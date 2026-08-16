@@ -24,6 +24,13 @@ Goal: an empty but real, deployed, secured app to build on.
       (Neon/Supabase) is part of the deploy step above, not yet done.
 - [x] Core schema: all 14 entities from [[02_ARCHITECTURE]] §3, plus
       `pipeline_events`, migrated and verified against local Postgres.
+- [x] Logging (stdlib, both apps), global error handling (FastAPI
+      catch-all handler + Next.js error/global-error boundaries),
+      and a real test suite for both apps (pytest against a genuine
+      Postgres test database, Vitest for frontend logic) — the
+      operator refers to this hardening pass as "Milestone 1"; it
+      closes out the foundations milestone rather than starting a new
+      one. See [[05_DECISIONS]].
 
 ## M1 — Manual pipeline, digitized
 

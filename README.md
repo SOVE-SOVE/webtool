@@ -45,6 +45,22 @@ npm run dev
 Then visit `http://localhost:3000/login` and sign in with the operator
 email/password set in `apps/api/.env`.
 
+## Checks
+
+```
+# apps/api — needs `docker compose up -d postgres` running first
+# (tests use the webdesignos_test database created alongside webdesignos)
+cd apps/api
+./.venv/bin/alembic check      # models vs. migrations haven't drifted
+./.venv/bin/pytest             # real integration tests, real Postgres
+
+# apps/web
+cd apps/web
+npm run lint
+npm run test                   # vitest
+npm run build                  # type-checks + production build
+```
+
 ## Deploying
 
 Not yet automated — this is local-only until an operator account exists

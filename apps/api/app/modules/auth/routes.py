@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.auth import create_session_token, require_operator, verify_password
+from app.core.logging import logger
 from app.core.settings import settings
 from app.modules.auth.schemas import LoginRequest, MeResponse
 
@@ -14,8 +15,10 @@ def login(data: LoginRequest, response: Response) -> MeResponse:
         data.password, settings.operator_password_hash
     )
     if not (valid_email and valid_password):
+        logger.warning("Failed login attempt for %s", data.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    logger.info("Operator logged in")
     token = create_session_token(settings.operator_email)
     response.set_cookie(
         key=settings.session_cookie_name,

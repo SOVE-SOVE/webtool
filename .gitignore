@@ -23,3 +23,6 @@ venv/
 # editors
 .vscode/
 .idea/
+
+# tooling artifacts
+.playwright-mcp/

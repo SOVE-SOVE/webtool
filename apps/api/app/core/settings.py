@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # cors — the web app's origin(s), comma-separated
     allowed_origins: str = "http://localhost:3000"
 
+    log_level: str = "INFO"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

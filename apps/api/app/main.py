@@ -1,12 +1,26 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.core.logging import configure_logging, logger
 from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.modules.auth.routes import router as auth_router
 from app.modules.businesses.routes import router as businesses_router
 
+configure_logging()
+
 app = FastAPI(title="Web Design OS API")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catch-all so an uncaught bug returns a generic error instead of a raw
+    traceback, while still logging the real exception for the operator.
+    """
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 app.add_middleware(
     CORSMiddleware,

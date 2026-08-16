@@ -21,6 +21,63 @@ why it lost.
 
 ---
 
+## 2026-08-16 — Foundation hardening: logging, error handling, testing
+
+**Decision:** Closed out the remaining foundations work (what the
+operator calls "Milestone 1"): stdlib logging in `apps/api` (no
+framework — `logging.basicConfig` plus a module logger, used for login
+attempts and unhandled exceptions); a catch-all FastAPI exception
+handler that logs the real traceback server-side and returns a generic
+`{"detail": "Internal server error"}` to the client; Next.js
+`error.tsx`/`global-error.tsx` boundaries; and a real test suite for
+both apps.
+
+Backend tests (pytest) run against an actual Postgres database
+(`webdesignos_test`, created via a docker-compose init script), not
+SQLite or mocks — the models use Postgres-native UUID/Enum types, so a
+lighter substitute would test something other than what actually runs.
+Frontend tests (Vitest, Node environment, no jsdom) cover `lib/api.ts`'s
+error-handling logic, the only real (non-framework) logic in
+`apps/web` at this point.
+
+**Why:** These were the parts of "foundation" that were true
+infrastructure gaps, not premature — every real app needs to not leak
+tracebacks to clients and needs some way to know it's broken without
+watching a terminal. Using the real Postgres for tests instead of
+SQLite avoids the specific, common failure mode where a lighter test
+database passes while the real one would reject the same migration or
+query. Using Vitest with a plain Node environment (no jsdom, no
+React Testing Library) avoids paying for a browser-simulation
+dependency when there's no component logic worth testing yet — that
+gets added in M1+ once the kanban board exists.
+
+**Alternatives considered:** `structlog`/`loguru` for backend logging
+— rejected, stdlib `logging` is enough at one-operator log volume and
+this avoids a dependency with no capability gain yet. `testcontainers`
+for spinning up an ephemeral test Postgres — rejected in favor of a
+docker-compose init script; the operator already runs `docker compose
+up -d postgres` for local dev, so reusing that container for a second
+database is simpler than a second container-management layer.
+
+## 2026-08-16 — Shared types: keep hand-written, defer codegen
+
+**Decision:** `apps/web/src/lib/api.ts` keeps hand-written TypeScript
+types mirroring the two Pydantic schemas that exist so far (`Me`,
+`Business`), instead of adding an OpenAPI-to-TypeScript codegen step
+now.
+
+**Why:** [[02_ARCHITECTURE]] §4 already calls for generating types from
+the API's OpenAPI schema once the surface grows — that's still the
+plan, not reversed. But the entire API surface today is one auth
+module and one CRUD module. Adding a codegen dependency and pipeline
+(`openapi-typescript`, an export-schema script, a generate command, a
+question of whether the generated file is committed or built) to keep
+two types in sync is exactly the kind of premature infrastructure
+[[00_VISION]] and [[02_ARCHITECTURE]]'s "what this is deliberately
+not" section warn against. Revisit as soon as the API surface grows
+past what's comfortable to hand-mirror — likely early in M1, once
+leads/projects get real routes.
+
 ## 2026-08-16 — M0 implemented; two implementation-time decisions
 
 **Decision:** M0 is built and verified locally (server running, DB
