@@ -21,6 +21,57 @@ why it lost.
 
 ---
 
+## 2026-08-16 — First dashboard: metric definitions and a scope fix found while building it
+
+**Decision:** Built CRUD for leads/clients/projects/tasks (table views,
+not kanban — see [[04_ROADMAP]] M1) and an Overview page with the 8
+requested metrics plus a "Needs your attention" list. Metric
+definitions, since several needed a judgment call the schema doesn't
+spell out:
+
+- **Qualified leads** — stage is `lead_score` or later (past the audit/
+  scoring gate).
+- **Contacted leads** — at least one logged `OUTREACH_SENT` interaction
+  (the actual event, not just current stage).
+- **Won projects** — count of `sales_opportunities` with status WON.
+- **Active projects** — projects not yet at `maintenance`.
+- **Revenue** — sum of `proposed_price_cents` on WON opportunities.
+  Labeled "Revenue (won)" — it's booked/won value, not cash collected;
+  there's still no invoicing/payments table.
+- **Needs your attention** — incomplete tasks that are overdue, due
+  within 2 days, or have no due date at all (undated tasks still need
+  triaging); plus leads stuck 5+ days that aren't already won/lost.
+
+**A real gap, found by testing the built UI, not just the tests**:
+`won_projects` and `revenue_cents` both read from `sales_opportunities`,
+but no route created rows there — the Leads/Clients/Projects/Tasks
+pages had no path that would ever populate it. Those two metrics would
+have stayed at 0 forever regardless of how the dashboard was used, a
+"technically correct, actually dead" gap that only surfaced by clicking
+through the real UI end to end. Fixed by having lead→client conversion
+(the actual "deal closed" action this UI has) record a won
+`SalesOpportunity`, with an optional price captured on that same form.
+Backend tests now assert on this directly (`test_convert_lead_records_
+won_opportunity_for_dashboard`), not just on the aggregation query in
+isolation.
+
+**Why:** A metric that's correct in isolation but unreachable through
+the actual product isn't done — see [[00_VISION]] "AI slop is
+unacceptable" and this project's general "no placeholder functionality"
+rule, which applies just as much to a dashboard number that can never
+move as it does to fake AI output.
+
+**Also found and fixed while testing in a real browser**: any FastAPI
+422 validation error rendered as the literal string `"[object Object]"`
+in the UI — `detail` is a string for `HTTPException` but a list of
+`{msg, loc, type}` objects for Pydantic validation errors, and
+`apps/web/src/lib/api.ts` only handled the string case. Fixed with an
+`errorMessage()` helper that flattens either shape; regression-tested
+in `api.test.ts`. This is exactly the kind of bug that only a real
+browser walkthrough (not curl, not unit tests in isolation) surfaces —
+worth remembering as a reason to keep doing that before calling
+frontend work done.
+
 ## 2026-08-16 — Foundation hardening: logging, error handling, testing
 
 **Decision:** Closed out the remaining foundations work (what the

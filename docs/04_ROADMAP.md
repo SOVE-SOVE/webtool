@@ -37,10 +37,29 @@ Goal: an empty but real, deployed, secured app to build on.
 Goal: replace the spreadsheet. Every stage in [[00_VISION]] exists as a
 record the operator can see and move by hand — no automation yet.
 
-- [ ] CRUD + a kanban-style view for prospects and projects across all
-      20 stages.
-- [ ] Activity log per prospect/project (what happened, when).
-- [ ] This alone should already beat "a spreadsheet + memory" — ship it
+Built as what the operator calls "the first usable dashboard" — a
+second, unrelated use of "Milestone 1" from the M0 hardening pass; see
+the note on that entry above. Don't read the two as the same thing.
+
+- [x] CRUD for leads, clients, projects, and tasks — plain sortable
+      tables with inline stage/done editing, not a kanban board. A
+      drag-and-drop kanban view was the original plan here; a table
+      does the same job (see and move a record through its stages) with
+      far less UI work, which matters more at this scale. Revisit only
+      if list-scanning stops being fast enough as volume grows.
+- [x] Overview dashboard: the 8 metrics the operator asked for (total/
+      qualified/contacted leads, meetings, won/active projects, revenue,
+      tasks needing attention) plus a "Needs your attention" list
+      (overdue/undated tasks, leads stale 5+ days). Pulled forward from
+      later in the roadmap because it was asked for directly — see
+      [[05_DECISIONS]] for exact metric definitions and the schema gap
+      that was found and fixed while building it (lead→client
+      conversion now records a won opportunity, or won-projects/revenue
+      could never move through the UI at all).
+- [ ] Activity log per prospect/project (what happened, when) — the
+      `pipeline_events` table exists in the schema but nothing writes
+      to it yet. Still open.
+- [x] This alone should already beat "a spreadsheet + memory" — shipped
       before automating anything.
 
 ## M2 — Research + audit + score automation

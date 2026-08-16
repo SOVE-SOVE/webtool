@@ -7,6 +7,11 @@ from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.modules.auth.routes import router as auth_router
 from app.modules.businesses.routes import router as businesses_router
+from app.modules.clients.routes import router as clients_router
+from app.modules.dashboard.routes import router as dashboard_router
+from app.modules.leads.routes import router as leads_router
+from app.modules.projects.routes import router as projects_router
+from app.modules.tasks.routes import router as tasks_router
 
 configure_logging()
 
@@ -38,3 +43,8 @@ def health() -> dict[str, str]:
 
 app.include_router(auth_router)
 app.include_router(businesses_router)
+app.include_router(leads_router)
+app.include_router(clients_router)
+app.include_router(projects_router)
+app.include_router(tasks_router)
+app.include_router(dashboard_router)

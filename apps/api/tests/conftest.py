@@ -18,7 +18,7 @@ from app.core.auth import hash_password
 from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model on Base.metadata
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
 from app.main import app
 
 OPERATOR_PASSWORD = "test-password"
@@ -49,3 +49,26 @@ def client():
 @pytest.fixture
 def operator_password() -> str:
     return OPERATOR_PASSWORD
+
+
+@pytest.fixture
+def authed_client(client: TestClient) -> TestClient:
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": settings.operator_email, "password": OPERATOR_PASSWORD},
+    )
+    assert res.status_code == 200
+    return client
+
+
+@pytest.fixture
+def db_session():
+    """
+    For writing rows that don't have CRUD routes yet (interactions,
+    sales opportunities, meetings) directly into the test database.
+    """
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
