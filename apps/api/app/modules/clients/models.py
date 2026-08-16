@@ -11,6 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.modules.businesses.models import Business
     from app.modules.projects.models import Project
+    from app.modules.users.models import User
 
 
 class Client(Base):
@@ -24,7 +25,9 @@ class Client(Base):
     )
     billing_email: Mapped[str | None] = mapped_column(String(255))
     contract_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     business: Mapped["Business"] = relationship(back_populates="client")
+    assigned_user: Mapped["User | None"] = relationship()
     projects: Mapped[list["Project"]] = relationship(back_populates="client")

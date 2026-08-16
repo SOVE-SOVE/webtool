@@ -33,7 +33,7 @@ export default function LoginPage() {
       >
         <div>
           <h1 className="text-lg font-semibold text-neutral-900">Web Design OS</h1>
-          <p className="text-sm text-neutral-500">Operator sign-in</p>
+          <p className="text-sm text-neutral-500">Sign in</p>
         </div>
 
         <div className="space-y-1">

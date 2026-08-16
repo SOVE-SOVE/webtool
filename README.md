@@ -1,6 +1,7 @@
 # Web Design OS
 
-Private internal tool for running a solo web-design business. Read
+Private internal tool for running a small web-design business (a
+workspace shared by a couple of people). Read
 [`docs/00_VISION.md`](docs/00_VISION.md) first — everything else in this
 repo should trace back to it. Full architecture:
 [`docs/02_ARCHITECTURE.md`](docs/02_ARCHITECTURE.md).
@@ -27,9 +28,10 @@ docker compose up -d postgres
 cd apps/api
 python3.12 -m venv .venv        # 3.12, not 3.14 — see docs/05_DECISIONS.md
 ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env            # fill in SESSION_SECRET and OPERATOR_*
-./.venv/bin/python -m app.core.generate_password_hash   # → OPERATOR_PASSWORD_HASH
+cp .env.example .env            # fill in SESSION_SECRET and SEED_*
+./.venv/bin/python -m app.core.generate_password_hash   # → SEED_ADMIN_PASSWORD_HASH
 ./.venv/bin/alembic upgrade head
+./.venv/bin/python -m app.core.seed   # creates the first workspace + admin user
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
@@ -42,8 +44,10 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Then visit `http://localhost:3000/login` and sign in with the operator
-email/password set in `apps/api/.env`.
+Then visit `http://localhost:3000/login` and sign in with the admin
+email/password from the seed step above. That admin can create
+teammate accounts from Settings once signed in — see
+`docs/01_REQUIREMENTS.md` "Multi-user & workspace".
 
 ## Checks
 

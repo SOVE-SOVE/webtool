@@ -7,16 +7,24 @@ from app.modules.businesses.models import Business
 from app.modules.businesses.schemas import BusinessCreate
 
 
-def list_businesses(db: Session) -> list[Business]:
-    return list(db.scalars(select(Business).order_by(Business.created_at.desc())))
+def list_businesses(db: Session, workspace_id: uuid.UUID) -> list[Business]:
+    return list(
+        db.scalars(
+            select(Business)
+            .where(Business.workspace_id == workspace_id)
+            .order_by(Business.created_at.desc())
+        )
+    )
 
 
-def get_business(db: Session, business_id: uuid.UUID) -> Business | None:
-    return db.get(Business, business_id)
+def get_business(db: Session, workspace_id: uuid.UUID, business_id: uuid.UUID) -> Business | None:
+    return db.scalar(
+        select(Business).where(Business.id == business_id, Business.workspace_id == workspace_id)
+    )
 
 
-def create_business(db: Session, data: BusinessCreate) -> Business:
-    business = Business(**data.model_dump())
+def create_business(db: Session, workspace_id: uuid.UUID, data: BusinessCreate) -> Business:
+    business = Business(workspace_id=workspace_id, **data.model_dump())
     db.add(business)
     db.commit()
     db.refresh(business)

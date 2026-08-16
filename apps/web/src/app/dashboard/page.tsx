@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type DashboardOverview } from "@/lib/api";
+import { api, type ActivityItem, type DashboardOverview } from "@/lib/api";
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -19,8 +19,27 @@ function MetricTile({ label, value }: { label: string; value: string | number })
   );
 }
 
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+const ACTIVITY_VERB: Record<string, string> = {
+  created: "created",
+  stage_changed: "moved the stage of",
+  assigned: "reassigned",
+  completed: "completed",
+  reopened: "reopened",
+};
+
 export default function OverviewPage() {
   const [data, setData] = useState<DashboardOverview | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,6 +47,7 @@ export default function OverviewPage() {
       .dashboardOverview()
       .then(setData)
       .catch(() => setError("Couldn't load dashboard data."));
+    api.listActivity().then(setActivity).catch(() => {});
   }, []);
 
   return (
@@ -69,6 +89,27 @@ export default function OverviewPage() {
                         {item.kind === "task" ? "Task" : "Stale lead"}
                       </span>
                     </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="mt-8">
+            <h2 className="text-sm font-semibold text-neutral-900">Recent activity</h2>
+            <p className="mt-1 text-xs text-neutral-500">What&apos;s happened across the workspace.</p>
+            {activity === null || activity.length === 0 ? (
+              <p className="mt-2 text-sm text-neutral-500">Nothing logged yet.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-neutral-200 border border-neutral-200">
+                {activity.slice(0, 15).map((item) => (
+                  <li key={item.id} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-sm text-neutral-700">
+                      <span className="font-medium text-neutral-900">{item.user_name ?? "Someone"}</span>{" "}
+                      {ACTIVITY_VERB[item.action] ?? item.action} {item.entity_type}
+                      {item.summary ? <span className="text-neutral-500"> — {item.summary}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-xs text-neutral-400">{timeAgo(item.created_at)}</span>
                   </li>
                 ))}
               </ul>

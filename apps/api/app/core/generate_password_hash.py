@@ -1,5 +1,7 @@
 """
-One-off CLI to generate the OPERATOR_PASSWORD_HASH value for .env.
+One-off CLI to generate a password hash for .env — used for
+SEED_ADMIN_PASSWORD_HASH (see app/core/seed.py) or when setting a
+user's password_hash directly.
 
     python -m app.core.generate_password_hash
 """
@@ -10,7 +12,7 @@ from app.core.auth import hash_password
 
 
 def main() -> None:
-    password = getpass("Operator password: ")
+    password = getpass("Password: ")
     confirm = getpass("Confirm: ")
     if password != confirm:
         raise SystemExit("Passwords did not match.")

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.modules.clients.models import Client
     from app.modules.design_briefs.models import DesignBrief
     from app.modules.tasks.models import Task
+    from app.modules.users.models import User
     from app.modules.websites.models import Website
 
 
@@ -44,12 +45,14 @@ class Project(Base):
     stage: Mapped[ProjectStage] = mapped_column(
         Enum(ProjectStage, name="project_stage"), default=ProjectStage.INTAKE
     )
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     client: Mapped["Client"] = relationship(back_populates="projects")
+    assigned_user: Mapped["User | None"] = relationship()
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
     design_briefs: Mapped[list["DesignBrief"]] = relationship(back_populates="project")
     websites: Mapped[list["Website"]] = relationship(back_populates="project")

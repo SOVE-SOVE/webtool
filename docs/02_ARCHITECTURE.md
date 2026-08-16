@@ -97,11 +97,39 @@ uuid()`), since some IDs (client-approval links) are exposed externally
 and must not be sequential/guessable — see [[06_SECURITY]]. One set of
 IDs, no separate "public token" column needed.
 
+### Workspace and users (added 2026-08-16)
+
+Two new root entities sit above the business-domain tree described
+below, per [[01_REQUIREMENTS]] "Multi-user & workspace":
+
+- **workspaces** — `id`, `name`, `created_at`, `updated_at`. The
+  top-level tenant boundary. One row today, but the schema supports
+  more without changing shape.
+- **users** — `id`, `workspace_id`, `name`, `email` (unique), `role`
+  (`admin` | `member`), `password_hash`, `created_at`, `updated_at`.
+  Belongs to exactly one workspace.
+
+`businesses.workspace_id` is the single point where the rest of the
+business-domain tree (below) is scoped to a workspace — every
+descendant table reaches its workspace by following its existing FK
+chain up to `businesses`, rather than duplicating `workspace_id` onto
+every table. `leads`, `clients`, `projects`, and `tasks` additionally
+carry a nullable `assigned_user_id` (FK → `users.id`, `ON DELETE
+SET NULL`) so those four record types — the ones [[01_REQUIREMENTS]]
+calls out as carrying responsibility — can be handed to a specific
+user. Unassigned is a valid, common state, not an error.
+
+Auth changes accordingly: session cookies now carry a user id (not an
+email), and every operator-auth route dependency resolves the full
+`User` row so route handlers can filter by `current_user.workspace_id`
+and check `current_user.role`. See §7.
+
 ### Entities
 
 - **businesses** — the canonical company record (name, industry,
-  location, ABN if known). One row per real-world business, whether
-  it's currently a prospect, a client, both over time, or neither yet.
+  location, ABN if known), scoped to a workspace via `workspace_id`.
+  One row per real-world business, whether it's currently a prospect, a
+  client, both over time, or neither yet.
 - **contacts** — people at a business (name, email, phone, role).
   Belongs to a business.
 - **leads** — the sales-tracking record for a business being pursued:
@@ -136,32 +164,50 @@ IDs, no separate "public token" column needed.
 ### Relationships (indented = "belongs to" the line above)
 
 ```
-businesses
-  contacts
-  leads
-    interactions
-    website_audits
-    sales_opportunities
-      meetings
-  clients                (created when a sales_opportunity is won)
-    projects
-      tasks
-      design_briefs
-      websites
-        qa_reports
-        deployments
+workspaces
+  users
+  businesses              (workspace_id)
+    contacts
+    leads                  (assigned_user_id)
+      interactions
+      website_audits
+      sales_opportunities
+        meetings
+    clients                (assigned_user_id; created when a sales_opportunity is won)
+      projects              (assigned_user_id)
+        tasks                (assigned_user_id)
+        design_briefs
+        websites
+          qa_reports
+          deployments
+  activity_log             (workspace_id, user_id, entity_type/entity_id)
 ```
 
-### Activity log: no generic polymorphic table
+### Activity log(s): entity-specific stays entity-specific; user attribution gets one polymorphic table
 
-A single generic `activity_log` table with a polymorphic
-`entity_type`/`entity_id` pair was considered and rejected — it's the
-classic entity-attribute-value trap: unenforceable foreign keys, ORM
-awkwardness, and a query pattern that fights Postgres instead of using
-it. Instead: `interactions` is the lead-side log, and a small
-`pipeline_events` table (nullable `lead_id`/`project_id`, exactly one
-set, via a check constraint) covers stage-transition history where
-needed. Simple, typed, still queryable.
+A single generic `activity_log` table covering *everything* (stage
+history included) was considered and rejected for the reasons in the
+original entry below — it's the classic entity-attribute-value trap:
+unenforceable foreign keys, ORM awkwardness, a query pattern that
+fights Postgres. That reasoning still holds for stage/domain history:
+`interactions` is the lead-side log, and `pipeline_events` (nullable
+`lead_id`/`project_id`, exactly one set, via a check constraint) covers
+stage-transition history.
+
+**Added 2026-08-16:** a *second*, narrower `activity_log` table now
+covers a different concern those don't: **which user did what**, across
+every entity type a user can touch (lead, client, project, task).
+Columns: `id`, `workspace_id`, `user_id` (FK → `users.id`, `ON DELETE
+SET NULL` — the log outlives the user), `entity_type`, `entity_id`,
+`action`, `summary`, `created_at`. `entity_type`/`entity_id` here *is*
+the polymorphic pair the original decision avoided, and that trade-off
+(no enforced FK on `entity_id`) is accepted deliberately this time: the
+alternative — a `created_by`/`updated_by` user FK plus per-action rows
+duplicated onto `leads`, `clients`, `projects`, and `tasks` individually
+— is strictly more code for the same guarantee, and this table is
+read as one combined feed ("what has my co-founder been doing"), which
+is exactly the shape a polymorphic table is good at and per-table
+columns are bad at. See [[05_DECISIONS]].
 
 ## 4. API architecture
 
@@ -195,7 +241,8 @@ needed. Simple, typed, still queryable.
   web app's origin), no bespoke proxy/BFF layer in Next.js.
 - Auth: FastAPI issues an httpOnly, secure, `SameSite=Lax` session
   cookie on login; the browser sends it automatically on API calls.
-  No OAuth/multi-provider identity — one operator account.
+  No OAuth/multi-provider identity — email+password against the
+  `users` table, one workspace per account (see §3, §7).
 - Pages mirror the backend modules and the pipeline: a kanban-style
   board for leads/projects by stage (per [[04_ROADMAP]] M1), detail
   pages per entity (`/leads/[id]`, `/projects/[id]/brief`, etc.).
@@ -267,8 +314,23 @@ Extends [[06_SECURITY]] for the two-service shape:
 - **Network boundary:** browser talks to both `apps/web` (pages) and
   `apps/api` (data) directly. `apps/api` CORS is locked to the exact
   web app origin(s) — no wildcard.
-- **Auth:** single operator credential; FastAPI-issued httpOnly signed
-  session cookie. No multi-tenant identity system.
+- **Auth (revised 2026-08-16):** per-user credentials backed by the
+  `users` table; FastAPI-issued httpOnly signed session cookie carrying
+  a user id. Still no OAuth/external identity provider, and still a
+  single signed cookie — only what it identifies changed (a user, not
+  a fixed email). This is workspace-scoped multi-user, not a
+  multi-tenant *identity* system: no SSO, no per-record permission
+  grants, just two roles (`admin`/`member`) and one workspace per
+  account. See [[01_REQUIREMENTS]] "Multi-user & workspace" and
+  [[05_DECISIONS]].
+- **Authorization:** every non-public route resolves the current user
+  and filters data to `current_user.workspace_id` — no cross-workspace
+  reads are possible through the API. User-management and workspace-
+  settings routes additionally require `role == admin`; every other
+  route (leads, clients, projects, tasks, activity) is readable/
+  writable by any workspace member, matching [[01_REQUIREMENTS]]'s
+  "MEMBER: view all workspace data" — there is no per-record ACL beyond
+  workspace membership.
 - **Client-approval routes:** the only unauthenticated surface on
   `apps/api` — gated by an unguessable per-project token, rate-limited,
   scoped to return only that project's preview data.

@@ -7,14 +7,20 @@ describe("api", () => {
   });
 
   it("resolves with the parsed body on a successful response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ email: "operator@example.com" }), { status: 200 }),
-    );
+    const me = {
+      id: "u1",
+      name: "Ada Admin",
+      email: "admin@example.com",
+      role: "admin",
+      workspace_id: "w1",
+      workspace_name: "Acme Web Design",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(me), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await api.me();
 
-    expect(result).toEqual({ email: "operator@example.com" });
+    expect(result).toEqual(me);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/auth/me"),
       expect.objectContaining({ credentials: "include" }),

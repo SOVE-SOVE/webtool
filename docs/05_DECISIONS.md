@@ -21,6 +21,64 @@ why it lost.
 
 ---
 
+## 2026-08-16 — Multi-user: workspace + users + roles, revising the single-operator assumption
+
+**Decision:** The business is now run by two people, not one, so
+single-operator auth (one email/password pair in `.env`, no user table)
+is replaced with: a `workspaces` table as the tenant boundary, a
+`users` table (each user belongs to exactly one workspace, has an
+`admin`/`member` role and a real password hash), `businesses.
+workspace_id` as the single scoping point for the whole business-domain
+tree (leads/clients/projects/tasks/websites all reach their workspace
+by following existing FKs up to `businesses`, not by duplicating
+`workspace_id` everywhere), and a nullable `assigned_user_id` on
+`leads`, `clients`, `projects`, and `tasks` — the four record types
+[[01_REQUIREMENTS]] identifies as carrying responsibility. A new
+`activity_log` table records which user did what, across entity types
+— see [[02_ARCHITECTURE]] §3 for why this one *is* a polymorphic table
+when the original activity-log decision (below) rejected that shape for
+stage history. Session cookies now carry a user id instead of a fixed
+email; every non-public route resolves the current user and filters
+queries to their workspace.
+
+Only two roles, matching [[01_REQUIREMENTS]]: `ADMIN` (users, workspace
+settings, integrations, plus everything a member can do) and `MEMBER`
+(everything else — view all workspace data, work leads/projects/
+tasks). No per-record ACLs, no "assigned user can edit but others can
+only view" restriction — assignment is about *whose job it is*, not
+about gating access; every workspace member can already see and edit
+all workspace data per the requirements doc. This keeps the
+authorization surface to two checks: "is this row in my workspace" and
+"am I an admin," not a permission matrix.
+
+**Why:** The operator explicitly asked for this — two people now work
+the same pipeline and need to know who's responsible for what and what
+the other person has done, without a side channel. Scoping via
+`businesses.workspace_id` alone (rather than a `workspace_id` column on
+every table) was chosen because every business-domain table already has
+an unbroken FK chain up to `businesses` — adding the column everywhere
+would be redundant data that could drift from the FK chain, for no
+query benefit `apps/api`'s modest volume needs. Explicitly not built:
+invitations/email signup (an admin creates accounts directly — no
+`RESEND_*` integration needed for this), per-record permission
+overrides, or multi-workspace accounts — none of that is required at
+two-to-a-handful-of-users scale, and building it now would be exactly
+the kind of enterprise-permissions overengineering [[01_REQUIREMENTS]]
+and the earlier overengineering-guardrails decision (below) warn
+against.
+
+**Alternatives considered:** A `workspace_id` column denormalized onto
+every business-domain table (leads, clients, projects, tasks, contacts,
+etc.) — rejected for the redundancy reason above; revisit only if a
+specific query pattern genuinely needs to filter by workspace without
+joining through `businesses` (none does yet). Row-level security
+(Postgres RLS) instead of application-level workspace filtering —
+rejected as unnecessary operational complexity for two users; the ORM-
+level filter is simple to audit and test at this scale, and every query
+already goes through `apps/api`, nothing else touches the database.
+
+---
+
 ## 2026-08-16 — First dashboard: metric definitions and a scope fix found while building it
 
 **Decision:** Built CRUD for leads/clients/projects/tasks (table views,
