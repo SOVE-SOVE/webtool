@@ -1,0 +1,93 @@
+# Roadmap
+
+Status: draft — sequencing, not dated commitments. Every item is here
+because it saves time, makes money, reduces mistakes, or improves
+quality, per [[00_VISION]]. Cut anything that stops being true. Each
+milestone should be independently usable, not a stepping stone that
+only pays off once everything after it exists.
+
+## M0 — Foundations
+
+Goal: an empty but real, deployed, secured app to build on.
+
+- [x] Repo structure and documentation baseline (this).
+- [x] Core stack decided — see [[02_ARCHITECTURE]] and [[05_DECISIONS]].
+- [ ] `apps/web` (Next.js) and `apps/api` (FastAPI) scaffolded per
+      [[02_ARCHITECTURE]], deployed, behind auth (no public
+      unauthenticated access to any client data).
+- [ ] Postgres database provisioned, `apps/api` connected via
+      SQLAlchemy/Alembic.
+- [ ] Core schema: prospects, projects, pipeline stage/state, activity
+      log — see [[database]].
+
+## M1 — Manual pipeline, digitized
+
+Goal: replace the spreadsheet. Every stage in [[00_VISION]] exists as a
+record the operator can see and move by hand — no automation yet.
+
+- [ ] CRUD + a kanban-style view for prospects and projects across all
+      20 stages.
+- [ ] Activity log per prospect/project (what happened, when).
+- [ ] This alone should already beat "a spreadsheet + memory" — ship it
+      before automating anything.
+
+## M2 — Research + audit + score automation
+
+Goal: stages 2–4 stop being manual.
+
+- [ ] Research agent: given a business name/URL, pull public info
+      (web presence, socials, listing) into a structured note.
+- [ ] Website audit agent: Playwright-driven check (loads, mobile,
+      HTTPS, speed, no-site-found) → structured report per prospect.
+- [ ] Lead score computed from research + audit.
+
+## M3 — Sales prep + outreach + follow-up
+
+Goal: stages 5–7 stop eating time, sending still stays human.
+
+- [ ] Sales prep packet assembled automatically from research + audit.
+- [ ] Outreach draft agent, referencing real findings — operator
+      reviews and sends (see [[03_AGENT_RULES]]).
+- [ ] Follow-up reminders/sequencing so nothing goes cold from being
+      forgotten.
+
+## M4 — Intake → project → brief/sitemap/copy
+
+Goal: stages 9–14. Signed client's info flows straight into a build
+spec with no re-keying.
+
+- [ ] Client intake form → auto-creates a project record.
+- [ ] Post-sale research agent.
+- [ ] Design brief, sitemap, and copy drafts generated from intake +
+      research, for operator sign-off before build.
+
+## M5 — Website build + QA + approval
+
+Goal: stages 15–18. First real reusable output.
+
+- [ ] First template/component package in [[packages]] — the build
+      baseline instead of a blank canvas.
+- [ ] Site generation from brief + sitemap + copy + client assets.
+- [ ] Automated QA checks (build, links, mobile) from [[tests]].
+- [ ] Operator approval gate, then a secure shareable client-preview
+      link with feedback capture.
+
+## M6 — Deployment + maintenance
+
+Goal: stages 19–20. Close the loop to revenue.
+
+- [ ] One-step deploy to hosting, tied to client approval.
+- [ ] Payment/invoicing (Stripe) tied to the deploy step.
+- [ ] Maintenance monitoring (uptime, broken links) for live client
+      sites — the entry point for recurring revenue.
+
+## Explicitly not roadmapped
+
+- Multi-tenant/team features — this is a one-operator system by design.
+- A generic no-code site builder, a custom CMS, a multi-agent
+  orchestration framework, or a job queue — see "what this is
+  deliberately not" in [[02_ARCHITECTURE]].
+- Anything that doesn't map to a pipeline stage in [[00_VISION]].
+
+Record why a milestone's scope changed in [[05_DECISIONS]] rather than
+rewriting history here.
