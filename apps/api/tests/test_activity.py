@@ -16,13 +16,35 @@ def test_creating_a_lead_logs_activity(authed_client, admin_user):
     assert entry["user_name"] == admin_user.name
 
 
-def test_lead_stage_change_logs_activity(authed_client):
+def test_lead_status_change_logs_activity(authed_client):
     lead = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"}).json()
-    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"stage": "research"})
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"status": "researched"})
 
     activity = authed_client.get("/api/v1/activity").json()
     actions = [a["action"] for a in activity]
-    assert "stage_changed" in actions
+    assert "status_changed" in actions
+
+
+def test_lead_archive_and_unarchive_log_activity(authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"}).json()
+    authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    authed_client.post(f"/api/v1/leads/{lead['id']}/unarchive")
+
+    activity = authed_client.get("/api/v1/activity").json()
+    actions = [a["action"] for a in activity]
+    assert "archived" in actions
+    assert "unarchived" in actions
+
+
+def test_activity_filter_by_entity(authed_client):
+    lead_a = authed_client.post("/api/v1/leads", json={"business_name": "First"}).json()
+    authed_client.post("/api/v1/leads", json={"business_name": "Second"})
+
+    activity = authed_client.get(
+        "/api/v1/activity", params={"entity_type": "lead", "entity_id": lead_a["id"]}
+    ).json()
+    assert len(activity) == 1
+    assert activity[0]["entity_id"] == lead_a["id"]
 
 
 def test_assignment_change_logs_activity(authed_client, member_user):

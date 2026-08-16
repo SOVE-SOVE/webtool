@@ -34,6 +34,34 @@ def test_get_business_not_found(authed_client):
     assert res.status_code == 404
 
 
+def test_update_business(authed_client):
+    create_res = authed_client.post("/api/v1/businesses", json={"name": "Northside Electrical"})
+    business_id = create_res.json()["id"]
+
+    patch_res = authed_client.patch(
+        f"/api/v1/businesses/{business_id}",
+        json={
+            "email": "hello@northside.example",
+            "social_links": "https://instagram.com/northside",
+            "notes": "Referred by a past client",
+        },
+    )
+    assert patch_res.status_code == 200
+    body = patch_res.json()
+    assert body["email"] == "hello@northside.example"
+    assert body["social_links"] == "https://instagram.com/northside"
+    assert body["notes"] == "Referred by a past client"
+    # Untouched fields survive a partial update.
+    assert body["name"] == "Northside Electrical"
+
+
+def test_update_business_not_found(authed_client):
+    res = authed_client.patch(
+        "/api/v1/businesses/00000000-0000-0000-0000-000000000000", json={"email": "x@example.com"}
+    )
+    assert res.status_code == 404
+
+
 def test_business_scoped_to_own_workspace(authed_client, other_authed_client):
     """A business created in one workspace is invisible to another workspace's admin."""
     create_res = authed_client.post("/api/v1/businesses", json={"name": "Workspace One Business"})

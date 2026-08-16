@@ -6,10 +6,18 @@ workspace_id). Every number here comes from a real query — nothing
 hardcoded. Definitions, since several of these are judgment calls the
 schema doesn't spell out on its own:
 
-- qualified_leads: leads whose stage is LEAD_SCORE or later — i.e. past
-  the audit/scoring gate, into active pursuit.
+- qualified_leads: leads whose status is QUALIFIED, CONTACTED, REPLIED,
+  MEETING, PROPOSAL, or WON — i.e. past initial triage, into active
+  pursuit. Updated 2026-08-16 for the LeadStatus redesign — see
+  docs/05_DECISIONS.md; NEW/RESEARCHED/LOST/NURTURE don't count.
 - contacted_leads: leads with at least one logged OUTREACH_SENT
-  interaction (the actual event, not just current stage).
+  interaction (the actual event, not just current status).
+
+Every lead-based metric below only counts non-archived leads
+(archived_at IS NULL) — archiving a lead is the operator saying "stop
+tracking this as part of the active pipeline," so it shouldn't inflate
+totals or show up needing attention. This is threaded through the
+`lead_in_workspace` subquery plus the two direct-count queries below.
 - won_projects: sales_opportunities with status=WON — the count of
   deals actually closed, not project delivery status.
 - active_projects: projects not yet at the MAINTENANCE stage.
@@ -34,19 +42,19 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.dashboard.schemas import AttentionItem, DashboardOverview
 from app.modules.interactions.models import Interaction, InteractionKind
-from app.modules.leads.models import Lead, LeadStage
+from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import Meeting
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
 from app.modules.tasks.models import Task
 
-QUALIFIED_STAGES = (
-    LeadStage.LEAD_SCORE,
-    LeadStage.SALES_PREPARATION,
-    LeadStage.OUTREACH,
-    LeadStage.FOLLOW_UP,
-    LeadStage.MEETING,
-    LeadStage.WON,
+QUALIFIED_STATUSES = (
+    LeadStatus.QUALIFIED,
+    LeadStatus.CONTACTED,
+    LeadStatus.REPLIED,
+    LeadStatus.MEETING,
+    LeadStatus.PROPOSAL,
+    LeadStatus.WON,
 )
 STALE_LEAD_THRESHOLD = timedelta(days=5)
 ATTENTION_DUE_WINDOW = timedelta(days=2)
@@ -58,8 +66,10 @@ _TaskLeadBusiness = aliased(Business)
 def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     now = datetime.now(timezone.utc)
 
-    lead_in_workspace = select(Lead.id).join(Business, Lead.business_id == Business.id).where(
-        Business.workspace_id == workspace_id
+    lead_in_workspace = (
+        select(Lead.id)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id, Lead.archived_at.is_(None))
     )
 
     total_leads = (
@@ -67,7 +77,7 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
             select(func.count())
             .select_from(Lead)
             .join(Business, Lead.business_id == Business.id)
-            .where(Business.workspace_id == workspace_id)
+            .where(Business.workspace_id == workspace_id, Lead.archived_at.is_(None))
         )
         or 0
     )
@@ -77,7 +87,11 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
             select(func.count())
             .select_from(Lead)
             .join(Business, Lead.business_id == Business.id)
-            .where(Business.workspace_id == workspace_id, Lead.stage.in_(QUALIFIED_STAGES))
+            .where(
+                Business.workspace_id == workspace_id,
+                Lead.archived_at.is_(None),
+                Lead.status.in_(QUALIFIED_STATUSES),
+            )
         )
         or 0
     )
@@ -183,7 +197,8 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         select(Lead, Business)
         .join(Business, Lead.business_id == Business.id)
         .where(Business.workspace_id == workspace_id)
-        .where(Lead.stage.not_in((LeadStage.WON, LeadStage.LOST)))
+        .where(Lead.archived_at.is_(None))
+        .where(Lead.status.not_in((LeadStatus.WON, LeadStatus.LOST)))
         .where(Lead.updated_at <= stale_cutoff)
         .order_by(Lead.updated_at.asc())
         .limit(10)
@@ -193,7 +208,7 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
             kind="stale_lead",
             id=lead.id,
             title=business.name,
-            detail=f"No movement in {(now - lead.updated_at).days} days — still at {lead.stage.value}",
+            detail=f"No movement in {(now - lead.updated_at).days} days — still at {lead.status.value}",
             href="/dashboard/leads",
         )
         for lead, business in stale_leads

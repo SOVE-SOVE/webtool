@@ -83,11 +83,11 @@ describe("api", () => {
 
     it("updateLead patches /api/v1/leads/:id", async () => {
       const fetchMock = stubOk({ id: "1" });
-      await api.updateLead("abc", { stage: "won" });
+      await api.updateLead("abc", { status: "won" });
 
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/v1/leads/abc"),
-        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ stage: "won" }) }),
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ status: "won" }) }),
       );
     });
 

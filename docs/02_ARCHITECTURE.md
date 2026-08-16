@@ -127,14 +127,17 @@ and check `current_user.role`. See §7.
 ### Entities
 
 - **businesses** — the canonical company record (name, industry,
-  location, ABN if known), scoped to a workspace via `workspace_id`.
-  One row per real-world business, whether it's currently a prospect, a
-  client, both over time, or neither yet.
+  location, ABN if known, email, social links, notes), scoped to a
+  workspace via `workspace_id`. One row per real-world business,
+  whether it's currently a prospect, a client, both over time, or
+  neither yet.
 - **contacts** — people at a business (name, email, phone, role).
   Belongs to a business.
 - **leads** — the sales-tracking record for a business being pursued:
-  pipeline stage (prospect → meeting), score, source. Belongs to a
-  business (0–1 active lead per business at a time).
+  a CRM-style `status` (NEW → ... → WON/LOST/NURTURE — see
+  [[05_DECISIONS]], not the 20-stage pipeline), `priority`, score,
+  source, notes, and a nullable `archived_at`. Belongs to a business
+  (0–1 active lead per business at a time).
 - **interactions** — every touchpoint on a lead: outreach sent, reply,
   call, note. Doubles as the lead-side activity log.
 - **website_audits** — structured audit results (loads, mobile, HTTPS,

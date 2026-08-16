@@ -47,12 +47,21 @@ def _to_read(entry: ActivityLog) -> ActivityRead:
     )
 
 
-def list_activity(db: Session, workspace_id: uuid.UUID, limit: int = 50) -> list[ActivityRead]:
-    entries = db.scalars(
+def list_activity(
+    db: Session,
+    workspace_id: uuid.UUID,
+    limit: int = 50,
+    entity_type: str | None = None,
+    entity_id: uuid.UUID | None = None,
+) -> list[ActivityRead]:
+    query = (
         select(ActivityLog)
         .options(joinedload(ActivityLog.user))
         .where(ActivityLog.workspace_id == workspace_id)
-        .order_by(ActivityLog.created_at.desc())
-        .limit(limit)
     )
+    if entity_type is not None:
+        query = query.where(ActivityLog.entity_type == entity_type)
+    if entity_id is not None:
+        query = query.where(ActivityLog.entity_id == entity_id)
+    entries = db.scalars(query.order_by(ActivityLog.created_at.desc()).limit(limit))
     return [_to_read(e) for e in entries]

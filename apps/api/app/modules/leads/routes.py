@@ -14,9 +14,11 @@ router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
 
 @router.get("", response_model=list[LeadRead])
 def list_leads(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    include_archived: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> list[LeadRead]:
-    return service.list_leads(db, current_user.workspace_id)
+    return service.list_leads(db, current_user.workspace_id, include_archived=include_archived)
 
 
 @router.post("", response_model=LeadRead, status_code=201)
@@ -44,6 +46,26 @@ def update_lead(
     db: Session = Depends(get_db),
 ) -> LeadRead:
     lead = service.update_lead(db, current_user.workspace_id, current_user.id, lead_id, data)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@router.post("/{lead_id}/archive", response_model=LeadRead)
+def archive_lead(
+    lead_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> LeadRead:
+    lead = service.archive_lead(db, current_user.workspace_id, current_user.id, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@router.post("/{lead_id}/unarchive", response_model=LeadRead)
+def unarchive_lead(
+    lead_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> LeadRead:
+    lead = service.unarchive_lead(db, current_user.workspace_id, current_user.id, lead_id)
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead

@@ -30,7 +30,7 @@ def test_convert_lead_to_client_marks_lead_won(authed_client):
     assert client_res.json()["business_name"] == "Hilltop Roofing"
 
     lead_after = authed_client.get(f"/api/v1/leads/{lead_id}").json()
-    assert lead_after["stage"] == "won"
+    assert lead_after["status"] == "won"
 
 
 def test_convert_lead_records_won_opportunity_for_dashboard(authed_client):

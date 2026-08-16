@@ -28,7 +28,7 @@ export default function ClientsPage() {
 
   useEffect(load, []);
 
-  const openLeads = leads.filter((l) => l.stage !== "won" && l.stage !== "lost");
+  const openLeads = leads.filter((l) => l.status !== "won" && l.status !== "lost");
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

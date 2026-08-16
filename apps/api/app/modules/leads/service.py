@@ -1,11 +1,12 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
-from app.modules.leads.models import Lead
+from app.modules.leads.models import Lead, LeadPriority
 from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate
 from app.modules.users.service import require_user_in_workspace
 
@@ -18,9 +19,12 @@ def _to_read(lead: Lead) -> LeadRead:
         industry=lead.business.industry,
         suburb=lead.business.suburb,
         state=lead.business.state,
-        stage=lead.stage,
+        status=lead.status,
+        priority=lead.priority,
         score=lead.score,
         source=lead.source,
+        notes=lead.notes,
+        archived_at=lead.archived_at,
         assigned_user_id=lead.assigned_user_id,
         assigned_user_name=lead.assigned_user.name if lead.assigned_user else None,
         created_at=lead.created_at,
@@ -37,8 +41,11 @@ def _base_query(workspace_id: uuid.UUID):
     )
 
 
-def list_leads(db: Session, workspace_id: uuid.UUID) -> list[LeadRead]:
-    leads = db.scalars(_base_query(workspace_id).order_by(Lead.created_at.desc()))
+def list_leads(db: Session, workspace_id: uuid.UUID, include_archived: bool = False) -> list[LeadRead]:
+    query = _base_query(workspace_id)
+    if not include_archived:
+        query = query.where(Lead.archived_at.is_(None))
+    leads = db.scalars(query.order_by(Lead.created_at.desc()))
     return [_to_read(lead) for lead in leads]
 
 
@@ -65,7 +72,12 @@ def create_lead(
     if data.assigned_user_id is not None:
         require_user_in_workspace(db, workspace_id, data.assigned_user_id)
 
-    lead = Lead(business_id=business.id, source=data.source, assigned_user_id=data.assigned_user_id)
+    lead = Lead(
+        business_id=business.id,
+        source=data.source,
+        priority=data.priority if data.priority is not None else LeadPriority.MEDIUM,
+        assigned_user_id=data.assigned_user_id,
+    )
     db.add(lead)
     db.flush()  # assigns lead.id for the activity log row below
 
@@ -96,20 +108,26 @@ def update_lead(
     if lead is None:
         return None
 
-    if data.stage is not None and data.stage != lead.stage:
+    if data.status is not None and data.status != lead.status:
         activity_service.record(
             db,
             workspace_id=workspace_id,
             user_id=actor_id,
             entity_type="lead",
             entity_id=lead.id,
-            action="stage_changed",
-            summary=f"{lead.stage.value} -> {data.stage.value}",
+            action="status_changed",
+            summary=f"{lead.status.value} -> {data.status.value}",
         )
-        lead.stage = data.stage
+        lead.status = data.status
+
+    if data.priority is not None:
+        lead.priority = data.priority
 
     if data.score is not None:
         lead.score = data.score
+
+    if "notes" in data.model_fields_set:
+        lead.notes = data.notes
 
     # assigned_user_id is only touched when the client sent the key at
     # all — `null` unassigns, an omitted key leaves assignment as-is.
@@ -129,4 +147,46 @@ def update_lead(
 
     db.commit()
     db.refresh(lead)
+    return _to_read(lead)
+
+
+def archive_lead(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, lead_id: uuid.UUID
+) -> LeadRead | None:
+    lead = db.scalar(_base_query(workspace_id).where(Lead.id == lead_id))
+    if lead is None:
+        return None
+    if lead.archived_at is None:
+        lead.archived_at = datetime.now(timezone.utc)
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            action="archived",
+        )
+        db.commit()
+        db.refresh(lead)
+    return _to_read(lead)
+
+
+def unarchive_lead(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, lead_id: uuid.UUID
+) -> LeadRead | None:
+    lead = db.scalar(_base_query(workspace_id).where(Lead.id == lead_id))
+    if lead is None:
+        return None
+    if lead.archived_at is not None:
+        lead.archived_at = None
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            action="unarchived",
+        )
+        db.commit()
+        db.refresh(lead)
     return _to_read(lead)

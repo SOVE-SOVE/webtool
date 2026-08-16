@@ -8,7 +8,7 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.clients.schemas import ClientCreate, ClientRead, ClientUpdate
-from app.modules.leads.models import Lead, LeadStage
+from app.modules.leads.models import Lead, LeadStatus
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
 from app.modules.users.service import require_user_in_workspace
 
@@ -70,7 +70,7 @@ def create_client(
         if lead is None:
             raise HTTPException(status_code=404, detail="Lead not found")
         business = lead.business
-        lead.stage = LeadStage.WON
+        lead.status = LeadStatus.WON
         # Converting a lead is the "deal closed" event — record it as a
         # won opportunity so it counts toward the dashboard's won-projects
         # and revenue metrics, whether or not a price was captured.

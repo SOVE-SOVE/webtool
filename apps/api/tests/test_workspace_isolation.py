@@ -18,6 +18,18 @@ def test_lead_scoped_to_own_workspace(authed_client, other_authed_client):
     other_patch = other_authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"score": 99})
     assert other_patch.status_code == 404
 
+    other_archive = other_authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    assert other_archive.status_code == 404
+
+
+def test_business_update_scoped_to_own_workspace(authed_client, other_authed_client):
+    business = authed_client.post("/api/v1/businesses", json={"name": "Workspace One Business"}).json()
+
+    other_patch = other_authed_client.patch(
+        f"/api/v1/businesses/{business['id']}", json={"email": "hijack@example.com"}
+    )
+    assert other_patch.status_code == 404
+
 
 def test_client_scoped_to_own_workspace(authed_client, other_authed_client):
     client_row = authed_client.post("/api/v1/clients", json={"business_name": "Workspace One Client"}).json()

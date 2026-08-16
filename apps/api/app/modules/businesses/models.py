@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,9 @@ class Business(Base):
     industry: Mapped[str | None] = mapped_column(String(120))
     website_url: Mapped[str | None] = mapped_column(String(500))
     phone: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(255))
+    social_links: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     suburb: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str | None] = mapped_column(String(10))
     postcode: Mapped[str | None] = mapped_column(String(10))

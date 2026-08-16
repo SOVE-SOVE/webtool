@@ -31,11 +31,22 @@ def test_overview_empty_state(authed_client):
 def test_overview_counts_leads_and_qualification(authed_client):
     lead_a = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()
     authed_client.post("/api/v1/leads", json={"business_name": "B"})
-    authed_client.patch(f"/api/v1/leads/{lead_a['id']}", json={"stage": "lead_score", "score": 70})
+    authed_client.patch(f"/api/v1/leads/{lead_a['id']}", json={"status": "qualified", "score": 70})
 
     body = authed_client.get("/api/v1/dashboard/overview").json()
     assert body["total_leads"] == 2
     assert body["qualified_leads"] == 1
+
+
+def test_overview_excludes_archived_leads(authed_client):
+    lead_a = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()
+    authed_client.patch(f"/api/v1/leads/{lead_a['id']}", json={"status": "qualified"})
+    authed_client.post("/api/v1/leads", json={"business_name": "B"})
+    authed_client.post(f"/api/v1/leads/{lead_a['id']}/archive")
+
+    body = authed_client.get("/api/v1/dashboard/overview").json()
+    assert body["total_leads"] == 1
+    assert body["qualified_leads"] == 0
 
 
 def test_overview_counts_contacted_leads(authed_client, db_session):

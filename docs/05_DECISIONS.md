@@ -21,6 +21,75 @@ why it lost.
 
 ---
 
+## 2026-08-16 — Lead management: LeadStatus replaces LeadStage; priority, notes, archive; business contact fields
+
+**Decision:** Redirected mid-M2-planning to build out the lead-management
+foundation properly first, per explicit operator instruction — CRUD +
+workspace authorization + a fast-triage UI, no AI/scraping work yet
+(that stays scoped to a future M2 pass). Concretely:
+
+- **`leads.stage` (`LeadStage`, pipeline-shaped: PROSPECT → WEBSITE_AUDIT
+  → ... → MEETING → WON/LOST) is replaced by `leads.status`
+  (`LeadStatus`: NEW, RESEARCHED, QUALIFIED, CONTACTED, REPLIED,
+  MEETING, PROPOSAL, WON, LOST, NURTURE)** — a CRM-style status distinct
+  from the delivery-side `ProjectStage` pipeline, which is untouched.
+  This supersedes `LeadStage` as described in [[02_ARCHITECTURE]] §3 and
+  the lead-side framing in [[00_VISION]]'s pipeline — the 20-stage
+  pipeline itself, and `ProjectStage`, are unaffected; only how a
+  *lead's own* status is tracked changed.
+- Added `leads.priority` (`LeadPriority`: LOW/MEDIUM/HIGH, default
+  MEDIUM — always meaningful for sorting), `leads.notes` (free text,
+  distinct from the activity-history feed), `leads.archived_at`
+  (nullable timestamp — archiving is orthogonal to status; a WON or
+  LOST lead can still be archived to declutter the list).
+- Added `businesses.email`, `businesses.social_links` (newline-
+  separated URLs, plain column, no JSON), `businesses.notes` — the
+  entity had no way to record these before. Added the business's
+  missing `PATCH /api/v1/businesses/{id}` route (previously
+  create+list+get only).
+- Added `GET /api/v1/activity`'s optional `entity_type`/`entity_id`
+  query params, so a lead's detail page can pull just its own history
+  from the existing generic feed instead of a duplicate route.
+- **Search/filter/sort implemented client-side**, over the already-
+  fetched `GET /api/v1/leads` list, not new server query params — this
+  shop's realistic lead volume doesn't need server-side pagination yet,
+  and building it now would be exactly the kind of premature infra
+  [[00_VISION]] warns against. `list_leads` excludes archived leads by
+  default; `include_archived=true` opts in.
+- **Dashboard metrics now exclude archived leads** (`total_leads`,
+  `qualified_leads`, the stale-lead "needs attention" list) — archiving
+  is the operator saying "stop tracking this as active," so it
+  shouldn't inflate totals or nag for attention. `qualified_leads`'
+  definition moved from "stage is LEAD_SCORE or later" to "status is
+  QUALIFIED, CONTACTED, REPLIED, MEETING, PROPOSAL, or WON" — see the
+  metric-definitions entry below, not rewritten, just superseded for
+  this one metric.
+- New `/dashboard/leads/[id]` detail page — editable business + lead
+  fields, archive/unarchive, and an activity-history feed. Didn't exist
+  before; the list page's inline dropdown edits are kept as-is for fast
+  triage.
+
+**Why:** The operator wants the lead-tracking foundation solid — richer
+status/priority/notes/archive model, full contact info on a business,
+and a UI built for triaging many prospects quickly — before any
+AI/scraping automation gets layered on top of it. Building the
+automation (M2's research/audit/score agents) against a thin lead model
+would mean redoing the schema once the richer requirements surfaced
+anyway.
+
+**Alternatives considered:** Keeping `stage` and adding a second
+parallel `status` field — rejected as confusing (two "what state is
+this lead in" columns) for no benefit; the pipeline-shaped stages
+(WEBSITE_AUDIT, LEAD_SCORE, SALES_PREPARATION, etc.) aren't meaningful
+CRM statuses on their own and can be reintroduced later as *automation
+progress* tracking (e.g. "research done: yes/no" flags) separately from
+`status` if M2 needs it, rather than conflating the two. Folding
+`archived` into the status enum as an eleventh value — rejected because
+archiving needs to compose with every other status (an archived WON
+lead is still a won lead), not replace it.
+
+---
+
 ## 2026-08-16 — Multi-user: workspace + users + roles, revising the single-operator assumption
 
 **Decision:** The business is now run by two people, not one, so

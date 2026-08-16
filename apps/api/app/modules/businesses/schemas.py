@@ -9,6 +9,23 @@ class BusinessCreate(BaseModel):
     industry: str | None = None
     website_url: str | None = None
     phone: str | None = None
+    email: str | None = None
+    social_links: str | None = None
+    notes: str | None = None
+    suburb: str | None = None
+    state: str | None = None
+    postcode: str | None = None
+    abn: str | None = None
+
+
+class BusinessUpdate(BaseModel):
+    name: str | None = None
+    industry: str | None = None
+    website_url: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    social_links: str | None = None
+    notes: str | None = None
     suburb: str | None = None
     state: str | None = None
     postcode: str | None = None
@@ -23,6 +40,9 @@ class BusinessRead(BaseModel):
     industry: str | None
     website_url: str | None
     phone: str | None
+    email: str | None
+    social_links: str | None
+    notes: str | None
     suburb: str | None
     state: str | None
     postcode: str | None

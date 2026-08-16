@@ -91,6 +91,9 @@ export type Business = {
   industry: string | null;
   website_url: string | null;
   phone: string | null;
+  email: string | null;
+  social_links: string | null;
+  notes: string | null;
   suburb: string | null;
   state: string | null;
   postcode: string | null;
@@ -99,19 +102,36 @@ export type Business = {
   updated_at: string;
 };
 
-export const LEAD_STAGES = [
-  "prospect",
-  "research",
-  "website_audit",
-  "lead_score",
-  "sales_preparation",
-  "outreach",
-  "follow_up",
+export type BusinessUpdate = {
+  name?: string;
+  industry?: string;
+  website_url?: string;
+  phone?: string;
+  email?: string;
+  social_links?: string;
+  notes?: string;
+  suburb?: string;
+  state?: string;
+  postcode?: string;
+  abn?: string;
+};
+
+export const LEAD_STATUSES = [
+  "new",
+  "researched",
+  "qualified",
+  "contacted",
+  "replied",
   "meeting",
+  "proposal",
   "won",
   "lost",
+  "nurture",
 ] as const;
-export type LeadStage = (typeof LEAD_STAGES)[number];
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export const LEAD_PRIORITIES = ["low", "medium", "high"] as const;
+export type LeadPriority = (typeof LEAD_PRIORITIES)[number];
 
 export type Lead = {
   id: string;
@@ -120,9 +140,12 @@ export type Lead = {
   industry: string | null;
   suburb: string | null;
   state: string | null;
-  stage: LeadStage;
+  status: LeadStatus;
+  priority: LeadPriority;
   score: number | null;
   source: string | null;
+  notes: string | null;
+  archived_at: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   created_at: string;
@@ -137,11 +160,18 @@ export type LeadCreate = {
   suburb?: string;
   state?: string;
   source?: string;
+  priority?: LeadPriority;
   assigned_user_id?: string;
 };
 
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
-export type LeadUpdate = { stage?: LeadStage; score?: number; assigned_user_id?: string | null };
+export type LeadUpdate = {
+  status?: LeadStatus;
+  priority?: LeadPriority;
+  score?: number;
+  notes?: string;
+  assigned_user_id?: string | null;
+};
 
 export type Client = {
   id: string;
@@ -256,12 +286,19 @@ export const api = {
   me: () => request<Me>("/api/v1/auth/me"),
 
   listBusinesses: () => request<Business[]>("/api/v1/businesses"),
+  getBusiness: (id: string) => request<Business>(`/api/v1/businesses/${id}`),
+  updateBusiness: (id: string, data: BusinessUpdate) =>
+    request<Business>(`/api/v1/businesses/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
-  listLeads: () => request<Lead[]>("/api/v1/leads"),
+  listLeads: (opts?: { includeArchived?: boolean }) =>
+    request<Lead[]>(`/api/v1/leads${opts?.includeArchived ? "?include_archived=true" : ""}`),
+  getLead: (id: string) => request<Lead>(`/api/v1/leads/${id}`),
   createLead: (data: LeadCreate) =>
     request<Lead>("/api/v1/leads", { method: "POST", body: JSON.stringify(data) }),
   updateLead: (id: string, data: LeadUpdate) =>
     request<Lead>(`/api/v1/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  archiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/archive`, { method: "POST" }),
+  unarchiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/unarchive`, { method: "POST" }),
 
   listClients: () => request<Client[]>("/api/v1/clients"),
   createClient: (data: ClientCreate) =>
@@ -293,5 +330,8 @@ export const api = {
   updateWorkspace: (name: string) =>
     request<Workspace>("/api/v1/workspace", { method: "PATCH", body: JSON.stringify({ name }) }),
 
-  listActivity: () => request<ActivityItem[]>("/api/v1/activity"),
+  listActivity: (filter?: { entity_type: string; entity_id: string }) =>
+    request<ActivityItem[]>(
+      `/api/v1/activity${filter ? `?entity_type=${filter.entity_type}&entity_id=${filter.entity_id}` : ""}`,
+    ),
 };

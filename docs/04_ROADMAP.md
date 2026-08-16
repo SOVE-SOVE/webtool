@@ -56,9 +56,17 @@ the note on that entry above. Don't read the two as the same thing.
       that was found and fixed while building it (lead→client
       conversion now records a won opportunity, or won-projects/revenue
       could never move through the UI at all).
-- [ ] Activity log per prospect/project (what happened, when) — the
-      `pipeline_events` table exists in the schema but nothing writes
-      to it yet. Still open.
+- [ ] Activity log per prospect/project (what happened, when) —
+      partially done: the lead detail page (added alongside the lead-
+      management rework, see [[05_DECISIONS]]) now surfaces a per-lead
+      history feed from the existing `activity_log` table, which
+      already records every create/status-change/assign/archive event.
+      Projects still have no equivalent view. `pipeline_events` — the
+      table originally slated for this — remains unwired; `activity_log`
+      turned out to cover the "what happened, when" need directly, so
+      building `pipeline_events` on top would be redundant unless a
+      future need specifically wants project/lead stage-transition
+      history separate from user-attributed activity.
 - [x] This alone should already beat "a spreadsheet + memory" — shipped
       before automating anything.
 
