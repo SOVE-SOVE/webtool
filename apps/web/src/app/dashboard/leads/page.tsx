@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, LEAD_STAGES, type Lead, type LeadStage } from "@/lib/api";
+import { api, LEAD_STAGES, type Lead, type LeadStage, type User } from "@/lib/api";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[] | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [businessName, setBusinessName] = useState("");
@@ -12,6 +13,7 @@ export default function LeadsPage() {
   const [suburb, setSuburb] = useState("");
   const [state, setState] = useState("");
   const [source, setSource] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
   function load() {
@@ -19,6 +21,7 @@ export default function LeadsPage() {
       .listLeads()
       .then(setLeads)
       .catch(() => setError("Couldn't load leads."));
+    api.listUsers().then(setUsers).catch(() => {});
   }
 
   useEffect(load, []);
@@ -33,12 +36,14 @@ export default function LeadsPage() {
         suburb: suburb || undefined,
         state: state || undefined,
         source: source || undefined,
+        assigned_user_id: assignedUserId || undefined,
       });
       setBusinessName("");
       setIndustry("");
       setSuburb("");
       setState("");
       setSource("");
+      setAssignedUserId("");
       setShowForm(false);
       load();
     } catch {
@@ -57,6 +62,11 @@ export default function LeadsPage() {
     const parsed = score === "" ? undefined : Number(score);
     if (parsed !== undefined && Number.isNaN(parsed)) return;
     await api.updateLead(id, { score: parsed });
+    load();
+  }
+
+  async function handleAssigneeChange(id: string, assigneeId: string) {
+    await api.updateLead(id, { assigned_user_id: assigneeId || null });
     load();
   }
 
@@ -105,6 +115,18 @@ export default function LeadsPage() {
             onChange={(e) => setState(e.target.value)}
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
           />
+          <select
+            value={assignedUserId}
+            onChange={(e) => setAssignedUserId(e.target.value)}
+            className="col-span-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={saving}
@@ -126,12 +148,13 @@ export default function LeadsPage() {
               <th className="px-3 py-2">Stage</th>
               <th className="px-3 py-2">Score</th>
               <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {leads.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={6} className="px-3 py-6 text-center text-neutral-500">
                   No leads yet.
                 </td>
               </tr>
@@ -167,6 +190,20 @@ export default function LeadsPage() {
                   />
                 </td>
                 <td className="px-3 py-2 text-neutral-600">{lead.source ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <select
+                    value={lead.assigned_user_id ?? ""}
+                    onChange={(e) => handleAssigneeChange(lead.id, e.target.value)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
               </tr>
             ))}
           </tbody>

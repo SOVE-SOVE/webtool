@@ -19,6 +19,7 @@ class ClientCreate(BaseModel):
     suburb: str | None = None
     state: str | None = None
     billing_email: str | None = None
+    assigned_user_id: uuid.UUID | None = None
     # Only meaningful with from_lead_id — records the deal as won at this
     # price, so it counts toward the dashboard's won-projects/revenue
     # metrics (see app/modules/dashboard/service.py).
@@ -31,6 +32,13 @@ class ClientCreate(BaseModel):
         return self
 
 
+class ClientUpdate(BaseModel):
+    # See app/modules/leads/schemas.py's LeadUpdate for why this stays a
+    # plain optional field: the key must be present at all to change
+    # assignment, `null` unassigns.
+    assigned_user_id: uuid.UUID | None = None
+
+
 class ClientRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,5 +47,7 @@ class ClientRead(BaseModel):
     business_name: str
     billing_email: str | None
     contract_signed_at: datetime | None
+    assigned_user_id: uuid.UUID | None
+    assigned_user_name: str | None
     project_count: int
     created_at: datetime

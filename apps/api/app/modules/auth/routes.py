@@ -1,25 +1,38 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session
 
-from app.core.auth import create_session_token, require_operator, verify_password
+from app.core.auth import create_session_token, get_current_user, verify_password
 from app.core.logging import logger
 from app.core.settings import settings
+from app.db.session import get_db
 from app.modules.auth.schemas import LoginRequest, MeResponse
+from app.modules.users.models import User
+from app.modules.users.service import get_by_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=MeResponse)
-def login(data: LoginRequest, response: Response) -> MeResponse:
-    valid_email = data.email.lower() == settings.operator_email.lower()
-    valid_password = bool(settings.operator_password_hash) and verify_password(
-        data.password, settings.operator_password_hash
+def _to_me(user: User) -> MeResponse:
+    return MeResponse(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        role=user.role,
+        workspace_id=user.workspace_id,
+        workspace_name=user.workspace.name,
     )
-    if not (valid_email and valid_password):
+
+
+@router.post("/login", response_model=MeResponse)
+def login(data: LoginRequest, response: Response, db: Session = Depends(get_db)) -> MeResponse:
+    user = get_by_email(db, data.email)
+    valid_password = user is not None and verify_password(data.password, user.password_hash)
+    if user is None or not valid_password:
         logger.warning("Failed login attempt for %s", data.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    logger.info("Operator logged in")
-    token = create_session_token(settings.operator_email)
+    logger.info("User %s logged in", user.id)
+    token = create_session_token(user.id)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=token,
@@ -28,7 +41,7 @@ def login(data: LoginRequest, response: Response) -> MeResponse:
         secure=settings.session_cookie_secure,
         samesite="lax",
     )
-    return MeResponse(email=settings.operator_email)
+    return _to_me(user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -37,5 +50,5 @@ def logout(response: Response) -> None:
 
 
 @router.get("/me", response_model=MeResponse)
-def me(email: str = Depends(require_operator)) -> MeResponse:
-    return MeResponse(email=email)
+def me(current_user: User = Depends(get_current_user)) -> MeResponse:
+    return _to_me(current_user)

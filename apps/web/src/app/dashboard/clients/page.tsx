@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type Client, type Lead } from "@/lib/api";
+import { api, type Client, type Lead, type User } from "@/lib/api";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[] | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [mode, setMode] = useState<"direct" | "convert">("direct");
@@ -13,6 +14,7 @@ export default function ClientsPage() {
   const [billingEmail, setBillingEmail] = useState("");
   const [leadId, setLeadId] = useState("");
   const [wonPrice, setWonPrice] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
   function load() {
@@ -21,6 +23,7 @@ export default function ClientsPage() {
       .then(setClients)
       .catch(() => setError("Couldn't load clients."));
     api.listLeads().then(setLeads).catch(() => {});
+    api.listUsers().then(setUsers).catch(() => {});
   }
 
   useEffect(load, []);
@@ -38,14 +41,20 @@ export default function ClientsPage() {
           from_lead_id: leadId,
           billing_email: billingEmail || undefined,
           won_price_cents: price,
+          assigned_user_id: assignedUserId || undefined,
         });
       } else {
-        await api.createClient({ business_name: businessName, billing_email: billingEmail || undefined });
+        await api.createClient({
+          business_name: businessName,
+          billing_email: billingEmail || undefined,
+          assigned_user_id: assignedUserId || undefined,
+        });
       }
       setBusinessName("");
       setBillingEmail("");
       setLeadId("");
       setWonPrice("");
+      setAssignedUserId("");
       setShowForm(false);
       load();
     } catch {
@@ -53,6 +62,11 @@ export default function ClientsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleAssigneeChange(id: string, assigneeId: string) {
+    await api.updateClient(id, { assigned_user_id: assigneeId || null });
+    load();
   }
 
   return (
@@ -122,6 +136,19 @@ export default function ClientsPage() {
             className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
           />
 
+          <select
+            value={assignedUserId}
+            onChange={(e) => setAssignedUserId(e.target.value)}
+            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+
           <button
             type="submit"
             disabled={saving}
@@ -142,12 +169,13 @@ export default function ClientsPage() {
               <th className="px-3 py-2">Billing email</th>
               <th className="px-3 py-2">Projects</th>
               <th className="px-3 py-2">Client since</th>
+              <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {clients.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
                   No clients yet.
                 </td>
               </tr>
@@ -159,6 +187,20 @@ export default function ClientsPage() {
                 <td className="px-3 py-2 text-neutral-600">{client.project_count}</td>
                 <td className="px-3 py-2 text-neutral-600">
                   {new Date(client.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-3 py-2">
+                  <select
+                    value={client.assigned_user_id ?? ""}
+                    onChange={(e) => handleAssigneeChange(client.id, e.target.value)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
                 </td>
               </tr>
             ))}

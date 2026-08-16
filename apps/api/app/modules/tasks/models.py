@@ -11,6 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.modules.leads.models import Lead
     from app.modules.projects.models import Project
+    from app.modules.users.models import User
 
 
 class Task(Base):
@@ -30,7 +31,9 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(255))
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project | None"] = relationship(back_populates="tasks")
     lead: Mapped["Lead | None"] = relationship()
+    assigned_user: Mapped["User | None"] = relationship()

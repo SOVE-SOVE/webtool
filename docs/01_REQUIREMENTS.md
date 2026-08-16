@@ -132,16 +132,51 @@ save time, make money, reduce mistakes, or improve quality, cut it.
 - **Time-to-value over completeness.** A stage that's 80% automated and
   shipped beats a fully automated stage that's still being designed.
 - **Traceability** — agent actions on a lead or client project should be
-  attributable to a pipeline stage, per [[03_AGENT_RULES]].
+  attributable to a pipeline stage, per [[03_AGENT_RULES]]. Human
+  actions on business records should be attributable to the user who
+  performed them — see "Multi-user & workspace" below.
 - **Quality floor** — nothing in the build/deploy path should ship
   output that reads as templated or AI-generated slop. See
   [[05_DECISIONS]].
-- **Solo-operator scale** — designed for one person running many
-  projects concurrently around university, not a team. No feature
-  should assume a second human in the loop unless it's the client.
+- **Small-team scale, not solo.** As of 2026-08-16 this runs two people
+  working the same pipeline together, not one operator — see "Multi-user
+  & workspace" below. Still not a team product: no feature should assume
+  more than a handful of internal users, and nothing should require an
+  admin/ops role beyond what a two-person shop needs day to day.
 - **Client data is sensitive** — PII, payment references, and
   unpublished draft sites need real (if lightweight) security
   treatment. See [[06_SECURITY]].
+
+## Multi-user & workspace
+
+Added 2026-08-16 — supersedes the earlier single-operator assumption
+threaded through this doc and [[03_AGENT_RULES]]. The business is now
+run by two people sharing one pipeline, and the tool needs to support
+that without turning into a multi-tenant product:
+
+- All business data (businesses, leads, clients, projects, tasks,
+  websites, activity) is scoped to one **workspace** — the shared
+  pool both users work from. There is no cross-workspace visibility
+  and (for now) no need for a business to run more than one workspace.
+- Every user belongs to exactly one workspace and has one of two
+  **roles**: `ADMIN` (manage users, workspace settings, integrations;
+  full data access) or `MEMBER` (view all workspace data; create/edit
+  leads; work projects; create/update tasks; log activity). See
+  [[02_ARCHITECTURE]] §3 for the data model and [[05_DECISIONS]] for
+  why only two roles.
+- Records that carry responsibility — a lead, a project, a task, a
+  client — can be **assigned** to a specific user, so "whose job is
+  this" has an answer without a side channel (a shared doc, a verbal
+  handoff).
+- Every important action (creating/converting a lead, changing a
+  project's stage, completing a task, reassigning something) is
+  recorded against the user who did it, so either person can see what
+  the other has been doing without asking.
+- **Not built now:** invitations/email-based signup (an admin creates
+  accounts directly), per-record permission overrides, more than two
+  roles, or more than one workspace per account. Two users today, but
+  the schema doesn't hardcode the number — a third hire should need no
+  schema change, just a new user row.
 
 ## Open questions
 

@@ -50,7 +50,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export type Me = { email: string };
+export type Role = "admin" | "member";
+
+export type Me = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  workspace_id: string;
+  workspace_name: string;
+};
+
+export type Workspace = { id: string; name: string; created_at: string };
+
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  created_at: string;
+};
+
+export type UserCreate = { name: string; email: string; password: string; role?: Role };
+export type UserUpdate = { role: Role };
+
+export type ActivityItem = {
+  id: string;
+  user_id: string | null;
+  user_name: string | null;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  summary: string | null;
+  created_at: string;
+};
 
 export type Business = {
   id: string;
@@ -90,6 +123,8 @@ export type Lead = {
   stage: LeadStage;
   score: number | null;
   source: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -102,9 +137,11 @@ export type LeadCreate = {
   suburb?: string;
   state?: string;
   source?: string;
+  assigned_user_id?: string;
 };
 
-export type LeadUpdate = { stage?: LeadStage; score?: number };
+// assigned_user_id: null unassigns, omitted leaves assignment untouched.
+export type LeadUpdate = { stage?: LeadStage; score?: number; assigned_user_id?: string | null };
 
 export type Client = {
   id: string;
@@ -112,11 +149,13 @@ export type Client = {
   business_name: string;
   billing_email: string | null;
   contract_signed_at: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
   project_count: number;
   created_at: string;
 };
 
-export type ClientCreate =
+export type ClientCreate = (
   | { from_lead_id: string; billing_email?: string; won_price_cents?: number }
   | {
       business_name: string;
@@ -126,7 +165,10 @@ export type ClientCreate =
       suburb?: string;
       state?: string;
       billing_email?: string;
-    };
+    }
+) & { assigned_user_id?: string };
+
+export type ClientUpdate = { assigned_user_id: string | null };
 
 export const PROJECT_STAGES = [
   "intake",
@@ -150,12 +192,15 @@ export type Project = {
   client_business_name: string;
   name: string;
   stage: ProjectStage;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type ProjectCreate = { client_id: string; name: string };
-export type ProjectUpdate = { stage: ProjectStage };
+export type ProjectCreate = { client_id: string; name: string; assigned_user_id?: string };
+// assigned_user_id: null unassigns, omitted leaves assignment untouched.
+export type ProjectUpdate = { stage?: ProjectStage; assigned_user_id?: string | null };
 
 export type Task = {
   id: string;
@@ -164,6 +209,8 @@ export type Task = {
   due_at: string | null;
   project_id: string | null;
   lead_id: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
   context: string;
   created_at: string;
 };
@@ -173,9 +220,11 @@ export type TaskCreate = {
   due_at?: string;
   project_id?: string;
   lead_id?: string;
+  assigned_user_id?: string;
 };
 
-export type TaskUpdate = { done: boolean };
+// assigned_user_id: null unassigns, omitted leaves assignment untouched.
+export type TaskUpdate = { done?: boolean; assigned_user_id?: string | null };
 
 export type AttentionItem = {
   kind: "task" | "stale_lead";
@@ -217,6 +266,8 @@ export const api = {
   listClients: () => request<Client[]>("/api/v1/clients"),
   createClient: (data: ClientCreate) =>
     request<Client>("/api/v1/clients", { method: "POST", body: JSON.stringify(data) }),
+  updateClient: (id: string, data: ClientUpdate) =>
+    request<Client>(`/api/v1/clients/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   listProjects: () => request<Project[]>("/api/v1/projects"),
   createProject: (data: ProjectCreate) =>
@@ -231,4 +282,16 @@ export const api = {
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
+
+  listUsers: () => request<User[]>("/api/v1/users"),
+  createUser: (data: UserCreate) =>
+    request<User>("/api/v1/users", { method: "POST", body: JSON.stringify(data) }),
+  updateUserRole: (id: string, data: UserUpdate) =>
+    request<User>(`/api/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  getWorkspace: () => request<Workspace>("/api/v1/workspace"),
+  updateWorkspace: (name: string) =>
+    request<Workspace>("/api/v1/workspace", { method: "PATCH", body: JSON.stringify({ name }) }),
+
+  listActivity: () => request<ActivityItem[]>("/api/v1/activity"),
 };

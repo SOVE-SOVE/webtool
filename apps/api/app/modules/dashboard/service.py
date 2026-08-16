@@ -1,7 +1,10 @@
 """
-Aggregate metrics for the Overview page. Every number here comes from a
-real query — nothing hardcoded. Definitions, since several of these are
-judgment calls the schema doesn't spell out on its own:
+Aggregate metrics for the Overview page, scoped to the current user's
+workspace (see docs/02_ARCHITECTURE.md §3 — every query here joins up
+to `businesses.workspace_id` since child tables don't carry their own
+workspace_id). Every number here comes from a real query — nothing
+hardcoded. Definitions, since several of these are judgment calls the
+schema doesn't spell out on its own:
 
 - qualified_leads: leads whose stage is LEAD_SCORE or later — i.e. past
   the audit/scoring gate, into active pursuit.
@@ -21,12 +24,14 @@ judgment calls the schema doesn't spell out on its own:
   already won/lost.
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.modules.businesses.models import Business
+from app.modules.clients.models import Client
 from app.modules.dashboard.schemas import AttentionItem, DashboardOverview
 from app.modules.interactions.models import Interaction, InteractionKind
 from app.modules.leads.models import Lead, LeadStage
@@ -46,39 +51,76 @@ QUALIFIED_STAGES = (
 STALE_LEAD_THRESHOLD = timedelta(days=5)
 ATTENTION_DUE_WINDOW = timedelta(days=2)
 
+_TaskProjectBusiness = aliased(Business)
+_TaskLeadBusiness = aliased(Business)
 
-def get_overview(db: Session) -> DashboardOverview:
+
+def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     now = datetime.now(timezone.utc)
 
-    total_leads = db.scalar(select(func.count()).select_from(Lead)) or 0
+    lead_in_workspace = select(Lead.id).join(Business, Lead.business_id == Business.id).where(
+        Business.workspace_id == workspace_id
+    )
+
+    total_leads = (
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .join(Business, Lead.business_id == Business.id)
+            .where(Business.workspace_id == workspace_id)
+        )
+        or 0
+    )
 
     qualified_leads = (
-        db.scalar(select(func.count()).select_from(Lead).where(Lead.stage.in_(QUALIFIED_STAGES))) or 0
+        db.scalar(
+            select(func.count())
+            .select_from(Lead)
+            .join(Business, Lead.business_id == Business.id)
+            .where(Business.workspace_id == workspace_id, Lead.stage.in_(QUALIFIED_STAGES))
+        )
+        or 0
     )
 
     contacted_leads = (
         db.scalar(
             select(func.count(func.distinct(Interaction.lead_id))).where(
-                Interaction.kind == InteractionKind.OUTREACH_SENT
+                Interaction.kind == InteractionKind.OUTREACH_SENT,
+                Interaction.lead_id.in_(lead_in_workspace),
             )
         )
         or 0
     )
 
-    meetings = db.scalar(select(func.count()).select_from(Meeting)) or 0
+    meetings = (
+        db.scalar(
+            select(func.count())
+            .select_from(Meeting)
+            .join(SalesOpportunity, Meeting.sales_opportunity_id == SalesOpportunity.id)
+            .where(SalesOpportunity.lead_id.in_(lead_in_workspace))
+        )
+        or 0
+    )
 
     won_projects = (
         db.scalar(
             select(func.count())
             .select_from(SalesOpportunity)
-            .where(SalesOpportunity.status == OpportunityStatus.WON)
+            .where(
+                SalesOpportunity.status == OpportunityStatus.WON,
+                SalesOpportunity.lead_id.in_(lead_in_workspace),
+            )
         )
         or 0
     )
 
     active_projects = (
         db.scalar(
-            select(func.count()).select_from(Project).where(Project.stage != ProjectStage.MAINTENANCE)
+            select(func.count())
+            .select_from(Project)
+            .join(Client, Project.client_id == Client.id)
+            .join(Business, Client.business_id == Business.id)
+            .where(Business.workspace_id == workspace_id, Project.stage != ProjectStage.MAINTENANCE)
         )
         or 0
     )
@@ -86,16 +128,31 @@ def get_overview(db: Session) -> DashboardOverview:
     revenue_cents = (
         db.scalar(
             select(func.coalesce(func.sum(SalesOpportunity.proposed_price_cents), 0)).where(
-                SalesOpportunity.status == OpportunityStatus.WON
+                SalesOpportunity.status == OpportunityStatus.WON,
+                SalesOpportunity.lead_id.in_(lead_in_workspace),
             )
         )
         or 0
     )
 
+    task_base = (
+        select(Task)
+        .outerjoin(Project, Task.project_id == Project.id)
+        .outerjoin(Client, Project.client_id == Client.id)
+        .outerjoin(_TaskProjectBusiness, Client.business_id == _TaskProjectBusiness.id)
+        .outerjoin(Lead, Task.lead_id == Lead.id)
+        .outerjoin(_TaskLeadBusiness, Lead.business_id == _TaskLeadBusiness.id)
+        .where(
+            or_(
+                _TaskProjectBusiness.workspace_id == workspace_id,
+                _TaskLeadBusiness.workspace_id == workspace_id,
+            )
+        )
+    )
+
     attention_due_before = now + ATTENTION_DUE_WINDOW
     due_tasks = db.scalars(
-        select(Task)
-        .options(joinedload(Task.project), joinedload(Task.lead).joinedload(Lead.business))
+        task_base.options(joinedload(Task.project), joinedload(Task.lead).joinedload(Lead.business))
         .where(Task.done.is_(False))
         .where(or_(Task.due_at.is_(None), Task.due_at <= attention_due_before))
         .order_by(Task.due_at.asc().nulls_last())
@@ -112,20 +169,20 @@ def get_overview(db: Session) -> DashboardOverview:
         for task in due_tasks
     ]
 
+    attention_task_subquery = (
+        task_base.where(Task.done.is_(False))
+        .where(or_(Task.due_at.is_(None), Task.due_at <= attention_due_before))
+        .subquery()
+    )
     tasks_needing_attention = (
-        db.scalar(
-            select(func.count())
-            .select_from(Task)
-            .where(Task.done.is_(False))
-            .where(or_(Task.due_at.is_(None), Task.due_at <= attention_due_before))
-        )
-        or 0
+        db.scalar(select(func.count()).select_from(attention_task_subquery)) or 0
     )
 
     stale_cutoff = now - STALE_LEAD_THRESHOLD
     stale_leads = db.execute(
         select(Lead, Business)
         .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id)
         .where(Lead.stage.not_in((LeadStage.WON, LeadStage.LOST)))
         .where(Lead.updated_at <= stale_cutoff)
         .order_by(Lead.updated_at.asc())

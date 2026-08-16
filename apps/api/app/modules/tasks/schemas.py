@@ -9,6 +9,7 @@ class TaskCreate(BaseModel):
     due_at: datetime | None = None
     project_id: uuid.UUID | None = None
     lead_id: uuid.UUID | None = None
+    assigned_user_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _exactly_one_parent(self) -> "TaskCreate":
@@ -18,7 +19,11 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
-    done: bool
+    done: bool | None = None
+    # See leads/schemas.py's LeadUpdate for why this stays a plain
+    # optional field: the key must be present at all to change
+    # assignment, `null` unassigns.
+    assigned_user_id: uuid.UUID | None = None
 
 
 class TaskRead(BaseModel):
@@ -30,5 +35,7 @@ class TaskRead(BaseModel):
     due_at: datetime | None
     project_id: uuid.UUID | None
     lead_id: uuid.UUID | None
+    assigned_user_id: uuid.UUID | None
+    assigned_user_name: str | None
     context: str
     created_at: datetime

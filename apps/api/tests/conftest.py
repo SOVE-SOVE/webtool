@@ -9,20 +9,20 @@ import os
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
 os.environ["SESSION_SECRET"] = "test-session-secret"
-os.environ["OPERATOR_EMAIL"] = "operator@example.com"
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import hash_password
-from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model on Base.metadata
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.main import app
+from app.modules.users.models import User, UserRole
+from app.modules.workspaces.models import Workspace
 
-OPERATOR_PASSWORD = "test-password"
-settings.operator_password_hash = hash_password(OPERATOR_PASSWORD)
+ADMIN_PASSWORD = "test-password"
+MEMBER_PASSWORD = "member-password"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -47,28 +47,122 @@ def client():
 
 
 @pytest.fixture
-def operator_password() -> str:
-    return OPERATOR_PASSWORD
-
-
-@pytest.fixture
-def authed_client(client: TestClient) -> TestClient:
-    res = client.post(
-        "/api/v1/auth/login",
-        json={"email": settings.operator_email, "password": OPERATOR_PASSWORD},
-    )
-    assert res.status_code == 200
-    return client
-
-
-@pytest.fixture
 def db_session():
     """
     For writing rows that don't have CRUD routes yet (interactions,
-    sales opportunities, meetings) directly into the test database.
+    sales opportunities, meetings, users, workspaces) directly into the
+    test database.
     """
     session = SessionLocal()
     try:
         yield session
     finally:
         session.close()
+
+
+def _make_workspace(db_session, name: str) -> Workspace:
+    workspace = Workspace(name=name)
+    db_session.add(workspace)
+    db_session.commit()
+    db_session.refresh(workspace)
+    return workspace
+
+
+def _make_user(db_session, workspace_id, name: str, email: str, password: str, role: UserRole) -> User:
+    user = User(
+        workspace_id=workspace_id,
+        name=name,
+        email=email,
+        role=role,
+        password_hash=hash_password(password),
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def workspace(db_session) -> Workspace:
+    return _make_workspace(db_session, "Acme Web Design")
+
+
+@pytest.fixture
+def admin_user(db_session, workspace) -> User:
+    return _make_user(db_session, workspace.id, "Ada Admin", "admin@example.com", ADMIN_PASSWORD, UserRole.ADMIN)
+
+
+@pytest.fixture
+def member_user(db_session, workspace) -> User:
+    return _make_user(
+        db_session, workspace.id, "Mia Member", "member@example.com", MEMBER_PASSWORD, UserRole.MEMBER
+    )
+
+
+@pytest.fixture
+def admin_password() -> str:
+    return ADMIN_PASSWORD
+
+
+@pytest.fixture
+def member_password() -> str:
+    return MEMBER_PASSWORD
+
+
+@pytest.fixture
+def authed_client(client: TestClient, admin_user: User) -> TestClient:
+    """Logged in as an admin — the default actor for tests that don't care about role."""
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": admin_user.email, "password": ADMIN_PASSWORD},
+    )
+    assert res.status_code == 200
+    return client
+
+
+@pytest.fixture
+def member_client(member_user: User) -> TestClient:
+    """
+    A second, independent TestClient (own cookie jar) logged in as a
+    MEMBER of the same workspace as `authed_client` — for role tests
+    that need both an admin and a member session live at once.
+    """
+    with TestClient(app) as c:
+        res = c.post(
+            "/api/v1/auth/login",
+            json={"email": member_user.email, "password": MEMBER_PASSWORD},
+        )
+        assert res.status_code == 200
+        yield c
+
+
+@pytest.fixture
+def other_workspace(db_session) -> Workspace:
+    return _make_workspace(db_session, "Other Business")
+
+
+@pytest.fixture
+def other_admin_user(db_session, other_workspace: Workspace) -> User:
+    return _make_user(
+        db_session,
+        other_workspace.id,
+        "Ollie Other",
+        "other-admin@example.com",
+        ADMIN_PASSWORD,
+        UserRole.ADMIN,
+    )
+
+
+@pytest.fixture
+def other_authed_client(other_admin_user: User) -> TestClient:
+    """
+    A second, independent TestClient logged in as an admin of a
+    *different* workspace — for cross-workspace isolation tests.
+    """
+    with TestClient(app) as c:
+        res = c.post(
+            "/api/v1/auth/login",
+            json={"email": other_admin_user.email, "password": ADMIN_PASSWORD},
+        )
+        assert res.status_code == 200
+        yield c

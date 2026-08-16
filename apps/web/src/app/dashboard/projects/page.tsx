@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, PROJECT_STAGES, type Client, type Project, type ProjectStage } from "@/lib/api";
+import { api, PROJECT_STAGES, type Client, type Project, type ProjectStage, type User } from "@/lib/api";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [clientId, setClientId] = useState("");
   const [name, setName] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
   function load() {
@@ -18,6 +20,7 @@ export default function ProjectsPage() {
       .then(setProjects)
       .catch(() => setError("Couldn't load projects."));
     api.listClients().then(setClients).catch(() => {});
+    api.listUsers().then(setUsers).catch(() => {});
   }
 
   useEffect(load, []);
@@ -27,9 +30,10 @@ export default function ProjectsPage() {
     if (!clientId) return;
     setSaving(true);
     try {
-      await api.createProject({ client_id: clientId, name });
+      await api.createProject({ client_id: clientId, name, assigned_user_id: assignedUserId || undefined });
       setName("");
       setClientId("");
+      setAssignedUserId("");
       setShowForm(false);
       load();
     } catch {
@@ -41,6 +45,11 @@ export default function ProjectsPage() {
 
   async function handleStageChange(id: string, stage: ProjectStage) {
     await api.updateProject(id, { stage });
+    load();
+  }
+
+  async function handleAssigneeChange(id: string, assigneeId: string) {
+    await api.updateProject(id, { assigned_user_id: assigneeId || null });
     load();
   }
 
@@ -80,6 +89,18 @@ export default function ProjectsPage() {
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
           />
+          <select
+            value={assignedUserId}
+            onChange={(e) => setAssignedUserId(e.target.value)}
+            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={saving}
@@ -99,12 +120,13 @@ export default function ProjectsPage() {
               <th className="px-3 py-2">Project</th>
               <th className="px-3 py-2">Client</th>
               <th className="px-3 py-2">Stage</th>
+              <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {projects.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={4} className="px-3 py-6 text-center text-neutral-500">
                   No projects yet.
                 </td>
               </tr>
@@ -122,6 +144,20 @@ export default function ProjectsPage() {
                     {PROJECT_STAGES.map((stage) => (
                       <option key={stage} value={stage}>
                         {stage.replace("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-3 py-2">
+                  <select
+                    value={project.assigned_user_id ?? ""}
+                    onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
                       </option>
                     ))}
                   </select>

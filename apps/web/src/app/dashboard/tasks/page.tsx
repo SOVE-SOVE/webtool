@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type Lead, type Project, type Task } from "@/lib/api";
+import { api, type Lead, type Project, type Task, type User } from "@/lib/api";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [linkType, setLinkType] = useState<"lead" | "project">("lead");
   const [linkId, setLinkId] = useState("");
   const [title, setTitle] = useState("");
   const [dueAt, setDueAt] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
   function load() {
@@ -22,6 +24,7 @@ export default function TasksPage() {
       .catch(() => setError("Couldn't load tasks."));
     api.listLeads().then(setLeads).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
+    api.listUsers().then(setUsers).catch(() => {});
   }
 
   useEffect(load, []);
@@ -36,10 +39,12 @@ export default function TasksPage() {
         due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
         lead_id: linkType === "lead" ? linkId : undefined,
         project_id: linkType === "project" ? linkId : undefined,
+        assigned_user_id: assignedUserId || undefined,
       });
       setTitle("");
       setDueAt("");
       setLinkId("");
+      setAssignedUserId("");
       setShowForm(false);
       load();
     } catch {
@@ -51,6 +56,11 @@ export default function TasksPage() {
 
   async function handleToggle(id: string, done: boolean) {
     await api.updateTask(id, { done });
+    load();
+  }
+
+  async function handleAssigneeChange(id: string, assigneeId: string) {
+    await api.updateTask(id, { assigned_user_id: assigneeId || null });
     load();
   }
 
@@ -125,6 +135,19 @@ export default function TasksPage() {
             />
           </div>
 
+          <select
+            value={assignedUserId}
+            onChange={(e) => setAssignedUserId(e.target.value)}
+            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+
           <button
             type="submit"
             disabled={saving}
@@ -145,12 +168,13 @@ export default function TasksPage() {
               <th className="px-3 py-2">Task</th>
               <th className="px-3 py-2">Context</th>
               <th className="px-3 py-2">Due</th>
+              <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
                   No tasks yet.
                 </td>
               </tr>
@@ -170,6 +194,20 @@ export default function TasksPage() {
                 <td className="px-3 py-2 text-neutral-600">{task.context}</td>
                 <td className="px-3 py-2 text-neutral-600">
                   {task.due_at ? new Date(task.due_at).toLocaleString() : "—"}
+                </td>
+                <td className="px-3 py-2">
+                  <select
+                    value={task.assigned_user_id ?? ""}
+                    onChange={(e) => handleAssigneeChange(task.id, e.target.value)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
                 </td>
               </tr>
             ))}

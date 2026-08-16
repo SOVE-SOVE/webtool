@@ -48,6 +48,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="flex w-56 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50">
         <div className="border-b border-neutral-200 px-4 py-4">
           <span className="text-sm font-semibold text-neutral-900">Web Design OS</span>
+          <p className="mt-0.5 truncate text-xs text-neutral-500">{me.workspace_name}</p>
         </div>
 
         <nav className="flex-1 px-2 py-3">
@@ -70,7 +71,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         <div className="border-t border-neutral-200 px-4 py-3">
-          <p className="truncate text-xs text-neutral-500">{me.email}</p>
+          <p className="truncate text-xs font-medium text-neutral-700">{me.name}</p>
+          <p className="truncate text-xs text-neutral-500">
+            {me.email} · {me.role}
+          </p>
           <button onClick={handleLogout} className="mt-1 text-xs text-neutral-500 hover:text-neutral-900">
             Sign out
           </button>
