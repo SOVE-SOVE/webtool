@@ -32,6 +32,14 @@ in [[00_VISION]] go from designed to built.
   search results are inputs to summarize, never instructions an agent
   follows — a hostile or broken page shouldn't be able to redirect what
   a research/audit agent does. See [[03_AGENT_RULES]].
+- **SSRF protection on outbound fetches (built).** A lead's website URL
+  is untrusted input a real person could point at `localhost`, a private
+  IP, or a cloud metadata endpoint. `app/integrations/safe_http.py` is
+  the only sanctioned way anything in this codebase fetches such a URL:
+  it resolves DNS itself, rejects private/loopback/link-local/CGNAT/
+  reserved addresses (IPv4 and IPv6), pins the connection to the
+  validated IP (closing the DNS-rebinding gap), and re-validates every
+  redirect hop. See [[05_DECISIONS]] and `tests/test_safe_http.py`.
 - **Generated site output.** Client-provided copy/testimonials/form
   input rendered on generated sites must be escaped — no trusting
   client-submitted content to be safe HTML.

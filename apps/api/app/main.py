@@ -14,6 +14,7 @@ from app.modules.leads.routes import router as leads_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.tasks.routes import router as tasks_router
 from app.modules.users.routes import router as users_router
+from app.modules.website_audits.routes import router as website_audits_router
 from app.modules.workspaces.routes import router as workspaces_router
 
 configure_logging()
@@ -54,3 +55,4 @@ app.include_router(dashboard_router)
 app.include_router(users_router)
 app.include_router(workspaces_router)
 app.include_router(activity_router)
+app.include_router(website_audits_router)

@@ -76,8 +76,14 @@ Goal: stages 2–4 stop being manual.
 
 - [ ] Research agent: given a business name/URL, pull public info
       (web presence, socials, listing) into a structured note.
-- [ ] Website audit agent: Playwright-driven check (loads, mobile,
-      HTTPS, speed, no-site-found) → structured report per prospect.
+- [x] Website audit agent: static HTML/CSS analysis (not the originally
+      planned Playwright rendering — see [[05_DECISIONS]] for why) of
+      technical/SEO/performance/mobile/accessibility/conversion/design,
+      each finding tagged verified-fact/inference/subjective-observation,
+      SSRF-safe fetch, stored per lead with a generated markdown report.
+      Rendering-dependent checks (contrast, true responsive behavior,
+      visual/typography quality) are explicitly marked not-measured
+      rather than approximated.
 - [ ] Lead score computed from research + audit.
 
 ## M3 — Sales prep + outreach + follow-up

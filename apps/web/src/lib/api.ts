@@ -116,6 +116,28 @@ export type BusinessUpdate = {
   abn?: string;
 };
 
+export type WebsiteAuditStatus = "success" | "blocked" | "failed";
+
+// `results` is intentionally loosely typed (not the full nested
+// WebsiteAuditOutput shape from app/agents/website_audit_schemas.py) —
+// the UI only ever renders report_markdown plus these summary fields.
+// Revisit if the UI needs to render individual category fields directly.
+export type WebsiteAudit = {
+  id: string;
+  lead_id: string;
+  url: string;
+  status: WebsiteAuditStatus;
+  has_existing_site: boolean;
+  mobile_friendly: boolean | null;
+  https: boolean | null;
+  page_speed_score: number | null;
+  flagged_for_review: boolean;
+  error: string | null;
+  report_markdown: string;
+  results: unknown;
+  audited_at: string;
+};
+
 export const LEAD_STATUSES = [
   "new",
   "researched",
@@ -299,6 +321,10 @@ export const api = {
     request<Lead>(`/api/v1/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   archiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/archive`, { method: "POST" }),
   unarchiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/unarchive`, { method: "POST" }),
+
+  listWebsiteAudits: (leadId: string) => request<WebsiteAudit[]>(`/api/v1/leads/${leadId}/audits`),
+  triggerWebsiteAudit: (leadId: string) =>
+    request<WebsiteAudit>(`/api/v1/leads/${leadId}/audits`, { method: "POST" }),
 
   listClients: () => request<Client[]>("/api/v1/clients"),
   createClient: (data: ClientCreate) =>

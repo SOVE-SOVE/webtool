@@ -13,6 +13,7 @@ import {
   type LeadPriority,
   type LeadStatus,
   type User,
+  type WebsiteAudit,
 } from "@/lib/api";
 
 function field(label: string, value: React.ReactNode) {
@@ -34,6 +35,9 @@ export default function LeadDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+  const [audits, setAudits] = useState<WebsiteAudit[] | null>(null);
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function load() {
@@ -50,6 +54,7 @@ export default function LeadDetailPage() {
       .listActivity({ entity_type: "lead", entity_id: leadId })
       .then(setActivity)
       .catch(() => {});
+    api.listWebsiteAudits(leadId).then(setAudits).catch(() => {});
   }
 
   useEffect(load, [leadId]);
@@ -73,8 +78,24 @@ export default function LeadDetailPage() {
     api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
   }
 
+  async function handleRunAudit() {
+    setAuditRunning(true);
+    setAuditError(null);
+    try {
+      const audit = await api.triggerWebsiteAudit(leadId);
+      setAudits((prev) => [audit, ...(prev ?? [])]);
+      api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    } catch {
+      setAuditError("Couldn't run the audit — the site may be unreachable.");
+    } finally {
+      setAuditRunning(false);
+    }
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
   if (!lead || !business) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+
+  const latestAudit = audits?.[0] ?? null;
 
   return (
     <div className="p-6">
@@ -261,6 +282,61 @@ export default function LeadDetailPage() {
           </div>
         </section>
       </div>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900">Website audit</h2>
+          <button
+            onClick={handleRunAudit}
+            disabled={auditRunning || !business.website_url}
+            title={business.website_url ? undefined : "Set a website URL on this business first"}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {auditRunning ? "Running…" : "Run audit"}
+          </button>
+        </div>
+        {auditError && <p className="mt-2 text-sm text-red-600">{auditError}</p>}
+        {!latestAudit && !auditError && (
+          <p className="mt-3 text-sm text-neutral-500">No audits run yet.</p>
+        )}
+        {latestAudit && (
+          <div className="mt-3 border border-neutral-200 p-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={`rounded-full px-2 py-0.5 font-medium ${
+                  latestAudit.status === "success"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                {latestAudit.status}
+              </span>
+              {latestAudit.https !== null && (
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5">
+                  HTTPS: {latestAudit.https ? "yes" : "no"}
+                </span>
+              )}
+              {latestAudit.mobile_friendly !== null && (
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5">
+                  Viewport configured: {latestAudit.mobile_friendly ? "yes" : "no"}
+                </span>
+              )}
+              {latestAudit.page_speed_score !== null && (
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5">
+                  Heuristic speed score: {latestAudit.page_speed_score}/100
+                </span>
+              )}
+              {latestAudit.flagged_for_review && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-800">Flagged for review</span>
+              )}
+              <span className="text-neutral-500">{new Date(latestAudit.audited_at).toLocaleString()}</span>
+            </div>
+            <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap font-sans text-sm text-neutral-800">
+              {latestAudit.report_markdown}
+            </pre>
+          </div>
+        )}
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>

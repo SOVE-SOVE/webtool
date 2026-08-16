@@ -300,7 +300,7 @@ three are in near-term scope ([[04_ROADMAP]] M2).
 | Role | Status | Notes |
 |---|---|---|
 | Research | M2 | Prospect + build-phase research summarization. |
-| Website auditing | M2 | Structured audit from Playwright output. |
+| Website auditing | Built (M2) | `agents/website_audit.py` — static HTML/CSS analysis via the SSRF-safe fetch client, not Playwright as originally planned here; see [[05_DECISIONS]]. |
 | Lead scoring | M2 | Deterministic-ish scoring from research + audit. |
 | Sales assistant | M3 | Sales-prep packet + outreach drafting. |
 | Meeting preparation | M3/deferred | Build only if meeting volume justifies it. |

@@ -21,6 +21,88 @@ why it lost.
 
 ---
 
+## 2026-08-17 — Website audit engine v1: static HTML analysis, SSRF-safe fetch, no rendering
+
+**Decision:** Built the first version of the website-audit engine
+(stage 3, WEBSITE AUDIT, in [[00_VISION]]) as a synchronous, deterministic,
+static-HTML-analysis pipeline — no LLM calls, no Playwright/browser
+rendering. Concretely:
+
+- **`app/integrations/safe_http.py`** — a new SSRF-safe HTTP client, and
+  the *only* sanctioned way anything in this codebase fetches a lead-
+  supplied URL. Validates scheme (http/https only), resolves the
+  hostname itself and checks every resolved address against private/
+  loopback/link-local/multicast/reserved/CGNAT ranges (IPv4 and IPv6),
+  then **pins the actual connection to the validated IP** via httpx's
+  `sni_hostname` extension rather than letting the HTTP stack re-resolve
+  at connect time — this closes the DNS-rebinding gap (validate one IP,
+  connect to a different one a moment later) that a naive "resolve, check,
+  then let the library connect normally" approach leaves open. Redirects
+  are followed manually, up to 3 hops, with the full validate-and-pin
+  pipeline repeated at every hop, since redirecting to an internal
+  address after an initial safe-looking request is the most common real-
+  world SSRF bypass. See docs/06_SECURITY.md.
+- **`app/agents/website_audit.py`** — fetches the homepage plus
+  `robots.txt`/`sitemap.xml`/linked CSS/a sample of linked resources (all
+  through the safe client), parses with BeautifulSoup (new dependency),
+  and extracts the operator's full requested field list (technical, SEO,
+  performance, mobile, accessibility, conversion, design) using only
+  static analysis — no JavaScript execution, no rendering, no screenshot.
+  Every data point is either directly measured or explicitly absent;
+  nothing is guessed. Each finding is tagged `verified_fact` /
+  `inference` / `subjective_observation` (`website_audit_schemas.py`),
+  which is what "clearly separate verified facts, inferences, and
+  subjective observations" turns into in code — the tag drives both the
+  structured JSON and the grouped sections of the generated markdown
+  report. Color contrast and full visual/typography/layout assessment
+  are explicitly marked as not measured in this version rather than
+  faked, since they genuinely require rendering.
+- **Runs synchronously** inside the `POST /leads/{id}/audits` request —
+  not via the `jobs` table + poller mechanism [[02_ARCHITECTURE]] §4
+  already specifies for background agent work. A single-site fetch
+  bounded by short timeouts is a few seconds; building the job-queue
+  plumbing for that isn't worth it for a "first version." Revisit if
+  audits start timing out the request or if bulk/batch auditing gets
+  built.
+- **Storage:** `website_audits` gained `url`, `status`
+  (`success`/`blocked`/`failed`), `results_json` (JSONB — the full
+  structured output), `report_markdown`, `error`, `flagged_for_review`;
+  the old `notes` column was dropped (superseded by `report_markdown`).
+  `has_existing_site`/`mobile_friendly`/`https`/`page_speed_score` stay
+  as a denormalized quick-glance summary, populated from the same run.
+- **API:** `POST /api/v1/leads/{id}/audits` (audits `business.website_url`
+  — 422 if unset) and `GET /api/v1/leads/{id}/audits` (history, newest
+  first), both workspace-scoped via the same lead-ownership pattern used
+  everywhere else. A minimal "Website audit" section on the lead detail
+  page triggers a run and renders the latest report.
+
+**Why:** The operator's brief was explicit and detailed about the
+requested fields, the fact/inference/observation separation, "never
+fabricate," and SSRF hardening — all of that is achievable from a
+static fetch + parse pipeline for the vast majority of the requested
+checks (title/meta/headings/canonical/robots/sitemap/alt-text/CTA-
+detection/etc. are all present in the raw HTML/CSS). Rendering-dependent
+checks (real contrast ratios, JS-rendered content, true responsive
+behavior, actual visual/typography quality) are the minority and are
+honestly labeled as not measured rather than approximated — matches
+[[00_VISION]]'s "never fabricate" instruction and this project's
+existing "no placeholder functionality" ethos better than a rendering
+pipeline that was rushed and produced unreliable numbers would have.
+
+**Alternatives considered:** Playwright-based rendering (the original
+[[02_ARCHITECTURE]] §6 plan for this role) — deferred, not rejected;
+it's the natural way to eventually add real contrast/visual/JS-rendered
+checks, but building SSRF-safe request pinning against Chromium's own
+network stack is materially harder than against httpx/httpcore (no
+equivalent to the `sni_hostname` pinning trick), and the static-analysis
+version alone already covers most of the requested field list. LLM-
+assisted synthesis of the findings into a narrative report — rejected
+for v1; a markdown report grouped by category and fact/inference/
+observation is already genuinely useful and keeps the whole pipeline
+deterministic and cheap, with no API key dependency.
+
+---
+
 ## 2026-08-16 — Lead management: LeadStatus replaces LeadStage; priority, notes, archive; business contact fields
 
 **Decision:** Redirected mid-M2-planning to build out the lead-management
