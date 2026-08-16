@@ -12,13 +12,18 @@ Goal: an empty but real, deployed, secured app to build on.
 
 - [x] Repo structure and documentation baseline (this).
 - [x] Core stack decided — see [[02_ARCHITECTURE]] and [[05_DECISIONS]].
-- [ ] `apps/web` (Next.js) and `apps/api` (FastAPI) scaffolded per
-      [[02_ARCHITECTURE]], deployed, behind auth (no public
-      unauthenticated access to any client data).
-- [ ] Postgres database provisioned, `apps/api` connected via
-      SQLAlchemy/Alembic.
-- [ ] Core schema: prospects, projects, pipeline stage/state, activity
-      log — see [[database]].
+- [x] `apps/web` (Next.js) and `apps/api` (FastAPI) scaffolded per
+      [[02_ARCHITECTURE]], behind auth (no unauthenticated access to
+      any client data). Verified locally end to end, including in a
+      real browser. **Not yet deployed to a public host** — that's the
+      one item left in this milestone, and needs the operator's own
+      hosting accounts (Vercel, and a Python-friendly host for
+      `apps/api`). See [[05_DECISIONS]].
+- [x] Postgres database provisioned locally (docker-compose),
+      `apps/api` connected via SQLAlchemy/Alembic. Production database
+      (Neon/Supabase) is part of the deploy step above, not yet done.
+- [x] Core schema: all 14 entities from [[02_ARCHITECTURE]] §3, plus
+      `pipeline_events`, migrated and verified against local Postgres.
 
 ## M1 — Manual pipeline, digitized
 

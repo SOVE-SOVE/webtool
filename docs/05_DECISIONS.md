@@ -21,6 +21,30 @@ why it lost.
 
 ---
 
+## 2026-08-16 — M0 implemented; two implementation-time decisions
+
+**Decision:** M0 is built and verified locally (server running, DB
+migrated, full login → dashboard → logout flow checked in a real
+browser via Playwright). Two choices made while implementing that
+weren't in the original architecture doc:
+
+1. **Python 3.12, not 3.14, for `apps/api`.** The machine's default
+   Python was 3.14 — too new for `pydantic-core`'s and `psycopg`'s
+   compiled wheels (PyO3 doesn't support 3.14 yet as of this writing),
+   so installing dependencies failed. Homebrew's `python3.12` works
+   cleanly. `apps/api/README`/setup docs specify 3.12 explicitly.
+2. **`bcrypt` directly, not `passlib[bcrypt]`.** `passlib` 1.7.4's
+   bcrypt-backend version-detection code breaks against current
+   `bcrypt` (≥4.1 removed the attribute passlib reads), a known
+   upstream incompatibility. Calling `bcrypt.hashpw`/`checkpw` directly
+   avoids it and drops a dependency — `passlib` was only ever a thin
+   wrapper here.
+
+**Why:** Both are "use the version that actually works" calls, not
+architecture changes — recorded so a future dependency bump doesn't
+silently reintroduce either problem without knowing why the original
+choice was made.
+
 ## 2026-08-16 — Stack revised: Next.js frontend + FastAPI backend
 
 **Decision:** Supersedes the same-day "Next.js modular monolith"
