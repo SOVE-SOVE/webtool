@@ -12,6 +12,7 @@ from app.modules.contacts import models as _contacts  # noqa: F401
 from app.modules.deployments import models as _deployments  # noqa: F401
 from app.modules.design_briefs import models as _design_briefs  # noqa: F401
 from app.modules.interactions import models as _interactions  # noqa: F401
+from app.modules.lead_scores import models as _lead_scores  # noqa: F401
 from app.modules.leads import models as _leads  # noqa: F401
 from app.modules.meetings import models as _meetings  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401

@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.modules.businesses.models import Business
     from app.modules.interactions.models import Interaction
+    from app.modules.lead_scores.models import LeadScore
     from app.modules.sales_opportunities.models import SalesOpportunity
     from app.modules.users.models import User
     from app.modules.website_audits.models import WebsiteAudit
@@ -69,4 +70,5 @@ class Lead(Base):
     assigned_user: Mapped["User | None"] = relationship()
     interactions: Mapped[list["Interaction"]] = relationship(back_populates="lead")
     website_audits: Mapped[list["WebsiteAudit"]] = relationship(back_populates="lead")
+    lead_scores: Mapped[list["LeadScore"]] = relationship(back_populates="lead")
     sales_opportunities: Mapped[list["SalesOpportunity"]] = relationship(back_populates="lead")

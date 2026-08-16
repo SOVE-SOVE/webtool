@@ -12,6 +12,7 @@ import {
   type Lead,
   type LeadPriority,
   type LeadStatus,
+  type LeadScore,
   type User,
   type WebsiteAudit,
 } from "@/lib/api";
@@ -38,6 +39,9 @@ export default function LeadDetailPage() {
   const [audits, setAudits] = useState<WebsiteAudit[] | null>(null);
   const [auditRunning, setAuditRunning] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const [scores, setScores] = useState<LeadScore[] | null>(null);
+  const [scoreRunning, setScoreRunning] = useState(false);
+  const [scoreError, setScoreError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function load() {
@@ -55,6 +59,7 @@ export default function LeadDetailPage() {
       .then(setActivity)
       .catch(() => {});
     api.listWebsiteAudits(leadId).then(setAudits).catch(() => {});
+    api.listLeadScores(leadId).then(setScores).catch(() => {});
   }
 
   useEffect(load, [leadId]);
@@ -92,10 +97,32 @@ export default function LeadDetailPage() {
     }
   }
 
+  async function handleRunScore() {
+    setScoreRunning(true);
+    setScoreError(null);
+    try {
+      const score = await api.triggerLeadScore(leadId);
+      setScores((prev) => [score, ...(prev ?? [])]);
+      const updated = await api.getLead(leadId);
+      setLead(updated);
+      api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    } catch {
+      setScoreError("Couldn't score this lead.");
+    } finally {
+      setScoreRunning(false);
+    }
+  }
+
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
   if (!lead || !business) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
 
   const latestAudit = audits?.[0] ?? null;
+  const latestScore = scores?.[0] ?? null;
+  const confidenceClass: Record<string, string> = {
+    high: "bg-green-100 text-green-800",
+    medium: "bg-amber-100 text-amber-800",
+    low: "bg-red-100 text-red-800",
+  };
 
   return (
     <div className="p-6">
@@ -334,6 +361,83 @@ export default function LeadDetailPage() {
             <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap font-sans text-sm text-neutral-800">
               {latestAudit.report_markdown}
             </pre>
+          </div>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900">Lead score</h2>
+          <button
+            onClick={handleRunScore}
+            disabled={scoreRunning}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {scoreRunning ? "Scoring…" : "Run score"}
+          </button>
+        </div>
+        {scoreError && <p className="mt-2 text-sm text-red-600">{scoreError}</p>}
+        {!latestScore && !scoreError && <p className="mt-3 text-sm text-neutral-500">Not scored yet.</p>}
+        {latestScore && (
+          <div className="mt-3 border border-neutral-200 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-2xl font-semibold text-neutral-900">
+                {latestScore.overall_score}
+                <span className="text-sm font-normal text-neutral-500">/100</span>
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${confidenceClass[latestScore.confidence]}`}
+              >
+                {latestScore.confidence} confidence
+              </span>
+              {latestScore.flagged_for_review && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
+                  Flagged for review
+                </span>
+              )}
+              <span className="text-xs text-neutral-500">
+                {new Date(latestScore.scored_at).toLocaleString()}
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {latestScore.results.categories.map((cat) => (
+                <div key={cat.key} className="border border-neutral-100 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-neutral-900">{cat.label}</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${confidenceClass[cat.confidence]}`}
+                    >
+                      {cat.confidence}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    {cat.score}/100 · weight {cat.weight}%
+                  </div>
+                  {cat.reasons.length > 0 && (
+                    <ul className="mt-2 space-y-0.5 text-xs text-neutral-700">
+                      {cat.reasons.map((r) => (
+                        <li key={r.rule_id}>
+                          {r.description} ({r.points >= 0 ? "+" : ""}
+                          {r.points})
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {latestScore.results.warnings.length > 0 && (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Warnings</div>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-neutral-600">
+                  {latestScore.results.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </section>

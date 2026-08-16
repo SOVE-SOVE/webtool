@@ -138,6 +138,43 @@ export type WebsiteAudit = {
   audited_at: string;
 };
 
+export type ScoreConfidence = "low" | "medium" | "high";
+
+export type ScoreReason = {
+  rule_id: string;
+  description: string;
+  points: number;
+};
+
+export type CategoryScore = {
+  key: string;
+  label: string;
+  score: number;
+  weight: number;
+  confidence: ScoreConfidence;
+  reasons: ScoreReason[];
+};
+
+export type LeadScoreResult = {
+  overall_score: number;
+  confidence: ScoreConfidence;
+  categories: CategoryScore[];
+  warnings: string[];
+  config_version: number;
+};
+
+export type LeadScore = {
+  id: string;
+  lead_id: string;
+  based_on_audit_id: string | null;
+  overall_score: number;
+  confidence: ScoreConfidence;
+  config_version: number;
+  flagged_for_review: boolean;
+  results: LeadScoreResult;
+  scored_at: string;
+};
+
 export const LEAD_STATUSES = [
   "new",
   "researched",
@@ -325,6 +362,10 @@ export const api = {
   listWebsiteAudits: (leadId: string) => request<WebsiteAudit[]>(`/api/v1/leads/${leadId}/audits`),
   triggerWebsiteAudit: (leadId: string) =>
     request<WebsiteAudit>(`/api/v1/leads/${leadId}/audits`, { method: "POST" }),
+
+  listLeadScores: (leadId: string) => request<LeadScore[]>(`/api/v1/leads/${leadId}/scores`),
+  triggerLeadScore: (leadId: string) =>
+    request<LeadScore>(`/api/v1/leads/${leadId}/scores`, { method: "POST" }),
 
   listClients: () => request<Client[]>("/api/v1/clients"),
   createClient: (data: ClientCreate) =>

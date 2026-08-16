@@ -21,6 +21,88 @@ why it lost.
 
 ---
 
+## 2026-08-17 — Explainable lead scoring: config-driven rule engine, append-only history
+
+**Decision:** Built the lead-scoring engine (stage 4, LEAD SCORE) as a
+config-driven rule engine, not code-embedded scoring logic:
+
+- **The scoring policy is data, not code** — `app/agents/scoring_rules.json`
+  holds the six category weights (summing to 100), the target-industry
+  and target-region lists, and every point-scoring rule (a signal name,
+  a comparison operator, a point value, and the human-readable reason it
+  produces). `app/agents/lead_score.py` is a generic evaluator over that
+  data (`_eval_condition`, `_score_category`) plus the *signal
+  extraction* step (reading Business/Lead/WebsiteAudit fields into a
+  flat named-signal dict) — extraction has to be code, but the actual
+  scoring policy doesn't. This directly satisfies "configurable later
+  without rewriting the system": retuning a weight, changing which
+  industries count as target verticals, or adjusting a rule's point
+  value is a JSON edit, no Python change. Mirrors the existing
+  "prompts as their own files" precedent in [[02_ARCHITECTURE]] §6.
+- **Explainability is structural, not incidental.** Every point on the
+  board is a `ScoreReason` (`rule_id`, `description`, `points`) that
+  traces back to exactly one config rule — there's no scoring path that
+  produces a number without a corresponding reason. `_score_category`
+  can't do otherwise; it only ever adds points alongside the reason that
+  earned them.
+- **No sensitive personal characteristics — enforced structurally, not
+  just as a rule.** `LeadScoreInput` (the only data the engine can see)
+  has no field for a person's name, age, gender, ethnicity, religion, or
+  any other personal characteristic — it's business-level facts only
+  (industry, location, registration, contact channels, website
+  findings). A test asserts this directly (`test_no_sensitive_personal_
+  characteristics_in_input_schema`) so a future field addition that
+  drifts from this can't land silently.
+- **No fabricated revenue/performance.** `commercial_value` and
+  `growth_opportunity` — the two categories closest to "how much is this
+  worth" — are scored from legitimate, observable proxies only (ABN
+  registration, industry price-point norms, contact-channel count,
+  visible marketing signals), never a guessed dollar figure. Both
+  categories are structurally capped at MEDIUM confidence regardless of
+  how much data is available (`_confidence_for`), and every score run
+  carries a standing warning that revenue, profit, and customer volume
+  are unknown. Overall confidence is the *weakest* of the six category
+  confidences, not an average — a lead can't read as "high confidence"
+  overall on the strength of its most measurable categories alone.
+- **`confidence` and `warnings` reflect real data gaps.** No website
+  audit on file → `website_opportunity` confidence drops to LOW and a
+  warning is added, rather than guessing at technical findings. No
+  industry/location recorded → the same pattern for `business_fit`/
+  `local_relevance`. Target lists left empty in config → scored neutral
+  with a warning, not silently skipped.
+- **Storage is append-only.** `lead_scores` is a new table, one row per
+  scoring run, never updated in place — mirrors `website_audits`'
+  history pattern. `trigger_score` always inserts a new row and updates
+  `leads.score` (the quick-glance field) to the latest result, but never
+  deletes or overwrites a prior `LeadScore` row, so "how did this lead's
+  score change after that audit" stays answerable. `based_on_audit_id`
+  records which website audit (if any) informed the run, for
+  traceability between the two.
+- **Runs synchronously**, same reasoning as the audit engine in the
+  entry below — pure computation over already-stored data, no network
+  calls, no reason to build job-queue plumbing for a sub-second call.
+
+**Why:** The operator's brief explicitly asked for configurability
+without a rewrite, full explainability, and a hard ban on fabricating
+revenue/demographics — a rule engine over a data file is the
+straightforward way to get all three at once: config changes need no
+code change, every point traces to a named rule, and the categories
+most prone to invented numbers are structurally prevented from claiming
+false confidence.
+
+**Alternatives considered:** An LLM-based scorer (prompt the categories
+and ask for a score) — rejected; it would make "explainable" much
+harder to guarantee (an LLM's stated reasons don't necessarily match
+what actually drove its score) and reintroduces exactly the fabrication
+risk the brief explicitly warned against for revenue/performance
+categories. A Python-native rule table (a list of lambdas/dataclasses in
+code) instead of JSON — rejected because it fails the literal
+"configurable without rewriting the system" requirement: editing a
+lambda is a code change requiring a deploy through the normal review
+path, not a data edit.
+
+---
+
 ## 2026-08-17 — Website audit engine v1: static HTML analysis, SSRF-safe fetch, no rendering
 
 **Decision:** Built the first version of the website-audit engine

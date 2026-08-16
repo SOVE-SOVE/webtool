@@ -143,6 +143,10 @@ and check `current_user.role`. See §7.
 - **website_audits** — structured audit results (loads, mobile, HTTPS,
   speed, or "no site found") for a business's existing site. Belongs
   to a lead.
+- **lead_scores** — one row per scoring run (see [[05_DECISIONS]]) —
+  append-only, never updated in place, so score history survives later
+  re-scores. Belongs to a lead; optionally references the website_audit
+  it was computed from.
 - **sales_opportunities** — the deal itself: proposed scope/price/tier
   under discussion. Belongs to a lead; becomes "won" → creates a
   client + project, or "lost".
@@ -174,6 +178,7 @@ workspaces
     leads                  (assigned_user_id)
       interactions
       website_audits
+      lead_scores
       sales_opportunities
         meetings
     clients                (assigned_user_id; created when a sales_opportunity is won)
@@ -301,7 +306,7 @@ three are in near-term scope ([[04_ROADMAP]] M2).
 |---|---|---|
 | Research | M2 | Prospect + build-phase research summarization. |
 | Website auditing | Built (M2) | `agents/website_audit.py` — static HTML/CSS analysis via the SSRF-safe fetch client, not Playwright as originally planned here; see [[05_DECISIONS]]. |
-| Lead scoring | M2 | Deterministic-ish scoring from research + audit. |
+| Lead scoring | Built (M2) | `agents/lead_score.py` — deterministic, config-driven rule engine (`agents/scoring_rules.json`) over the business record + latest website audit; see [[05_DECISIONS]]. |
 | Sales assistant | M3 | Sales-prep packet + outreach drafting. |
 | Meeting preparation | M3/deferred | Build only if meeting volume justifies it. |
 | Creative director | M4/deferred | Design brief drafting — high judgment, expect heavy edits. |

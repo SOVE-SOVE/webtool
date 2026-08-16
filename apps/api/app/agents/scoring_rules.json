@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "category_weights": {
+    "website_opportunity": 25,
+    "business_fit": 20,
+    "contactability": 20,
+    "commercial_value": 15,
+    "local_relevance": 10,
+    "growth_opportunity": 10
+  },
+  "target_industries": [
+    "plumbing", "plumber", "electrical", "electrician", "landscaping", "landscaper",
+    "cleaning", "cleaner", "carpentry", "carpenter", "painting", "painter",
+    "roofing", "roofer", "hvac", "air conditioning", "pest control", "handyman",
+    "locksmith", "removalist", "gardening", "tree service", "concreting",
+    "tiling", "plastering", "fencing", "pool service", "pool maintenance"
+  ],
+  "target_states": ["VIC", "NSW", "QLD", "SA", "WA", "TAS", "ACT", "NT"],
+  "categories": {
+    "website_opportunity": {
+      "rules": [
+        {
+          "id": "no_website",
+          "signal": "has_existing_site",
+          "op": "is_false",
+          "points": 100,
+          "reason": "No existing website found — full-site opportunity",
+          "stop": true
+        },
+        {
+          "id": "not_https",
+          "signal": "https",
+          "op": "is_false",
+          "points": 15,
+          "reason": "Site is not served over HTTPS"
+        },
+        {
+          "id": "no_mobile_viewport",
+          "signal": "mobile_viewport_present",
+          "op": "is_false",
+          "points": 20,
+          "reason": "No mobile viewport configuration found — site likely isn't mobile-friendly"
+        },
+        {
+          "id": "broken_resources",
+          "signal": "broken_resource_count",
+          "op": "gt",
+          "value": 0,
+          "points": 10,
+          "reason": "Site has broken resources (images/scripts/stylesheets)"
+        },
+        {
+          "id": "poor_speed",
+          "signal": "heuristic_speed_score",
+          "op": "lt",
+          "value": 50,
+          "points": 15,
+          "reason": "Heuristic speed score is below 50/100"
+        },
+        {
+          "id": "seo_gaps",
+          "signal": "seo_issue_count",
+          "op": "gte",
+          "value": 3,
+          "points": 15,
+          "reason": "Multiple SEO gaps found (title/description/canonical/headings/etc.)"
+        },
+        {
+          "id": "accessibility_gaps",
+          "signal": "accessibility_issue_count",
+          "op": "gte",
+          "value": 3,
+          "points": 10,
+          "reason": "Multiple accessibility gaps found"
+        },
+        {
+          "id": "outdated_design",
+          "signal": "design_outdated_signal_count",
+          "op": "gt",
+          "value": 0,
+          "points": 15,
+          "reason": "Outdated design/technology patterns detected"
+        }
+      ]
+    },
+    "business_fit": {
+      "rules": [
+        {
+          "id": "industry_match",
+          "signal": "industry_fit",
+          "op": "eq",
+          "value": "match",
+          "points": 100,
+          "reason": "Industry matches a configured target vertical (trades/local services)"
+        },
+        {
+          "id": "industry_no_match",
+          "signal": "industry_fit",
+          "op": "eq",
+          "value": "no_match",
+          "points": 20,
+          "reason": "Industry recorded but outside configured target verticals — may still be viable but outside primary focus"
+        },
+        {
+          "id": "industry_unknown",
+          "signal": "industry_fit",
+          "op": "eq",
+          "value": "unknown",
+          "points": 10,
+          "reason": "Industry not recorded — fit could not be assessed"
+        },
+        {
+          "id": "industry_unconfigured",
+          "signal": "industry_fit",
+          "op": "eq",
+          "value": "unconfigured",
+          "points": 50,
+          "reason": "No target industries configured — treated as neutral"
+        }
+      ]
+    },
+    "local_relevance": {
+      "rules": [
+        {
+          "id": "location_match",
+          "signal": "location_fit",
+          "op": "eq",
+          "value": "match",
+          "points": 100,
+          "reason": "Located in a configured target region"
+        },
+        {
+          "id": "location_no_match",
+          "signal": "location_fit",
+          "op": "eq",
+          "value": "no_match",
+          "points": 20,
+          "reason": "Location recorded but outside configured target regions"
+        },
+        {
+          "id": "location_unknown",
+          "signal": "location_fit",
+          "op": "eq",
+          "value": "unknown",
+          "points": 40,
+          "reason": "No location recorded for this business — relevance could not be confirmed"
+        },
+        {
+          "id": "location_unconfigured",
+          "signal": "location_fit",
+          "op": "eq",
+          "value": "unconfigured",
+          "points": 60,
+          "reason": "No target regions configured — treated as neutral"
+        }
+      ]
+    },
+    "contactability": {
+      "rules": [
+        {
+          "id": "has_phone",
+          "signal": "has_phone",
+          "op": "is_true",
+          "points": 30,
+          "reason": "Phone number on file"
+        },
+        {
+          "id": "has_email",
+          "signal": "has_email",
+          "op": "is_true",
+          "points": 30,
+          "reason": "Email address on file"
+        },
+        {
+          "id": "has_contact_form",
+          "signal": "has_contact_form",
+          "op": "is_true",
+          "points": 25,
+          "reason": "Website has a contact form"
+        },
+        {
+          "id": "has_social",
+          "signal": "has_social_links",
+          "op": "is_true",
+          "points": 15,
+          "reason": "Social media presence found"
+        }
+      ]
+    },
+    "commercial_value": {
+      "rules": [
+        {
+          "id": "industry_price_point",
+          "signal": "industry_fit",
+          "op": "eq",
+          "value": "match",
+          "points": 40,
+          "reason": "Industry is in a vertical with an established reference price point for our offer"
+        },
+        {
+          "id": "has_abn",
+          "signal": "has_abn",
+          "op": "is_true",
+          "points": 25,
+          "reason": "Business has a registered ABN on file — indicates an established, registered operating business"
+        },
+        {
+          "id": "established_web_presence",
+          "signal": "has_existing_site",
+          "op": "is_true",
+          "points": 15,
+          "reason": "Business already has an operating website — some existing investment in its online presence"
+        },
+        {
+          "id": "multiple_contact_channels",
+          "signal": "contact_channel_count",
+          "op": "gte",
+          "value": 2,
+          "points": 20,
+          "reason": "Multiple contact channels found (phone/email/social) — suggests an actively operating business"
+        }
+      ]
+    },
+    "growth_opportunity": {
+      "rules": [
+        {
+          "id": "active_social_presence",
+          "signal": "has_social_links",
+          "op": "is_true",
+          "points": 35,
+          "reason": "Active social media presence found — often correlates with active marketing/growth efforts"
+        },
+        {
+          "id": "multiple_cta",
+          "signal": "cta_found_count",
+          "op": "gte",
+          "value": 2,
+          "points": 30,
+          "reason": "Multiple calls-to-action found — site is actively driving engagement"
+        },
+        {
+          "id": "maintained_site_signals",
+          "signal": "sitemap_found",
+          "op": "is_true",
+          "points": 20,
+          "reason": "Sitemap present — suggests the site is maintained/actively managed"
+        },
+        {
+          "id": "rich_content",
+          "signal": "resource_count_total",
+          "op": "gte",
+          "value": 15,
+          "points": 15,
+          "reason": "Site has a relatively rich set of pages/resources"
+        }
+      ]
+    }
+  }
+}

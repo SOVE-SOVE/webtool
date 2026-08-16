@@ -84,7 +84,16 @@ Goal: stages 2–4 stop being manual.
       Rendering-dependent checks (contrast, true responsive behavior,
       visual/typography quality) are explicitly marked not-measured
       rather than approximated.
-- [ ] Lead score computed from research + audit.
+- [x] Lead score computed from the business record + latest website
+      audit (research agent isn't built yet, so that input is still
+      pending — see [[05_DECISIONS]]). Six configurable categories
+      (website opportunity, business/service fit, commercial value,
+      local relevance, contactability, growth opportunity), every point
+      traceable to a named rule, confidence and warnings reflect real
+      data gaps, no fabricated revenue/performance data. Scoring policy
+      lives in `app/agents/scoring_rules.json`, editable without a code
+      change. History preserved — re-scoring never overwrites a prior
+      score.
 
 ## M3 — Sales prep + outreach + follow-up
 
