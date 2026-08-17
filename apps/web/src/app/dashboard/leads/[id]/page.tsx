@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
+  ApiError,
   LEAD_PRIORITIES,
   LEAD_STATUSES,
   type ActivityItem,
@@ -12,8 +13,23 @@ import {
   type Lead,
   type LeadPriority,
   type LeadStatus,
+  type SalesAuditReport,
   type User,
 } from "@/lib/api";
+import { SalesAuditReportView } from "@/components/SalesAuditReportView";
+
+// Sales Audit generation reads live evidence (renders the site, checks
+// public search) so it's only meaningful once a lead has cleared initial
+// qualification — matches "when I open a qualified lead" from the request.
+const SALES_AUDIT_ELIGIBLE_STATUSES: LeadStatus[] = [
+  "qualified",
+  "contacted",
+  "replied",
+  "meeting",
+  "proposal",
+  "won",
+  "nurture",
+];
 
 function field(label: string, value: React.ReactNode) {
   return (
@@ -35,6 +51,10 @@ export default function LeadDetailPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [salesAudits, setSalesAudits] = useState<SalesAuditReport[] | null>(null);
+  const [generatingAudit, setGeneratingAudit] = useState(false);
+  const [generateAuditError, setGenerateAuditError] = useState<string | null>(null);
+  const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
 
   function load() {
     api
@@ -50,6 +70,7 @@ export default function LeadDetailPage() {
       .listActivity({ entity_type: "lead", entity_id: leadId })
       .then(setActivity)
       .catch(() => {});
+    api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
   }
 
   useEffect(load, [leadId]);
@@ -71,6 +92,21 @@ export default function LeadDetailPage() {
     const updated = lead.archived_at ? await api.unarchiveLead(lead.id) : await api.archiveLead(lead.id);
     setLead(updated);
     api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+  }
+
+  async function handleGenerateSalesAudit() {
+    setGeneratingAudit(true);
+    setGenerateAuditError(null);
+    try {
+      const report = await api.generateSalesAudit(leadId);
+      setSalesAudits((prev) => [report, ...(prev ?? [])]);
+      setExpandedAuditId(report.id);
+      api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    } catch (err) {
+      setGenerateAuditError(err instanceof ApiError ? err.message : "Couldn't generate the sales audit.");
+    } finally {
+      setGeneratingAudit(false);
+    }
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -261,6 +297,67 @@ export default function LeadDetailPage() {
           </div>
         </section>
       </div>
+
+      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-900">Sales audit</h2>
+            <button
+              onClick={handleGenerateSalesAudit}
+              disabled={generatingAudit}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {generatingAudit ? "Generating…" : "Generate sales audit"}
+            </button>
+          </div>
+          {generatingAudit && (
+            <p className="mt-2 text-sm text-neutral-500">
+              Auditing the website, checking public info, and writing the report — this can take up to a
+              minute.
+            </p>
+          )}
+          {generateAuditError && <p className="mt-2 text-sm text-red-600">{generateAuditError}</p>}
+
+          <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+            {salesAudits && salesAudits.length === 0 && !generatingAudit && (
+              <li className="px-3 py-3 text-sm text-neutral-500">No sales audits generated yet.</li>
+            )}
+            {salesAudits?.map((report) => {
+              const expanded = expandedAuditId === report.id;
+              return (
+                <li key={report.id} className="px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setExpandedAuditId(expanded ? null : report.id)}
+                      className="text-left text-neutral-900 hover:underline"
+                    >
+                      {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
+                    </button>
+                    <div className="flex items-center gap-3">
+                      {report.flagged_for_review && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                          Flagged for review
+                        </span>
+                      )}
+                      <Link
+                        href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
+                        className="text-xs text-neutral-500 hover:underline"
+                      >
+                        Open full view
+                      </Link>
+                    </div>
+                  </div>
+                  {expanded && (
+                    <div className="mt-3">
+                      <SalesAuditReportView report={report} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>

@@ -264,6 +264,44 @@ export type AttentionItem = {
   href: string;
 };
 
+export type WebsiteAudit = {
+  id: string;
+  lead_id: string;
+  has_existing_site: boolean;
+  mobile_friendly: boolean | null;
+  https: boolean | null;
+  page_speed_score: number | null;
+  load_time_ms: number | null;
+  title: string | null;
+  meta_description: string | null;
+  viewport_meta_present: boolean | null;
+  audit_error: string | null;
+  notes: string | null;
+  audited_at: string;
+};
+
+export type SalesAuditReport = {
+  id: string;
+  lead_id: string;
+  website_audit: WebsiteAudit | null;
+  business_summary: string;
+  website_strengths: string[];
+  top_problems: string[];
+  why_problems_matter: string[];
+  recommended_improvements: string[];
+  suggested_structure: string[];
+  talking_points: string[];
+  potential_objections: string[];
+  suggested_offer: string;
+  sources_note: string | null;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  model_used: string;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -319,6 +357,12 @@ export const api = {
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
+
+  generateSalesAudit: (leadId: string) =>
+    request<SalesAuditReport>(`/api/v1/leads/${leadId}/sales-audits`, { method: "POST" }),
+  listSalesAudits: (leadId: string) =>
+    request<SalesAuditReport[]>(`/api/v1/leads/${leadId}/sales-audits`),
+  getSalesAudit: (id: string) => request<SalesAuditReport>(`/api/v1/sales-audits/${id}`),
 
   listUsers: () => request<User[]>("/api/v1/users"),
   createUser: (data: UserCreate) =>

@@ -21,6 +21,51 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Lead score: deterministic, computed from the website audit, not the LLM
+
+**Decision:** `leads.score` (previously a manual-only field) is now
+auto-computed by a new `agents/lead_score.py` every time a Sales Audit
+is generated, and overwrites whatever was there before — see
+`app.modules.sales_audits.service.generate_sales_audit`. The score is a
+plain rule-based 0-100 value derived from the website audit's real,
+measured signals (no site → 85; site present but unreachable → 90;
+otherwise a 30-point baseline plus points for missing HTTPS, not being
+mobile-friendly, slow load time, and missing title/meta description,
+capped at 80). No LLM call is involved. This closes roadmap M2's third
+item ("lead score computed from research + audit") and requirement #4 in
+[[01_REQUIREMENTS]].
+
+Fixing this also required a correctness fix in `agents/sales_audit.py`:
+its "thin evidence" flag used to treat `lead_score is not None` as a
+signal that *some* independent evidence existed. Now that the score is
+always derived from the same website audit being judged, that check was
+circular and would have stopped firing entirely. `thin_evidence` now
+looks only at `website_unusable and not search_results`.
+
+**Why:** Requirement #4 explicitly asks to "avoid wasting time on leads
+that don't fit the $599–$1,299 offer" — a manually-entered score can't
+do that consistently across dozens of prospects. A deterministic
+formula was chosen over folding a score into the sales-audit LLM's
+output because: it mirrors `agents/website_audit.py`'s own approach (no
+LLM call, same measured signals, same reasoning the operator can already
+see in a Sales Audit's sources note); it's free to compute (no added API
+cost, matters while credits are being managed); it's fully unit-testable
+and never drifts between two runs against identical audit data, unlike
+an LLM judgment call would.
+
+**Alternatives considered:** Scoring via the sales-audit LLM call itself
+— rejected as strictly worse here: more expensive per run, non-
+deterministic (same inputs could score differently across runs, which
+would look like a bug to the operator), and it would only run when a
+full Sales Audit is generated rather than being available the moment a
+website audit exists. Not overwriting an existing manual score — 
+rejected because the whole point is for the operator to stop hand-
+scoring; a stale manual value silently blocking the computed one would
+undermine that. Manual override remains possible via `PATCH
+/api/v1/leads/{id}`, it's just re-computed on the next audit.
+
+---
+
 ## 2026-08-16 — Lead management: LeadStatus replaces LeadStage; priority, notes, archive; business contact fields
 
 **Decision:** Redirected mid-M2-planning to build out the lead-management

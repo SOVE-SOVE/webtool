@@ -26,6 +26,16 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # llm — Claude API, the one adapter per docs/02_ARCHITECTURE.md §6.
+    # Blank is fine for tests (integrations.llm is mocked there); a real
+    # sales-audit generation call fails fast without it.
+    llm_api_key: str = ""
+    llm_model: str = "claude-sonnet-5"
+
+    # brave search — optional. When unset, the sales-audit search step is
+    # skipped (not faked) rather than the app failing to start.
+    brave_search_api_key: str | None = None
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

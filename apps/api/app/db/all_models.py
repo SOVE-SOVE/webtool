@@ -17,6 +17,7 @@ from app.modules.meetings import models as _meetings  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401
 from app.modules.projects import models as _projects  # noqa: F401
 from app.modules.qa_reports import models as _qa_reports  # noqa: F401
+from app.modules.sales_audits import models as _sales_audits  # noqa: F401
 from app.modules.sales_opportunities import models as _sales_opportunities  # noqa: F401
 from app.modules.tasks import models as _tasks  # noqa: F401
 from app.modules.users import models as _users  # noqa: F401

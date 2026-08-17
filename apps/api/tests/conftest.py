@@ -9,6 +9,12 @@ import os
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
 os.environ["SESSION_SECRET"] = "test-session-secret"
+# Blank regardless of what the developer's own .env has configured —
+# tests that need a key set it themselves via monkeypatch, and the
+# "key not configured" behavior needs to be reachable no matter what's
+# in the local environment.
+os.environ["BRAVE_SEARCH_API_KEY"] = ""
+os.environ["LLM_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient

@@ -75,16 +75,30 @@ the note on that entry above. Don't read the two as the same thing.
 Goal: stages 2–4 stop being manual.
 
 - [ ] Research agent: given a business name/URL, pull public info
-      (web presence, socials, listing) into a structured note.
-- [ ] Website audit agent: Playwright-driven check (loads, mobile,
-      HTTPS, speed, no-site-found) → structured report per prospect.
-- [ ] Lead score computed from research + audit.
+      (web presence, socials, listing) into a structured note. Partial:
+      Brave Search results are pulled and folded into the Sales Audit's
+      evidence (see below), but there's no standalone structured
+      research note independent of generating a Sales Audit yet.
+- [x] Website audit agent: Playwright-driven check (loads, mobile,
+      HTTPS, speed, no-site-found) → structured report per prospect —
+      `agents/website_audit.py`, deterministic, no LLM call.
+- [x] Lead score computed from research + audit — `agents/lead_score.py`,
+      deterministic rules over the website audit's measured signals, run
+      automatically whenever a Sales Audit is generated. See
+      [[05_DECISIONS]] for the scoring formula and why it isn't LLM-
+      judged.
 
 ## M3 — Sales prep + outreach + follow-up
 
 Goal: stages 5–7 stop eating time, sending still stays human.
 
-- [ ] Sales prep packet assembled automatically from research + audit.
+- [x] Sales prep packet assembled automatically from research + audit —
+      `agents/sales_audit.py` / `modules/sales_audits/`: a 9-section
+      report (business summary, website strengths, top problems, why
+      they matter, recommended improvements, suggested structure,
+      talking points, objection handling, suggested offer) generated
+      from the website audit + search evidence, surfaced on the lead
+      detail page with a "Generate sales audit" action.
 - [ ] Outreach draft agent, referencing real findings — operator
       reviews and sends (see [[03_AGENT_RULES]]).
 - [ ] Follow-up reminders/sequencing so nothing goes cold from being
