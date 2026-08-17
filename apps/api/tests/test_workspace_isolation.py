@@ -85,6 +85,30 @@ def test_cannot_create_task_on_another_workspaces_lead(authed_client, other_auth
     assert res.status_code == 404
 
 
+def test_meeting_scoped_to_own_workspace(authed_client, other_authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Workspace One Lead"}).json()
+    meeting = authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Discovery call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead["id"]},
+    ).json()
+
+    other_list = other_authed_client.get("/api/v1/meetings").json()
+    assert meeting["id"] not in [item["id"] for item in other_list]
+
+    other_get = other_authed_client.get(f"/api/v1/meetings/{meeting['id']}")
+    assert other_get.status_code == 404
+
+
+def test_cannot_create_meeting_on_another_workspaces_lead(authed_client, other_authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Workspace One Lead"}).json()
+
+    res = other_authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Hijacked call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead["id"]},
+    )
+    assert res.status_code == 404
+
+
 def test_dashboard_overview_scoped_to_own_workspace(authed_client, other_authed_client):
     authed_client.post("/api/v1/leads", json={"business_name": "Workspace One Lead"})
 

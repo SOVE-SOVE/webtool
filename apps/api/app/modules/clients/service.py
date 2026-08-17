@@ -127,6 +127,11 @@ def update_client(
     if client is None:
         return None
 
+    if "billing_email" in data.model_fields_set:
+        client.billing_email = data.billing_email
+    if "contract_signed_at" in data.model_fields_set:
+        client.contract_signed_at = data.contract_signed_at
+
     if "assigned_user_id" in data.model_fields_set and data.assigned_user_id != client.assigned_user_id:
         if data.assigned_user_id is not None:
             require_user_in_workspace(db, workspace_id, data.assigned_user_id)

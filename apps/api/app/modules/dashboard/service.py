@@ -59,8 +59,8 @@ QUALIFIED_STATUSES = (
 STALE_LEAD_THRESHOLD = timedelta(days=5)
 ATTENTION_DUE_WINDOW = timedelta(days=2)
 
-_TaskProjectBusiness = aliased(Business)
-_TaskLeadBusiness = aliased(Business)
+_ProjectBusiness = aliased(Business)
+_LeadBusiness = aliased(Business)
 
 
 def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
@@ -106,12 +106,24 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         or 0
     )
 
+    # Meetings belong to a project or a lead (see docs/05_DECISIONS.md),
+    # so both paths are outer-joined and matched with OR — same pattern
+    # as the task_base query below.
     meetings = (
         db.scalar(
             select(func.count())
             .select_from(Meeting)
-            .join(SalesOpportunity, Meeting.sales_opportunity_id == SalesOpportunity.id)
-            .where(SalesOpportunity.lead_id.in_(lead_in_workspace))
+            .outerjoin(Project, Meeting.project_id == Project.id)
+            .outerjoin(Client, Project.client_id == Client.id)
+            .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
+            .outerjoin(Lead, Meeting.lead_id == Lead.id)
+            .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
+            .where(
+                or_(
+                    _ProjectBusiness.workspace_id == workspace_id,
+                    _LeadBusiness.workspace_id == workspace_id,
+                )
+            )
         )
         or 0
     )
@@ -153,13 +165,13 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         select(Task)
         .outerjoin(Project, Task.project_id == Project.id)
         .outerjoin(Client, Project.client_id == Client.id)
-        .outerjoin(_TaskProjectBusiness, Client.business_id == _TaskProjectBusiness.id)
+        .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
         .outerjoin(Lead, Task.lead_id == Lead.id)
-        .outerjoin(_TaskLeadBusiness, Lead.business_id == _TaskLeadBusiness.id)
+        .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
         .where(
             or_(
-                _TaskProjectBusiness.workspace_id == workspace_id,
-                _TaskLeadBusiness.workspace_id == workspace_id,
+                _ProjectBusiness.workspace_id == workspace_id,
+                _LeadBusiness.workspace_id == workspace_id,
             )
         )
     )

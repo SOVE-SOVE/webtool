@@ -33,9 +33,13 @@ class ClientCreate(BaseModel):
 
 
 class ClientUpdate(BaseModel):
-    # See app/modules/leads/schemas.py's LeadUpdate for why this stays a
-    # plain optional field: the key must be present at all to change
-    # assignment, `null` unassigns.
+    # Every field here is only applied when the key is present in the
+    # request body at all (see model_fields_set usage in
+    # service.update_client) — `null` clears/unassigns, omitting the key
+    # leaves it untouched. See app/modules/leads/schemas.py's LeadUpdate
+    # for the same convention.
+    billing_email: str | None = None
+    contract_signed_at: datetime | None = None
     assigned_user_id: uuid.UUID | None = None
 
 

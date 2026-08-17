@@ -8,9 +8,11 @@ from app.db import all_models  # noqa: F401 — registers every model before map
 from app.modules.activity_log.routes import router as activity_router
 from app.modules.auth.routes import router as auth_router
 from app.modules.businesses.routes import router as businesses_router
+from app.modules.calendar.routes import router as calendar_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.leads.routes import router as leads_router
+from app.modules.meetings.routes import router as meetings_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.sales_audits.routes import router as sales_audits_router
@@ -60,3 +62,5 @@ app.include_router(activity_router)
 app.include_router(website_audits_router)
 app.include_router(sales_audits_router)
 app.include_router(outreach_router)
+app.include_router(meetings_router)
+app.include_router(calendar_router)

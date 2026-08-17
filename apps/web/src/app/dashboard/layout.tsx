@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/clients", label: "Clients" },
   { href: "/dashboard/projects", label: "Projects" },
   { href: "/dashboard/tasks", label: "Tasks" },
+  { href: "/dashboard/calendar", label: "Calendar" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 

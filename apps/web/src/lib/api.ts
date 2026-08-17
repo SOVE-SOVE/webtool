@@ -198,7 +198,13 @@ export type ClientCreate = (
     }
 ) & { assigned_user_id?: string };
 
-export type ClientUpdate = { assigned_user_id: string | null };
+// Every field: omitting the key leaves it untouched, `null` clears it
+// (or unassigns, for assigned_user_id).
+export type ClientUpdate = {
+  billing_email?: string | null;
+  contract_signed_at?: string | null;
+  assigned_user_id?: string | null;
+};
 
 export const PROJECT_STAGES = [
   "intake",
@@ -255,6 +261,45 @@ export type TaskCreate = {
 
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
 export type TaskUpdate = { done?: boolean; assigned_user_id?: string | null };
+
+export type Meeting = {
+  id: string;
+  title: string;
+  scheduled_at: string;
+  held_at: string | null;
+  notes: string | null;
+  outcome: string | null;
+  project_id: string | null;
+  lead_id: string | null;
+  context: string;
+  created_at: string;
+};
+
+export type MeetingCreate = {
+  title: string;
+  scheduled_at: string;
+  project_id?: string;
+  lead_id?: string;
+  notes?: string;
+};
+
+export type MeetingUpdate = {
+  title?: string;
+  scheduled_at?: string;
+  held_at?: string | null;
+  notes?: string | null;
+  outcome?: string | null;
+};
+
+export type CalendarEvent = {
+  kind: "meeting" | "task";
+  id: string;
+  title: string;
+  at: string;
+  detail: string;
+  done: boolean | null;
+  href: string;
+};
 
 export type AttentionItem = {
   kind: "task" | "stale_lead";
@@ -411,6 +456,7 @@ export const api = {
   unarchiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/unarchive`, { method: "POST" }),
 
   listClients: () => request<Client[]>("/api/v1/clients"),
+  getClient: (id: string) => request<Client>(`/api/v1/clients/${id}`),
   createClient: (data: ClientCreate) =>
     request<Client>("/api/v1/clients", { method: "POST", body: JSON.stringify(data) }),
   updateClient: (id: string, data: ClientUpdate) =>
@@ -429,6 +475,17 @@ export const api = {
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
+
+  listMeetings: () => request<Meeting[]>("/api/v1/meetings"),
+  getMeeting: (id: string) => request<Meeting>(`/api/v1/meetings/${id}`),
+  createMeeting: (data: MeetingCreate) =>
+    request<Meeting>("/api/v1/meetings", { method: "POST", body: JSON.stringify(data) }),
+  updateMeeting: (id: string, data: MeetingUpdate) =>
+    request<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteMeeting: (id: string) => request<void>(`/api/v1/meetings/${id}`, { method: "DELETE" }),
+
+  listCalendarEvents: (start: string, end: string) =>
+    request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),
 
   generateSalesAudit: (leadId: string) =>
     request<SalesAuditReport>(`/api/v1/leads/${leadId}/sales-audits`, { method: "POST" }),

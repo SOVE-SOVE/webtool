@@ -21,6 +21,72 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Calendar + Client Management: Meeting moves to project/lead (not sales_opportunity), unified calendar aggregates meetings + task due dates
+
+**Decision:** Built the first post-M3 feature ahead of the rest of M4
+(client intake/brief/sitemap/copy), per explicit operator direction —
+the operator wanted the day-to-day operational layer (seeing what's
+scheduled, having a real client record) before more automation. Three
+things:
+
+- **`meetings` is now a real feature, not schema-only scaffolding.**
+  It existed since the initial migration with zero routes/service and
+  zero rows. Rather than wire it up as originally drawn (belongs to a
+  `sales_opportunity`), `Meeting` now belongs to exactly one of a
+  `project` or a `lead` — the same dual-parent shape (nullable FKs +
+  a `(x IS NOT NULL)::int + (y IS NOT NULL)::int = 1` check constraint)
+  already used by `Task`. New `modules/meetings/` gives it full CRUD
+  (list/create/get/patch/delete), workspace-scoped via the same
+  outer-join-both-parents-and-OR pattern `tasks/service.py` already
+  established.
+- **New `modules/calendar/`** exposes `GET /api/v1/calendar?start=&end=`,
+  a read-only aggregation (no new table) merging meetings (by
+  `scheduled_at`) and open tasks (by `due_at`) into one date-sorted feed
+  for a given range. It reuses `meetings/service.py` and
+  `tasks/service.py`'s own workspace-scoped query + context-string
+  helpers rather than re-deriving the project/lead join a third time.
+  `/dashboard/calendar` renders this as a month grid; clicking a meeting
+  opens an inline edit panel (notes, outcome, mark held, cancel).
+- **Client Management got a detail page** (`/dashboard/clients/[id]`),
+  the first entity besides leads to get one — editable business fields
+  (reusing the existing business PATCH route), plus `billing_email` and
+  `contract_signed_at` added to `ClientUpdate` (previously
+  assignment-only), linked projects, and the activity-history feed the
+  lead detail page already had. `clients.notes` was deliberately *not*
+  added — `businesses.notes` already exists and is shown/edited on this
+  same page, so a second notes field would just be two places to look.
+
+**Why:** `sales_opportunities` has no CRUD surface anywhere in this app
+— it's only ever created implicitly on lead conversion (see the
+2026-08-16 lead-management entry) — so a meeting scoped to it would have
+had nothing for the UI to attach to without first building opportunity
+selection, which nobody asked for. Scoping to lead/project instead reuses
+a pattern that already exists, attaches meetings to the two things a
+user actually picks from elsewhere in the app (a lead row, a project
+row), and covers both halves of the pipeline the "unified calendar"
+requirement asked for — sales calls and post-sale client check-ins —
+without inventing a second relationship shape. The dashboard's
+`meetings` metric query was updated from a `Meeting → SalesOpportunity`
+join to the same outer-join-OR pattern as the task-attention query, for
+the same reason.
+
+**Alternatives considered:** Keeping `Meeting.sales_opportunity_id` and
+building `sales_opportunities` CRUD/UI alongside it — rejected as
+scope creep; nothing in the Calendar/Client Management ask needed
+opportunity-level detail, and building a whole new entity's UI just to
+unblock meeting scheduling would have been backwards. Adding a project
+detail page in this same pass (to host meetings/tasks per-project the
+way the lead detail page does) — rejected for now; the projects list
+page still only supports inline stage/assignment editing, and a project
+detail page is real scope that belongs with M4's intake/brief work,
+not bundled into this one. Adding `assigned_user_id` to `Meeting` to
+match `leads`/`clients`/`projects`/`tasks` — rejected because
+[[01_REQUIREMENTS]]'s "Multi-user & workspace" section explicitly scopes
+that pattern to those four record types; a meeting's "whose job is this"
+answer already comes from its parent lead/project's assignment.
+
+---
+
 ## 2026-08-18 — Closed the two phase-review security findings: in-process rate limiter, pre-navigation SSRF check
 
 **Decision:** Both gaps found by the same day's phase review (below) are

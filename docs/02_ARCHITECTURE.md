@@ -147,7 +147,10 @@ and check `current_user.role`. See §7.
   under discussion. Belongs to a lead; becomes "won" → creates a
   client + project, or "lost".
 - **meetings** — scheduled/held meetings with notes and outcome.
-  Belongs to a sales_opportunity.
+  Belongs to exactly one of a lead (sales-side calls) or a project
+  (post-sale client check-ins) — the same dual-parent shape as `tasks`,
+  not a sales_opportunity as originally drafted here. See
+  [[05_DECISIONS]] (2026-08-18, Calendar + Client Management).
 - **clients** — a business that has converted: billing details,
   contract terms. Belongs to a business (1–1, created on won
   opportunity). Deliberately *not* a copy of all business fields —
@@ -175,10 +178,11 @@ workspaces
       interactions
       website_audits
       sales_opportunities
-        meetings
+      meetings               (lead_id XOR project_id — see below)
     clients                (assigned_user_id; created when a sales_opportunity is won)
       projects              (assigned_user_id)
         tasks                (assigned_user_id)
+        meetings               (lead_id XOR project_id — see below)
         design_briefs
         websites
           qa_reports

@@ -65,3 +65,36 @@ def test_convert_unknown_lead_404s(authed_client):
 def test_get_client_not_found(authed_client):
     res = authed_client.get("/api/v1/clients/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 404
+
+
+def test_update_client_billing_and_contract_fields(authed_client):
+    client_row = authed_client.post("/api/v1/clients", json={"business_name": "Coastal Cafe"}).json()
+
+    res = authed_client.patch(
+        f"/api/v1/clients/{client_row['id']}",
+        json={"billing_email": "billing@coastalcafe.example", "contract_signed_at": "2026-08-18T00:00:00Z"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["billing_email"] == "billing@coastalcafe.example"
+    assert body["contract_signed_at"] is not None
+
+
+def test_update_client_clears_billing_email(authed_client):
+    client_row = authed_client.post(
+        "/api/v1/clients", json={"business_name": "Coastal Cafe", "billing_email": "old@example.com"}
+    ).json()
+
+    res = authed_client.patch(f"/api/v1/clients/{client_row['id']}", json={"billing_email": None})
+    assert res.status_code == 200
+    assert res.json()["billing_email"] is None
+
+
+def test_update_client_omitted_fields_untouched(authed_client):
+    client_row = authed_client.post(
+        "/api/v1/clients", json={"business_name": "Coastal Cafe", "billing_email": "keep@example.com"}
+    ).json()
+
+    res = authed_client.patch(f"/api/v1/clients/{client_row['id']}", json={})
+    assert res.status_code == 200
+    assert res.json()["billing_email"] == "keep@example.com"

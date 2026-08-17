@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.modules.clients.models import Client
     from app.modules.design_briefs.models import DesignBrief
+    from app.modules.meetings.models import Meeting
     from app.modules.tasks.models import Task
     from app.modules.users.models import User
     from app.modules.websites.models import Website
@@ -54,5 +55,6 @@ class Project(Base):
     client: Mapped["Client"] = relationship(back_populates="projects")
     assigned_user: Mapped["User | None"] = relationship()
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+    meetings: Mapped[list["Meeting"]] = relationship(back_populates="project")
     design_briefs: Mapped[list["DesignBrief"]] = relationship(back_populates="project")
     websites: Mapped[list["Website"]] = relationship(back_populates="project")

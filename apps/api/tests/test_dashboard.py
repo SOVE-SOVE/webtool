@@ -4,7 +4,6 @@ from sqlalchemy import update
 
 from app.modules.interactions.models import Interaction, InteractionKind
 from app.modules.leads.models import Lead
-from app.modules.meetings.models import Meeting
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
 
 
@@ -61,19 +60,39 @@ def test_overview_counts_contacted_leads(authed_client, db_session):
 
 def test_overview_counts_meetings_and_revenue(authed_client, db_session):
     lead = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()
+    authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Discovery call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead["id"]},
+    )
 
     opportunity = SalesOpportunity(
         lead_id=lead["id"], status=OpportunityStatus.WON, proposed_price_cents=89900
     )
     db_session.add(opportunity)
-    db_session.flush()
-    db_session.add(Meeting(sales_opportunity_id=opportunity.id, outcome="Signed"))
     db_session.commit()
 
     body = authed_client.get("/api/v1/dashboard/overview").json()
     assert body["meetings"] == 1
     assert body["won_projects"] == 1
     assert body["revenue_cents"] == 89900
+
+
+def test_overview_counts_project_meetings_too(authed_client):
+    client_row = authed_client.post("/api/v1/clients", json={"business_name": "A"}).json()
+    project = authed_client.post(
+        "/api/v1/projects", json={"client_id": client_row["id"], "name": "Site"}
+    ).json()
+    authed_client.post(
+        "/api/v1/meetings",
+        json={
+            "title": "Kickoff check-in",
+            "scheduled_at": "2026-09-01T10:00:00Z",
+            "project_id": project["id"],
+        },
+    )
+
+    body = authed_client.get("/api/v1/dashboard/overview").json()
+    assert body["meetings"] == 1
 
 
 def test_overview_active_projects_excludes_maintenance(authed_client):

@@ -132,6 +132,20 @@ Goal: stages 5–7 stop eating time, sending still stays human.
 Goal: stages 9–14. Signed client's info flows straight into a build
 spec with no re-keying.
 
+- [x] Calendar + Client Management — built ahead of the rest of M4, per
+      explicit operator direction, as the operational layer both people
+      need day to day rather than intake/brief automation. `meetings`
+      (previously schema-only, zero routes) is now a real feature:
+      scheduled against a lead (sales call) or a project (client
+      check-in) — see [[05_DECISIONS]] for why that's the parent shape
+      instead of the originally-drafted sales_opportunity. A unified
+      `/dashboard/calendar` (month grid) surfaces meetings and open task
+      due dates together across both sides of the pipeline; the
+      dashboard's `meetings` metric now counts both. Client Management
+      gained a `/dashboard/clients/[id]` detail page (editable business
+      fields, billing email, contract-signed date, assigned user, linked
+      projects, activity history) mirroring the existing lead detail
+      page — the first entity besides leads to get one.
 - [ ] Client intake form → auto-creates a project record.
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +

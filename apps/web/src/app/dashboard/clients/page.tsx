@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, type Client, type Lead, type User } from "@/lib/api";
 
@@ -182,7 +183,11 @@ export default function ClientsPage() {
             )}
             {clients.map((client) => (
               <tr key={client.id}>
-                <td className="px-3 py-2 font-medium text-neutral-900">{client.business_name}</td>
+                <td className="px-3 py-2 font-medium text-neutral-900">
+                  <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
+                    {client.business_name}
+                  </Link>
+                </td>
                 <td className="px-3 py-2 text-neutral-600">{client.billing_email ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{client.project_count}</td>
                 <td className="px-3 py-2 text-neutral-600">

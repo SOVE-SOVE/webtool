@@ -11,7 +11,6 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.modules.leads.models import Lead
-    from app.modules.meetings.models import Meeting
 
 
 class OpportunityStatus(str, enum.Enum):
@@ -39,4 +38,3 @@ class SalesOpportunity(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     lead: Mapped["Lead"] = relationship(back_populates="sales_opportunities")
-    meetings: Mapped[list["Meeting"]] = relationship(back_populates="sales_opportunity")
