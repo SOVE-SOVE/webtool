@@ -1,9 +1,10 @@
 # Security
 
 Status: draft — a working checklist, not a compliance document. This is
-a single-user internal tool, but it holds real client PII and touches
-payments, so it gets real (if lightweight) treatment. Revisit as stages
-in [[00_VISION]] go from designed to built.
+a small internal team tool (multi-user since 2026-08-16, see
+[[05_DECISIONS]]), but it holds real client PII and touches payments, so
+it gets real (if lightweight) treatment. Revisit as stages in
+[[00_VISION]] go from designed to built.
 
 ## What's actually at risk here
 
@@ -48,10 +49,44 @@ in [[00_VISION]] go from designed to built.
   when researching/auditing prospect sites — legal and practical risk,
   not just politeness.
 
+## Open findings (from the 2026-08-18 M0-M3 phase review)
+
+Audited and confirmed solid: bcrypt password hashing; signed, expiring
+session cookies (httponly, samesite=lax, secure configurable via
+`SESSION_COOKIE_SECURE`); CORS locked to an explicit origin list, never
+a wildcard; every route workspace-scoped via a join back to
+`businesses.workspace_id` (or, for admin-only routes, gated by role) —
+audited module by module, no gaps found; role checks (`require_admin`)
+always build on top of authentication, never replace it; no raw SQL
+anywhere (SQLAlchemy ORM/Core throughout, no injection surface); every
+agent prompt that receives scraped or search-result text explicitly
+marks it as data to summarize, never instructions to follow; secrets
+never appear in logs; `.env*` gitignored, `.env.example` has no real
+values; 0 known vulnerabilities in frontend dependencies (`npm audit`).
+
+Two gaps this doc already called for, but that aren't implemented yet:
+
+- **No cost/rate limiting on paid API calls.** Any workspace member can
+  call "Generate sales audit" / outreach / follow-up as many times as
+  they want — each is a real, billed Anthropic (and, for search, Brave)
+  API call. This doc's "Cost/rate limits on paid APIs" control has no
+  implementation. Fix before this is used at any real volume.
+- **No SSRF hardening on website audits.** `integrations/browser.py`'s
+  `fetch_page_signals()` drives headless Chromium to whatever URL is
+  stored in `businesses.website_url`, with no scheme allowlist and no
+  block on loopback/link-local/private-IP/cloud-metadata targets.
+  Currently only trusted, authenticated workspace members can set that
+  field, which limits severity today — but there's no defense if that
+  changes (e.g. the field gets populated from a lower-trust source
+  later). Add a URL/IP allowlist check before navigation.
+- **"Scraping etiquette" (robots.txt, rate limits) is still just a
+  stated intent**, not implemented in `integrations/browser.py`.
+
 ## Explicitly out of scope for now
 
 - Formal compliance frameworks (SOC2, etc.) — irrelevant at this scale.
-- Multi-user access control — see [[03_AGENT_RULES]] and
-  [[02_ARCHITECTURE]], this is a one-operator tool.
+- Automated dependency-vulnerability scanning (no Dependabot/pip-audit/
+  CI configured at all yet) — fine at current team size, revisit once
+  this deploys anywhere real.
 
 Record security-relevant decisions and incidents in [[05_DECISIONS]].

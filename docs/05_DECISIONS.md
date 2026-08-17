@@ -21,6 +21,47 @@ why it lost.
 
 ---
 
+## 2026-08-18 — M0-M3 phase-completion review: full audit, two security findings deferred to next phase
+
+**Decision:** Before starting M4, ran a full review of the "Lead +
+Sales" phase (M0-M3): full backend (113 tests) and frontend (10 tests)
+suites, both apps' production builds, a full migration chain round-trip
+against an empty database (upgrade base→head and back down clean), a
+module-by-module audit of workspace isolation (every list/get/mutate
+query traced back to a `businesses.workspace_id` join or an
+admin-role gate — no IDOR patterns found; `db.get()`-by-raw-PK is used
+in exactly two places, both scoped to the caller's own
+`current_user.workspace_id`, never a request-supplied id), and a
+security pass against [[06_SECURITY]]'s own checklist.
+
+Found and fixed nothing code-level (everything checked out) except two
+real gaps [[06_SECURITY]] already called for but never implemented:
+no cost/rate limiting on the paid LLM/search generation endpoints, and
+no SSRF hardening on `integrations/browser.py`'s website-audit fetch
+(no scheme/private-IP allowlist before navigating headless Chromium to
+an operator-supplied URL). Both are documented as open findings in
+[[06_SECURITY]] rather than fixed in this pass — deliberately deferred,
+not missed.
+
+Also confirmed, not fixed: M1's "activity log per prospect/project" item
+is still genuinely partial (projects have no equivalent to the lead
+detail page's activity feed) — pre-existing, unrelated to this phase's
+work, tracked in [[04_ROADMAP]].
+
+**Why:** The operator asked to close out this phase with a real audit,
+not just a feature-complete checklist — a review is only worth doing if
+findings get written down somewhere durable enough to act on later,
+which is what [[06_SECURITY]]'s new "Open findings" section is for.
+
+**Alternatives considered:** Fixing the two security gaps immediately
+as part of this review — rejected for this pass specifically because
+the ask was "review + document," and rate-limiting/SSRF-hardening are
+each a real design decision (what limit, what allowlist shape) worth
+their own scoped change rather than a rushed addition inside an audit
+commit.
+
+---
+
 ## 2026-08-18 — Sales outreach + follow-up: drafting-only lifecycle, FOLLOW_UP_DUE tied to the generate-follow-up action, LLM reasons in relative days not absolute dates
 
 **Decision:** New `modules/outreach/` backs two features:
