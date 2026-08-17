@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.modules.leads import service as leads_service
 from app.modules.sales_audits import service
@@ -16,7 +17,7 @@ router = APIRouter(tags=["sales-audits"])
 @router.post("/api/v1/leads/{lead_id}/sales-audits", response_model=SalesAuditRead, status_code=201)
 def generate_sales_audit(
     lead_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(enforce_generation_rate_limit),
     db: Session = Depends(get_db),
 ) -> SalesAuditRead:
     report = service.generate_sales_audit(db, current_user.workspace_id, current_user.id, lead_id)

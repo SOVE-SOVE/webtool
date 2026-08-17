@@ -21,6 +21,56 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Closed the two phase-review security findings: in-process rate limiter, pre-navigation SSRF check
+
+**Decision:** Both gaps found by the same day's phase review (below) are
+now fixed:
+
+- **Rate limiting** — `app/core/rate_limit.py`: a single in-process,
+  per-user, sliding-window limiter (`LLM_RATE_LIMIT_PER_MINUTE`, default
+  10/60s), applied via `enforce_generation_rate_limit` as a drop-in
+  replacement for `Depends(get_current_user)` on exactly the three
+  routes that trigger a paid call — `POST .../sales-audits`, `POST
+  .../outreach`, `POST .../follow-ups`. One shared bucket across all
+  three per user, not one bucket each, since the thing being protected
+  is a single combined API budget either way. Read/list/lifecycle
+  endpoints (approve, mark-sent, etc.) are untouched — they don't call
+  a paid API, so limiting them would just be user-hostile.
+- **SSRF hardening** — `integrations/browser.py`'s new
+  `_check_url_is_public()` runs before every `fetch_page_signals()`
+  navigation: rejects non-`http(s)` schemes, `localhost`, and any
+  hostname that resolves (via `socket.getaddrinfo`, so an IP-literal
+  bypass doesn't work either) to a private/loopback/link-local/
+  reserved/multicast address — including the `169.254.169.254` cloud
+  metadata address. A rejection surfaces as the existing `PageSignals
+  .error` path, so it flows through to `audit_error` +
+  `flagged_for_review` exactly like a real network failure already did
+  — no changes needed anywhere else.
+
+**Why:** These were flagged, not fixed, in the same-day phase-completion
+review specifically because each deserved its own scoped design
+decision rather than a rushed patch inside an audit commit. The operator
+then asked for them to be closed before moving on, so here they are.
+
+**Alternatives considered:** A Redis-backed or database-backed rate
+limiter — rejected as over-engineering for a single-process deployment
+with no existing cache/queue infrastructure (see
+`app/core/rate_limit.py`'s own docstring); revisit only if this ever
+runs multiple worker processes behind a load balancer, at which point an
+in-process counter stops being meaningful anyway. Limiting per-workspace
+instead of per-user — rejected because it would let one runaway teammate
+silently exhaust a whole team's shared budget while the rest of the team
+gets blocked by someone else's usage; per-user keeps the failure
+contained to whoever's actually generating. Full request-level
+interception to also block SSRF-via-redirect — rejected as
+disproportionate for this pass; the pre-navigation check closes the
+direct/obvious vector (an operator or attacker entering an internal URL
+outright), and the redirect gap is now explicitly documented rather than
+silently unhandled — worth a follow-up if this ever fetches lower-trust
+URLs.
+
+---
+
 ## 2026-08-18 — M0-M3 phase-completion review: full audit, two security findings deferred to next phase
 
 **Decision:** Before starting M4, ran a full review of the "Lead +

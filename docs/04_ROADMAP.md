@@ -7,13 +7,14 @@ milestone should be independently usable, not a stepping stone that
 only pays off once everything after it exists.
 
 **Phase status (2026-08-18):** M0-M3 — "Lead + Sales" — reviewed as a
-complete, working phase: full test suites pass (113 backend, 10
+complete, working phase: full test suites pass (126 backend, 10
 frontend), both apps build clean, the full migration chain round-trips
 from empty, and multi-user/workspace isolation was audited across every
-module with no gaps found. One item remains genuinely open from M1
-(project-side activity log — see that entry), and the review surfaced
-two real security gaps to close before this handles outbound traffic at
-volume — see [[06_SECURITY]] and [[05_DECISIONS]]. M4 is next.
+module with no gaps found. The review surfaced two security gaps —
+missing cost/rate limiting and missing SSRF hardening on website
+audits — both closed same day, see [[06_SECURITY]] and
+[[05_DECISIONS]]. One item remains genuinely open from M1 (project-side
+activity log — see that entry). M4 is next.
 
 ## M0 — Foundations
 

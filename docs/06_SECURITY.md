@@ -44,43 +44,43 @@ it gets real (if lightweight) treatment. Revisit as stages in
   business-ending event, not an inconvenience.
 - **Cost/rate limits on paid APIs.** A bug that loops an LLM or search
   call shouldn't be able to run up an unbounded bill — basic rate
-  limiting or a hard budget cap per agent run.
+  limiting or a hard budget cap per agent run. **Implemented
+  2026-08-18** — `app/core/rate_limit.py`, an in-process per-user
+  sliding-window limiter (`LLM_RATE_LIMIT_PER_MINUTE`, default 10)
+  shared across the Sales Audit, Outreach, and Follow-up generation
+  endpoints. See [[05_DECISIONS]] for why in-process rather than
+  Redis-backed.
+- **SSRF hardening on website audits.** `integrations/browser.py`'s
+  `fetch_page_signals()` now rejects any `website_url` that isn't a
+  public, routable `http(s)` address before navigating — blocks
+  loopback, link-local (including the cloud metadata address), private
+  ranges, and non-http(s) schemes. **Implemented 2026-08-18.** Known
+  residual gap: only the initial target is checked, not addresses
+  reached via redirect during navigation — see the caveat in
+  `_check_url_is_public`'s docstring and [[05_DECISIONS]].
 - **Scraping etiquette.** Respect robots.txt and reasonable rate limits
   when researching/auditing prospect sites — legal and practical risk,
-  not just politeness.
+  not just politeness. **Still not implemented** — the SSRF fix above
+  only blocks unsafe *targets*, not scrape-politeness for allowed ones.
 
-## Open findings (from the 2026-08-18 M0-M3 phase review)
+## Review history
 
-Audited and confirmed solid: bcrypt password hashing; signed, expiring
-session cookies (httponly, samesite=lax, secure configurable via
-`SESSION_COOKIE_SECURE`); CORS locked to an explicit origin list, never
-a wildcard; every route workspace-scoped via a join back to
-`businesses.workspace_id` (or, for admin-only routes, gated by role) —
-audited module by module, no gaps found; role checks (`require_admin`)
-always build on top of authentication, never replace it; no raw SQL
-anywhere (SQLAlchemy ORM/Core throughout, no injection surface); every
-agent prompt that receives scraped or search-result text explicitly
-marks it as data to summarize, never instructions to follow; secrets
-never appear in logs; `.env*` gitignored, `.env.example` has no real
-values; 0 known vulnerabilities in frontend dependencies (`npm audit`).
-
-Two gaps this doc already called for, but that aren't implemented yet:
-
-- **No cost/rate limiting on paid API calls.** Any workspace member can
-  call "Generate sales audit" / outreach / follow-up as many times as
-  they want — each is a real, billed Anthropic (and, for search, Brave)
-  API call. This doc's "Cost/rate limits on paid APIs" control has no
-  implementation. Fix before this is used at any real volume.
-- **No SSRF hardening on website audits.** `integrations/browser.py`'s
-  `fetch_page_signals()` drives headless Chromium to whatever URL is
-  stored in `businesses.website_url`, with no scheme allowlist and no
-  block on loopback/link-local/private-IP/cloud-metadata targets.
-  Currently only trusted, authenticated workspace members can set that
-  field, which limits severity today — but there's no defense if that
-  changes (e.g. the field gets populated from a lower-trust source
-  later). Add a URL/IP allowlist check before navigation.
-- **"Scraping etiquette" (robots.txt, rate limits) is still just a
-  stated intent**, not implemented in `integrations/browser.py`.
+**2026-08-18 (M0-M3 phase review):** Audited and confirmed solid: bcrypt
+password hashing; signed, expiring session cookies (httponly,
+samesite=lax, secure configurable via `SESSION_COOKIE_SECURE`); CORS
+locked to an explicit origin list, never a wildcard; every route
+workspace-scoped via a join back to `businesses.workspace_id` (or, for
+admin-only routes, gated by role) — audited module by module, no gaps
+found; role checks (`require_admin`) always build on top of
+authentication, never replace it; no raw SQL anywhere (SQLAlchemy
+ORM/Core throughout, no injection surface); every agent prompt that
+receives scraped or search-result text explicitly marks it as data to
+summarize, never instructions to follow; secrets never appear in logs;
+`.env*` gitignored, `.env.example` has no real values; 0 known
+vulnerabilities in frontend dependencies (`npm audit`). Found two gaps
+this doc already called for but that weren't implemented — cost/rate
+limiting and SSRF hardening, both above — closed the same day; robots.txt
+etiquette remains open.
 
 ## Explicitly out of scope for now
 

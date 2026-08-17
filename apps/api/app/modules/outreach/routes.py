@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.modules.leads import service as leads_service
 from app.modules.outreach import service
@@ -17,7 +18,7 @@ router = APIRouter(tags=["outreach"])
 def generate_outreach(
     lead_id: uuid.UUID,
     body: OutreachGenerateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(enforce_generation_rate_limit),
     db: Session = Depends(get_db),
 ) -> OutreachMessageRead:
     message = service.generate_outreach(db, current_user.workspace_id, current_user.id, lead_id, body.channel)
@@ -100,7 +101,7 @@ def close_outreach(
 @router.post("/api/v1/leads/{lead_id}/follow-ups", response_model=FollowUpRead, status_code=201)
 def generate_follow_up(
     lead_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(enforce_generation_rate_limit),
     db: Session = Depends(get_db),
 ) -> FollowUpRead:
     follow_up = service.generate_follow_up(db, current_user.workspace_id, current_user.id, lead_id)

@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # skipped (not faked) rather than the app failing to start.
     brave_search_api_key: str | None = None
 
+    # Cap on paid-API-triggering generations (sales audit, outreach
+    # draft, follow-up suggestion) per user — docs/06_SECURITY.md's
+    # "cost/rate limits on paid APIs" control. See app/core/rate_limit.py.
+    llm_rate_limit_per_minute: int = 10
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
