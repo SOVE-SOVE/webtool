@@ -11,6 +11,7 @@ from app.modules.businesses.routes import router as businesses_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.leads.routes import router as leads_router
+from app.modules.outreach.routes import router as outreach_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.sales_audits.routes import router as sales_audits_router
 from app.modules.tasks.routes import router as tasks_router
@@ -58,3 +59,4 @@ app.include_router(workspaces_router)
 app.include_router(activity_router)
 app.include_router(website_audits_router)
 app.include_router(sales_audits_router)
+app.include_router(outreach_router)

@@ -8,19 +8,24 @@ import {
   ApiError,
   LEAD_PRIORITIES,
   LEAD_STATUSES,
+  OUTREACH_CHANNELS,
   type ActivityItem,
   type Business,
+  type FollowUp,
   type Lead,
   type LeadPriority,
   type LeadStatus,
+  type OutreachChannel,
+  type OutreachMessage,
   type SalesAuditReport,
   type User,
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
+import { OutreachMessageView } from "@/components/OutreachMessageView";
 
-// Sales Audit generation reads live evidence (renders the site, checks
-// public search) so it's only meaningful once a lead has cleared initial
-// qualification — matches "when I open a qualified lead" from the request.
+// Sales Audit / Outreach generation reads or references live evidence, so
+// it's only meaningful once a lead has cleared initial qualification —
+// matches "for qualified leads" from the request.
 const SALES_AUDIT_ELIGIBLE_STATUSES: LeadStatus[] = [
   "qualified",
   "contacted",
@@ -30,6 +35,21 @@ const SALES_AUDIT_ELIGIBLE_STATUSES: LeadStatus[] = [
   "won",
   "nurture",
 ];
+
+const OUTREACH_CHANNEL_LABELS: Record<OutreachChannel, string> = {
+  email: "Draft email",
+  phone: "Draft phone talking points",
+  in_person: "Draft in-person talking points",
+};
+
+const OUTREACH_STATUS_LABELS: Record<OutreachMessage["status"], string> = {
+  drafted: "Drafted",
+  approved: "Approved",
+  sent: "Sent",
+  replied: "Replied",
+  follow_up_due: "Follow-up due",
+  closed: "Closed",
+};
 
 function field(label: string, value: React.ReactNode) {
   return (
@@ -56,6 +76,16 @@ export default function LeadDetailPage() {
   const [generateAuditError, setGenerateAuditError] = useState<string | null>(null);
   const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
 
+  const [outreachMessages, setOutreachMessages] = useState<OutreachMessage[] | null>(null);
+  const [generatingChannel, setGeneratingChannel] = useState<OutreachChannel | null>(null);
+  const [outreachError, setOutreachError] = useState<string | null>(null);
+  const [expandedOutreachId, setExpandedOutreachId] = useState<string | null>(null);
+  const [outreachActionId, setOutreachActionId] = useState<string | null>(null);
+
+  const [generatingFollowUp, setGeneratingFollowUp] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [latestFollowUp, setLatestFollowUp] = useState<FollowUp | null>(null);
+
   function load() {
     api
       .getLead(leadId)
@@ -71,6 +101,11 @@ export default function LeadDetailPage() {
       .then(setActivity)
       .catch(() => {});
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
+    api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
+  }
+
+  function refreshActivity() {
+    api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
   }
 
   useEffect(load, [leadId]);
@@ -78,7 +113,7 @@ export default function LeadDetailPage() {
   async function saveLead(data: Parameters<typeof api.updateLead>[1]) {
     const updated = await api.updateLead(leadId, data);
     setLead(updated);
-    api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    refreshActivity();
   }
 
   async function saveBusiness(data: Parameters<typeof api.updateBusiness>[1]) {
@@ -91,7 +126,7 @@ export default function LeadDetailPage() {
     if (!lead) return;
     const updated = lead.archived_at ? await api.unarchiveLead(lead.id) : await api.archiveLead(lead.id);
     setLead(updated);
-    api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    refreshActivity();
   }
 
   async function handleGenerateSalesAudit() {
@@ -101,11 +136,63 @@ export default function LeadDetailPage() {
       const report = await api.generateSalesAudit(leadId);
       setSalesAudits((prev) => [report, ...(prev ?? [])]);
       setExpandedAuditId(report.id);
-      api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+      refreshActivity();
     } catch (err) {
       setGenerateAuditError(err instanceof ApiError ? err.message : "Couldn't generate the sales audit.");
     } finally {
       setGeneratingAudit(false);
+    }
+  }
+
+  async function handleGenerateOutreach(channel: OutreachChannel) {
+    setGeneratingChannel(channel);
+    setOutreachError(null);
+    try {
+      const message = await api.generateOutreach(leadId, channel);
+      setOutreachMessages((prev) => [message, ...(prev ?? [])]);
+      setExpandedOutreachId(message.id);
+      refreshActivity();
+    } catch (err) {
+      setOutreachError(err instanceof ApiError ? err.message : "Couldn't generate the outreach draft.");
+    } finally {
+      setGeneratingChannel(null);
+    }
+  }
+
+  async function handleOutreachAction(id: string, action: "approve" | "mark-sent" | "mark-replied" | "close") {
+    setOutreachActionId(id);
+    setOutreachError(null);
+    try {
+      const fn =
+        action === "approve"
+          ? api.approveOutreach
+          : action === "mark-sent"
+            ? api.markOutreachSent
+            : action === "mark-replied"
+              ? api.markOutreachReplied
+              : api.closeOutreach;
+      const updated = await fn(id);
+      setOutreachMessages((prev) => (prev ?? []).map((m) => (m.id === id ? updated : m)));
+      refreshActivity();
+    } catch (err) {
+      setOutreachError(err instanceof ApiError ? err.message : "That action didn't go through.");
+    } finally {
+      setOutreachActionId(null);
+    }
+  }
+
+  async function handleGenerateFollowUp() {
+    setGeneratingFollowUp(true);
+    setFollowUpError(null);
+    try {
+      const followUp = await api.generateFollowUp(leadId);
+      setLatestFollowUp(followUp);
+      refreshActivity();
+      api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
+    } catch (err) {
+      setFollowUpError(err instanceof ApiError ? err.message : "Couldn't generate a follow-up.");
+    } finally {
+      setGeneratingFollowUp(false);
     }
   }
 
@@ -356,6 +443,124 @@ export default function LeadDetailPage() {
               );
             })}
           </ul>
+        </section>
+      )}
+
+      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-900">Outreach</h2>
+            <div className="flex gap-2">
+              {OUTREACH_CHANNELS.map((channel) => (
+                <button
+                  key={channel}
+                  onClick={() => handleGenerateOutreach(channel)}
+                  disabled={generatingChannel !== null}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {outreachError && <p className="mt-2 text-sm text-red-600">{outreachError}</p>}
+
+          <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+            {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
+              <li className="px-3 py-3 text-sm text-neutral-500">No outreach drafted yet.</li>
+            )}
+            {outreachMessages?.map((message) => {
+              const expanded = expandedOutreachId === message.id;
+              const busy = outreachActionId === message.id;
+              return (
+                <li key={message.id} className="px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setExpandedOutreachId(expanded ? null : message.id)}
+                      className="text-left text-neutral-900 hover:underline"
+                    >
+                      {expanded ? "▾" : "▸"} {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
+                      {new Date(message.generated_at).toLocaleString()}
+                    </button>
+                    <div className="flex items-center gap-2">
+                      {message.flagged_for_review && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged</span>
+                      )}
+                      <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                        {OUTREACH_STATUS_LABELS[message.status]}
+                      </span>
+                    </div>
+                  </div>
+                  {expanded && (
+                    <div className="mt-3">
+                      <OutreachMessageView message={message} />
+                      <div className="mt-3 flex gap-2">
+                        {message.status === "drafted" && (
+                          <button
+                            onClick={() => handleOutreachAction(message.id, "approve")}
+                            disabled={busy}
+                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {(message.status === "drafted" || message.status === "approved") && (
+                          <button
+                            onClick={() => handleOutreachAction(message.id, "mark-sent")}
+                            disabled={busy}
+                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            Mark sent
+                          </button>
+                        )}
+                        {(message.status === "sent" || message.status === "follow_up_due") && (
+                          <button
+                            onClick={() => handleOutreachAction(message.id, "mark-replied")}
+                            disabled={busy}
+                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            Mark replied
+                          </button>
+                        )}
+                        {message.status !== "closed" && (
+                          <button
+                            onClick={() => handleOutreachAction(message.id, "close")}
+                            disabled={busy}
+                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={handleGenerateFollowUp}
+              disabled={generatingFollowUp}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {generatingFollowUp ? "Generating…" : "Generate follow-up"}
+            </button>
+            <Link href="/dashboard/follow-ups" className="text-xs text-neutral-500 hover:underline">
+              View all follow-ups
+            </Link>
+          </div>
+          {followUpError && <p className="mt-2 text-sm text-red-600">{followUpError}</p>}
+          {latestFollowUp && (
+            <div className="mt-3 rounded-md border border-neutral-200 px-3 py-2 text-sm">
+              <p className="text-neutral-900">
+                Follow up via {latestFollowUp.channel.replace("_", " ")} by{" "}
+                {new Date(latestFollowUp.due_date).toLocaleDateString()}
+              </p>
+              <p className="mt-1 text-neutral-600">{latestFollowUp.suggested_next_action}</p>
+            </div>
+          )}
         </section>
       )}
 

@@ -302,6 +302,78 @@ export type SalesAuditReport = {
   generated_at: string;
 };
 
+export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
+export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
+
+export const OUTREACH_STATUSES = [
+  "drafted",
+  "approved",
+  "sent",
+  "replied",
+  "follow_up_due",
+  "closed",
+] as const;
+export type OutreachStatus = (typeof OUTREACH_STATUSES)[number];
+
+export type OutreachMessage = {
+  id: string;
+  lead_id: string;
+  based_on_sales_audit_id: string | null;
+  channel: OutreachChannel;
+  status: OutreachStatus;
+  subject: string | null;
+  body: string | null;
+  opening_line: string | null;
+  key_points: string[];
+  objection_handling: string[];
+  suggested_close: string | null;
+  model_used: string;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  sent_by_user_name: string | null;
+  sent_at: string | null;
+  replied_at: string | null;
+  closed_by_user_name: string | null;
+  closed_at: string | null;
+};
+
+export type PreviousOutreachSummary = {
+  id: string;
+  channel: OutreachChannel;
+  status: OutreachStatus;
+  generated_at: string;
+  excerpt: string;
+};
+
+export const FOLLOW_UP_STATUSES = ["pending", "done"] as const;
+export type FollowUpStatus = (typeof FOLLOW_UP_STATUSES)[number];
+
+export type FollowUp = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  channel: OutreachChannel;
+  due_date: string;
+  suggested_next_action: string;
+  status: FollowUpStatus;
+  previous_outreach: PreviousOutreachSummary | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  resolved_by_user_name: string | null;
+  resolved_at: string | null;
+};
+
+export type FollowUpBuckets = {
+  overdue: FollowUp[];
+  due_today: FollowUp[];
+  upcoming: FollowUp[];
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -363,6 +435,22 @@ export const api = {
   listSalesAudits: (leadId: string) =>
     request<SalesAuditReport[]>(`/api/v1/leads/${leadId}/sales-audits`),
   getSalesAudit: (id: string) => request<SalesAuditReport>(`/api/v1/sales-audits/${id}`),
+
+  generateOutreach: (leadId: string, channel: OutreachChannel) =>
+    request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    }),
+  listOutreach: (leadId: string) => request<OutreachMessage[]>(`/api/v1/leads/${leadId}/outreach`),
+  approveOutreach: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/approve`, { method: "POST" }),
+  markOutreachSent: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/mark-sent`, { method: "POST" }),
+  markOutreachReplied: (id: string) =>
+    request<OutreachMessage>(`/api/v1/outreach/${id}/mark-replied`, { method: "POST" }),
+  closeOutreach: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/close`, { method: "POST" }),
+
+  generateFollowUp: (leadId: string) => request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups`, { method: "POST" }),
+  listFollowUps: () => request<FollowUpBuckets>("/api/v1/follow-ups"),
+  resolveFollowUp: (id: string) => request<FollowUp>(`/api/v1/follow-ups/${id}/resolve`, { method: "POST" }),
 
   listUsers: () => request<User[]>("/api/v1/users"),
   createUser: (data: UserCreate) =>

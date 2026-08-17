@@ -21,6 +21,62 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Sales outreach + follow-up: drafting-only lifecycle, FOLLOW_UP_DUE tied to the generate-follow-up action, LLM reasons in relative days not absolute dates
+
+**Decision:** New `modules/outreach/` backs two features:
+
+- **Outreach drafting** (`agents/outreach.py`) — for a qualified lead,
+  drafts an EMAIL (subject + body) or PHONE/IN_PERSON talking points
+  (opening line, key points, objection handling, suggested close) via
+  three separate prompt files (`agents/prompts/outreach_*.md`), grounded
+  in the business record, the latest website/sales audit, and — if this
+  isn't the first contact — every prior `OutreachMessage` already
+  generated for the lead. `OutreachMessage.status` is
+  `DRAFTED → APPROVED → SENT → REPLIED/FOLLOW_UP_DUE → CLOSED`; only
+  explicit operator actions (`/approve`, `/mark-sent`, `/mark-replied`,
+  `/close`) advance it — nothing in this feature ever sends anything.
+  `FOLLOW_UP_DUE` specifically is set when a follow-up is generated
+  against a `SENT`/`REPLIED` message, not on a timer — there is no
+  background scheduler in this app, so "due" has to be an event, not a
+  clock. Marking a message sent/replied also writes an `Interaction`
+  row (`interactions` table, previously scaffolded but never written
+  to) — this is what now populates the dashboard's "contacted leads"
+  metric, which had no other writer before.
+- **Follow-up suggestion** (`agents/follow_up.py`) — given a lead's full
+  outreach history (or none, for a stalled lead that was never
+  followed up on), suggests the next channel, a due date, and what to
+  cover. The model reasons in **relative days (1-30), not an absolute
+  date** — `run()` converts to a date and clamps server-side. An
+  absolute date from the model would require trusting it to know
+  today's date correctly and never hallucinate a malformed or
+  wildly-off value; a bounded relative offset can be clamped instead of
+  rejected outright, which fits docs/03_AGENT_RULES.md's "flag, don't
+  fail" posture better than a validation error on the request. Buckets
+  (OVERDUE/DUE TODAY/UPCOMING) on `/dashboard/follow-ups` are computed
+  from `due_date` vs. today at read time, never stored.
+
+**Why:** Requirement/roadmap M3 explicitly separates "draft" from
+"send" — see docs/03_AGENT_RULES.md's outreach/follow-up rule — and asks
+for the four states plus overdue/due-today/upcoming bucketing by name.
+Every lifecycle and follow-up action records an `activity_log` entry
+with the responsible user (`outreach_drafted/approved/sent/replied/
+closed`, `follow_up_generated/completed`), per the traceability
+requirement.
+
+**Alternatives considered:** One shared prompt file with a
+channel parameter instead of three separate `outreach_*.md` files —
+rejected so each channel's guardrails and structure (a written email vs.
+a call/visit talking-points sheet) can be tuned independently without
+conditionals inside one prompt. Letting the LLM pick an absolute
+`due_date` directly — rejected per above; the relative-days + clamp
+approach was chosen specifically to make a bad value degrade gracefully
+instead of crashing the request. Auto-flipping `OutreachMessage.status`
+to `FOLLOW_UP_DUE` on a timer — rejected, no background job runner
+exists in this app, and tying it to the generate-follow-up action
+instead keeps it something the operator explicitly triggered.
+
+---
+
 ## 2026-08-18 — Lead score: deterministic, computed from the website audit, not the LLM
 
 **Decision:** `leads.score` (previously a manual-only field) is now

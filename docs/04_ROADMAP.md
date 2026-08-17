@@ -99,10 +99,23 @@ Goal: stages 5–7 stop eating time, sending still stays human.
       talking points, objection handling, suggested offer) generated
       from the website audit + search evidence, surfaced on the lead
       detail page with a "Generate sales audit" action.
-- [ ] Outreach draft agent, referencing real findings — operator
-      reviews and sends (see [[03_AGENT_RULES]]).
-- [ ] Follow-up reminders/sequencing so nothing goes cold from being
-      forgotten.
+- [x] Outreach draft agent, referencing real findings — operator
+      reviews and sends (see [[03_AGENT_RULES]]) — `agents/outreach.py` /
+      `modules/outreach/`: drafts EMAIL, PHONE, or IN_PERSON talking
+      points for a qualified lead, grounded in the website/sales audit
+      and any prior outreach already sent, with explicit guardrails
+      against fake familiarity/urgency, exaggerated claims, spam
+      language, and unnecessary compliments. Drafting only — status only
+      ever advances (DRAFTED → APPROVED → SENT → REPLIED/FOLLOW_UP_DUE →
+      CLOSED) via an explicit operator action, never automatically. See
+      [[05_DECISIONS]].
+- [x] Follow-up reminders/sequencing so nothing goes cold from being
+      forgotten — `agents/follow_up.py`: given a lead's full outreach
+      history, suggests the next channel, a due date, and what to cover,
+      surfaced as OVERDUE/DUE TODAY/UPCOMING on the new `/dashboard/
+      follow-ups` page (and a "Generate follow-up" action on the lead
+      detail page). Every drafting/lifecycle/follow-up action is
+      recorded in the activity log with the responsible user.
 
 ## M4 — Intake → project → brief/sitemap/copy
 

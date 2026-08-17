@@ -8,6 +8,7 @@ import { api, ApiError, type Me } from "@/lib/api";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/leads", label: "Leads" },
+  { href: "/dashboard/follow-ups", label: "Follow-ups" },
   { href: "/dashboard/clients", label: "Clients" },
   { href: "/dashboard/projects", label: "Projects" },
   { href: "/dashboard/tasks", label: "Tasks" },
