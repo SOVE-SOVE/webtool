@@ -177,7 +177,10 @@ and check `current_user.role`. See §7.
   just what's client-specific.
 - **projects** — the delivery-side unit of work. Belongs to a client;
   a client can have more than one project over time (new site, later
-  redesign). Carries its own pipeline stage (intake → maintenance).
+  redesign). Carries its own pipeline stage (intake → complete — see
+  [[05_DECISIONS]] for the 12-stage set), the agreed package/price/
+  deadline, and — when created by converting a won lead —
+  `source_lead_id`, a direct traceability pointer back to that lead.
 - **tasks** — operator/agent to-do items. Belongs to a project (or a
   lead, for sales-side follow-ups).
 - **design_briefs** — the structured brief. Belongs to a project.

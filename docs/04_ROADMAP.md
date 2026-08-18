@@ -163,7 +163,16 @@ spec with no re-keying.
       failed LLM call never blocks scheduling. See [[05_DECISIONS]] for
       the full design and why Google Calendar/per-user/one-directional
       is the "simplest appropriate" scope.
-- [ ] Client intake form → auto-creates a project record.
+- [x] Lead-to-client conversion → auto-creates a project record.
+      Converting a won lead now creates the Client *and* one INTAKE-stage
+      Project (with a starter task checklist) in the same transaction,
+      carrying the agreed package/price/deadline and a direct
+      traceability pointer back to the lead (`source_lead_id`). There's
+      no separate "client intake form" UI — the conversion action itself
+      is the trigger, since that's the app's real "became a client"
+      event. The project stage pipeline was also redesigned to the
+      12-stage set the operator specified for this workflow. See
+      [[05_DECISIONS]].
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +
       research, for operator sign-off before build.

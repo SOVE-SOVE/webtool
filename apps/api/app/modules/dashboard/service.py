@@ -20,7 +20,10 @@ totals or show up needing attention. This is threaded through the
 `lead_in_workspace` subquery plus the two direct-count queries below.
 - won_projects: sales_opportunities with status=WON — the count of
   deals actually closed, not project delivery status.
-- active_projects: projects not yet at the MAINTENANCE stage.
+- active_projects: projects not yet at MAINTENANCE or COMPLETE — the two
+  post-launch stages (ongoing care, and fully closed out). Updated
+  2026-08-19 when COMPLETE was added after MAINTENANCE in the project
+  stage redesign — see docs/05_DECISIONS.md.
 - revenue_cents: sum of proposed_price_cents on WON opportunities.
   There's no invoicing/payments table yet (see docs/06_SECURITY.md /
   02_ARCHITECTURE.md "to be decided") — this is booked/won value, not
@@ -146,7 +149,10 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
             .select_from(Project)
             .join(Client, Project.client_id == Client.id)
             .join(Business, Client.business_id == Business.id)
-            .where(Business.workspace_id == workspace_id, Project.stage != ProjectStage.MAINTENANCE)
+            .where(
+                Business.workspace_id == workspace_id,
+                Project.stage.not_in((ProjectStage.MAINTENANCE, ProjectStage.COMPLETE)),
+            )
         )
         or 0
     )

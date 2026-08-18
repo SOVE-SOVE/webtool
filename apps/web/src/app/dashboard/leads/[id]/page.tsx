@@ -11,6 +11,7 @@ import {
   OUTREACH_CHANNELS,
   type ActivityItem,
   type Business,
+  type Client,
   type FollowUp,
   type Lead,
   type LeadPriority,
@@ -86,6 +87,18 @@ export default function LeadDetailPage() {
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [latestFollowUp, setLatestFollowUp] = useState<FollowUp | null>(null);
 
+  const [clients, setClients] = useState<Client[]>([]);
+  const [showConvertForm, setShowConvertForm] = useState(false);
+  const [convertBillingEmail, setConvertBillingEmail] = useState("");
+  const [convertPackage, setConvertPackage] = useState("");
+  const [convertPrice, setConvertPrice] = useState("");
+  const [convertDeadline, setConvertDeadline] = useState("");
+  const [convertProjectName, setConvertProjectName] = useState("");
+  const [convertAssignedUserId, setConvertAssignedUserId] = useState("");
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+  const [convertedClient, setConvertedClient] = useState<Client | null>(null);
+
   function load() {
     api
       .getLead(leadId)
@@ -102,6 +115,7 @@ export default function LeadDetailPage() {
       .catch(() => {});
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
+    api.listClients().then(setClients).catch(() => {});
   }
 
   function refreshActivity() {
@@ -193,6 +207,34 @@ export default function LeadDetailPage() {
       setFollowUpError(err instanceof ApiError ? err.message : "Couldn't generate a follow-up.");
     } finally {
       setGeneratingFollowUp(false);
+    }
+  }
+
+  async function handleConvert(e: React.FormEvent) {
+    e.preventDefault();
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const price = convertPrice === "" ? undefined : Math.round(Number(convertPrice) * 100);
+      const newClient = await api.createClient({
+        from_lead_id: leadId,
+        billing_email: convertBillingEmail || undefined,
+        won_price_cents: price,
+        package: convertPackage || undefined,
+        deadline: convertDeadline || undefined,
+        project_name: convertProjectName || undefined,
+        assigned_user_id: convertAssignedUserId || undefined,
+      });
+      setConvertedClient(newClient);
+      setClients((prev) => [newClient, ...prev]);
+      setShowConvertForm(false);
+      const updatedLead = await api.getLead(leadId);
+      setLead(updatedLead);
+      refreshActivity();
+    } catch (err) {
+      setConvertError(err instanceof ApiError ? err.message : "Couldn't convert this lead.");
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -384,6 +426,111 @@ export default function LeadDetailPage() {
           </div>
         </section>
       </div>
+
+      {(() => {
+        const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
+        if (lead.archived_at) return null;
+        return (
+          <section className="mt-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900">Convert to client</h2>
+              {!existingClient && (
+                <button
+                  onClick={() => setShowConvertForm((v) => !v)}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+                >
+                  {showConvertForm ? "Cancel" : "Mark WON — convert"}
+                </button>
+              )}
+            </div>
+
+            {existingClient ? (
+              <p className="mt-2 text-sm text-neutral-600">
+                This lead was won and converted.{" "}
+                <Link href={`/dashboard/clients/${existingClient.id}`} className="hover:underline">
+                  View client
+                </Link>
+                .
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-neutral-500">
+                Creates the client record and an INTAKE-stage project (with starter tasks) in one step, and
+                preserves this lead&apos;s full history — audits, outreach, and notes stay attached to it.
+              </p>
+            )}
+
+            {showConvertForm && !existingClient && (
+              <form
+                onSubmit={handleConvert}
+                className="mt-3 max-w-2xl space-y-3 border border-neutral-200 p-4"
+              >
+                <input
+                  placeholder="Project name (defaults to “{business} Website”)"
+                  value={convertProjectName}
+                  onChange={(e) => setConvertProjectName(e.target.value)}
+                  className={inputClass}
+                />
+                <div className="flex gap-3">
+                  <input
+                    placeholder="Package (e.g. Core, $899)"
+                    value={convertPackage}
+                    onChange={(e) => setConvertPackage(e.target.value)}
+                    className={inputClass}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Agreed price, AUD"
+                    value={convertPrice}
+                    onChange={(e) => setConvertPrice(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs uppercase tracking-wide text-neutral-500">
+                      Agreed deadline
+                    </label>
+                    <input
+                      type="date"
+                      value={convertDeadline}
+                      onChange={(e) => setConvertDeadline(e.target.value)}
+                      className={`${inputClass} mt-1`}
+                    />
+                  </div>
+                  <input
+                    placeholder="Billing email (optional)"
+                    value={convertBillingEmail}
+                    onChange={(e) => setConvertBillingEmail(e.target.value)}
+                    className={`${inputClass} mt-5`}
+                  />
+                </div>
+                <select
+                  value={convertAssignedUserId}
+                  onChange={(e) => setConvertAssignedUserId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Unassigned</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+                {convertError && <p className="text-sm text-red-600">{convertError}</p>}
+                <button
+                  type="submit"
+                  disabled={converting}
+                  className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  {converting ? "Converting…" : "Convert to client"}
+                </button>
+              </form>
+            )}
+          </section>
+        );
+      })()}
 
       {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
         <section className="mt-8">

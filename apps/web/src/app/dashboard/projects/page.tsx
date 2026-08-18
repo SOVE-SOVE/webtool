@@ -1,7 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, PROJECT_STAGES, type Client, type Project, type ProjectStage, type User } from "@/lib/api";
+import {
+  api,
+  PROJECT_STAGE_LABELS,
+  PROJECT_STAGES,
+  type Client,
+  type Project,
+  type ProjectStage,
+  type User,
+} from "@/lib/api";
+
+function formatPrice(cents: number | null): string {
+  return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
+}
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -119,34 +132,61 @@ export default function ProjectsPage() {
             <tr>
               <th className="px-3 py-2">Project</th>
               <th className="px-3 py-2">Client</th>
-              <th className="px-3 py-2">Stage</th>
+              <th className="px-3 py-2">Current stage</th>
+              <th className="px-3 py-2">Package</th>
+              <th className="px-3 py-2">Price</th>
+              <th className="px-3 py-2">Deadline</th>
               <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {projects.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={7} className="px-3 py-6 text-center text-neutral-500">
                   No projects yet.
                 </td>
               </tr>
             )}
             {projects.map((project) => (
               <tr key={project.id}>
-                <td className="px-3 py-2 font-medium text-neutral-900">{project.name}</td>
-                <td className="px-3 py-2 text-neutral-600">{project.client_business_name}</td>
+                <td className="px-3 py-2 font-medium text-neutral-900">
+                  {project.name}
+                  {project.source_lead_id && (
+                    <Link
+                      href={`/dashboard/leads/${project.source_lead_id}`}
+                      className="ml-2 text-xs font-normal text-neutral-500 hover:underline"
+                    >
+                      from lead
+                    </Link>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-neutral-600">
+                  <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                    {project.client_business_name}
+                  </Link>
+                </td>
                 <td className="px-3 py-2">
-                  <select
-                    value={project.stage}
-                    onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                  >
-                    {PROJECT_STAGES.map((stage) => (
-                      <option key={stage} value={stage}>
-                        {stage.replace("_", " ")}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                      {PROJECT_STAGE_LABELS[project.stage]}
+                    </span>
+                    <select
+                      value={project.stage}
+                      onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    >
+                      {PROJECT_STAGES.map((stage) => (
+                        <option key={stage} value={stage}>
+                          {PROJECT_STAGE_LABELS[stage]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-neutral-600">{project.package ?? "—"}</td>
+                <td className="px-3 py-2 text-neutral-600">{formatPrice(project.price_cents)}</td>
+                <td className="px-3 py-2 text-neutral-600">
+                  {project.deadline ? new Date(project.deadline).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-3 py-2">
                   <select

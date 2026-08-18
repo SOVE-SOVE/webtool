@@ -9,6 +9,8 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.clients.schemas import ClientCreate, ClientRead, ClientUpdate
 from app.modules.leads.models import Lead, LeadStatus
+from app.modules.projects import service as projects_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
 from app.modules.users.service import require_user_in_workspace
 
@@ -60,15 +62,19 @@ def get_client(db: Session, workspace_id: uuid.UUID, client_id: uuid.UUID) -> Cl
 def create_client(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: ClientCreate
 ) -> ClientRead:
+    lead: Lead | None = None
+
     if data.from_lead_id is not None:
         lead = db.scalar(
             select(Lead)
             .join(Business, Lead.business_id == Business.id)
             .where(Lead.id == data.from_lead_id, Business.workspace_id == workspace_id)
-            .options(joinedload(Lead.business))
+            .options(joinedload(Lead.business).joinedload(Business.client))
         )
         if lead is None:
             raise HTTPException(status_code=404, detail="Lead not found")
+        if lead.business.client is not None:
+            raise HTTPException(status_code=409, detail="This lead has already been converted to a client")
         business = lead.business
         lead.status = LeadStatus.WON
         # Converting a lead is the "deal closed" event — record it as a
@@ -77,6 +83,7 @@ def create_client(
         db.add(
             SalesOpportunity(
                 lead_id=lead.id,
+                tier=data.package,
                 status=OpportunityStatus.WON,
                 proposed_price_cents=data.won_price_cents,
             )
@@ -113,10 +120,40 @@ def create_client(
         summary=f"Added client {business.name}",
     )
 
+    project: Project | None = None
+    if lead is not None:
+        # Lead-to-client conversion: the delivery side starts here — one
+        # Project at INTAKE, carrying the agreed terms and a direct
+        # traceability pointer back to the originating lead (see
+        # docs/05_DECISIONS.md), plus its starter task checklist.
+        project = Project(
+            client_id=client.id,
+            source_lead_id=lead.id,
+            name=data.project_name or f"{business.name} Website",
+            stage=ProjectStage.INTAKE,
+            package=data.package,
+            price_cents=data.won_price_cents,
+            deadline=data.deadline,
+            assigned_user_id=data.assigned_user_id,
+        )
+        db.add(project)
+        db.flush()
+        projects_service.create_default_tasks(db, project.id)
+
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="project",
+            entity_id=project.id,
+            action="created",
+            summary=f"Created project {project.name} from won lead conversion",
+        )
+
     db.commit()
     db.refresh(client)
     client.business = business
-    client.projects = []
+    client.projects = [project] if project is not None else []
     return _to_read(client)
 
 

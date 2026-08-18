@@ -21,6 +21,108 @@ why it lost.
 
 ---
 
+## 2026-08-19 — Lead-to-client conversion now creates the Project too; project pipeline redesigned to the operator's 12 stages
+
+**Decision:** Converting a won lead (`POST /api/v1/clients` with
+`from_lead_id`, unchanged entry point — see the 2026-08-16 dashboard
+entry below for why this is the "deal closed" event) now does the full
+lead-to-client conversion workflow in one transaction, not just the
+Client half:
+
+- Creates the Client (unchanged) and, new: one Project at `INTAKE`,
+  named `project_name` or `"{business name} Website"`, plus its starter
+  task checklist (`app/modules/projects/service.py`'s
+  `DEFAULT_INTAKE_TASK_TITLES` — confirm scope, collect assets, schedule
+  kickoff). The checklist is only seeded on conversion, not on every
+  manually-added project via `POST /api/v1/projects` — deliberately
+  scoped to the workflow that was actually requested rather than
+  changing that endpoint's existing behavior.
+- `ClientCreate` gained `package`, `deadline`, and `project_name`
+  (alongside the existing `won_price_cents`) — the agreed terms of the
+  deal, captured once at the moment it's won. `package`/`won_price_cents`
+  still also land on a new `SalesOpportunity` row (unchanged, feeds the
+  dashboard's won/revenue metrics), and price/package/deadline are
+  additionally stored directly on the new `Project`
+  (`projects.package`/`price_cents`/`deadline`) — this is a deliberate,
+  narrow duplication of the *value* at the moment of conversion (like an
+  invoice recording a price), not a live-synced mirror: the Project owns
+  its own engagement terms from creation on, independent of what happens
+  to the sales-side opportunity later, and independent of whether a
+  client's *next* project (a future redesign) has terms of its own.
+- `projects.source_lead_id` (nullable FK → `leads.id`, `ON DELETE SET
+  NULL`) is the direct traceability pointer from a project back to the
+  lead it was converted from — added because `Project → Client →
+  Business → Lead` is already a valid 1-1 traceability path (via
+  `Business.lead`/`Business.client`, unchanged) for a client's *first*
+  project, but stops being unambiguous the moment a client gets a second,
+  independently-added project. Requirement: "the original lead must
+  remain historically traceable to the client and project" — both halves
+  now hold without a guessing join. The lead row itself is never touched
+  beyond `status -> WON` (unchanged from before); every audit,
+  interaction, sales audit, and outreach message already belongs to the
+  lead and was never at risk of being deleted or duplicated by this
+  change, since none of that is copied — only referenced.
+- Converting the same lead twice now 409s ("This lead has already been
+  converted to a client") instead of hitting a raw unique-constraint
+  `IntegrityError` — a pre-existing gap (checked via
+  `lead.business.client is not None` before doing anything).
+
+**Project stage pipeline redesigned** to the exact 12 stages the
+operator specified for this workflow: `INTAKE → RESEARCH → BRIEF →
+DESIGN → DEVELOPMENT → QA → CLIENT_REVIEW → REVISIONS → READY_TO_DEPLOY →
+DEPLOYED → MAINTENANCE → COMPLETE`, replacing the earlier set (`INTAKE,
+PROJECT, RESEARCH, DESIGN_BRIEF, SITEMAP, COPY, WEBSITE, QA, MY_APPROVAL,
+CLIENT_APPROVAL, DEPLOYMENT, MAINTENANCE`). Migration
+`e8b2f4a91c3d_project_stage_redesign_conversion` remaps any existing
+rows (`DESIGN_BRIEF→BRIEF`, `SITEMAP`/`COPY→DESIGN`, `WEBSITE→
+DEVELOPMENT`, `MY_APPROVAL→QA`, `CLIENT_APPROVAL→CLIENT_REVIEW`,
+`DEPLOYMENT→READY_TO_DEPLOY`, `PROJECT→INTAKE`) rather than dropping
+data, with the inverse mapping in `downgrade()`. `active_projects` on the
+dashboard now excludes both `MAINTENANCE` and `COMPLETE` (previously
+just `MAINTENANCE`, back when it was the last stage) — see
+`app/modules/dashboard/service.py`.
+
+Frontend: the lead detail page gained a "Convert to client" section
+(package/price/deadline/project name/billing email/assignee, shown
+until a client already exists for that lead's business) as the intended
+entry point for "a lead is marked WON" — the existing Clients-page
+convert form still works too, both call the same endpoint. The Projects
+table shows the current stage as both a label and the existing editable
+dropdown (kept a table per the M1 kanban-vs-table decision, not turned
+into a board), plus new Package/Price/Deadline columns and a "from lead"
+link back to the source lead; the client detail page's project list
+shows the same stage label and lead link.
+
+**Why:** This is `docs/04_ROADMAP.md` M4's last open item ("Client
+intake form → auto-creates a project record"), operationalized as
+"convert a won lead" since that's the existing, real trigger for
+becoming a client in this app — there's no separate intake-form UI to
+re-key from. The specific 12-stage pipeline, the agreed-terms fields,
+and the traceability requirement were specified directly by the
+operator for this piece of work.
+
+**Alternatives considered:** A separate `POST /api/v1/leads/{id}/convert`
+endpoint instead of extending the existing `POST /api/v1/clients` —
+rejected; the conversion behavior (mark lead WON, create Client) already
+lived in `clients.service.create_client`'s `from_lead_id` branch, and
+splitting "create the client" from "create its first project" into two
+round-trips would reopen the exact "won_projects/revenue metric
+unreachable" gap the 2026-08-16 dashboard entry fixed by making
+conversion atomic. Storing package/price/deadline only on
+`SalesOpportunity` and reading them onto `ProjectRead` via a join at
+request time — rejected as a more fragile design for the same
+information: it would require guessing *which* opportunity belongs to
+*which* project for any client with more than one project, exactly the
+ambiguity `source_lead_id` was added to avoid; a value captured once at
+creation and owned by the project from then on is simpler and doesn't
+silently go stale if a later opportunity is added against the same
+lead. Auto-seeding the starter task checklist on every `POST
+/api/v1/projects` call, not just conversions — considered for
+consistency, rejected as changing established behavior of an existing
+endpoint beyond what was asked.
+
+---
+
 ## 2026-08-18 — Meeting preparation system: brief restructured into BUSINESS/WEBSITE/SALES/DISCOVERY, facts split out of the LLM entirely
 
 **Decision:** Rebuilt the meeting brief (introduced same day in the

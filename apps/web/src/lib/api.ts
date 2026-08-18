@@ -186,7 +186,19 @@ export type Client = {
 };
 
 export type ClientCreate = (
-  | { from_lead_id: string; billing_email?: string; won_price_cents?: number }
+  | {
+      from_lead_id: string;
+      billing_email?: string;
+      // The agreed terms of the deal, captured on conversion — see
+      // apps/api/app/modules/clients/schemas.py's ClientCreate. price
+      // also records a won SalesOpportunity for the dashboard's
+      // revenue metric; package/deadline land directly on the new
+      // Project this creates.
+      won_price_cents?: number;
+      package?: string;
+      deadline?: string;
+      project_name?: string;
+    }
   | {
       business_name: string;
       industry?: string;
@@ -208,35 +220,67 @@ export type ClientUpdate = {
 
 export const PROJECT_STAGES = [
   "intake",
-  "project",
   "research",
-  "design_brief",
-  "sitemap",
-  "copy",
-  "website",
+  "brief",
+  "design",
+  "development",
   "qa",
-  "my_approval",
-  "client_approval",
-  "deployment",
+  "client_review",
+  "revisions",
+  "ready_to_deploy",
+  "deployed",
   "maintenance",
+  "complete",
 ] as const;
 export type ProjectStage = (typeof PROJECT_STAGES)[number];
+
+export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
+  intake: "Intake",
+  research: "Research",
+  brief: "Brief",
+  design: "Design",
+  development: "Development",
+  qa: "QA",
+  client_review: "Client review",
+  revisions: "Revisions",
+  ready_to_deploy: "Ready to deploy",
+  deployed: "Deployed",
+  maintenance: "Maintenance",
+  complete: "Complete",
+};
 
 export type Project = {
   id: string;
   client_id: string;
   client_business_name: string;
+  source_lead_id: string | null;
   name: string;
   stage: ProjectStage;
+  package: string | null;
+  price_cents: number | null;
+  deadline: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type ProjectCreate = { client_id: string; name: string; assigned_user_id?: string };
+export type ProjectCreate = {
+  client_id: string;
+  name: string;
+  assigned_user_id?: string;
+  package?: string;
+  price_cents?: number;
+  deadline?: string;
+};
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
-export type ProjectUpdate = { stage?: ProjectStage; assigned_user_id?: string | null };
+export type ProjectUpdate = {
+  stage?: ProjectStage;
+  assigned_user_id?: string | null;
+  package?: string | null;
+  price_cents?: number | null;
+  deadline?: string | null;
+};
 
 export type Task = {
   id: string;

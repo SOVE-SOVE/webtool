@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -7,8 +7,11 @@ from pydantic import BaseModel, ConfigDict, model_validator
 class ClientCreate(BaseModel):
     """
     Two ways to add a client: convert a won lead (reuses its business,
-    and marks the lead WON), or add one directly for a client that never
-    went through the lead pipeline (e.g. a referral).
+    marks the lead WON, and — this is the lead-to-client conversion
+    workflow — also creates the delivery-side Project and its starter
+    tasks in the same transaction), or add one directly for a client
+    that never went through the lead pipeline (e.g. a referral, which
+    gets no auto-created project).
     """
 
     from_lead_id: uuid.UUID | None = None
@@ -20,10 +23,17 @@ class ClientCreate(BaseModel):
     state: str | None = None
     billing_email: str | None = None
     assigned_user_id: uuid.UUID | None = None
-    # Only meaningful with from_lead_id — records the deal as won at this
-    # price, so it counts toward the dashboard's won-projects/revenue
-    # metrics (see app/modules/dashboard/service.py).
+    # Everything below is only meaningful with from_lead_id — the agreed
+    # terms of the deal that was just won, captured on conversion. Price
+    # also records a WON SalesOpportunity so it counts toward the
+    # dashboard's won-projects/revenue metrics (see
+    # app/modules/dashboard/service.py); package/deadline are stored
+    # directly on the new Project (see app/modules/projects/models.py).
     won_price_cents: int | None = None
+    package: str | None = None
+    deadline: date | None = None
+    # Defaults to "{business name} Website" if omitted.
+    project_name: str | None = None
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> "ClientCreate":
