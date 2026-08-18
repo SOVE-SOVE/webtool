@@ -270,9 +270,21 @@ export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 
 export type MeetingBrief = {
   id: string;
-  summary: string;
-  talking_points: string[];
-  open_items: string[];
+  business_name: string;
+  business_industry: string | null;
+  business_location: string | null;
+  business_website: string | null;
+  website_strengths: string[];
+  website_weaknesses: string[];
+  website_opportunities: string[];
+  lead_score: number | null;
+  previous_interactions: string[];
+  outreach_history: string[];
+  objections: string[];
+  questions_to_ask: string[];
+  likely_requirements: string[];
+  possible_package: string;
+  suggested_pricing_range: string;
   flagged_for_review: boolean;
   review_notes: string | null;
   generated_at: string;
@@ -520,6 +532,7 @@ export const api = {
   updateMeeting: (id: string, data: MeetingUpdate) =>
     request<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteMeeting: (id: string) => request<void>(`/api/v1/meetings/${id}`, { method: "DELETE" }),
+  generateMeetingBrief: (id: string) => request<Meeting>(`/api/v1/meetings/${id}/brief`, { method: "POST" }),
 
   listCalendarEvents: (start: string, end: string) =>
     request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),

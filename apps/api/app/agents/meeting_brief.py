@@ -1,11 +1,14 @@
 """
-Meeting preparation role — docs/02_ARCHITECTURE.md §6 lists this as
-"M3/deferred, build only if meeting volume justifies it"; the operator
-has now asked for it explicitly as part of Calendar Integration. Turns
-whatever is already known about a lead (sales audit, prior outreach,
-prior meetings) into a short pre-meeting brief via integrations/llm.py —
-no new external data is fetched here, this only synthesizes existing
-records. See agents/prompts/meeting_brief.md for the model instructions.
+Meeting preparation role — docs/04_ROADMAP.md M4 ("meeting preparation
+system"). Given everything already known about a lead going into an
+upcoming sales meeting, produces the BUSINESS/WEBSITE/SALES sections of
+the brief entirely from stored records (no LLM call — see
+modules/meetings/service.py's `_assemble_brief`) and uses an LLM only
+for the two DISCOVERY fields that genuinely require synthesis:
+questions to ask and likely requirements. Keeping the fact sections
+outside the LLM's reach is a structural guarantee against invented
+figures, not just a prompting guardrail. See agents/prompts/
+meeting_brief.md for the model instructions.
 """
 
 from pathlib import Path
@@ -15,7 +18,7 @@ from pydantic import BaseModel
 from app.agents.base import AgentResult
 from app.integrations.llm import generate_structured
 
-PROMPT_VERSION = "meeting_brief-v1"
+PROMPT_VERSION = "meeting_brief-v2"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "meeting_brief.md"
 
 
@@ -26,13 +29,13 @@ class PriorOutreachSummary(BaseModel):
     excerpt: str
 
 
-class PriorMeetingSummary(BaseModel):
-    scheduled_at: str
-    outcome: str | None
-    notes: str | None
+class PriorInteractionSummary(BaseModel):
+    kind: str
+    occurred_at: str
+    summary: str | None
 
 
-class MeetingBriefInput(BaseModel):
+class MeetingBriefDiscoveryInput(BaseModel):
     business_name: str
     industry: str | None
     lead_status: str
@@ -42,42 +45,52 @@ class MeetingBriefInput(BaseModel):
     meeting_title: str
     meeting_type: str
     scheduled_at: str
-    latest_sales_audit_summary: str | None
+    website_strengths: list[str]
+    website_weaknesses: list[str]
+    website_opportunities: list[str]
+    objections: list[str]
+    possible_package: str
     prior_outreach: list[PriorOutreachSummary]
-    prior_meetings: list[PriorMeetingSummary]
+    prior_interactions: list[PriorInteractionSummary]
 
 
-class MeetingBriefOutput(BaseModel):
-    summary: str
-    talking_points: list[str]
-    open_items: list[str]
+class MeetingBriefDiscoveryOutput(BaseModel):
+    questions_to_ask: list[str]
+    likely_requirements: list[str]
 
 
 def _load_system_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
+def _format_list(label: str, items: list[str], empty: str) -> str:
+    if not items:
+        return f"{label}: {empty}"
+    lines = [f"{label}:"]
+    lines.extend(f"- {item}" for item in items)
+    return "\n".join(lines)
+
+
 def _format_prior_outreach(items: list[PriorOutreachSummary]) -> str:
     if not items:
-        return "No prior outreach on record — this is the first documented contact."
-    lines = ["Prior outreach (most recent first):"]
+        return "Outreach history: no prior outreach on record — this is the first documented contact."
+    lines = ["Outreach history (most recent first):"]
     for item in items:
         lines.append(f"- [{item.generated_at}] {item.channel} ({item.status}): {item.excerpt}")
     return "\n".join(lines)
 
 
-def _format_prior_meetings(items: list[PriorMeetingSummary]) -> str:
+def _format_prior_interactions(items: list[PriorInteractionSummary]) -> str:
     if not items:
-        return "No prior meetings on record — this is the first meeting with this lead."
-    lines = ["Prior meetings (most recent first):"]
+        return "Prior interactions: none on record — this is the first documented touchpoint."
+    lines = ["Prior interactions (most recent first):"]
     for item in items:
-        outcome = item.outcome or "no outcome recorded"
-        notes = f" — {item.notes}" if item.notes else ""
-        lines.append(f"- [{item.scheduled_at}] {outcome}{notes}")
+        summary = f" — {item.summary}" if item.summary else ""
+        lines.append(f"- [{item.occurred_at}] {item.kind}{summary}")
     return "\n".join(lines)
 
 
-def _build_user_message(input: MeetingBriefInput) -> str:
+def _build_user_message(input: MeetingBriefDiscoveryInput) -> str:
     return "\n\n".join(
         [
             "BUSINESS / LEAD RECORD",
@@ -89,37 +102,45 @@ def _build_user_message(input: MeetingBriefInput) -> str:
             f"Lead notes: {input.lead_notes or 'none'}",
             "THIS MEETING",
             f"Title: {input.meeting_title}\nType: {input.meeting_type}\nScheduled: {input.scheduled_at}",
-            "LATEST SALES AUDIT",
-            input.latest_sales_audit_summary or "No sales audit has been generated for this lead yet.",
+            "WEBSITE AUDIT FINDINGS (from the latest Sales Audit, if any — ground truth, do not add to it)",
+            _format_list("Strengths", input.website_strengths, "none recorded"),
+            _format_list("Weaknesses", input.website_weaknesses, "none recorded"),
+            _format_list("Opportunities", input.website_opportunities, "none recorded"),
+            "KNOWN OBJECTIONS (from the latest Sales Audit, if any)",
+            _format_list("Objections", input.objections, "none recorded"),
+            "PACKAGE ALREADY SUGGESTED (fixed — do not propose a different one or a different price)",
+            input.possible_package,
             "OUTREACH HISTORY",
             _format_prior_outreach(input.prior_outreach),
-            "MEETING HISTORY",
-            _format_prior_meetings(input.prior_meetings),
+            "INTERACTION HISTORY",
+            _format_prior_interactions(input.prior_interactions),
         ]
     )
 
 
-def run(input: MeetingBriefInput) -> AgentResult[MeetingBriefOutput]:
-    schema = MeetingBriefOutput.model_json_schema()
+def run(input: MeetingBriefDiscoveryInput) -> AgentResult[MeetingBriefDiscoveryOutput]:
+    schema = MeetingBriefDiscoveryOutput.model_json_schema()
     raw = generate_structured(
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,
     )
-    output = MeetingBriefOutput.model_validate(raw)
+    output = MeetingBriefDiscoveryOutput.model_validate(raw)
 
     thin_evidence = (
-        input.latest_sales_audit_summary is None
+        not input.website_strengths
+        and not input.website_weaknesses
+        and not input.website_opportunities
         and not input.prior_outreach
-        and not input.prior_meetings
+        and not input.prior_interactions
     )
 
     return AgentResult(
         output=output,
         confidence=0.5 if thin_evidence else 0.85,
         flagged_for_review=thin_evidence,
-        notes="No sales audit, prior outreach, or prior meeting history available — brief is a best "
-        "effort from the business/lead record alone."
+        notes="No sales audit, prior outreach, or prior interaction history available — discovery section is a "
+        "best effort from the business/lead record alone."
         if thin_evidence
         else None,
     )

@@ -96,7 +96,12 @@ def test_create_meeting_defaults_type_status_duration(authed_client):
     assert body["status"] == "scheduled"
     assert body["duration_minutes"] == 30
     assert body["synced_to_calendar"] is False
-    assert body["brief"] is None
+    # Brief is always assembled (BUSINESS/WEBSITE/SALES facts are pure DB
+    # reads); only the LLM-derived discovery fields are empty here since
+    # conftest.py sets LLM_API_KEY="".
+    assert body["brief"] is not None
+    assert body["brief"]["business_name"] == "A"
+    assert body["brief"]["questions_to_ask"] == []
 
 
 def test_create_meeting_for_project_defaults_client_check_in(authed_client):
@@ -221,14 +226,27 @@ def test_update_meeting_reassign(authed_client, member_user):
     assert res.json()["assigned_user_id"] is None
 
 
-def test_meeting_brief_not_generated_without_llm_key_configured(authed_client):
-    """conftest.py sets LLM_API_KEY="" — brief generation must be skipped, not attempted/fail."""
-    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()["id"]
+def test_meeting_brief_generated_without_llm_key_has_deterministic_facts_only(authed_client):
+    """
+    conftest.py sets LLM_API_KEY="" — BUSINESS/WEBSITE/SALES facts and
+    the package/pricing note are pure DB reads and must still be
+    generated; only the LLM-derived discovery fields degrade gracefully.
+    """
+    lead_id = authed_client.post(
+        "/api/v1/leads", json={"business_name": "Hilltop Roofing", "industry": "Roofing"}
+    ).json()["id"]
     res = authed_client.post(
         "/api/v1/meetings",
         json={"title": "Call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead_id},
     )
-    assert res.json()["brief"] is None
+    brief = res.json()["brief"]
+    assert brief is not None
+    assert brief["business_name"] == "Hilltop Roofing"
+    assert brief["business_industry"] == "Roofing"
+    assert brief["possible_package"] == "No sales audit generated yet — no package suggestion available."
+    assert brief["questions_to_ask"] == []
+    assert brief["likely_requirements"] == []
+    assert brief["flagged_for_review"] is True
 
 
 def test_meeting_brief_generated_for_lead_meeting(authed_client, monkeypatch):
@@ -236,9 +254,8 @@ def test_meeting_brief_generated_for_lead_meeting(authed_client, monkeypatch):
 
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
     fake_output = {
-        "summary": "First touch with this lead.",
-        "talking_points": ["Ask about their current site", "Mention the core package"],
-        "open_items": ["Confirm timeline"],
+        "questions_to_ask": ["What's driving the timing on this?", "Who else is involved in the decision?"],
+        "likely_requirements": ["A contact form", "Photo gallery of past jobs"],
     }
     monkeypatch.setattr("app.agents.meeting_brief.generate_structured", lambda **kwargs: dict(fake_output))
 
@@ -249,9 +266,91 @@ def test_meeting_brief_generated_for_lead_meeting(authed_client, monkeypatch):
     )
     brief = res.json()["brief"]
     assert brief is not None
-    assert brief["summary"] == "First touch with this lead."
-    assert brief["talking_points"] == ["Ask about their current site", "Mention the core package"]
-    assert brief["flagged_for_review"] is True  # no sales audit/outreach/meeting history yet
+    assert brief["business_name"] == "A"
+    assert brief["questions_to_ask"] == [
+        "What's driving the timing on this?",
+        "Who else is involved in the decision?",
+    ]
+    assert brief["likely_requirements"] == ["A contact form", "Photo gallery of past jobs"]
+    assert brief["flagged_for_review"] is True  # no sales audit/outreach/interaction history yet
+
+
+def test_meeting_brief_uses_latest_sales_audit_deterministically(authed_client, db_session):
+    """
+    WEBSITE/SALES facts and possible_package/suggested_pricing_range must
+    be an exact pass-through of the latest Sales Audit row — no LLM
+    involved in these fields at all.
+    """
+    from app.modules.sales_audits.models import SalesAuditReport
+
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()["id"]
+    authed_client.patch(f"/api/v1/leads/{lead_id}", json={"score": 72})
+
+    db_session.add(
+        SalesAuditReport(
+            lead_id=lead_id,
+            business_summary="A local roofing business.",
+            website_strengths="Clear phone number on every page",
+            top_problems="No mobile-friendly layout\nNo HTTPS",
+            why_problems_matter="Loses mobile leads\nBrowser warning scares visitors",
+            recommended_improvements="Rebuild mobile-first\nAdd an SSL certificate",
+            suggested_structure="Home\nServices\nContact",
+            talking_points="Their current site fails on mobile",
+            potential_objections="Price — explain the flat tiers\nTiming — 2 week turnaround",
+            suggested_offer="The Core package (~$899) fits the scope described.",
+            model_used="test",
+            prompt_version="test-v1",
+        )
+    )
+    db_session.commit()
+
+    res = authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead_id},
+    )
+    brief = res.json()["brief"]
+    assert brief["website_strengths"] == ["Clear phone number on every page"]
+    assert brief["website_weaknesses"] == ["No mobile-friendly layout", "No HTTPS"]
+    assert brief["website_opportunities"] == ["Rebuild mobile-first", "Add an SSL certificate"]
+    assert brief["objections"] == ["Price — explain the flat tiers", "Timing — 2 week turnaround"]
+    assert brief["lead_score"] == 72
+    assert brief["possible_package"] == "The Core package (~$899) fits the scope described."
+    assert brief["suggested_pricing_range"] == "Core (~$899)"
+
+
+def test_regenerate_meeting_brief_endpoint(authed_client, monkeypatch):
+    from app.core.settings import settings
+
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()["id"]
+    meeting = authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead_id},
+    ).json()
+    assert meeting["brief"]["questions_to_ask"] == []
+
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(
+        "app.agents.meeting_brief.generate_structured",
+        lambda **kwargs: {"questions_to_ask": ["What's the timeline?"], "likely_requirements": ["Booking form"]},
+    )
+
+    res = authed_client.post(f"/api/v1/meetings/{meeting['id']}/brief")
+    assert res.status_code == 200
+    assert res.json()["brief"]["questions_to_ask"] == ["What's the timeline?"]
+
+
+def test_regenerate_meeting_brief_rejects_project_meeting(authed_client):
+    client_id = authed_client.post("/api/v1/clients", json={"business_name": "A"}).json()["id"]
+    project_id = authed_client.post(
+        "/api/v1/projects", json={"client_id": client_id, "name": "Site"}
+    ).json()["id"]
+    meeting = authed_client.post(
+        "/api/v1/meetings",
+        json={"title": "Check-in", "scheduled_at": "2026-09-01T10:00:00Z", "project_id": project_id},
+    ).json()
+
+    res = authed_client.post(f"/api/v1/meetings/{meeting['id']}/brief")
+    assert res.status_code == 400
 
 
 def test_meeting_brief_not_generated_for_project_meeting(authed_client, monkeypatch):
@@ -276,6 +375,10 @@ def test_meeting_brief_not_generated_for_project_meeting(authed_client, monkeypa
 
 
 def test_meeting_brief_generation_failure_does_not_block_booking(authed_client, monkeypatch):
+    """
+    An LLM failure must not lose the deterministic BUSINESS/WEBSITE/SALES
+    facts already assembled — only the discovery fields degrade.
+    """
     from app.core.settings import settings
 
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
@@ -291,7 +394,11 @@ def test_meeting_brief_generation_failure_does_not_block_booking(authed_client, 
         json={"title": "Call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead_id},
     )
     assert res.status_code == 201
-    assert res.json()["brief"] is None
+    brief = res.json()["brief"]
+    assert brief is not None
+    assert brief["business_name"] == "A"
+    assert brief["questions_to_ask"] == []
+    assert brief["flagged_for_review"] is True
 
 
 def test_meeting_synced_when_assigned_user_has_calendar_connected(authed_client, admin_user, db_session, monkeypatch):

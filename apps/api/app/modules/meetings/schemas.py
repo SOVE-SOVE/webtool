@@ -6,13 +6,38 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from app.modules.meetings.models import MeetingBrief, MeetingStatus, MeetingType
 
 
+def _split(text: str) -> list[str]:
+    return [p for p in text.split("\n") if p]
+
+
 class MeetingBriefRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    summary: str
-    talking_points: list[str]
-    open_items: list[str]
+
+    # BUSINESS
+    business_name: str
+    business_industry: str | None
+    business_location: str | None
+    business_website: str | None
+
+    # WEBSITE
+    website_strengths: list[str]
+    website_weaknesses: list[str]
+    website_opportunities: list[str]
+
+    # SALES
+    lead_score: int | None
+    previous_interactions: list[str]
+    outreach_history: list[str]
+    objections: list[str]
+
+    # DISCOVERY
+    questions_to_ask: list[str]
+    likely_requirements: list[str]
+    possible_package: str
+    suggested_pricing_range: str
+
     flagged_for_review: bool
     review_notes: str | None
     generated_at: datetime
@@ -21,9 +46,21 @@ class MeetingBriefRead(BaseModel):
     def from_model(brief: MeetingBrief) -> "MeetingBriefRead":
         return MeetingBriefRead(
             id=brief.id,
-            summary=brief.summary,
-            talking_points=[p for p in brief.talking_points.split("\n") if p],
-            open_items=[p for p in brief.open_items.split("\n") if p],
+            business_name=brief.business_name,
+            business_industry=brief.business_industry,
+            business_location=brief.business_location,
+            business_website=brief.business_website,
+            website_strengths=_split(brief.website_strengths),
+            website_weaknesses=_split(brief.website_weaknesses),
+            website_opportunities=_split(brief.website_opportunities),
+            lead_score=brief.lead_score,
+            previous_interactions=_split(brief.previous_interactions),
+            outreach_history=_split(brief.outreach_history),
+            objections=_split(brief.objections),
+            questions_to_ask=_split(brief.questions_to_ask),
+            likely_requirements=_split(brief.likely_requirements),
+            possible_package=brief.possible_package,
+            suggested_pricing_range=brief.suggested_pricing_range,
             flagged_for_review=brief.flagged_for_review,
             review_notes=brief.review_notes,
             generated_at=brief.generated_at,

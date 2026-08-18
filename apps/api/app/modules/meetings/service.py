@@ -12,6 +12,7 @@ from app.integrations import google_calendar
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
+from app.modules.interactions.models import Interaction
 from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import Meeting, MeetingBrief, MeetingStatus, MeetingType
 from app.modules.meetings.schemas import MeetingBriefRead, MeetingCreate, MeetingRead, MeetingUpdate
@@ -19,6 +20,17 @@ from app.modules.outreach.models import OutreachMessage
 from app.modules.projects.models import Project
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.users.service import require_user_in_workspace
+
+# The three real price tiers this business sells at — see
+# docs/00_VISION.md "Offer" and agents/prompts/sales_audit.md, which is
+# the only place a tier name is ever chosen. Matched against a Sales
+# Audit's free-text suggested_offer to pull a fixed, real price into
+# the brief deterministically — never re-guessed or re-priced here.
+_PRICE_TIERS: list[tuple[str, str]] = [
+    ("simple", "Simple (~$599)"),
+    ("core", "Core (~$899)"),
+    ("advanced", "Advanced (~$1,299+)"),
+]
 
 # Meetings belong to exactly one of project or lead, and each reaches the
 # workspace via a different FK chain, so both paths are joined (outer,
@@ -185,26 +197,71 @@ def _delete_google_event(db: Session, user_id: uuid.UUID, event_id: str) -> None
     google_calendar.delete_event(access_token, calendar_id, event_id)
 
 
-def _gather_brief_input(db: Session, lead: Lead, meeting: Meeting) -> meeting_brief_agent.MeetingBriefInput:
+def _business_location(business: Business) -> str | None:
+    parts = [p for p in (business.suburb, business.state) if p]
+    return ", ".join(parts) if parts else None
+
+
+def _offer_from_audit(suggested_offer: str | None) -> tuple[str, str]:
+    """
+    Matches a Sales Audit's free-text suggested_offer against the three
+    real tier names to pull a fixed, real price — the only prices this
+    business actually quotes (see _PRICE_TIERS). Never guesses a new
+    number.
+    """
+    if not suggested_offer:
+        return (
+            "No sales audit generated yet — no package suggestion available.",
+            "Not available — generate a sales audit first.",
+        )
+    lowered = suggested_offer.lower()
+    for keyword, price in _PRICE_TIERS:
+        if keyword in lowered:
+            return (suggested_offer, price)
+    return (suggested_offer, "Tier not clearly identified from the sales audit text — see package note.")
+
+
+def _gather_brief_facts(db: Session, lead: Lead, meeting: Meeting) -> dict:
+    """
+    Assembles the BUSINESS/WEBSITE/SALES facts and the package/pricing
+    note directly from stored records — no LLM involvement, so nothing
+    returned here can be invented. See MeetingBrief's docstring.
+    """
+    business = lead.business
+
     latest_audit = db.scalar(
         select(SalesAuditReport)
         .where(SalesAuditReport.lead_id == lead.id)
         .order_by(SalesAuditReport.generated_at.desc())
     )
-    audit_summary = None
     if latest_audit is not None:
-        top_problems = [p for p in latest_audit.top_problems.split("\n") if p][:3]
-        audit_summary = (
-            f"{latest_audit.business_summary}\n"
-            f"Top problems: {'; '.join(top_problems) or 'none recorded'}\n"
-            f"Suggested offer: {latest_audit.suggested_offer}"
+        website_strengths = [s for s in latest_audit.website_strengths.split("\n") if s]
+        website_weaknesses = [s for s in latest_audit.top_problems.split("\n") if s]
+        website_opportunities = [s for s in latest_audit.recommended_improvements.split("\n") if s]
+        objections = [s for s in latest_audit.potential_objections.split("\n") if s]
+        possible_package, suggested_pricing_range = _offer_from_audit(latest_audit.suggested_offer)
+    else:
+        website_strengths, website_weaknesses, website_opportunities, objections = [], [], [], []
+        possible_package, suggested_pricing_range = _offer_from_audit(None)
+
+    interaction_rows = db.scalars(
+        select(Interaction)
+        .where(Interaction.lead_id == lead.id)
+        .order_by(Interaction.occurred_at.desc())
+        .limit(10)
+    )
+    prior_interactions = [
+        meeting_brief_agent.PriorInteractionSummary(
+            kind=i.kind.value, occurred_at=i.occurred_at.isoformat(), summary=i.summary
         )
+        for i in interaction_rows
+    ]
 
     outreach_rows = db.scalars(
         select(OutreachMessage)
         .where(OutreachMessage.lead_id == lead.id)
         .order_by(OutreachMessage.generated_at.desc())
-        .limit(5)
+        .limit(10)
     )
     prior_outreach = [
         meeting_brief_agent.PriorOutreachSummary(
@@ -216,62 +273,103 @@ def _gather_brief_input(db: Session, lead: Lead, meeting: Meeting) -> meeting_br
         for m in outreach_rows
     ]
 
-    prior_meeting_rows = db.scalars(
-        select(Meeting)
-        .where(Meeting.lead_id == lead.id, Meeting.id != meeting.id)
-        .order_by(Meeting.scheduled_at.desc())
-        .limit(5)
-    )
-    prior_meetings = [
-        meeting_brief_agent.PriorMeetingSummary(
-            scheduled_at=m.scheduled_at.isoformat(), outcome=m.outcome, notes=m.notes
-        )
-        for m in prior_meeting_rows
-    ]
-
-    return meeting_brief_agent.MeetingBriefInput(
-        business_name=lead.business.name,
-        industry=lead.business.industry,
-        lead_status=lead.status.value,
-        lead_priority=lead.priority.value,
-        lead_score=lead.score,
-        lead_notes=lead.notes,
-        meeting_title=meeting.title,
-        meeting_type=meeting.meeting_type.value,
-        scheduled_at=meeting.scheduled_at.isoformat(),
-        latest_sales_audit_summary=audit_summary,
-        prior_outreach=prior_outreach,
-        prior_meetings=prior_meetings,
-    )
+    return {
+        "business_name": business.name,
+        "business_industry": business.industry,
+        "business_location": _business_location(business),
+        "business_website": business.website_url,
+        "website_strengths": website_strengths,
+        "website_weaknesses": website_weaknesses,
+        "website_opportunities": website_opportunities,
+        "lead_score": lead.score,
+        "previous_interactions": [
+            f"[{i.occurred_at}] {i.kind}" + (f" — {i.summary}" if i.summary else "") for i in prior_interactions
+        ],
+        "outreach_history": [
+            f"[{o.generated_at}] {o.channel} ({o.status}): {o.excerpt}" for o in prior_outreach
+        ],
+        "objections": objections,
+        "possible_package": possible_package,
+        "suggested_pricing_range": suggested_pricing_range,
+        "prior_interactions": prior_interactions,
+        "prior_outreach": prior_outreach,
+    }
 
 
 def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting: Meeting, lead: Lead) -> None:
     """
-    Best-effort, non-fatal — skipped entirely (not attempted) if no LLM
-    key is configured, matching integrations/search.py's "skip rather
-    than fake" pattern; any other failure (network, malformed response)
-    is caught and logged rather than failing the meeting-booking request
-    that triggered it.
+    BUSINESS/WEBSITE/SALES facts and the package/pricing note are always
+    assembled (pure DB reads, see _gather_brief_facts) — those sections
+    never depend on the LLM being configured. Only questions_to_ask and
+    likely_requirements come from agents/meeting_brief.py, and degrade
+    gracefully (empty, flagged for review) rather than skipping the
+    whole brief, if no LLM key is configured or generation fails —
+    matching integrations/search.py's "skip rather than fake" pattern
+    for the part that's actually generated, without losing the parts
+    that aren't.
     """
-    if not settings.llm_api_key:
-        return
+    facts = _gather_brief_facts(db, lead, meeting)
 
-    try:
-        brief_input = _gather_brief_input(db, lead, meeting)
-        result = meeting_brief_agent.run(brief_input)
-    except Exception as exc:  # noqa: BLE001 - genuinely must never break booking, see docstring
-        logger.warning("Meeting brief generation failed for meeting %s: %s", meeting.id, exc)
-        return
+    questions_to_ask: list[str] = []
+    likely_requirements: list[str] = []
+    flagged_for_review = True
+    review_notes = (
+        "No LLM configured — discovery questions/requirements unavailable. "
+        "Business/website/sales facts below are accurate and unaffected."
+    )
+    model_used = "none"
 
-    output = result.output
+    if settings.llm_api_key:
+        try:
+            discovery_input = meeting_brief_agent.MeetingBriefDiscoveryInput(
+                business_name=facts["business_name"],
+                industry=facts["business_industry"],
+                lead_status=lead.status.value,
+                lead_priority=lead.priority.value,
+                lead_score=lead.score,
+                lead_notes=lead.notes,
+                meeting_title=meeting.title,
+                meeting_type=meeting.meeting_type.value,
+                scheduled_at=meeting.scheduled_at.isoformat(),
+                website_strengths=facts["website_strengths"],
+                website_weaknesses=facts["website_weaknesses"],
+                website_opportunities=facts["website_opportunities"],
+                objections=facts["objections"],
+                possible_package=facts["possible_package"],
+                prior_outreach=facts["prior_outreach"],
+                prior_interactions=facts["prior_interactions"],
+            )
+            result = meeting_brief_agent.run(discovery_input)
+            questions_to_ask = result.output.questions_to_ask
+            likely_requirements = result.output.likely_requirements
+            flagged_for_review = result.flagged_for_review
+            review_notes = result.notes
+            model_used = settings.llm_model
+        except Exception as exc:  # noqa: BLE001 - genuinely must never break booking, see docstring
+            logger.warning("Meeting brief discovery generation failed for meeting %s: %s", meeting.id, exc)
+            flagged_for_review = True
+            review_notes = "Discovery question generation failed — business/website/sales facts below are unaffected."
+
     brief = MeetingBrief(
         meeting_id=meeting.id,
-        summary=output.summary,
-        talking_points="\n".join(output.talking_points),
-        open_items="\n".join(output.open_items),
-        flagged_for_review=result.flagged_for_review,
-        review_notes=result.notes,
-        model_used=settings.llm_model,
+        business_name=facts["business_name"],
+        business_industry=facts["business_industry"],
+        business_location=facts["business_location"],
+        business_website=facts["business_website"],
+        website_strengths="\n".join(facts["website_strengths"]),
+        website_weaknesses="\n".join(facts["website_weaknesses"]),
+        website_opportunities="\n".join(facts["website_opportunities"]),
+        lead_score=facts["lead_score"],
+        previous_interactions="\n".join(facts["previous_interactions"]),
+        outreach_history="\n".join(facts["outreach_history"]),
+        objections="\n".join(facts["objections"]),
+        questions_to_ask="\n".join(questions_to_ask),
+        likely_requirements="\n".join(likely_requirements),
+        possible_package=facts["possible_package"],
+        suggested_pricing_range=facts["suggested_pricing_range"],
+        flagged_for_review=flagged_for_review,
+        review_notes=review_notes,
+        model_used=model_used,
         prompt_version=meeting_brief_agent.PROMPT_VERSION,
     )
     db.add(brief)
@@ -285,6 +383,30 @@ def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, m
         action="brief_generated",
         summary=f"Prepared meeting brief for {meeting.title}",
     )
+
+
+def regenerate_brief(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting_id: uuid.UUID
+) -> MeetingRead | None:
+    """
+    Explicit on-demand (re)generation — e.g. after a new Sales Audit
+    lands, or for a meeting booked before this feature existed.
+    Overwrites any existing brief. Lead-side (sales) meetings only, same
+    restriction as automatic generation on booking.
+    """
+    meeting = db.scalar(_base_query(workspace_id).where(Meeting.id == meeting_id))
+    if meeting is None:
+        return None
+    if meeting.lead is None:
+        raise HTTPException(status_code=400, detail="Only lead-side (sales) meetings have a meeting brief")
+
+    if meeting.brief is not None:
+        db.delete(meeting.brief)
+        db.flush()
+
+    _generate_brief(db, workspace_id, actor_id, meeting, meeting.lead)
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
 
 
 def create_meeting(
@@ -434,6 +556,13 @@ def delete_meeting(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, me
         return False
 
     _remove_from_google_calendar(db, meeting)
+
+    # meeting_briefs.meeting_id is NOT NULL, so the ORM's default
+    # delete-parent behavior (null out the child FK) would violate that
+    # constraint — delete the loaded brief explicitly instead of relying
+    # on the DB's ON DELETE CASCADE, which the ORM never reaches here.
+    if meeting.brief is not None:
+        db.delete(meeting.brief)
 
     activity_service.record(
         db,

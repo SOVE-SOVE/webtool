@@ -28,10 +28,12 @@ def create_meeting(
 ) -> MeetingRead:
     """
     Rate-limited like the other generation endpoints — booking a
-    lead-side meeting triggers an automatic meeting-brief LLM call
-    (project-side meetings don't, but sharing one bucket is simpler than
-    a conditional dependency and meeting creation isn't high-frequency
-    enough for that to matter — see app/core/rate_limit.py).
+    lead-side meeting triggers automatic meeting-brief generation
+    (project-side meetings don't; see service.py's MeetingBrief
+    docstring for what's deterministic vs. LLM-generated in that brief).
+    Sharing one rate-limit bucket is simpler than a conditional
+    dependency and meeting creation isn't high-frequency enough for that
+    to matter — see app/core/rate_limit.py.
     """
     return service.create_meeting(db, current_user.workspace_id, current_user.id, data)
 
@@ -65,3 +67,16 @@ def delete_meeting(
 ) -> None:
     if not service.delete_meeting(db, current_user.workspace_id, current_user.id, meeting_id):
         raise HTTPException(status_code=404, detail="Meeting not found")
+
+
+@router.post("/{meeting_id}/brief", response_model=MeetingRead)
+def generate_meeting_brief(
+    meeting_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> MeetingRead:
+    """On-demand (re)generation — see service.regenerate_brief."""
+    meeting = service.regenerate_brief(db, current_user.workspace_id, current_user.id, meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return meeting

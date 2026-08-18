@@ -172,6 +172,20 @@ export default function CalendarPage() {
     setSelectedMeeting(updated);
   }
 
+  async function handleGenerateBrief() {
+    if (!selectedMeeting) return;
+    setMeetingBusy(true);
+    setMeetingError(null);
+    try {
+      const updated = await api.generateMeetingBrief(selectedMeeting.id);
+      setSelectedMeeting(updated);
+    } catch {
+      setMeetingError("Couldn't generate a meeting brief.");
+    } finally {
+      setMeetingBusy(false);
+    }
+  }
+
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const todayKey = toDateKey(today);
 
@@ -444,45 +458,106 @@ export default function CalendarPage() {
                 </button>
               </>
             )}
+            {selectedMeeting.lead_id && (
+              <button
+                onClick={handleGenerateBrief}
+                disabled={meetingBusy}
+                className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {meetingBusy ? "Generating…" : selectedMeeting.brief ? "Regenerate brief" : "Generate brief"}
+              </button>
+            )}
           </div>
 
-          {selectedMeeting.brief && (
-            <div className="mt-5 border-t border-neutral-200 pt-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-neutral-900">Meeting brief</h3>
-                {selectedMeeting.brief.flagged_for_review && (
-                  <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                    Flagged for review
-                  </span>
-                )}
-              </div>
-              <p className="mt-2 text-sm text-neutral-700">{selectedMeeting.brief.summary}</p>
-
-              {selectedMeeting.brief.talking_points.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">Talking points</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-neutral-700">
-                    {selectedMeeting.brief.talking_points.map((point, i) => (
-                      <li key={i}>{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {selectedMeeting.brief.open_items.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">Open items</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-neutral-700">
-                    {selectedMeeting.brief.open_items.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+          {selectedMeeting.brief && <MeetingBriefPanel brief={selectedMeeting.brief} />}
         </section>
       )}
+    </div>
+  );
+}
+
+function briefList(label: string, items: string[], empty: string) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+      {items.length > 0 ? (
+        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-neutral-700">
+          {items.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-sm text-neutral-400">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) {
+  return (
+    <div className="mt-5 border-t border-neutral-200 pt-4">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-neutral-900">Meeting brief</h3>
+        {brief.flagged_for_review && (
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+        )}
+      </div>
+      {brief.review_notes && <p className="mt-1 text-xs text-neutral-500">{brief.review_notes}</p>}
+
+      <div className="mt-3 space-y-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Business</p>
+          <p className="mt-1 text-sm text-neutral-700">
+            {brief.business_name}
+            {brief.business_industry ? ` · ${brief.business_industry}` : ""}
+            {brief.business_location ? ` · ${brief.business_location}` : ""}
+          </p>
+          {brief.business_website && (
+            <p className="text-sm text-neutral-500">
+              <a href={brief.business_website} target="_blank" rel="noreferrer" className="hover:underline">
+                {brief.business_website}
+              </a>
+            </p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Website</p>
+          <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {briefList("Strengths", brief.website_strengths, "None on record")}
+            {briefList("Weaknesses", brief.website_weaknesses, "None on record")}
+            {briefList("Opportunities", brief.website_opportunities, "None on record")}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Sales</p>
+          <p className="mt-1 text-sm text-neutral-700">
+            Lead score: {brief.lead_score !== null ? brief.lead_score : "not scored"}
+          </p>
+          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {briefList("Previous interactions", brief.previous_interactions, "None on record")}
+            {briefList("Outreach history", brief.outreach_history, "None on record")}
+            {briefList("Objections", brief.objections, "None on record")}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Discovery</p>
+          <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {briefList("Questions to ask", brief.questions_to_ask, "Not generated")}
+            {briefList("Likely requirements", brief.likely_requirements, "Not generated")}
+          </div>
+          <p className="mt-2 text-sm text-neutral-700">
+            <span className="text-xs uppercase tracking-wide text-neutral-500">Possible package: </span>
+            {brief.possible_package}
+          </p>
+          <p className="text-sm text-neutral-700">
+            <span className="text-xs uppercase tracking-wide text-neutral-500">Suggested pricing range: </span>
+            {brief.suggested_pricing_range}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

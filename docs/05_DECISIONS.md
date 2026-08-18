@@ -21,6 +21,62 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Meeting preparation system: brief restructured into BUSINESS/WEBSITE/SALES/DISCOVERY, facts split out of the LLM entirely
+
+**Decision:** Rebuilt the meeting brief (introduced same day in the
+Calendar Integration entry below, then a plain summary/talking-points/
+open-items shape) into the four sections the operator asked for —
+BUSINESS (name, industry, location, website), WEBSITE (strengths,
+weaknesses, opportunities), SALES (lead score, previous interactions,
+outreach history, objections), DISCOVERY (questions to ask, likely
+requirements, possible package, suggested pricing range) — per the
+explicit "do not invent information" requirement.
+
+BUSINESS/WEBSITE/SALES and the package/pricing note are assembled in
+`modules/meetings/service.py`'s `_gather_brief_facts` as a **pure
+database read** — the business record, the latest Sales Audit's
+`website_strengths`/`top_problems`/`recommended_improvements`/
+`potential_objections`, `Interaction` rows, and `OutreachMessage` rows,
+copied through unchanged. `possible_package`/`suggested_pricing_range`
+are resolved by matching the latest Sales Audit's free-text
+`suggested_offer` against the three real tier names (Simple/Core/
+Advanced, `_PRICE_TIERS`) — never a new number. None of this reaches
+`agents/meeting_brief.py` at all. Only `questions_to_ask` and
+`likely_requirements` — the two fields that genuinely require
+synthesis rather than lookup — go through the LLM, given the assembled
+facts as grounding and the same "never state a number not already in
+the record" guardrail the Sales Audit prompt uses.
+
+Brief generation no longer requires an LLM key to produce a row: with
+no key configured (or on an LLM failure), the deterministic sections
+still populate and only the discovery fields come back empty,
+`flagged_for_review=True`, with a `review_notes` explanation — better
+than the previous all-or-nothing skip, since the facts a rep actually
+needs before a call don't depend on the LLM being available. Added
+`POST /api/v1/meetings/{id}/brief` (rate-limited, lead-side meetings
+only) to regenerate on demand — e.g. after a new Sales Audit lands, or
+for a meeting booked before this feature existed — alongside the
+existing automatic generation on booking; this doesn't reverse the
+"automatic, not manual-only" call in the Calendar Integration entry
+below, it adds an explicit refresh path on top of it.
+
+**Why:** Structurally preventing invention is stronger than prompting
+for it — a fact the LLM never receives as a "you may say numbers here"
+license can't be misstated by it. Splitting facts from synthesis also
+means a brief is never blocked on LLM availability, which matters for
+something meant to be "read immediately before a call."
+
+**Alternatives considered:** Asking the LLM to reproduce the stored
+facts verbatim alongside the two synthesized fields — rejected; it adds
+a failure mode (paraphrasing, omission, drift from the source record)
+for zero benefit over a direct copy. Skipping the whole brief when no
+LLM key is configured, matching the original all-or-nothing behavior —
+rejected once the fact sections stopped depending on the LLM, since
+withholding accurate, available information because an unrelated
+field can't be generated no longer made sense.
+
+---
+
 ## 2026-08-18 — Calendar Integration: Google Calendar, per-user OAuth, one-directional sync; meeting_type/status/assigned_user/duration added; auto lead-status bump + auto meeting brief on booking
 
 **Decision:** Implements the requested workflow — INTERESTED LEAD →
