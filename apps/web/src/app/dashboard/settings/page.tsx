@@ -2,13 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type Me, type Role, type User } from "@/lib/api";
+import { api, ApiError, type CalendarConnection, type Me, type Role, type User } from "@/lib/api";
 
 export default function SettingsPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [calendarConnection, setCalendarConnection] = useState<CalendarConnection | null | undefined>(undefined);
+  const [disconnecting, setDisconnecting] = useState(false);
+  // Read directly from window.location rather than next/navigation's
+  // useSearchParams, which requires a Suspense boundary during static
+  // generation — not worth it for reading one param from an OAuth
+  // redirect. "connected" | "error" | null.
+  const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
+  useEffect(() => {
+    setCalendarStatus(new URLSearchParams(window.location.search).get("calendar"));
+  }, []);
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [savingWorkspace, setSavingWorkspace] = useState(false);
@@ -26,9 +37,20 @@ export default function SettingsPage() {
       setWorkspaceName(m.workspace_name);
     }).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
+    api.getGoogleCalendarStatus().then(setCalendarConnection).catch(() => setCalendarConnection(null));
   }
 
   useEffect(load, []);
+
+  async function handleDisconnectCalendar() {
+    setDisconnecting(true);
+    try {
+      await api.disconnectGoogleCalendar();
+      setCalendarConnection(null);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   async function handleLogout() {
     await api.logout();
@@ -95,6 +117,53 @@ export default function SettingsPage() {
       </div>
 
       {error && <p className="mt-4 max-w-md text-sm text-red-600">{error}</p>}
+
+      <section className="mt-6 max-w-md border border-neutral-200 p-4">
+        <h2 className="text-sm font-semibold text-neutral-900">Calendar</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Connect your Google Calendar so booked meetings you&apos;re assigned to appear on it
+          automatically. No invite emails are sent — this only creates a private event on your own
+          calendar.
+        </p>
+
+        {calendarStatus === "connected" && (
+          <p className="mt-2 text-sm text-emerald-700">Google Calendar connected.</p>
+        )}
+        {calendarStatus === "error" && (
+          <p className="mt-2 text-sm text-red-600">
+            Couldn&apos;t connect Google Calendar — please try again.
+          </p>
+        )}
+
+        {calendarConnection === undefined && <p className="mt-3 text-sm text-neutral-500">Loading…</p>}
+
+        {calendarConnection === null && (
+          <a
+            href={api.googleCalendarConnectUrl()}
+            className="mt-3 inline-block rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Connect Google Calendar
+          </a>
+        )}
+
+        {calendarConnection && (
+          <div className="mt-3 flex items-center justify-between text-sm">
+            <div>
+              <p className="text-neutral-900">Connected as {calendarConnection.google_email ?? "unknown"}</p>
+              <p className="text-xs text-neutral-500">
+                Since {new Date(calendarConnection.connected_at).toLocaleDateString()}
+              </p>
+            </div>
+            <button
+              onClick={handleDisconnectCalendar}
+              disabled={disconnecting}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </button>
+          </div>
+        )}
+      </section>
 
       <section className="mt-6 max-w-md border border-neutral-200 p-4">
         <h2 className="text-sm font-semibold text-neutral-900">Workspace</h2>

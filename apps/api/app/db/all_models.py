@@ -7,6 +7,7 @@ should be imported directly — import from the owning module instead.
 
 from app.modules.activity_log import models as _activity_log  # noqa: F401
 from app.modules.businesses import models as _businesses  # noqa: F401
+from app.modules.calendar import models as _calendar  # noqa: F401
 from app.modules.clients import models as _clients  # noqa: F401
 from app.modules.contacts import models as _contacts  # noqa: F401
 from app.modules.deployments import models as _deployments  # noqa: F401

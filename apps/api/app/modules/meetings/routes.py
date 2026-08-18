@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.modules.meetings import service
 from app.modules.meetings.schemas import MeetingCreate, MeetingRead, MeetingUpdate
@@ -21,8 +22,17 @@ def list_meetings(
 
 @router.post("", response_model=MeetingRead, status_code=201)
 def create_meeting(
-    data: MeetingCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    data: MeetingCreate,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
 ) -> MeetingRead:
+    """
+    Rate-limited like the other generation endpoints — booking a
+    lead-side meeting triggers an automatic meeting-brief LLM call
+    (project-side meetings don't, but sharing one bucket is simpler than
+    a conditional dependency and meeting creation isn't high-frequency
+    enough for that to matter — see app/core/rate_limit.py).
+    """
     return service.create_meeting(db, current_user.workspace_id, current_user.id, data)
 
 

@@ -262,33 +262,70 @@ export type TaskCreate = {
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
 export type TaskUpdate = { done?: boolean; assigned_user_id?: string | null };
 
+export const MEETING_TYPES = ["sales_call", "client_check_in", "other"] as const;
+export type MeetingType = (typeof MEETING_TYPES)[number];
+
+export const MEETING_STATUSES = ["scheduled", "held", "cancelled", "no_show"] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+
+export type MeetingBrief = {
+  id: string;
+  summary: string;
+  talking_points: string[];
+  open_items: string[];
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  generated_at: string;
+};
+
 export type Meeting = {
   id: string;
   title: string;
+  meeting_type: MeetingType;
+  status: MeetingStatus;
   scheduled_at: string;
+  duration_minutes: number;
   held_at: string | null;
   notes: string | null;
   outcome: string | null;
   project_id: string | null;
   lead_id: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  synced_to_calendar: boolean;
   context: string;
   created_at: string;
+  brief: MeetingBrief | null;
 };
 
 export type MeetingCreate = {
   title: string;
+  meeting_type?: MeetingType;
   scheduled_at: string;
+  duration_minutes?: number;
   project_id?: string;
   lead_id?: string;
+  // Omitted defaults to the parent lead/project's assigned user.
+  assigned_user_id?: string | null;
   notes?: string;
 };
 
+// assigned_user_id: null unassigns, omitted leaves assignment untouched.
 export type MeetingUpdate = {
   title?: string;
   scheduled_at?: string;
+  duration_minutes?: number;
+  status?: MeetingStatus;
   held_at?: string | null;
   notes?: string | null;
   outcome?: string | null;
+  assigned_user_id?: string | null;
+};
+
+export type CalendarConnection = {
+  google_email: string | null;
+  calendar_id: string;
+  connected_at: string;
 };
 
 export type CalendarEvent = {
@@ -486,6 +523,11 @@ export const api = {
 
   listCalendarEvents: (start: string, end: string) =>
     request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),
+
+  getGoogleCalendarStatus: () => request<CalendarConnection | null>("/api/v1/calendar/google/status"),
+  // A real browser navigation (OAuth consent screen), not a fetch call.
+  googleCalendarConnectUrl: () => `${API_URL}/api/v1/calendar/google/connect`,
+  disconnectGoogleCalendar: () => request<void>("/api/v1/calendar/google/disconnect", { method: "POST" }),
 
   generateSalesAudit: (leadId: string) =>
     request<SalesAuditReport>(`/api/v1/leads/${leadId}/sales-audits`, { method: "POST" }),

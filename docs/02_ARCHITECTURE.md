@@ -40,6 +40,7 @@ explicitly wants a Next.js frontend and a Python/FastAPI backend. See
                  │  PostgreSQL      │  │  External services          │
                  │  (single DB)     │  │  Claude API · Playwright     │
                  └────────────────┘  │  Brave Search · Resend        │
+                                       │  Google Calendar (OAuth)       │
                                        │  Stripe · Vercel/hosting API   │
                                        │  Sentry                         │
                                        └──────────────────────────────┘
@@ -67,8 +68,9 @@ web-design-os/
 │           │                   (§6), plus agents/prompts/ for prompt
 │           │                   templates
 │           ├── integrations/   thin adapters: llm.py, search.py,
-│           │                   browser.py, email.py, hosting.py,
-│           │                   payments.py, monitoring.py
+│           │                   browser.py, google_calendar.py,
+│           │                   email.py, hosting.py, payments.py,
+│           │                   monitoring.py
 │           ├── jobs/           the in-process job runner (§4)
 │           ├── db/             SQLAlchemy base + Alembic migrations
 │           ├── core/           settings, auth, logging, shared deps
@@ -146,11 +148,29 @@ and check `current_user.role`. See §7.
 - **sales_opportunities** — the deal itself: proposed scope/price/tier
   under discussion. Belongs to a lead; becomes "won" → creates a
   client + project, or "lost".
-- **meetings** — scheduled/held meetings with notes and outcome.
-  Belongs to exactly one of a lead (sales-side calls) or a project
-  (post-sale client check-ins) — the same dual-parent shape as `tasks`,
-  not a sales_opportunity as originally drafted here. See
-  [[05_DECISIONS]] (2026-08-18, Calendar + Client Management).
+- **meetings** — a scheduled meeting: `title`, `meeting_type`
+  (`sales_call` | `client_check_in` | `other`, defaulted from the
+  parent), `status` (`scheduled` → `held` | `cancelled` | `no_show`),
+  `scheduled_at`, `duration_minutes`, `notes`, `outcome`,
+  `assigned_user_id`, and `external_event_id` (the synced Google
+  Calendar event id, nullable — see integrations/google_calendar.py and
+  [[06_SECURITY]]). Belongs to exactly one of a lead (sales-side calls)
+  or a project (post-sale client check-ins) — the same dual-parent shape
+  as `tasks`, not a sales_opportunity as originally drafted here. See
+  [[05_DECISIONS]] (2026-08-18, Calendar + Client Management and
+  Calendar Integration).
+- **meeting_briefs** — an auto-generated pre-meeting brief (summary,
+  talking points, open items), synthesized by `agents/meeting_brief.py`
+  from a lead's existing sales audit/outreach/meeting history when a
+  lead-side meeting is booked. Belongs to a meeting, 1–1; project-side
+  meetings don't get one.
+- **calendar_connections** — one user's connected Google Calendar
+  (`google_email`, `encrypted_refresh_token`, `calendar_id`). Belongs to
+  a user, 1–1 — not scoped under `businesses.workspace_id` like the rest
+  of this tree, since it's a personal integration credential, not
+  workspace business data. Reaches its workspace via `user_id →
+  users.workspace_id` when it needs to (it doesn't; nothing lists
+  connections across users).
 - **clients** — a business that has converted: billing details,
   contract terms. Belongs to a business (1–1, created on won
   opportunity). Deliberately *not* a copy of all business fields —
@@ -172,17 +192,19 @@ and check `current_user.role`. See §7.
 ```
 workspaces
   users
+    calendar_connections    (user_id, 1-1 — personal, not workspace data)
   businesses              (workspace_id)
     contacts
     leads                  (assigned_user_id)
       interactions
       website_audits
       sales_opportunities
-      meetings               (lead_id XOR project_id — see below)
+      meetings               (lead_id XOR project_id — assigned_user_id)
+        meeting_briefs         (1-1, lead-side meetings only)
     clients                (assigned_user_id; created when a sales_opportunity is won)
       projects              (assigned_user_id)
         tasks                (assigned_user_id)
-        meetings               (lead_id XOR project_id — see below)
+        meetings               (lead_id XOR project_id — assigned_user_id)
         design_briefs
         websites
           qa_reports
@@ -307,7 +329,7 @@ three are in near-term scope ([[04_ROADMAP]] M2).
 | Website auditing | M2 | Structured audit from Playwright output. |
 | Lead scoring | M2 | Deterministic-ish scoring from research + audit. |
 | Sales assistant | M3 | Sales-prep packet + outreach drafting. |
-| Meeting preparation | M3/deferred | Build only if meeting volume justifies it. |
+| Meeting preparation | Built 2026-08-18 | `agents/meeting_brief.py` — auto-runs when a lead-side meeting is booked, synthesizing existing lead info (no new data fetched). See [[05_DECISIONS]] (Calendar Integration). |
 | Creative director | M4/deferred | Design brief drafting — high judgment, expect heavy edits. |
 | Copywriter | M4 | Per-page copy drafts from intake + research. |
 | Website builder | M5 | Assembles a site from template + brief + copy, not a from-scratch generator. |
@@ -323,13 +345,26 @@ Extends [[06_SECURITY]] for the two-service shape:
   web app origin(s) — no wildcard.
 - **Auth (revised 2026-08-16):** per-user credentials backed by the
   `users` table; FastAPI-issued httpOnly signed session cookie carrying
-  a user id. Still no OAuth/external identity provider, and still a
-  single signed cookie — only what it identifies changed (a user, not
-  a fixed email). This is workspace-scoped multi-user, not a
-  multi-tenant *identity* system: no SSO, no per-record permission
-  grants, just two roles (`admin`/`member`) and one workspace per
-  account. See [[01_REQUIREMENTS]] "Multi-user & workspace" and
-  [[05_DECISIONS]].
+  a user id. Still no OAuth/external identity provider for *signing in*
+  to this app, and still a single signed cookie — only what it
+  identifies changed (a user, not a fixed email). This is
+  workspace-scoped multi-user, not a multi-tenant *identity* system: no
+  SSO, no per-record permission grants, just two roles (`admin`/
+  `member`) and one workspace per account. See [[01_REQUIREMENTS]]
+  "Multi-user & workspace" and [[05_DECISIONS]]. (Google Calendar OAuth,
+  added 2026-08-18, is a separate, per-user *outbound* integration
+  connection — see below — not an identity provider for this app.)
+- **Google Calendar OAuth tokens (added 2026-08-18):** only a refresh
+  token is persisted, Fernet-encrypted at rest
+  (`CALENDAR_TOKEN_ENCRYPTION_KEY`, see app/core/crypto.py) — never
+  plaintext, per [[06_SECURITY]]. Access tokens are fetched on demand
+  and never stored. The OAuth `state` param is signed (itsdangerous,
+  its own salt) and checked against the authenticated session on
+  callback — standard CSRF defense, not just "any validly-signed state
+  is accepted." Sync is one-directional (this app pushes meeting events
+  out, never reads the connected calendar back) and never sets
+  attendees or triggers a Google invite email — see
+  integrations/google_calendar.py.
 - **Authorization:** every non-public route resolves the current user
   and filters data to `current_user.workspace_id` — no cross-workspace
   reads are possible through the API. User-management and workspace-

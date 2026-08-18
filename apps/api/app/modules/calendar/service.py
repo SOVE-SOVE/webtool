@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.calendar.schemas import CalendarEvent
 from app.modules.meetings import service as meeting_service
-from app.modules.meetings.models import Meeting
+from app.modules.meetings.models import Meeting, MeetingStatus
 from app.modules.tasks import service as task_service
 from app.modules.tasks.models import Task
 
@@ -33,7 +33,7 @@ def list_events(db: Session, workspace_id: uuid.UUID, start: date, end: date) ->
             title=m.title,
             at=m.scheduled_at,
             detail=meeting_service._context(m),
-            done=m.held_at is not None,
+            done=m.status != MeetingStatus.SCHEDULED,
             href="/dashboard/calendar",
         )
         for m in meetings

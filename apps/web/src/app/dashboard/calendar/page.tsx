@@ -5,13 +5,30 @@ import { useEffect, useMemo, useState } from "react";
 import {
   api,
   ApiError,
+  MEETING_TYPES,
   type CalendarEvent,
   type Lead,
   type Meeting,
+  type MeetingStatus,
+  type MeetingType,
   type Project,
+  type User,
 } from "@/lib/api";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
+  sales_call: "Sales call",
+  client_check_in: "Client check-in",
+  other: "Other",
+};
+
+const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
+  scheduled: "Scheduled",
+  held: "Held",
+  cancelled: "Cancelled",
+  no_show: "No-show",
+};
 
 function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -39,13 +56,17 @@ export default function CalendarPage() {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
+  const [meetingType, setMeetingType] = useState<MeetingType | "">("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
+  const [duration, setDuration] = useState("30");
   const [parentType, setParentType] = useState<"lead" | "project">("lead");
   const [parentId, setParentId] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -69,6 +90,7 @@ export default function CalendarPage() {
   useEffect(() => {
     api.listLeads().then(setLeads).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
+    api.listUsers().then(setUsers).catch(() => {});
   }, []);
 
   const eventsByDay = useMemo(() => {
@@ -90,14 +112,20 @@ export default function CalendarPage() {
       const scheduled_at = new Date(`${date}T${time || "00:00"}`).toISOString();
       await api.createMeeting({
         title,
+        meeting_type: meetingType || undefined,
         scheduled_at,
+        duration_minutes: Number(duration) || 30,
         notes: notes || undefined,
+        assigned_user_id: assignedUserId || undefined,
         ...(parentType === "lead" ? { lead_id: parentId } : { project_id: parentId }),
       });
       setTitle("");
+      setMeetingType("");
       setDate("");
       setTime("10:00");
+      setDuration("30");
       setParentId("");
+      setAssignedUserId("");
       setNotes("");
       setShowForm(false);
       load();
@@ -117,11 +145,12 @@ export default function CalendarPage() {
     }
   }
 
-  async function handleMarkHeld() {
+  async function handleStatusChange(status: MeetingStatus) {
     if (!selectedMeeting) return;
     setMeetingBusy(true);
+    setMeetingError(null);
     try {
-      const updated = await api.updateMeeting(selectedMeeting.id, { held_at: new Date().toISOString() });
+      const updated = await api.updateMeeting(selectedMeeting.id, { status });
       setSelectedMeeting(updated);
       load();
     } catch {
@@ -141,20 +170,6 @@ export default function CalendarPage() {
     if (!selectedMeeting) return;
     const updated = await api.updateMeeting(selectedMeeting.id, { notes: value || null });
     setSelectedMeeting(updated);
-  }
-
-  async function handleDeleteMeeting() {
-    if (!selectedMeeting) return;
-    setMeetingBusy(true);
-    try {
-      await api.deleteMeeting(selectedMeeting.id);
-      setSelectedMeeting(null);
-      load();
-    } catch {
-      setMeetingError("Couldn't cancel that meeting.");
-    } finally {
-      setMeetingBusy(false);
-    }
   }
 
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -196,6 +211,12 @@ export default function CalendarPage() {
               onChange={(e) => setTime(e.target.value)}
               className={inputClass}
             />
+            <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="45">45 min</option>
+              <option value="60">60 min</option>
+            </select>
           </div>
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5">
@@ -234,6 +255,32 @@ export default function CalendarPage() {
               </option>
             ))}
           </select>
+          <div className="flex gap-3">
+            <select
+              value={meetingType}
+              onChange={(e) => setMeetingType(e.target.value as MeetingType)}
+              className={inputClass}
+            >
+              <option value="">Type: default for {parentType === "lead" ? "sales call" : "check-in"}</option>
+              {MEETING_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {MEETING_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={assignedUserId}
+              onChange={(e) => setAssignedUserId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Assigned: same as {parentType}</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <textarea
             placeholder="Notes (optional)"
             value={notes}
@@ -338,8 +385,15 @@ export default function CalendarPage() {
             </button>
           </div>
           <p className="mt-1 text-xs text-neutral-500">
-            {selectedMeeting.context} · {new Date(selectedMeeting.scheduled_at).toLocaleString()}
-            {selectedMeeting.held_at && ` · Held ${new Date(selectedMeeting.held_at).toLocaleDateString()}`}
+            {selectedMeeting.context} · {MEETING_TYPE_LABELS[selectedMeeting.meeting_type]} ·{" "}
+            {new Date(selectedMeeting.scheduled_at).toLocaleString()} ({selectedMeeting.duration_minutes} min)
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+            <span className="rounded bg-neutral-100 px-2 py-0.5 text-neutral-700">
+              {MEETING_STATUS_LABELS[selectedMeeting.status]}
+            </span>
+            {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
+            {selectedMeeting.synced_to_calendar && <span className="text-emerald-700">Synced to Google Calendar</span>}
           </p>
           {meetingError && <p className="mt-2 text-sm text-red-600">{meetingError}</p>}
 
@@ -365,23 +419,68 @@ export default function CalendarPage() {
           </div>
 
           <div className="mt-4 flex gap-2">
-            {!selectedMeeting.held_at && (
-              <button
-                onClick={handleMarkHeld}
-                disabled={meetingBusy}
-                className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
-              >
-                Mark held
-              </button>
+            {selectedMeeting.status === "scheduled" && (
+              <>
+                <button
+                  onClick={() => handleStatusChange("held")}
+                  disabled={meetingBusy}
+                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  Mark held
+                </button>
+                <button
+                  onClick={() => handleStatusChange("no_show")}
+                  disabled={meetingBusy}
+                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  Mark no-show
+                </button>
+                <button
+                  onClick={() => handleStatusChange("cancelled")}
+                  disabled={meetingBusy}
+                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Cancel meeting
+                </button>
+              </>
             )}
-            <button
-              onClick={handleDeleteMeeting}
-              disabled={meetingBusy}
-              className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-            >
-              Cancel meeting
-            </button>
           </div>
+
+          {selectedMeeting.brief && (
+            <div className="mt-5 border-t border-neutral-200 pt-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-neutral-900">Meeting brief</h3>
+                {selectedMeeting.brief.flagged_for_review && (
+                  <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                    Flagged for review
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-sm text-neutral-700">{selectedMeeting.brief.summary}</p>
+
+              {selectedMeeting.brief.talking_points.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">Talking points</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-neutral-700">
+                    {selectedMeeting.brief.talking_points.map((point, i) => (
+                      <li key={i}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selectedMeeting.brief.open_items.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">Open items</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-neutral-700">
+                    {selectedMeeting.brief.open_items.map((item, i) => (
+                      <li key={i}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
     </div>

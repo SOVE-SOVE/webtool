@@ -146,6 +146,23 @@ spec with no re-keying.
       fields, billing email, contract-signed date, assigned user, linked
       projects, activity history) mirroring the existing lead detail
       page — the first entity besides leads to get one.
+- [x] Calendar Integration — Google Calendar, OAuth 2.0, connected
+      per-user from Settings (one registered app; each teammate
+      individually grants consent). Meetings gained `meeting_type`,
+      `status` (scheduled/held/cancelled/no_show), `assigned_user_id`,
+      and `duration_minutes`. Booking a lead-side meeting now runs the
+      full requested workflow automatically: the lead's status advances
+      to MEETING (never regressing one already further along), the
+      event is pushed to the assigned user's connected Google Calendar
+      (no attendees, no invite email — see [[06_SECURITY]]), and
+      `agents/meeting_brief.py` generates a pre-meeting brief from the
+      lead's existing sales audit/outreach/meeting history — the
+      "Meeting preparation" AI role, previously deferred, per
+      [[02_ARCHITECTURE]] §6. Every step is best-effort/non-fatal except
+      the meeting booking itself: a missing calendar connection or a
+      failed LLM call never blocks scheduling. See [[05_DECISIONS]] for
+      the full design and why Google Calendar/per-user/one-directional
+      is the "simplest appropriate" scope.
 - [ ] Client intake form → auto-creates a project record.
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +

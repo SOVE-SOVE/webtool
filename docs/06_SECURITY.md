@@ -15,6 +15,9 @@ it gets real (if lightweight) treatment. Revisit as stages in
   they're meant to be public.
 - API keys for every integration in [[02_ARCHITECTURE]] (LLM, search,
   email, hosting, payments, error monitoring).
+- Google Calendar OAuth refresh tokens (one per connected user) — a
+  leaked token would let someone create/edit/delete events on that
+  person's real calendar.
 - No card data — Stripe-hosted checkout/payment links keep this app
   entirely out of PCI scope. Never build a custom card form.
 
@@ -62,6 +65,25 @@ it gets real (if lightweight) treatment. Revisit as stages in
   when researching/auditing prospect sites — legal and practical risk,
   not just politeness. **Still not implemented** — the SSRF fix above
   only blocks unsafe *targets*, not scrape-politeness for allowed ones.
+- **OAuth tokens never stored in plaintext.** The Google Calendar
+  refresh token is the only long-lived credential persisted (access
+  tokens are fetched on demand and never stored at all) — encrypted at
+  rest with Fernet (`app/core/crypto.py`,
+  `CALENDAR_TOKEN_ENCRYPTION_KEY`, symmetric, distinct from
+  `SESSION_SECRET`). A decrypt failure (rotated key) degrades to "not
+  connected, please reconnect," never an error leaking ciphertext.
+  **Implemented 2026-08-18.**
+- **OAuth CSRF.** The Google Calendar connect flow's `state` param is
+  signed (itsdangerous, its own salt, 10-minute expiry) and, on
+  callback, checked against the already-authenticated session's user —
+  a validly-signed state for a *different* user is rejected, not just
+  "is this signature real." **Implemented 2026-08-18.**
+- **No unnecessary outbound emails.** Every write to the connected
+  Google Calendar passes `sendUpdates=none` and never sets attendees —
+  booking or rescheduling a meeting in this app must never trigger
+  Google to email the lead/client an invite. See
+  `integrations/google_calendar.py` and [[05_DECISIONS]]. **Implemented
+  2026-08-18.**
 
 ## Review history
 

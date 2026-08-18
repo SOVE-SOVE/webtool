@@ -21,6 +21,122 @@ why it lost.
 
 ---
 
+## 2026-08-18 — Calendar Integration: Google Calendar, per-user OAuth, one-directional sync; meeting_type/status/assigned_user/duration added; auto lead-status bump + auto meeting brief on booking
+
+**Decision:** Implements the requested workflow — INTERESTED LEAD →
+MEETING BOOKED → CALENDAR EVENT → LEAD UPDATED → MEETING BRIEF — on top
+of the Calendar + Client Management feature below. Recommendation given
+before building, per the operator's explicit ask to "recommend the
+simplest appropriate calendar integration" first:
+
+**Google Calendar, OAuth 2.0, connected per user, one-directional.** One
+registered Google Cloud OAuth app for the whole product
+(`GOOGLE_CALENDAR_CLIENT_ID`/`SECRET`, same tier as `LLM_API_KEY`); each
+teammate individually grants consent from Settings — not a shared
+workspace calendar, since a meeting's event needs to land on whoever is
+actually assigned to it. Sync is one-directional (this app pushes
+meeting events out; it never reads the connected calendar back) — no
+webhook receiver, no availability/conflict checking, matching this
+project's standing "no infra we don't need yet" posture (see the
+overengineering-guardrails entry below). Least-privilege scope
+(`calendar.events` + `openid email`, not the full `calendar` scope).
+
+Concretely:
+
+- **`meetings` gained real fields**: `meeting_type`
+  (`sales_call`/`client_check_in`/`other`, defaulted from the parent —
+  lead → sales_call, project → client_check_in — but overridable),
+  `status` (`scheduled` → `held`/`cancelled`/`no_show`, replacing the
+  old held_at-only implicit state), `duration_minutes` (default 30, now
+  needed for a real calendar event's end time), `assigned_user_id`
+  (defaults to the parent lead/project's own assignment when omitted,
+  explicit value otherwise), and `external_event_id` (the synced Google
+  event id). Adding `assigned_user_id` to `Meeting` **reverses** the
+  same-day earlier decision (below) that deliberately left it off,
+  citing [[01_REQUIREMENTS]]'s four-entity list — the operator's
+  explicit "Need: assigned user" requirement, plus the fact that
+  calendar sync genuinely needs to know *whose* calendar to push to,
+  overrides that reasoning.
+- **New `integrations/google_calendar.py`** — the thin OAuth + Calendar
+  API adapter (auth URL, code exchange, refresh, create/update/delete
+  event). Every write passes `sendUpdates=none` and never sets
+  attendees — a booked meeting must never trigger Google to email the
+  lead/client an invite, per the operator's explicit "no unnecessary
+  emails" instruction.
+- **New `calendar_connections` table** (`modules/calendar/models.py`) —
+  one row per user, storing only a Fernet-encrypted refresh token
+  (`app/core/crypto.py`, `CALENDAR_TOKEN_ENCRYPTION_KEY`). Access tokens
+  are fetched on demand via the refresh token and never persisted — "no
+  token in plaintext" is satisfied by not storing the sensitive
+  short-lived one at all, and encrypting (not just hashing, since it
+  must be read back) the long-lived one. Split into a separate
+  `modules/calendar/connections.py` file from the existing
+  `modules/calendar/service.py` (the meetings+tasks aggregation) purely
+  to avoid a circular import — `service.py` already imports
+  `modules/meetings/service.py`, and `meetings/service.py` needs the
+  connection/token helpers to sync a booked meeting.
+- **CALENDAR EVENT** — `modules/meetings/service.py`'s
+  `_sync_to_google_calendar` runs after a meeting is created or
+  rescheduled/reassigned: best-effort, never fatal. No connection, an
+  expired/revoked token, or a Google API failure all silently no-op
+  (logged, not surfaced) — the meeting is still booked in this app
+  either way. A `status` transition to `cancelled`/`no_show` deletes the
+  synced event; reassigning a meeting deletes it from the previous
+  assignee's calendar and creates it on the new one.
+- **LEAD UPDATED** — booking a lead-side meeting bumps `lead.status` to
+  `MEETING` (an existing `LeadStatus` value, previously never
+  auto-written), but only forward: a lead already at
+  `PROPOSAL`/`WON`/`LOST`/`NURTURE` or a later meeting isn't regressed.
+  Recorded in `activity_log` like every other status change.
+- **MEETING BRIEF** — new `agents/meeting_brief.py` (the "Meeting
+  preparation" role [[02_ARCHITECTURE]] §6 listed as deferred) runs
+  automatically for lead-side meetings only, synthesizing the lead's
+  existing sales audit, prior outreach, and prior meeting history into a
+  short brief (summary, talking points, open items) — no new external
+  data is fetched, this is pure synthesis via `integrations/llm.py`,
+  same `AgentResult`/`flagged_for_review` shape as every other agent.
+  Skipped entirely (not attempted) if `LLM_API_KEY` is unset, and any
+  other failure is caught and logged rather than blocking the
+  meeting-booking request that triggered it — generating a brief must
+  never be a reason a meeting fails to get booked. `POST
+  /api/v1/meetings` now sits behind `enforce_generation_rate_limit`
+  (shared bucket with Sales Audit/Outreach/Follow-up) since it can
+  trigger this LLM call.
+- **OAuth CSRF**: the `state` param is signed (itsdangerous, its own
+  salt, 10-minute expiry) and, on callback, checked against the
+  *already-authenticated* session's user id — not just "is this validly
+  signed by anyone." The callback route requires the normal session
+  cookie (it's a same-origin top-level redirect back to this app, so the
+  cookie is present) rather than trusting the state param alone to
+  identify the user.
+
+**Why:** Every element of the "Need" list maps directly to a schema/UI
+change above; "Use OAuth securely" is the per-user encrypted-refresh-
+token + signed-state design; "Never store access tokens in plaintext"
+is satisfied by never storing the access token at all and encrypting the
+refresh token; "Do not automatically send unnecessary emails" is
+`sendUpdates=none` + no attendees, checked at the one integration point
+that talks to Google, not scattered across call sites.
+
+**Alternatives considered:** A shared workspace-level Google Calendar
+connection instead of per-user — rejected because "assigned user" is an
+explicit requirement and a two-person shop's calendars are personal, not
+shared; an event needs to land on the actual assignee's calendar for
+this to be useful day to day. Two-directional sync (reading the
+connected calendar back for availability/conflict checking) — rejected
+as scope creep for this pass; nothing in the requested workflow needs it
+and it would require a webhook receiver or polling, both real
+infrastructure this app doesn't have yet. A generic multi-provider
+calendar abstraction (Outlook/CalDAV alongside Google) — rejected same
+as the single-LLM-provider decision below: one provider, one adapter,
+until a second is actually needed. Making the meeting brief a manual
+"Generate brief" button (matching Sales Audit's UX) instead of automatic
+— rejected because the operator's instruction was specifically "when a
+meeting is booked, automatically prepare a meeting brief," not on
+request.
+
+---
+
 ## 2026-08-18 — Calendar + Client Management: Meeting moves to project/lead (not sales_opportunity), unified calendar aggregates meetings + task due dates
 
 **Decision:** Built the first post-M3 feature ahead of the rest of M4

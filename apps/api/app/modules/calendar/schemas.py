@@ -2,7 +2,15 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+
+class CalendarConnectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    google_email: str | None
+    calendar_id: str
+    connected_at: datetime
 
 
 class CalendarEvent(BaseModel):

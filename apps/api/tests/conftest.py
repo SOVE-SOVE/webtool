@@ -15,6 +15,12 @@ os.environ["SESSION_SECRET"] = "test-session-secret"
 # in the local environment.
 os.environ["BRAVE_SEARCH_API_KEY"] = ""
 os.environ["LLM_API_KEY"] = ""
+# A real (test-only) Fernet key so calendar-connection encryption tests
+# can round-trip — tests that want the "not configured" path unset this
+# themselves via monkeypatch.
+os.environ["CALENDAR_TOKEN_ENCRYPTION_KEY"] = "wIxldGe6BcCKukNVkV38yTsovSsFyCIgvLFgeA8_Ho0="
+os.environ["GOOGLE_CALENDAR_CLIENT_ID"] = "test-client-id"
+os.environ["GOOGLE_CALENDAR_CLIENT_SECRET"] = "test-client-secret"
 
 import pytest
 from fastapi.testclient import TestClient

@@ -37,9 +37,24 @@ class Settings(BaseSettings):
     brave_search_api_key: str | None = None
 
     # Cap on paid-API-triggering generations (sales audit, outreach
-    # draft, follow-up suggestion) per user — docs/06_SECURITY.md's
-    # "cost/rate limits on paid APIs" control. See app/core/rate_limit.py.
+    # draft, follow-up suggestion, meeting brief) per user —
+    # docs/06_SECURITY.md's "cost/rate limits on paid APIs" control. See
+    # app/core/rate_limit.py.
     llm_rate_limit_per_minute: int = 10
+
+    # google calendar — one OAuth app for the whole product; each user
+    # individually connects their own calendar from Settings (see
+    # modules/calendar/). Blank client_id/secret means the connect
+    # button returns a clear "not configured" error rather than the app
+    # failing to start, matching the brave_search_api_key pattern below.
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_redirect_uri: str = "http://localhost:8000/api/v1/calendar/google/callback"
+    # Fernet key (python -c "from cryptography.fernet import Fernet;
+    # print(Fernet.generate_key().decode())") — encrypts the stored
+    # refresh token at rest. See app/core/crypto.py and
+    # docs/06_SECURITY.md: never store an OAuth token in plaintext.
+    calendar_token_encryption_key: str = ""
 
     @property
     def allowed_origins_list(self) -> list[str]:
