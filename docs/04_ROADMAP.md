@@ -163,10 +163,24 @@ spec with no re-keying.
       failed LLM call never blocks scheduling. See [[05_DECISIONS]] for
       the full design and why Google Calendar/per-user/one-directional
       is the "simplest appropriate" scope.
-- [ ] Client intake form → auto-creates a project record.
+- [x] Client intake form → auto-creates a project record —
+      `modules/design_briefs/`: expanded the `design_briefs` stub into
+      the full BUSINESS/BRAND/CONTENT/WEBSITE/ASSETS intake, one row
+      per project. "Start intake" on a client's page (pre-filled from
+      what the CRM already knows, nothing invented) creates the project
+      and brief together; the project detail page's Brief section is
+      the ongoing editor, saving field-by-field. Every empty field is
+      surfaced in `missing_fields` rather than guessed at, and the
+      brief is the operator-reviewable/editable source of truth for
+      design — "Approve brief" locks it in and advances the project
+      past `INTAKE`, and any further edit reverts it to draft. See
+      [[05_DECISIONS]].
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +
-      research, for operator sign-off before build.
+      research, for operator sign-off before build — the intake
+      collection above is the foundation this reads from; the
+      generation step itself (research agent → drafted sitemap/copy)
+      is still open.
 
 ## M5 — Website build + QA + approval
 

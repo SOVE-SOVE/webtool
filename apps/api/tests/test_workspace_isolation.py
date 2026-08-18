@@ -121,3 +121,29 @@ def test_activity_feed_scoped_to_own_workspace(authed_client, other_authed_clien
 
     other_activity = other_authed_client.get("/api/v1/activity").json()
     assert other_activity == []
+
+
+def test_design_brief_scoped_to_own_workspace(authed_client, other_authed_client):
+    client_row = authed_client.post("/api/v1/clients", json={"business_name": "Workspace One Client"}).json()
+    project = authed_client.post(
+        "/api/v1/projects", json={"client_id": client_row["id"], "name": "Site"}
+    ).json()
+    authed_client.patch(f"/api/v1/projects/{project['id']}/brief", json={"business_name": "Workspace One Client"})
+
+    other_get = other_authed_client.get(f"/api/v1/projects/{project['id']}/brief")
+    assert other_get.status_code == 404
+
+    other_patch = other_authed_client.patch(
+        f"/api/v1/projects/{project['id']}/brief", json={"business_name": "Hijacked"}
+    )
+    assert other_patch.status_code == 404
+
+    other_approve = other_authed_client.post(f"/api/v1/projects/{project['id']}/brief/approve")
+    assert other_approve.status_code == 404
+
+
+def test_cannot_start_intake_on_another_workspaces_client(authed_client, other_authed_client):
+    client_row = authed_client.post("/api/v1/clients", json={"business_name": "Workspace One Client"}).json()
+
+    res = other_authed_client.post(f"/api/v1/clients/{client_row['id']}/intake", json={})
+    assert res.status_code == 404
