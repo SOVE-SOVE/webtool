@@ -162,6 +162,54 @@ job here is to surface that, not to gate on it.
 
 ---
 
+## 2026-08-19 — Component library: 17 sections on 8 shared primitives, config-driven, no fabricated content
+
+**Decision:** Built `packages/site-templates` (roadmap M5's "first
+template/component package") as a plain React/TypeScript package —
+Tailwind utility classes only, no build tooling of its own, since
+`apps/api` copies these files into a generated Next.js project at build
+time rather than importing them as Python code (see
+[[02_ARCHITECTURE]] §2). Every section (Navigation, Hero, CTA, Service
+cards, Features, Testimonials, Pricing, FAQ, Contact, Image/content
+split, Gallery, Footer, Form, Stats, Logos, Team, Portfolio) takes one
+typed, JSON-serializable config object and renders exactly that — no
+section fetches data, computes a number, or falls back to placeholder
+copy. `Media.alt` is required (not optional) on every image type in the
+config, and `Testimonials`/similar list sections render nothing rather
+than a placeholder when their content array is empty.
+
+Rather than a component per near-duplicate layout, most sections
+delegate to two shared primitives: `CardGrid` (a pure responsive-grid
+layout primitive, no opinion on card shape) and `Card` (icon/photo +
+title + description + CTA). `Section`/`Container`/`Heading`/`Button`
+give every section the same spacing, type scale, and tone (light/muted/
+dark/brand) instead of each one picking its own.
+
+A `SECTION_REGISTRY` maps each section's `type` to its component plus
+metadata: which of `apps/api`'s `sitemaps.models.PageType` values it
+suits, and which config fields are required. `getSectionsForPageType()`
+is the query surface the website generator (roadmap M5, next) will use
+instead of hardcoding "services page gets a service-cards section" —
+and `validateSection()` reports missing required fields without ever
+inventing a value to satisfy them, which is the same "flag, don't
+fabricate" contract the Anti-Slop system builds on next.
+
+**Why:** the generator needs a fixed, reviewable set of building blocks
+"instead of repeatedly inventing UI" (operator's framing) — a config-
+driven library makes both "which sections exist" and "what content each
+one needs" explicit and testable ahead of any generation logic
+existing, rather than emerging ad hoc inside a prompt.
+
+**Alternatives considered:** one large parameterized `Section` component
+covering every layout via a `variant` prop — rejected, the config shapes
+(e.g. `PricingTier` vs `Testimonial`) are different enough that one
+mega-type would need most fields optional, defeating the point of
+flagging missing content per section type. A full Next.js app inside
+`packages/` — rejected for now; nothing here needs a dev server or its
+own routing, and the eventual generated site owns that.
+
+---
+
 ## 2026-08-19 — Lead-to-client conversion now creates the Project too; project pipeline redesigned to the operator's 12 stages
 
 **Decision:** Converting a won lead (`POST /api/v1/clients` with

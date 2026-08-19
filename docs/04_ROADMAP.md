@@ -236,8 +236,19 @@ spec with no re-keying.
 
 Goal: stages 15–18. First real reusable output.
 
-- [ ] First template/component package in [[packages]] — the build
-      baseline instead of a blank canvas.
+- [x] First template/component package in [[packages]] — the build
+      baseline instead of a blank canvas. `packages/site-templates`: 17
+      section components (nav, hero, CTA, service cards, features,
+      testimonials, pricing, FAQ, contact, image/content split, gallery,
+      footer, form, stats, logos, team, portfolio) built on 8 shared
+      primitives (Section, Container, Heading, Button, Media, Card,
+      CardGrid, Form), each driven entirely by a typed config object —
+      no section fetches data or invents content. A registry maps every
+      section type to its component plus metadata (sitemap PageTypes it
+      suits, required config fields), so the future generator queries
+      `getSectionsForPageType()` instead of hardcoding which section
+      goes where. `validateSection()` flags missing required fields
+      without ever filling them in. See [[05_DECISIONS]].
 - [ ] Site generation from brief + sitemap + copy + client assets.
 - [ ] Automated QA checks (build, links, mobile) from [[tests]].
 - [ ] Operator approval gate, then a secure shareable client-preview
