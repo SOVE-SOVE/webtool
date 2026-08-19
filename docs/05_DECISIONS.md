@@ -162,6 +162,78 @@ job here is to surface that, not to gate on it.
 
 ---
 
+## 2026-08-19 — Anti-Slop quality evaluator: deterministic rules over section configs, missing content flagged instead of invented
+
+**Decision:** Built `agents/anti_slop.py` as a deterministic rules
+engine (no LLM call — same reasoning as `agents/lead_score.py`: a score
+that can drift between runs of identical input isn't a score) that
+takes a proposed site (`pages: [{name, sections: [{type, config}]}]`,
+the same shape `packages/site-templates`' `SiteSection` configs take
+and `websites.config` already stores as JSON) and returns a 0-100 score
+plus a list of specific `QualityIssue`s. It operates on raw `dict`
+configs rather than a Python port of the TypeScript types — a section's
+prose fields, media, and card-shaped arrays are found by walking the
+dict for known key names (`heading`/`body`/`quote`/etc., `{src, alt}`
+pairs), which stays correct as sections gain fields without needing a
+second schema kept in sync by hand (only the small `requiredFields` list
+per type needs manual sync with `registry.ts`, called out in a comment
+at the top of the map).
+
+Every one of the operator's listed anti-patterns maps to a specific
+rule: generic/cliche copy and "Welcome to our website" language against
+a curated phrase list; repetitive AI phrasing via exact-duplicate
+detection across every page's prose, not just within one page; generic
+layouts and excessive cards via section-type-sequence checks (same type
+stacked back-to-back, 4+ card-grid sections on one page, no hero/split
+section to anchor the page); generic stock imagery via known stock-host
+domains and generic-alt-text patterns; gradients/glassmorphism/rounded-
+corners/animation via a `VisualStyleInput` the generator will report
+(every field defaults to the safest value, so *omitting* it never
+produces a false positive — only an explicit heavy-handed choice does).
+
+The fabrication rules (fake testimonials, invented statistics, invented
+claims) work by requiring a match against an `AuthenticContent` pool
+(`known_testimonial_quotes`/`known_stat_values`/`known_claims`) the
+generator is expected to supply from the brief/research/creative
+direction — not by trying to guess truthfulness from text alone, which
+isn't something pattern-matching can actually do. An empty pool doesn't
+mean "assume it's all fine": every testimonial/stat/superlative claim in
+the output gets flagged as unverified until something in the pool
+backs it up. Two different match strictnesses are used deliberately —
+testimonials/claims (full sentences) require both containment *and* a
+0.6 length-ratio, so a three-word accidental substring can't validate a
+fabricated quote; stat values (short tokens like `"12+"`, `"24/7"`) use
+plain containment only, since the ratio guard would reject genuine
+matches by construction.
+
+Missing required content (`missing_information`) is reported completely
+separately from `issues` and never affects `score` — conflating "this
+page is honestly incomplete" with "this page is low-quality" would
+punish exactly the behavior (flag a gap, don't invent filler) the whole
+system exists to enforce. `passed` requires both `score >= 70` and zero
+high-severity issues, so a site can't buy its way past one fabricated
+testimonial by otherwise being clean.
+
+Not yet wired into anything — no route, no call site. The generator
+(roadmap M5, next) is expected to call it post-generation and react to
+`flagged_for_review`, same contract as every other agent.
+
+**Why:** [[00_VISION]]'s "AI slop is unacceptable — output quality is a
+hard constraint, not a nice-to-have" and [[03_AGENT_RULES]]'s quality
+bar were previously aspirational prose with nothing to check them
+against. A generator that "tries to avoid slop" via prompt instructions
+alone has no floor; this gives it one that's independently testable.
+
+**Alternatives considered:** an LLM-as-judge quality scorer — rejected
+for the same reason lead-scoring is deterministic: a judgment that can
+flip between identical runs isn't a floor, it's a suggestion. Inferring
+testimonial/statistic authenticity from text alone (tone, specificity
+heuristics) — rejected as unfounded; nothing about *how a sentence
+reads* proves whether it's true, so the only honest check is against a
+supplied source of truth, not the text itself.
+
+---
+
 ## 2026-08-19 — Component library: 17 sections on 8 shared primitives, config-driven, no fabricated content
 
 **Decision:** Built `packages/site-templates` (roadmap M5's "first

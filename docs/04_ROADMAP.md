@@ -249,6 +249,21 @@ Goal: stages 15–18. First real reusable output.
       `getSectionsForPageType()` instead of hardcoding which section
       goes where. `validateSection()` flags missing required fields
       without ever filling them in. See [[05_DECISIONS]].
+- [x] Anti-Slop quality evaluator — `agents/anti_slop.py`, deterministic
+      (no LLM call, mirrors `agents/lead_score.py`), the "quality floor"
+      from [[01_REQUIREMENTS]] made checkable rather than aspirational.
+      Takes a proposed site's section configs (the same shape
+      `packages/site-templates` renders) and scores them 0-100 against
+      explicit rules: generic/cliche copy, repeated phrasing across
+      pages, unverified superlative claims, testimonials/statistics with
+      no match in a supplied "authentic content" pool, stock-photo hosts
+      and placeholder alt text, repetitive/card-heavy page structure,
+      and (once the generator reports them) heavy gradients/
+      glassmorphism/rounded-corners/animation. Missing required content
+      is reported separately as `missing_information`, never scored as
+      a defect — this system flags gaps, it never fabricates to fill
+      them. Not yet wired into the generator (roadmap item below) or
+      exposed as a route. See [[05_DECISIONS]].
 - [ ] Site generation from brief + sitemap + copy + client assets.
 - [ ] Automated QA checks (build, links, mobile) from [[tests]].
 - [ ] Operator approval gate, then a secure shareable client-preview
