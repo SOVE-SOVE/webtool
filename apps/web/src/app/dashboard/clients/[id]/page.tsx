@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
+  PROJECT_STAGE_LABELS,
   type ActivityItem,
   type Business,
   type Client,
@@ -255,11 +256,23 @@ export default function ClientDetailPage() {
           )}
           {clientProjects.map((project) => (
             <li key={project.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <Link href={`/dashboard/projects/${project.id}`} className="text-neutral-900 hover:underline">
-                {project.name}
-              </Link>
+              <div>
+                <Link href={`/dashboard/projects/${project.id}`} className="text-neutral-900 hover:underline">
+                  {project.name}
+                </Link>
+                {project.source_lead_id && (
+                  <Link
+                    href={`/dashboard/leads/${project.source_lead_id}`}
+                    className="ml-2 text-xs text-neutral-500 hover:underline"
+                  >
+                    from lead
+                  </Link>
+                )}
+              </div>
               <span className="flex items-center gap-3 text-xs text-neutral-500">
-                {project.stage.replace("_", " ")}
+                <span className="rounded bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700">
+                  {PROJECT_STAGE_LABELS[project.stage]}
+                </span>
                 {project.assigned_user_name && <span>· {project.assigned_user_name}</span>}
               </span>
             </li>

@@ -1,9 +1,9 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.modules.clients.models import Client
     from app.modules.design_briefs.models import DesignBrief
+    from app.modules.leads.models import Lead
     from app.modules.meetings.models import Meeting
     from app.modules.tasks.models import Task
     from app.modules.users.models import User
@@ -19,20 +20,26 @@ if TYPE_CHECKING:
 
 
 class ProjectStage(str, enum.Enum):
-    """Mirrors the delivery half of the pipeline in docs/00_VISION.md."""
+    """
+    The delivery-side pipeline a project moves through, from signed
+    client to closed-out engagement. Replaces the earlier stage set
+    (see docs/05_DECISIONS.md for the migration/mapping) per explicit
+    operator-specified stages for the lead-to-client conversion
+    workflow.
+    """
 
     INTAKE = "intake"
-    PROJECT = "project"
     RESEARCH = "research"
-    DESIGN_BRIEF = "design_brief"
-    SITEMAP = "sitemap"
-    COPY = "copy"
-    WEBSITE = "website"
+    BRIEF = "brief"
+    DESIGN = "design"
+    DEVELOPMENT = "development"
     QA = "qa"
-    MY_APPROVAL = "my_approval"
-    CLIENT_APPROVAL = "client_approval"
-    DEPLOYMENT = "deployment"
+    CLIENT_REVIEW = "client_review"
+    REVISIONS = "revisions"
+    READY_TO_DEPLOY = "ready_to_deploy"
+    DEPLOYED = "deployed"
     MAINTENANCE = "maintenance"
+    COMPLETE = "complete"
 
 
 class Project(Base):
@@ -42,10 +49,21 @@ class Project(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
+    # Set when this project was created by converting a won lead — the
+    # direct traceability pointer back to that lead (see
+    # docs/05_DECISIONS.md). Null for projects added independently of a
+    # conversion (e.g. a second project for an existing client).
+    source_lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
     name: Mapped[str] = mapped_column(String(255))
     stage: Mapped[ProjectStage] = mapped_column(
         Enum(ProjectStage, name="project_stage"), default=ProjectStage.INTAKE
     )
+    # The agreed terms of this project's engagement — captured once
+    # (typically at lead conversion) and owned by the project from then
+    # on, not re-derived from the sales side on every read.
+    package: Mapped[str | None] = mapped_column(String(50))
+    price_cents: Mapped[int | None] = mapped_column(Integer)
+    deadline: Mapped[date | None] = mapped_column(Date)
     assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -53,6 +71,7 @@ class Project(Base):
     )
 
     client: Mapped["Client"] = relationship(back_populates="projects")
+    source_lead: Mapped["Lead | None"] = relationship()
     assigned_user: Mapped["User | None"] = relationship()
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
     meetings: Mapped[list["Meeting"]] = relationship(back_populates="project")

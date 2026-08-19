@@ -9,7 +9,18 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.projects.models import Project
 from app.modules.projects.schemas import ProjectCreate, ProjectRead, ProjectUpdate
+from app.modules.tasks.models import Task
 from app.modules.users.service import require_user_in_workspace
+
+# Seeded on every new project so INTAKE never starts as an empty to-do
+# list — the concrete first steps of docs/01_REQUIREMENTS.md stage 9
+# (client intake). Operators edit/add/remove from here via the normal
+# task routes; this is just the starting checklist, not a fixed workflow.
+DEFAULT_INTAKE_TASK_TITLES = [
+    "Confirm project scope and deliverables with client",
+    "Collect brand assets and content from client",
+    "Schedule kickoff/intake call",
+]
 
 
 def _to_read(project: Project) -> ProjectRead:
@@ -17,13 +28,23 @@ def _to_read(project: Project) -> ProjectRead:
         id=project.id,
         client_id=project.client_id,
         client_business_name=project.client.business.name,
+        source_lead_id=project.source_lead_id,
         name=project.name,
         stage=project.stage,
+        package=project.package,
+        price_cents=project.price_cents,
+        deadline=project.deadline,
         assigned_user_id=project.assigned_user_id,
         assigned_user_name=project.assigned_user.name if project.assigned_user else None,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
+
+
+def create_default_tasks(db: Session, project_id: uuid.UUID) -> None:
+    """Seeds the initial INTAKE task checklist for a newly created project."""
+    for title in DEFAULT_INTAKE_TASK_TITLES:
+        db.add(Task(project_id=project_id, title=title))
 
 
 def _base_query(workspace_id: uuid.UUID):
@@ -65,7 +86,14 @@ def create_project(
     if data.assigned_user_id is not None:
         require_user_in_workspace(db, workspace_id, data.assigned_user_id)
 
-    project = Project(client_id=data.client_id, name=data.name, assigned_user_id=data.assigned_user_id)
+    project = Project(
+        client_id=data.client_id,
+        name=data.name,
+        assigned_user_id=data.assigned_user_id,
+        package=data.package,
+        price_cents=data.price_cents,
+        deadline=data.deadline,
+    )
     db.add(project)
     db.flush()
 
@@ -111,6 +139,13 @@ def update_project(
             summary=f"{project.stage.value} -> {data.stage.value}",
         )
         project.stage = data.stage
+
+    if "package" in data.model_fields_set:
+        project.package = data.package
+    if "price_cents" in data.model_fields_set:
+        project.price_cents = data.price_cents
+    if "deadline" in data.model_fields_set:
+        project.deadline = data.deadline
 
     if "assigned_user_id" in data.model_fields_set and data.assigned_user_id != project.assigned_user_id:
         if data.assigned_user_id is not None:

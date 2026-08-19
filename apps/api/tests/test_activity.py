@@ -75,7 +75,7 @@ def test_project_and_client_actions_log_activity(authed_client):
     project = authed_client.post(
         "/api/v1/projects", json={"client_id": client_row["id"], "name": "New site"}
     ).json()
-    authed_client.patch(f"/api/v1/projects/{project['id']}", json={"stage": "design_brief"})
+    authed_client.patch(f"/api/v1/projects/{project['id']}", json={"stage": "brief"})
 
     activity = authed_client.get("/api/v1/activity").json()
     client_actions = [a["action"] for a in activity if a["entity_type"] == "client"]

@@ -194,6 +194,20 @@ spec with no re-keying.
       editing (`PATCH /creative-directions/{id}`) is the "review and
       edit before continuing" step, surfaced on the same
       `/dashboard/projects/[id]` page as the intake brief.
+- [x] Lead-to-client conversion → auto-creates a project record.
+      Converting a won lead now creates the Client *and* one INTAKE-stage
+      Project (with a starter task checklist) in the same transaction,
+      carrying the agreed package/price/deadline and a direct
+      traceability pointer back to the lead (`source_lead_id`). There's
+      no separate "client intake form" UI — the conversion action itself
+      is the trigger, since that's the app's real "became a client"
+      event. The project stage pipeline was also redesigned to the
+      12-stage set the operator specified for this workflow. See
+      [[05_DECISIONS]]. Note: a client can end up with two projects if
+      both flows are used (one from conversion, one from "Start
+      intake") — each flow creates its own project rather than reusing
+      one, consistent with "a client can have more than one project
+      over time."
 - [ ] Post-sale research agent.
 - [x] Sitemap/planning system — `agents/sitemap.py` / `modules/sitemaps/`:
       given a project's client brief and (where one exists) its

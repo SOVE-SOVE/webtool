@@ -114,7 +114,7 @@ def test_approve_brief_advances_project_stage(authed_client):
     assert body["approved_at"] is not None
 
     updated_project = authed_client.get(f"/api/v1/projects/{project['id']}").json()
-    assert updated_project["stage"] == "design_brief"
+    assert updated_project["stage"] == "brief"
 
 
 def test_editing_approved_brief_reverts_to_draft(authed_client):

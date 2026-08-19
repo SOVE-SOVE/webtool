@@ -95,7 +95,7 @@ def test_overview_counts_project_meetings_too(authed_client):
     assert body["meetings"] == 1
 
 
-def test_overview_active_projects_excludes_maintenance(authed_client):
+def test_overview_active_projects_excludes_maintenance_and_complete(authed_client):
     client_row = authed_client.post("/api/v1/clients", json={"business_name": "A"}).json()
     project = authed_client.post(
         "/api/v1/projects", json={"client_id": client_row["id"], "name": "Site"}
@@ -104,6 +104,9 @@ def test_overview_active_projects_excludes_maintenance(authed_client):
     assert authed_client.get("/api/v1/dashboard/overview").json()["active_projects"] == 1
 
     authed_client.patch(f"/api/v1/projects/{project['id']}", json={"stage": "maintenance"})
+    assert authed_client.get("/api/v1/dashboard/overview").json()["active_projects"] == 0
+
+    authed_client.patch(f"/api/v1/projects/{project['id']}", json={"stage": "complete"})
     assert authed_client.get("/api/v1/dashboard/overview").json()["active_projects"] == 0
 
 

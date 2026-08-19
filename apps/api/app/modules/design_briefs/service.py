@@ -175,7 +175,7 @@ def approve_brief(
     # project past intake so the pipeline reflects it, same pattern as
     # ProjectUpdate's stage-change logging.
     if project.stage == ProjectStage.INTAKE:
-        project.stage = ProjectStage.DESIGN_BRIEF
+        project.stage = ProjectStage.BRIEF
 
     activity_service.record(
         db,
