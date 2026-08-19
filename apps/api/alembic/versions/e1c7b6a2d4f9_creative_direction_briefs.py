@@ -30,9 +30,9 @@ def upgrade() -> None:
         sa.Column('project_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
             'status',
-            postgresql.ENUM('draft', 'approved', name='creative_direction_status'),
+            postgresql.ENUM('DRAFT', 'APPROVED', name='creative_direction_status'),
             nullable=False,
-            server_default='draft',
+            server_default='DRAFT',
         ),
         sa.Column('target_audience', sa.Text(), nullable=True),
         sa.Column('business_goals', sa.Text(), nullable=True),

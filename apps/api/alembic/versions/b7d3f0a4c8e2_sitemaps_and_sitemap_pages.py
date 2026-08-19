@@ -31,9 +31,9 @@ def upgrade() -> None:
         sa.Column('project_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
             'status',
-            postgresql.ENUM('draft', 'approved', name='sitemap_status'),
+            postgresql.ENUM('DRAFT', 'APPROVED', name='sitemap_status'),
             nullable=False,
-            server_default='draft',
+            server_default='DRAFT',
         ),
         sa.Column('overview', sa.Text(), nullable=True),
         sa.Column('creative_direction_id', postgresql.UUID(as_uuid=True), nullable=True),
@@ -64,21 +64,21 @@ def upgrade() -> None:
         sa.Column(
             'page_type',
             postgresql.ENUM(
-                'home', 'about', 'services', 'service_detail', 'products', 'product_detail',
-                'contact', 'faq', 'testimonials', 'portfolio', 'blog', 'blog_post', 'custom',
+                'HOME', 'ABOUT', 'SERVICES', 'SERVICE_DETAIL', 'PRODUCTS', 'PRODUCT_DETAIL',
+                'CONTACT', 'FAQ', 'TESTIMONIALS', 'PORTFOLIO', 'BLOG', 'BLOG_POST', 'CUSTOM',
                 name='sitemap_page_type',
             ),
             nullable=False,
-            server_default='custom',
+            server_default='CUSTOM',
         ),
         sa.Column(
             'nav_placement',
             postgresql.ENUM(
-                'primary_nav', 'footer_nav', 'primary_and_footer', 'not_in_nav',
+                'PRIMARY_NAV', 'FOOTER_NAV', 'PRIMARY_AND_FOOTER', 'NOT_IN_NAV',
                 name='sitemap_nav_placement',
             ),
             nullable=False,
-            server_default='primary_nav',
+            server_default='PRIMARY_NAV',
         ),
         sa.Column('order_index', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('purpose', sa.Text(), nullable=False),

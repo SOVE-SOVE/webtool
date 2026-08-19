@@ -27,7 +27,7 @@ def upgrade() -> None:
     # create_type=False on the reused Enum object below: it's created
     # explicitly once here, then referenced (not re-created) by both
     # outreach_messages.channel and follow_ups.channel.
-    outreach_channel = postgresql.ENUM('email', 'phone', 'in_person', name='outreach_channel', create_type=False)
+    outreach_channel = postgresql.ENUM('EMAIL', 'PHONE', 'IN_PERSON', name='outreach_channel', create_type=False)
     outreach_channel.create(op.get_bind())
 
     op.create_table(
@@ -38,9 +38,9 @@ def upgrade() -> None:
         sa.Column('channel', outreach_channel, nullable=False),
         sa.Column(
             'status',
-            postgresql.ENUM('drafted', 'approved', 'sent', 'replied', 'follow_up_due', 'closed', name='outreach_status'),
+            postgresql.ENUM('DRAFTED', 'APPROVED', 'SENT', 'REPLIED', 'FOLLOW_UP_DUE', 'CLOSED', name='outreach_status'),
             nullable=False,
-            server_default='drafted',
+            server_default='DRAFTED',
         ),
         sa.Column('subject', sa.String(length=255), nullable=True),
         sa.Column('body', sa.Text(), nullable=True),
@@ -80,9 +80,9 @@ def upgrade() -> None:
         sa.Column('suggested_next_action', sa.Text(), nullable=False),
         sa.Column(
             'status',
-            postgresql.ENUM('pending', 'done', name='follow_up_status'),
+            postgresql.ENUM('PENDING', 'DONE', name='follow_up_status'),
             nullable=False,
-            server_default='pending',
+            server_default='PENDING',
         ),
         sa.Column('flagged_for_review', sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column('review_notes', sa.Text(), nullable=True),
