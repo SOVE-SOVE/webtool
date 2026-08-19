@@ -239,5 +239,94 @@ describe("api", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+
+    it("generateSitemap posts to /api/v1/projects/:id/sitemaps with an empty body by default", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.generateSitemap("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/sitemaps"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({}) }),
+      );
+    });
+
+    it("generateSitemap sends the chosen creative direction and notes when given", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.generateSitemap("p1", { creative_direction_id: "cd1", additional_notes: "Keep it small" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/sitemaps"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ creative_direction_id: "cd1", additional_notes: "Keep it small" }),
+        }),
+      );
+    });
+
+    it("listSitemaps gets /api/v1/projects/:id/sitemaps", async () => {
+      const fetchMock = stubOk([]);
+      await api.listSitemaps("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/sitemaps"),
+        expect.anything(),
+      );
+    });
+
+    it("approveSitemap posts to /api/v1/sitemaps/:id/approve", async () => {
+      const fetchMock = stubOk({ id: "s1", status: "approved" });
+      await api.approveSitemap("s1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/sitemaps/s1/approve"),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    it("addSitemapPage posts to /api/v1/sitemaps/:id/pages with the given page", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.addSitemapPage("s1", { title: "FAQ", slug: "faq" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/sitemaps/s1/pages"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ title: "FAQ", slug: "faq" }),
+        }),
+      );
+    });
+
+    it("updateSitemapPage patches /api/v1/sitemaps/:id/pages/:pageId", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.updateSitemapPage("s1", "pg1", { title: "Updated" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/sitemaps/s1/pages/pg1"),
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ title: "Updated" }) }),
+      );
+    });
+
+    it("deleteSitemapPage deletes /api/v1/sitemaps/:id/pages/:pageId", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.deleteSitemapPage("s1", "pg1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/sitemaps/s1/pages/pg1"),
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    it("reorderSitemapPages patches /api/v1/sitemaps/:id/pages/reorder with the given items", async () => {
+      const fetchMock = stubOk({ id: "s1" });
+      await api.reorderSitemapPages("s1", [{ id: "pg1", order_index: 1 }]);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/sitemaps/s1/pages/reorder"),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ items: [{ id: "pg1", order_index: 1 }] }),
+        }),
+      );
+    });
   });
 });

@@ -195,11 +195,28 @@ spec with no re-keying.
       edit before continuing" step, surfaced on the same
       `/dashboard/projects/[id]` page as the intake brief.
 - [ ] Post-sale research agent.
-- [ ] Design brief, sitemap, and copy drafts generated from intake +
-      research, for operator sign-off before build — the intake
-      collection and Creative Director above are the foundation this
-      reads from; the generation step itself (research agent → drafted
-      sitemap/copy) is still open.
+- [x] Sitemap/planning system — `agents/sitemap.py` / `modules/sitemaps/`:
+      given a project's client brief and (where one exists) its
+      creative direction, recommends a website structure — which pages
+      to build and why, primary/secondary CTA, key sections, required
+      content, required functionality, and navigation relationships
+      (parent/child nesting for e.g. service-detail pages, primary/
+      footer nav placement). Deliberately selective per the operator's
+      brief: the prompt is built around *not* defaulting to every
+      common page (Testimonials/FAQ/Blog/Portfolio are judgement calls,
+      not defaults) — see `agents/prompts/sitemap.md`. Unlike the
+      brief/creative-direction's text-block fields, pages are real rows
+      (`sitemap_pages`, self-referential parent) because the operator
+      must add/edit/remove/reorder individual pages, not just replace a
+      block of text — surfaced on `/dashboard/projects/[id]` as an
+      editable, reorderable page tree with the same DRAFT → APPROVED
+      gate as the brief/creative direction; "Approve" marks the sitemap
+      as the structural source of truth for the (not-yet-built)
+      site-generation step. Generates no website code, per the
+      operator's explicit scope for this piece.
+- [ ] Copy drafts generated from intake + research, for operator
+      sign-off before build — the intake collection, Creative Director,
+      and sitemap above are the foundation this reads from.
 
 ## M5 — Website build + QA + approval
 

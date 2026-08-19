@@ -11,10 +11,12 @@ import {
   type CreativeDirectionBrief,
   type Project,
   type ProjectStage,
+  type Sitemap,
   type User,
 } from "@/lib/api";
 import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
+import { SitemapView } from "@/components/SitemapView";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -35,6 +37,24 @@ export default function ProjectDetailPage() {
   const [businessGoals, setBusinessGoals] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
 
+  const [sitemaps, setSitemaps] = useState<Sitemap[] | null>(null);
+  const [sitemapExpandedId, setSitemapExpandedId] = useState<string | null>(null);
+  const [generatingSitemap, setGeneratingSitemap] = useState(false);
+  const [generateSitemapError, setGenerateSitemapError] = useState<string | null>(null);
+  const [showGenerateSitemapForm, setShowGenerateSitemapForm] = useState(false);
+  const [sitemapCreativeDirectionId, setSitemapCreativeDirectionId] = useState("");
+  const [sitemapAdditionalNotes, setSitemapAdditionalNotes] = useState("");
+
+  function loadSitemaps() {
+    api
+      .listSitemaps(projectId)
+      .then((list) => {
+        setSitemaps(list);
+        if (list.length > 0) setSitemapExpandedId(list[0].id);
+      })
+      .catch(() => {});
+  }
+
   function loadCreativeDirections() {
     api
       .listCreativeDirections(projectId)
@@ -54,6 +74,7 @@ export default function ProjectDetailPage() {
       .then(setActivity)
       .catch(() => {});
     loadCreativeDirections();
+    loadSitemaps();
   }
 
   useEffect(load, [projectId]);
@@ -95,6 +116,31 @@ export default function ProjectDetailPage() {
 
   function handleCreativeDirectionUpdated(updated: CreativeDirectionBrief) {
     setBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
+  }
+
+  async function handleGenerateSitemap(e: React.FormEvent) {
+    e.preventDefault();
+    setGeneratingSitemap(true);
+    setGenerateSitemapError(null);
+    try {
+      const generated = await api.generateSitemap(projectId, {
+        creative_direction_id: sitemapCreativeDirectionId || undefined,
+        additional_notes: sitemapAdditionalNotes || undefined,
+      });
+      setSitemaps((prev) => [generated, ...(prev ?? [])]);
+      setSitemapExpandedId(generated.id);
+      setShowGenerateSitemapForm(false);
+      setSitemapCreativeDirectionId("");
+      setSitemapAdditionalNotes("");
+    } catch {
+      setGenerateSitemapError("Couldn't generate a sitemap.");
+    } finally {
+      setGeneratingSitemap(false);
+    }
+  }
+
+  function handleSitemapUpdated(updated: Sitemap) {
+    setSitemaps((prev) => (prev ? prev.map((s) => (s.id === updated.id ? updated : s)) : prev));
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -256,6 +302,112 @@ export default function ProjectDetailPage() {
                 {expanded && (
                   <div className="mt-3">
                     <CreativeDirectionView brief={cd} onChange={handleCreativeDirectionUpdated} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Sitemap</h2>
+            <p className="text-xs text-neutral-500">
+              The recommended page structure for this site — review, edit, add/remove/reorder pages, then
+              approve. The approved sitemap becomes the structural source of truth for website generation.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowGenerateSitemapForm((v) => !v)}
+            disabled={generatingSitemap}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+          >
+            {showGenerateSitemapForm ? "Cancel" : sitemaps && sitemaps.length > 0 ? "Regenerate" : "Generate sitemap"}
+          </button>
+        </div>
+
+        {showGenerateSitemapForm && (
+          <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 border border-neutral-200 p-4">
+            <p className="text-xs text-neutral-500">
+              Uses the project brief and the latest approved creative direction above by default.
+            </p>
+            <label className="block text-sm">
+              <span className="text-neutral-600">Creative direction to use</span>
+              <select
+                value={sitemapCreativeDirectionId}
+                onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
+                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">Auto (latest approved, or most recent)</option>
+                {briefs?.map((cd) => (
+                  <option key={cd.id} value={cd.id}>
+                    {new Date(cd.generated_at).toLocaleString()} — {cd.status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="text-neutral-600">Additional notes</span>
+              <textarea
+                value={sitemapAdditionalNotes}
+                onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={generatingSitemap}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {generatingSitemap ? "Generating…" : "Generate"}
+            </button>
+          </form>
+        )}
+        {generatingSitemap && (
+          <p className="mt-2 text-sm text-neutral-500">
+            Pulling together the brief and creative direction to recommend a page structure — this can take up
+            to a minute.
+          </p>
+        )}
+        {generateSitemapError && <p className="mt-2 text-sm text-red-600">{generateSitemapError}</p>}
+
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
+            <li className="px-3 py-3 text-sm text-neutral-500">No sitemap generated yet.</li>
+          )}
+          {sitemaps?.map((s) => {
+            const expanded = sitemapExpandedId === s.id;
+            return (
+              <li key={s.id} className="px-3 py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setSitemapExpandedId(expanded ? null : s.id)}
+                    className="text-left text-neutral-900 hover:underline"
+                  >
+                    {expanded ? "▾" : "▸"} Sitemap — {new Date(s.generated_at).toLocaleString()} ({s.pages.length}{" "}
+                    top-level pages)
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        s.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+                      }`}
+                    >
+                      {s.status}
+                    </span>
+                    {s.flagged_for_review && (
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                        Flagged for review
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {expanded && (
+                  <div className="mt-3">
+                    <SitemapView sitemap={s} onChange={handleSitemapUpdated} />
                   </div>
                 )}
               </li>

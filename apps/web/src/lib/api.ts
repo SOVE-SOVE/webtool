@@ -533,6 +533,111 @@ export type CreativeDirectionUpdate = {
   references_inspiration?: string[];
 };
 
+export const SITEMAP_STATUSES = ["draft", "approved"] as const;
+export type SitemapStatus = (typeof SITEMAP_STATUSES)[number];
+
+export const PAGE_TYPES = [
+  "home",
+  "about",
+  "services",
+  "service_detail",
+  "products",
+  "product_detail",
+  "contact",
+  "faq",
+  "testimonials",
+  "portfolio",
+  "blog",
+  "blog_post",
+  "custom",
+] as const;
+export type PageType = (typeof PAGE_TYPES)[number];
+
+export const NAV_PLACEMENTS = ["primary_nav", "footer_nav", "primary_and_footer", "not_in_nav"] as const;
+export type NavPlacement = (typeof NAV_PLACEMENTS)[number];
+
+export type SitemapPage = {
+  id: string;
+  sitemap_id: string;
+  parent_page_id: string | null;
+  title: string;
+  slug: string;
+  page_type: PageType;
+  nav_placement: NavPlacement;
+  order_index: number;
+  purpose: string;
+  primary_cta: string | null;
+  secondary_cta: string | null;
+  key_sections: string[];
+  required_content: string[];
+  required_functionality: string[];
+  created_at: string;
+  updated_at: string;
+  children: SitemapPage[];
+};
+
+export type Sitemap = {
+  id: string;
+  project_id: string;
+  status: SitemapStatus;
+  overview: string | null;
+  creative_direction_id: string | null;
+  sources_note: string | null;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  model_used: string | null;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  updated_at: string;
+  pages: SitemapPage[];
+};
+
+export type GenerateSitemapRequest = {
+  creative_direction_id?: string;
+  additional_notes?: string;
+};
+
+export type SitemapPageCreate = {
+  title: string;
+  slug: string;
+  page_type?: PageType;
+  parent_page_id?: string | null;
+  nav_placement?: NavPlacement;
+  purpose?: string;
+  primary_cta?: string | null;
+  secondary_cta?: string | null;
+  key_sections?: string[];
+  required_content?: string[];
+  required_functionality?: string[];
+  order_index?: number;
+};
+
+// Every field: omitting the key leaves it untouched, `null` on
+// parent_page_id promotes the page to top-level.
+export type SitemapPageUpdate = {
+  title?: string;
+  slug?: string;
+  page_type?: PageType;
+  parent_page_id?: string | null;
+  nav_placement?: NavPlacement;
+  purpose?: string;
+  primary_cta?: string | null;
+  secondary_cta?: string | null;
+  key_sections?: string[];
+  required_content?: string[];
+  required_functionality?: string[];
+};
+
+export type SitemapPageOrderItem = {
+  id: string;
+  order_index: number;
+  // Omit to leave the current parent untouched; null promotes to top-level.
+  parent_page_id?: string | null;
+};
+
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
@@ -709,6 +814,29 @@ export const api = {
     }),
   approveCreativeDirection: (id: string) =>
     request<CreativeDirectionBrief>(`/api/v1/creative-directions/${id}/approve`, { method: "POST" }),
+
+  generateSitemap: (projectId: string, data?: GenerateSitemapRequest) =>
+    request<Sitemap>(`/api/v1/projects/${projectId}/sitemaps`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listSitemaps: (projectId: string) => request<Sitemap[]>(`/api/v1/projects/${projectId}/sitemaps`),
+  getSitemap: (id: string) => request<Sitemap>(`/api/v1/sitemaps/${id}`),
+  approveSitemap: (id: string) => request<Sitemap>(`/api/v1/sitemaps/${id}/approve`, { method: "POST" }),
+  addSitemapPage: (sitemapId: string, data: SitemapPageCreate) =>
+    request<Sitemap>(`/api/v1/sitemaps/${sitemapId}/pages`, { method: "POST", body: JSON.stringify(data) }),
+  updateSitemapPage: (sitemapId: string, pageId: string, data: SitemapPageUpdate) =>
+    request<Sitemap>(`/api/v1/sitemaps/${sitemapId}/pages/${pageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteSitemapPage: (sitemapId: string, pageId: string) =>
+    request<Sitemap>(`/api/v1/sitemaps/${sitemapId}/pages/${pageId}`, { method: "DELETE" }),
+  reorderSitemapPages: (sitemapId: string, items: SitemapPageOrderItem[]) =>
+    request<Sitemap>(`/api/v1/sitemaps/${sitemapId}/pages/reorder`, {
+      method: "PATCH",
+      body: JSON.stringify({ items }),
+    }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

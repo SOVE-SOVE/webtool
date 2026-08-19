@@ -22,6 +22,7 @@ from app.modules.projects import models as _projects  # noqa: F401
 from app.modules.qa_reports import models as _qa_reports  # noqa: F401
 from app.modules.sales_audits import models as _sales_audits  # noqa: F401
 from app.modules.sales_opportunities import models as _sales_opportunities  # noqa: F401
+from app.modules.sitemaps import models as _sitemaps  # noqa: F401
 from app.modules.tasks import models as _tasks  # noqa: F401
 from app.modules.users import models as _users  # noqa: F401
 from app.modules.website_audits import models as _website_audits  # noqa: F401
