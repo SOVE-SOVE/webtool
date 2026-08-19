@@ -56,5 +56,5 @@ class Project(Base):
     assigned_user: Mapped["User | None"] = relationship()
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
     meetings: Mapped[list["Meeting"]] = relationship(back_populates="project")
-    design_briefs: Mapped[list["DesignBrief"]] = relationship(back_populates="project")
+    design_briefs: Mapped["DesignBrief | None"] = relationship(back_populates="project", uselist=False)
     websites: Mapped[list["Website"]] = relationship(back_populates="project")

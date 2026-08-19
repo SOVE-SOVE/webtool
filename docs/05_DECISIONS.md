@@ -21,6 +21,61 @@ why it lost.
 
 ---
 
+## 2026-08-19 — Client intake system: one wide `design_briefs` row per project, missing fields computed not stored
+
+**Decision:** Built the M4 "Client intake form → auto-creates a project
+record" item by expanding the `design_briefs` stub (`goals`/`tone`/
+`pages`) into the full BUSINESS/BRAND/CONTENT/WEBSITE/ASSETS intake the
+operator specified — 35 fields total, every one nullable, list-shaped
+ones (colours, testimonials, required pages, ...) stored newline-
+separated in `Text` columns, same convention as `businesses.
+social_links` and the Sales Audit report sections — no JSON columns.
+`design_briefs.project_id` is now unique: one brief is the project's
+single evolving source of truth, not a history of generations.
+
+`BriefRead.missing_fields` is computed on every read from whatever's
+currently null/empty, never stored — the "clearly identify missing
+information, never fabricate it" requirement is structural (a field
+either has a real value or it doesn't) rather than a flag that could
+drift out of sync with the data. `POST /api/v1/clients/{id}/intake`
+creates the project (`INTAKE` stage) and brief together in one call,
+pre-filled from whatever the operator already entered; `GET`/`PATCH
+/api/v1/projects/{id}/brief` lazily create an empty draft on first
+touch instead of requiring a separate create step for projects that
+already existed. Editing an `APPROVED` brief reverts it to `DRAFT`
+(clearing the approval) so the "approved" label can never describe
+content that's since changed; approving a brief advances the project
+past `INTAKE` to `DESIGN_BRIEF` if it hasn't moved already.
+
+Assets (logos, images, videos, documents, existing copy) are captured
+as reference/notes lines (e.g. a Drive link plus a label), not actual
+file uploads — there's no blob storage integration anywhere in this app
+yet (see [[02_ARCHITECTURE]] `integrations/`), and building one wasn't
+part of this task. Revisit if/when a real upload flow is needed for
+site generation in M5.
+
+**Why:** A single wide table mirrors the existing `sales_audit_reports`/
+`meeting_briefs` pattern (one row, many `Text` sections) rather than
+introducing a new normalized shape or JSON columns for a form that's
+edited field-by-field, not generated wholesale by an agent. Computing
+"missing" instead of storing it removes an entire class of staleness
+bug. Reverting approval on edit was chosen over either silently
+allowing drift or hard-blocking edits after approval — the operator
+should always be able to fix a brief, but the "approved, ready for
+design" label has to mean what it says.
+
+**Alternatives considered:** A separate `client_intake` table feeding a
+generated `design_briefs` row — rejected; there's no meaningful
+distinction between "what the client told us" and "the brief" at this
+stage (no AI drafting/summarization step yet, per M4's still-open
+"Design brief ... generated from intake + research" item), so a second
+table would just be the same 35 fields duplicated. Blocking approval
+until every field is filled — rejected; the operator may knowingly
+proceed with real gaps (e.g. "logo TBD, client sending later"), and the
+job here is to surface that, not to gate on it.
+
+---
+
 ## 2026-08-18 — Meeting preparation system: brief restructured into BUSINESS/WEBSITE/SALES/DISCOVERY, facts split out of the LLM entirely
 
 **Decision:** Rebuilt the meeting brief (introduced same day in the
