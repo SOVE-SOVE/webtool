@@ -472,6 +472,67 @@ export type SalesAuditReport = {
   generated_at: string;
 };
 
+export const CREATIVE_DIRECTION_STATUSES = ["draft", "approved"] as const;
+export type CreativeDirectionStatus = (typeof CREATIVE_DIRECTION_STATUSES)[number];
+
+export type CreativeDirectionBrief = {
+  id: string;
+  project_id: string;
+  status: CreativeDirectionStatus;
+  target_audience: string | null;
+  business_goals: string | null;
+  facts: string[];
+  assumptions: string[];
+  creative_concept: string;
+  visual_direction: string;
+  brand_personality: string[];
+  colour_direction: string;
+  typography_direction: string;
+  image_direction: string;
+  layout_direction: string;
+  ux_direction: string;
+  tone_of_voice: string;
+  visual_hierarchy: string;
+  cta_strategy: string;
+  things_to_avoid: string[];
+  references_inspiration: string[];
+  sources_note: string | null;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  model_used: string;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  edited_by_user_name: string | null;
+  edited_at: string | null;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+};
+
+export type GenerateCreativeDirectionRequest = {
+  target_audience?: string;
+  business_goals?: string;
+  additional_notes?: string;
+};
+
+export type CreativeDirectionUpdate = {
+  facts?: string[];
+  assumptions?: string[];
+  creative_concept?: string;
+  visual_direction?: string;
+  brand_personality?: string[];
+  colour_direction?: string;
+  typography_direction?: string;
+  image_direction?: string;
+  layout_direction?: string;
+  ux_direction?: string;
+  tone_of_voice?: string;
+  visual_hierarchy?: string;
+  cta_strategy?: string;
+  things_to_avoid?: string[];
+  references_inspiration?: string[];
+};
+
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
@@ -632,6 +693,22 @@ export const api = {
   listSalesAudits: (leadId: string) =>
     request<SalesAuditReport[]>(`/api/v1/leads/${leadId}/sales-audits`),
   getSalesAudit: (id: string) => request<SalesAuditReport>(`/api/v1/sales-audits/${id}`),
+
+  generateCreativeDirection: (projectId: string, data?: GenerateCreativeDirectionRequest) =>
+    request<CreativeDirectionBrief>(`/api/v1/projects/${projectId}/creative-directions`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listCreativeDirections: (projectId: string) =>
+    request<CreativeDirectionBrief[]>(`/api/v1/projects/${projectId}/creative-directions`),
+  getCreativeDirection: (id: string) => request<CreativeDirectionBrief>(`/api/v1/creative-directions/${id}`),
+  updateCreativeDirection: (id: string, data: CreativeDirectionUpdate) =>
+    request<CreativeDirectionBrief>(`/api/v1/creative-directions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  approveCreativeDirection: (id: string) =>
+    request<CreativeDirectionBrief>(`/api/v1/creative-directions/${id}/approve`, { method: "POST" }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

@@ -21,6 +21,92 @@ why it lost.
 
 ---
 
+## 2026-08-19 — Client intake + Creative Director merged same day: Creative Director now defaults target audience/goals from the intake brief
+
+**Decision:** These two M4 features were built concurrently on separate
+branches (see both entries below) and merged the same day. On merge,
+`modules/creative_directions/service.py`'s `generate_creative_direction`
+was updated to close the seam the Creative Director entry below
+describes: it now looks up the project's `DesignBrief` (client intake,
+see the entry below) and uses `target_customers`/`business_goals` as
+the default `target_audience`/`business_goals` for the agent when the
+generation request doesn't explicitly override them, and folds
+`business_description`, `services_products`, `brand_colours`,
+`brand_fonts`, `brand_guidelines`, and `visual_references` into the
+agent's input as confirmed client context when present. A project with
+no intake brief yet (or one still missing those fields) falls back to
+the pre-merge behavior: operator-entered text at generation time, gap
+flagged for review.
+
+**Why:** the Creative Director entry below was written to not block on
+client intake landing, explicitly leaving this as the one integration
+point to revisit once it did — see its "when intake lands" note. Intake
+landed the same day, so closing it immediately avoids leaving known-
+stale guidance in the docs below it.
+
+---
+
+## 2026-08-19 — Creative Director: separate module from `design_briefs`, target audience/goals stay operator-entered until client intake lands
+
+**Decision:** Built the Creative Director role (roadmap M4) as a new
+`modules/creative_directions/` module (`creative_direction_briefs`
+table) rather than filling in the existing `design_briefs` stub
+(`goals`/`tone`/`pages` — never wired to a route). The feature asks for
+13 distinct creative-direction fields (concept, visual direction, brand
+personality, colour, typography, image, layout, UX direction, tone of
+voice, visual hierarchy, CTA strategy, things to avoid, references) plus
+an explicit FACTS/ASSUMPTIONS split — materially richer than the stub,
+and a different concern from a plain brief.
+
+Generated via `agents/creative_director.py`, one row per generation,
+editable in place (`edited_by/at`) and gated behind an explicit
+DRAFT → APPROVED status (mirrors `OutreachStatus`) before a designer or
+the site-generation system should treat it as final — the "review and
+edit before continuing" requirement. `POST /projects/{id}/creative-
+directions` (rate-limited, like Sales Audit/Outreach/Follow-up),
+`PATCH /creative-directions/{id}` to edit, `POST .../approve` to gate.
+
+Client intake (`04_ROADMAP.md` M4, not yet built) is the eventual
+source of two inputs the direction most depends on for being
+client-specific rather than generic: target audience and business
+goals. Until it exists, `GenerateCreativeDirectionRequest` takes them as
+plain operator-entered text at generation time. The agent treats their
+absence as a hard signal, not a soft one: `flagged_for_review=True` and
+an explicit assumptions-only path, never a silently generic direction.
+When intake lands, `modules/creative_directions/service.py` is the only
+place that needs to change — pull the two fields from the intake record
+instead of the request body; the agent, schema, and stored shape don't
+change.
+
+Research grounding: `generate_creative_direction` walks
+project → client → business → (business's) lead → latest `WebsiteAudit`
++ latest `SalesAuditReport`, i.e. it reuses whatever real evidence the
+sales process already gathered rather than re-auditing. A project whose
+client was added directly (never went through a lead) has no such
+history — genuinely thin evidence, also flagged.
+
+**Why:** `docs/03_AGENT_RULES.md` requires flagging rather than passing
+a low-confidence result through silently, and the feature's own spec
+requires never presenting an assumption as a fact — a single explicit
+gap-detection path (missing target audience *and* goals) is simpler and
+more legible than trying to infer confidence from a dozen loosely
+related signals.
+
+**Alternatives considered:** Waiting for client intake to be built
+first was considered (two other in-flight branches — Calendar/Client
+Management and the meeting-prep system — were mid-flight against
+`projects`/`clients` at the same time) and rejected: the FACTS/
+ASSUMPTIONS/RECOMMENDATIONS split the feature explicitly asked for is
+exactly the mechanism for handling incomplete intake gracefully, so
+blocking on intake would have meant not using the framework that exists
+to avoid that dependency. `projects/models.py`, `clients/schemas.py`,
+and `clients/service.py` were left untouched by this change for the
+same reason — the new table's `project` relationship is deliberately
+one-directional (no `back_populates` on `Project`) so this module stays
+purely additive against files other concurrent work was touching.
+
+---
+
 ## 2026-08-19 — Client intake system: one wide `design_briefs` row per project, missing fields computed not stored
 
 **Decision:** Built the M4 "Client intake form → auto-creates a project
