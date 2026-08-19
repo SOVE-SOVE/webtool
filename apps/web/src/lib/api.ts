@@ -238,6 +238,82 @@ export type ProjectCreate = { client_id: string; name: string; assigned_user_id?
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
 export type ProjectUpdate = { stage?: ProjectStage; assigned_user_id?: string | null };
 
+export const BRIEF_STATUSES = ["draft", "approved"] as const;
+export type BriefStatus = (typeof BRIEF_STATUSES)[number];
+
+// Every field the client intake form collects, per docs/04_ROADMAP.md M4.
+// All optional/nullable — an unanswered question stays missing rather
+// than being guessed at (see BriefRead.missing_fields below).
+export type BriefFields = {
+  // Business
+  business_name?: string;
+  industry?: string;
+  location?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  business_description?: string;
+  services_products?: string;
+  target_customers?: string;
+  business_goals?: string;
+  // Brand
+  brand_name?: string;
+  logo_notes?: string;
+  brand_colours?: string;
+  brand_fonts?: string;
+  brand_guidelines?: string;
+  visual_references?: string;
+  existing_social_profiles?: string;
+  // Content
+  about_content?: string;
+  services_content?: string;
+  products_content?: string;
+  content_contact_details?: string;
+  testimonials?: string;
+  faqs?: string;
+  calls_to_action?: string;
+  // Website
+  required_pages?: string;
+  required_functionality?: string;
+  existing_website_url?: string;
+  domain?: string;
+  hosting?: string;
+  integrations?: string;
+  // Assets (reference/notes, not file uploads — see docs/02_ARCHITECTURE.md)
+  logo_assets?: string;
+  image_assets?: string;
+  video_assets?: string;
+  document_assets?: string;
+  existing_copy_assets?: string;
+};
+
+export type BriefUpdate = BriefFields;
+export type BriefIntakeStart = BriefFields & { project_name?: string };
+
+export type BriefFieldValue = string | string[] | null;
+
+export type BriefSection = {
+  label: string;
+  fields: Record<string, BriefFieldValue>;
+  missing: string[];
+};
+
+export type Brief = {
+  id: string;
+  project_id: string;
+  status: BriefStatus;
+  approved_at: string | null;
+  approved_by_user_name: string | null;
+  business: BriefSection;
+  brand: BriefSection;
+  content: BriefSection;
+  website: BriefSection;
+  assets: BriefSection;
+  missing_fields: string[];
+  created_at: string;
+  updated_at: string;
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -578,6 +654,14 @@ export const api = {
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
   updateProject: (id: string, data: ProjectUpdate) =>
     request<Project>(`/api/v1/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  startIntake: (clientId: string, data: BriefIntakeStart) =>
+    request<Brief>(`/api/v1/clients/${clientId}/intake`, { method: "POST", body: JSON.stringify(data) }),
+  getBrief: (projectId: string) => request<Brief>(`/api/v1/projects/${projectId}/brief`),
+  updateBrief: (projectId: string, data: BriefUpdate) =>
+    request<Brief>(`/api/v1/projects/${projectId}/brief`, { method: "PATCH", body: JSON.stringify(data) }),
+  approveBrief: (projectId: string) =>
+    request<Brief>(`/api/v1/projects/${projectId}/brief/approve`, { method: "POST" }),
 
   listTasks: () => request<Task[]>("/api/v1/tasks"),
   createTask: (data: TaskCreate) =>

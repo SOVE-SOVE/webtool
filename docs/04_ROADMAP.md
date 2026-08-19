@@ -163,30 +163,43 @@ spec with no re-keying.
       failed LLM call never blocks scheduling. See [[05_DECISIONS]] for
       the full design and why Google Calendar/per-user/one-directional
       is the "simplest appropriate" scope.
-- [x] Creative Director — built ahead of client intake (which two other
-      in-flight branches were touching at the same time), same rationale
-      as Calendar/Client Management above: the piece that's ready to
-      build now, built now. `agents/creative_director.py` /
-      `modules/creative_directions/`: turns the business record, latest
-      website audit, and latest sales-audit research for a project's
-      client into a practical, client-specific creative direction
-      (concept, visual/brand/colour/typography/image/layout/UX
-      direction, tone of voice, recommended visual hierarchy, recommended
-      CTA strategy, things to avoid, references) — explicit FACTS vs.
-      ASSUMPTIONS vs. RECOMMENDATIONS throughout, never presenting an
-      assumption as a fact. Target audience/business goals are
-      operator-entered at generation time until client intake exists to
-      supply them structurally (see [[05_DECISIONS]]) — their absence is
-      flagged for review rather than silently producing a generic
-      direction. DRAFT → APPROVED status gate with in-place editing
-      (`PATCH /creative-directions/{id}`) is the "review and edit before
-      continuing" step, surfaced on a new `/dashboard/projects/[id]`
-      page (the first project detail page).
-- [ ] Client intake form → auto-creates a project record.
+- [x] Client intake form → auto-creates a project record —
+      `modules/design_briefs/`: expanded the `design_briefs` stub into
+      the full BUSINESS/BRAND/CONTENT/WEBSITE/ASSETS intake, one row
+      per project. "Start intake" on a client's page (pre-filled from
+      what the CRM already knows, nothing invented) creates the project
+      and brief together; the project detail page's Brief section is
+      the ongoing editor, saving field-by-field. Every empty field is
+      surfaced in `missing_fields` rather than guessed at, and the
+      brief is the operator-reviewable/editable source of truth for
+      design — "Approve brief" locks it in and advances the project
+      past `INTAKE`, and any further edit reverts it to draft. See
+      [[05_DECISIONS]].
+- [x] Creative Director — built in parallel with the intake work above
+      (two concurrent branches; merged same day, see [[05_DECISIONS]]).
+      `agents/creative_director.py` / `modules/creative_directions/`:
+      turns the business record, latest website audit, latest
+      sales-audit research, and — once an intake brief exists — the
+      client's own stated `target_customers`/`business_goals` and brand
+      material for a project's client into a practical, client-specific
+      creative direction (concept, visual/brand/colour/typography/
+      image/layout/UX direction, tone of voice, recommended visual
+      hierarchy, recommended CTA strategy, things to avoid, references)
+      — explicit FACTS vs. ASSUMPTIONS vs. RECOMMENDATIONS throughout,
+      never presenting an assumption as a fact. When no intake brief
+      exists yet (or it's missing target audience/goals), the operator
+      can still type them in at generation time; either way, a genuine
+      gap is flagged for review rather than silently producing a
+      generic direction. DRAFT → APPROVED status gate with in-place
+      editing (`PATCH /creative-directions/{id}`) is the "review and
+      edit before continuing" step, surfaced on the same
+      `/dashboard/projects/[id]` page as the intake brief.
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +
-      research, for operator sign-off before build. Creative Director
-      (above) is the direction this consumes once built.
+      research, for operator sign-off before build — the intake
+      collection and Creative Director above are the foundation this
+      reads from; the generation step itself (research agent → drafted
+      sitemap/copy) is still open.
 
 ## M5 — Website build + QA + approval
 

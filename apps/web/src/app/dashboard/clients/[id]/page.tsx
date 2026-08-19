@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
@@ -31,6 +31,7 @@ function toDateInputValue(iso: string | null): string {
 
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const clientId = params.id;
 
   const [clientRecord, setClientRecord] = useState<Client | null>(null);
@@ -39,6 +40,7 @@ export default function ClientDetailPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [startingIntake, setStartingIntake] = useState(false);
 
   function load() {
     api
@@ -68,6 +70,31 @@ export default function ClientDetailPage() {
     if (!business) return;
     const updated = await api.updateBusiness(business.id, data);
     setBusiness(updated);
+  }
+
+  // Pre-fills the intake with whatever the CRM already knows about this
+  // business — never fabricated, just copied from the existing record —
+  // so the operator isn't re-typing what's already on file.
+  async function handleStartIntake() {
+    if (!business) return;
+    setStartingIntake(true);
+    setError(null);
+    try {
+      const location = [business.suburb, business.state].filter(Boolean).join(", ");
+      const brief = await api.startIntake(clientId, {
+        business_name: business.name,
+        industry: business.industry || undefined,
+        location: location || undefined,
+        contact_email: business.email || undefined,
+        contact_phone: business.phone || undefined,
+        existing_website_url: business.website_url || undefined,
+        existing_social_profiles: business.social_links || undefined,
+      });
+      router.push(`/dashboard/projects/${brief.project_id}`);
+    } catch {
+      setError("Couldn't start intake — try again.");
+      setStartingIntake(false);
+    }
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -210,20 +237,27 @@ export default function ClientDetailPage() {
       </div>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-neutral-900">Projects</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900">Projects</h2>
+          <button
+            onClick={handleStartIntake}
+            disabled={startingIntake}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {startingIntake ? "Starting…" : "Start intake"}
+          </button>
+        </div>
         <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
           {clientProjects.length === 0 && (
             <li className="px-3 py-3 text-sm text-neutral-500">
-              No projects yet.{" "}
-              <Link href="/dashboard/projects" className="hover:underline">
-                Start one
-              </Link>
-              .
+              No projects yet. Start intake creates one and opens its client intake form.
             </li>
           )}
           {clientProjects.map((project) => (
             <li key={project.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <span className="text-neutral-900">{project.name}</span>
+              <Link href={`/dashboard/projects/${project.id}`} className="text-neutral-900 hover:underline">
+                {project.name}
+              </Link>
               <span className="flex items-center gap-3 text-xs text-neutral-500">
                 {project.stage.replace("_", " ")}
                 {project.assigned_user_name && <span>· {project.assigned_user_name}</span>}

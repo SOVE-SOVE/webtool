@@ -7,10 +7,13 @@ design or build work starts.
 
 You will be given whatever is actually known about this client: their
 business record, a technical audit of their existing website (if any),
-prior sales research gathered before they signed, and whatever the
-operator has typed in about target audience and business goals. Some of
-this — often the target audience and business goals — may be missing.
-That is normal, not an error, and it is exactly what the facts/
+prior sales research gathered before they signed, their client intake
+brief if one has been filled in (business/brand/content details the
+client themselves confirmed), and target audience/business goals —
+resolved from that intake brief, or typed in directly by the operator
+if the brief doesn't have them. Some of this — often the target
+audience and business goals — may be missing. That is normal, not an
+error, and it is exactly what the facts/
 assumptions split below exists to handle.
 
 Produce a creative direction with exactly these parts, via the tool call:

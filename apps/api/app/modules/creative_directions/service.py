@@ -17,6 +17,7 @@ from app.modules.creative_directions.schemas import (
     CreativeDirectionUpdate,
     GenerateCreativeDirectionRequest,
 )
+from app.modules.design_briefs.models import DesignBrief
 from app.modules.leads.models import Lead
 from app.modules.projects.models import Project
 from app.modules.sales_audits.models import SalesAuditReport
@@ -76,12 +77,46 @@ def _join(items: list[str]) -> str:
     return "\n".join(items)
 
 
+def _get_design_brief(db: Session, project_id: uuid.UUID) -> DesignBrief | None:
+    return db.scalar(select(DesignBrief).where(DesignBrief.project_id == project_id))
+
+
+# (intake field, human label) — only the fields relevant to a creative
+# direction, not the full ~35-field brief (e.g. contact details/hosting/
+# domain don't inform this).
+_INTAKE_CONTEXT_FIELDS = [
+    ("business_description", "Business description"),
+    ("services_products", "Services/products"),
+    ("brand_name", "Brand name (if different from business name)"),
+    ("brand_colours", "Existing brand colours"),
+    ("brand_fonts", "Existing brand fonts"),
+    ("brand_guidelines", "Existing brand guidelines"),
+    ("visual_references", "Visual references the client supplied"),
+    ("existing_social_profiles", "Existing social profiles"),
+    ("required_pages", "Pages the client wants"),
+    ("calls_to_action", "Calls to action the client wants"),
+]
+
+
+def _build_intake_notes(brief: DesignBrief | None) -> str | None:
+    if brief is None:
+        return None
+    lines = []
+    for field, label in _INTAKE_CONTEXT_FIELDS:
+        value = getattr(brief, field)
+        if value:
+            lines.append(f"{label}: {value}")
+    return "\n".join(lines) if lines else None
+
+
 def _build_sources_note(
     business: Business,
     lead: Lead | None,
     website_audit: WebsiteAudit | None,
     sales_audit: SalesAuditReport | None,
-    request: GenerateCreativeDirectionRequest,
+    design_brief: DesignBrief | None,
+    target_audience_source: str,
+    business_goals_source: str,
 ) -> str:
     parts = [f"Business record: {business.name} ({business.industry or 'industry unknown'})"]
     if website_audit is None:
@@ -100,15 +135,25 @@ def _build_sources_note(
     else:
         parts.append("Prior sales audit: no linked lead on record")
 
-    if request.target_audience:
-        parts.append("Target audience: operator-supplied")
+    if design_brief is not None:
+        parts.append(f"Client intake brief: {design_brief.status.value}")
     else:
-        parts.append("Target audience: not supplied — assumed")
-    if request.business_goals:
-        parts.append("Business goals: operator-supplied")
-    else:
-        parts.append("Business goals: not supplied — assumed")
+        parts.append("Client intake brief: not started")
+
+    parts.append(f"Target audience: {target_audience_source}")
+    parts.append(f"Business goals: {business_goals_source}")
     return "; ".join(parts)
+
+
+def _resolve(operator_value: str | None, brief_value: str | None) -> tuple[str | None, str]:
+    """Operator-supplied value at generation time wins over the intake
+    brief; the brief wins over nothing. Returns (value, human-readable
+    source label for sources_note)."""
+    if operator_value:
+        return operator_value, "operator-supplied"
+    if brief_value:
+        return brief_value, "from client intake brief"
+    return None, "not supplied — assumed"
 
 
 def generate_creative_direction(
@@ -126,6 +171,14 @@ def generate_creative_direction(
     lead = db.scalar(select(Lead).where(Lead.business_id == business.id))
     website_audit = _latest_website_audit(db, lead.id) if lead else None
     sales_audit = _latest_sales_audit(db, lead.id) if lead else None
+    design_brief = _get_design_brief(db, project.id)
+
+    target_audience, target_audience_source = _resolve(
+        request.target_audience, design_brief.target_customers if design_brief else None
+    )
+    business_goals, business_goals_source = _resolve(
+        request.business_goals, design_brief.business_goals if design_brief else None
+    )
 
     agent_input = CreativeDirectorInput(
         business_name=business.name,
@@ -143,9 +196,10 @@ def generate_creative_direction(
         prior_top_problems=_split(sales_audit.top_problems) if sales_audit else None,
         prior_suggested_structure=_split(sales_audit.suggested_structure) if sales_audit else None,
         prior_suggested_offer=sales_audit.suggested_offer if sales_audit else None,
-        target_audience=request.target_audience,
-        business_goals=request.business_goals,
+        target_audience=target_audience,
+        business_goals=business_goals,
         additional_notes=request.additional_notes,
+        intake_notes=_build_intake_notes(design_brief),
     )
     result = creative_director_agent.run(agent_input)
     output = result.output
@@ -153,8 +207,8 @@ def generate_creative_direction(
     brief = CreativeDirectionBrief(
         project_id=project.id,
         status=CreativeDirectionStatus.DRAFT,
-        target_audience=request.target_audience,
-        business_goals=request.business_goals,
+        target_audience=target_audience,
+        business_goals=business_goals,
         facts=_join(output.facts),
         assumptions=_join(output.assumptions),
         creative_concept=output.creative_concept,
@@ -170,7 +224,9 @@ def generate_creative_direction(
         cta_strategy=output.cta_strategy,
         things_to_avoid=_join(output.things_to_avoid),
         references_inspiration=_join(output.references_inspiration),
-        sources_note=_build_sources_note(business, lead, website_audit, sales_audit, request),
+        sources_note=_build_sources_note(
+            business, lead, website_audit, sales_audit, design_brief, target_audience_source, business_goals_source
+        ),
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
         model_used=settings.llm_model,

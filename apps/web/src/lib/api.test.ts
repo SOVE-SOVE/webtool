@@ -154,12 +154,35 @@ describe("api", () => {
       );
     });
 
+    it("startIntake posts to /api/v1/clients/:id/intake with the given body", async () => {
+      const fetchMock = stubOk({ id: "b1", project_id: "p1" });
+      await api.startIntake("c1", { business_name: "Coastal Cafe" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/clients/c1/intake"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ business_name: "Coastal Cafe" }),
+        }),
+      );
+    });
+
     it("listCreativeDirections gets /api/v1/projects/:id/creative-directions", async () => {
       const fetchMock = stubOk([]);
       await api.listCreativeDirections("p1");
 
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/v1/projects/p1/creative-directions"),
+        expect.anything(),
+      );
+    });
+
+    it("getBrief gets /api/v1/projects/:id/brief", async () => {
+      const fetchMock = stubOk({ id: "b1" });
+      await api.getBrief("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/brief"),
         expect.anything(),
       );
     });
@@ -173,6 +196,19 @@ describe("api", () => {
         expect.objectContaining({
           method: "PATCH",
           body: JSON.stringify({ creative_concept: "Revised concept" }),
+        }),
+      );
+    });
+
+    it("updateBrief patches /api/v1/projects/:id/brief", async () => {
+      const fetchMock = stubOk({ id: "b1" });
+      await api.updateBrief("p1", { business_name: "Coastal Cafe" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/brief"),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ business_name: "Coastal Cafe" }),
         }),
       );
     });
@@ -192,6 +228,16 @@ describe("api", () => {
       await api.getProject("p1");
 
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/projects/p1"), expect.anything());
+    });
+
+    it("approveBrief posts to /api/v1/projects/:id/brief/approve", async () => {
+      const fetchMock = stubOk({ id: "b1", status: "approved" });
+      await api.approveBrief("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/brief/approve"),
+        expect.objectContaining({ method: "POST" }),
+      );
     });
   });
 });

@@ -205,6 +205,56 @@ def test_approve_creative_direction(authed_client, monkeypatch):
     assert any(a["action"] == "creative_direction_approved" for a in activity)
 
 
+def test_generate_creative_direction_uses_intake_brief_when_not_overridden(authed_client, monkeypatch):
+    _patch_creative_director(monkeypatch)
+    project = _create_project_without_lead(authed_client)
+
+    brief_res = authed_client.patch(
+        f"/api/v1/projects/{project['id']}/brief",
+        json={
+            "target_customers": "Young families looking for weekend brunch spots",
+            "business_goals": "Drive more weekend foot traffic and online gift-card sales",
+            "brand_colours": "Terracotta and cream",
+            "business_description": "A neighbourhood cafe known for its all-day breakfast menu.",
+        },
+    )
+    assert brief_res.status_code == 200
+
+    res = authed_client.post(f"/api/v1/projects/{project['id']}/creative-directions")
+    assert res.status_code == 201
+    body = res.json()
+
+    # Pulled from the intake brief, not typed in at generation time —
+    # so this should not be flagged as missing client context.
+    assert body["target_audience"] == "Young families looking for weekend brunch spots"
+    assert body["business_goals"] == "Drive more weekend foot traffic and online gift-card sales"
+    assert body["flagged_for_review"] is False
+    assert "from client intake brief" in body["sources_note"]
+
+
+def test_generate_creative_direction_request_overrides_intake_brief(authed_client, monkeypatch):
+    _patch_creative_director(monkeypatch)
+    project = _create_project_without_lead(authed_client)
+    authed_client.patch(
+        f"/api/v1/projects/{project['id']}/brief",
+        json={"target_customers": "From the brief", "business_goals": "From the brief"},
+    )
+
+    res = authed_client.post(
+        f"/api/v1/projects/{project['id']}/creative-directions",
+        json={"target_audience": "Operator override audience"},
+    )
+    assert res.status_code == 201
+    body = res.json()
+
+    # target_audience explicitly overridden at generation time; business
+    # goals had no override, so it still falls back to the brief.
+    assert body["target_audience"] == "Operator override audience"
+    assert body["business_goals"] == "From the brief"
+    assert "operator-supplied" in body["sources_note"]
+    assert "from client intake brief" in body["sources_note"]
+
+
 def test_creative_directions_are_workspace_isolated(authed_client, other_authed_client, monkeypatch):
     _patch_creative_director(monkeypatch)
     project = _create_project_without_lead(authed_client)

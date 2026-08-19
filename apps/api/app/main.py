@@ -12,6 +12,7 @@ from app.modules.calendar.routes import router as calendar_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.creative_directions.routes import router as creative_directions_router
 from app.modules.dashboard.routes import router as dashboard_router
+from app.modules.design_briefs.routes import router as design_briefs_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
 from app.modules.outreach.routes import router as outreach_router
@@ -65,4 +66,5 @@ app.include_router(sales_audits_router)
 app.include_router(outreach_router)
 app.include_router(meetings_router)
 app.include_router(calendar_router)
+app.include_router(design_briefs_router)
 app.include_router(creative_directions_router)

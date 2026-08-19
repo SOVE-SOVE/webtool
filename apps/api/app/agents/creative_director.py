@@ -1,18 +1,21 @@
 """
 Creative director role — docs/02_ARCHITECTURE.md §6, roadmap M4. Turns
 everything known about a client/project (business record, website
-audit, prior sales research) plus whatever the operator has supplied
-about target audience/goals into a structured creative direction for a
-website designer or the site-generation system to work from. See
-agents/prompts/creative_director.md for the actual instructions given
-to the model, including the FACTS/RECOMMENDATIONS/ASSUMPTIONS framework
-required by the Creative Director feature.
+audit, prior sales research, client intake brief) plus whatever the
+operator has supplied about target audience/goals into a structured
+creative direction for a website designer or the site-generation system
+to work from. See agents/prompts/creative_director.md for the actual
+instructions given to the model, including the FACTS/RECOMMENDATIONS/
+ASSUMPTIONS framework required by the Creative Director feature.
 
-Client intake (roadmap M4) doesn't exist yet as a structured source, so
-`target_audience`/`business_goals` below are operator-supplied free text
-at generation time rather than pulled from an intake record. When intake
-lands, the service layer can populate these from it instead — the agent
-and output schema don't need to change.
+`target_audience`/`business_goals`/`intake_notes` are resolved by the
+service layer (modules/creative_directions/service.py) from the
+project's `DesignBrief` (client intake, modules/design_briefs/) when one
+exists, with any operator-supplied override at generation time taking
+priority. A project with no intake brief yet — or one still missing
+those fields — falls back to whatever the operator typed in, and a
+genuine gap in both sources is flagged rather than silently producing a
+generic direction.
 """
 
 from pathlib import Path
@@ -46,6 +49,7 @@ class CreativeDirectorInput(BaseModel):
     target_audience: str | None
     business_goals: str | None
     additional_notes: str | None
+    intake_notes: str | None
 
 
 class CreativeDirectorOutput(BaseModel):
@@ -115,8 +119,11 @@ def _build_user_message(input: CreativeDirectorInput) -> str:
             + "\n"
             + _format_list("Suggested site structure", input.prior_suggested_structure)
             + f"\nSuggested offer/tier: {input.prior_suggested_offer or 'none on record'}",
-            "CLIENT-SUPPLIED CONTEXT (operator-entered — may be incomplete; if a field below is 'not provided', "
-            "you do not know it and must treat any statement about it as an assumption, not a fact)",
+            "CLIENT INTAKE BRIEF (confirmed by the client, via the intake form — treat as fact, not assumption)",
+            input.intake_notes or "No intake brief on record for this project, or it hasn't been filled in yet.",
+            "TARGET AUDIENCE / BUSINESS GOALS (resolved from the intake brief above, or operator-entered at "
+            "generation time if the brief doesn't have them — 'not provided' means neither source has it, and "
+            "you do not know it: treat any statement about it as an assumption, not a fact)",
             f"Target audience: {input.target_audience or 'not provided'}\n"
             f"Business goals for the new site: {input.business_goals or 'not provided'}\n"
             f"Additional notes: {input.additional_notes or 'none'}",

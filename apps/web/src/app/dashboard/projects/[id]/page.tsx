@@ -6,11 +6,14 @@ import { useEffect, useState } from "react";
 import {
   api,
   PROJECT_STAGES,
+  type ActivityItem,
+  type Brief,
   type CreativeDirectionBrief,
   type Project,
   type ProjectStage,
   type User,
 } from "@/lib/api";
+import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 
 export default function ProjectDetailPage() {
@@ -18,7 +21,9 @@ export default function ProjectDetailPage() {
   const projectId = params.id;
 
   const [project, setProject] = useState<Project | null>(null);
+  const [brief, setBrief] = useState<Brief | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
@@ -30,7 +35,7 @@ export default function ProjectDetailPage() {
   const [businessGoals, setBusinessGoals] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
 
-  function loadBriefs() {
+  function loadCreativeDirections() {
     api
       .listCreativeDirections(projectId)
       .then((list) => {
@@ -40,23 +45,28 @@ export default function ProjectDetailPage() {
       .catch(() => {});
   }
 
-  useEffect(() => {
-    api
-      .getProject(projectId)
-      .then(setProject)
-      .catch(() => setError("Couldn't load this project."));
+  function load() {
+    api.getProject(projectId).then(setProject).catch(() => setError("Couldn't load this project."));
+    api.getBrief(projectId).then(setBrief).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
-    loadBriefs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+    api
+      .listActivity({ entity_type: "project", entity_id: projectId })
+      .then(setActivity)
+      .catch(() => {});
+    loadCreativeDirections();
+  }
+
+  useEffect(load, [projectId]);
 
   async function handleStageChange(stage: ProjectStage) {
-    const updated = await api.updateProject(projectId, { stage });
+    if (!project) return;
+    const updated = await api.updateProject(project.id, { stage });
     setProject(updated);
   }
 
   async function handleAssigneeChange(assigneeId: string) {
-    const updated = await api.updateProject(projectId, { assigned_user_id: assigneeId || null });
+    if (!project) return;
+    const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
     setProject(updated);
   }
 
@@ -65,13 +75,13 @@ export default function ProjectDetailPage() {
     setGenerating(true);
     setGenerateError(null);
     try {
-      const brief = await api.generateCreativeDirection(projectId, {
+      const generated = await api.generateCreativeDirection(projectId, {
         target_audience: targetAudience || undefined,
         business_goals: businessGoals || undefined,
         additional_notes: additionalNotes || undefined,
       });
-      setBriefs((prev) => [brief, ...(prev ?? [])]);
-      setExpandedId(brief.id);
+      setBriefs((prev) => [generated, ...(prev ?? [])]);
+      setExpandedId(generated.id);
       setShowGenerateForm(false);
       setTargetAudience("");
       setBusinessGoals("");
@@ -83,7 +93,7 @@ export default function ProjectDetailPage() {
     }
   }
 
-  function handleBriefUpdated(updated: CreativeDirectionBrief) {
+  function handleCreativeDirectionUpdated(updated: CreativeDirectionBrief) {
     setBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
   }
 
@@ -91,25 +101,21 @@ export default function ProjectDetailPage() {
   if (!project) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="p-6">
       <Link href="/dashboard/projects" className="text-sm text-neutral-500 hover:underline">
-        ← Back to projects
+        ← All projects
       </Link>
 
-      <div className="mt-4 flex items-center justify-between">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-neutral-900">{project.name}</h1>
           <p className="text-sm text-neutral-500">{project.client_business_name}</p>
         </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2">
-          <span className="text-neutral-500">Stage</span>
+        <div className="flex items-center gap-3">
           <select
             value={project.stage}
             onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
-            className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           >
             {PROJECT_STAGES.map((stage) => (
               <option key={stage} value={stage}>
@@ -117,13 +123,10 @@ export default function ProjectDetailPage() {
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-neutral-500">Assigned to</span>
           <select
             value={project.assigned_user_id ?? ""}
             onChange={(e) => handleAssigneeChange(e.target.value)}
-            className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           >
             <option value="">Unassigned</option>
             {users.map((user) => (
@@ -132,8 +135,21 @@ export default function ProjectDetailPage() {
               </option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-neutral-900">Project brief</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          The structured client intake — this becomes the source of truth for the build. Every field
+          saves as you leave it; missing fields are flagged, never guessed at.
+        </p>
+        <div className="mt-3">
+          {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : (
+            <p className="text-sm text-neutral-500">Loading brief…</p>
+          )}
+        </div>
+      </section>
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
@@ -141,7 +157,8 @@ export default function ProjectDetailPage() {
             <h2 className="text-sm font-semibold text-neutral-900">Creative direction</h2>
             <p className="text-xs text-neutral-500">
               The creative concept, visual direction, and brand direction for this project — review and edit
-              before design/build work starts.
+              before design/build work starts. Uses the brief above when it has answers, and flags what's
+              still missing.
             </p>
           </div>
           <button
@@ -156,8 +173,9 @@ export default function ProjectDetailPage() {
         {showGenerateForm && (
           <form onSubmit={handleGenerate} className="mt-3 space-y-3 border border-neutral-200 p-4">
             <p className="text-xs text-neutral-500">
-              Optional — anything typed in here is used as confirmed client context. Left blank, the direction
-              will lean on the business record and mark the gap as an assumption to confirm later.
+              Optional — overrides the brief above for this generation only. Left blank, target audience and
+              business goals are pulled from the project brief when it has them; if the brief doesn't have them
+              either, the gap is marked as an assumption to confirm later.
             </p>
             <label className="block text-sm">
               <span className="text-neutral-600">Target audience</span>
@@ -199,8 +217,8 @@ export default function ProjectDetailPage() {
         )}
         {generating && (
           <p className="mt-2 text-sm text-neutral-500">
-            Pulling together the business record, website audit, and prior research — this can take up to a
-            minute.
+            Pulling together the business record, brief, website audit, and prior research — this can take up
+            to a minute.
           </p>
         )}
         {generateError && <p className="mt-2 text-sm text-red-600">{generateError}</p>}
@@ -209,28 +227,26 @@ export default function ProjectDetailPage() {
           {briefs && briefs.length === 0 && !generating && (
             <li className="px-3 py-3 text-sm text-neutral-500">No creative direction generated yet.</li>
           )}
-          {briefs?.map((brief) => {
-            const expanded = expandedId === brief.id;
+          {briefs?.map((cd) => {
+            const expanded = expandedId === cd.id;
             return (
-              <li key={brief.id} className="px-3 py-3 text-sm">
+              <li key={cd.id} className="px-3 py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <button
-                    onClick={() => setExpandedId(expanded ? null : brief.id)}
+                    onClick={() => setExpandedId(expanded ? null : cd.id)}
                     className="text-left text-neutral-900 hover:underline"
                   >
-                    {expanded ? "▾" : "▸"} Creative direction — {new Date(brief.generated_at).toLocaleString()}
+                    {expanded ? "▾" : "▸"} Creative direction — {new Date(cd.generated_at).toLocaleString()}
                   </button>
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        brief.status === "approved"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-neutral-100 text-neutral-700"
+                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
                       }`}
                     >
-                      {brief.status}
+                      {cd.status}
                     </span>
-                    {brief.flagged_for_review && (
+                    {cd.flagged_for_review && (
                       <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
                         Flagged for review
                       </span>
@@ -239,12 +255,29 @@ export default function ProjectDetailPage() {
                 </div>
                 {expanded && (
                   <div className="mt-3">
-                    <CreativeDirectionView brief={brief} onChange={handleBriefUpdated} />
+                    <CreativeDirectionView brief={cd} onChange={handleCreativeDirectionUpdated} />
                   </div>
                 )}
               </li>
             );
           })}
+        </ul>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {activity && activity.length === 0 && (
+            <li className="px-3 py-3 text-sm text-neutral-500">No activity yet.</li>
+          )}
+          {activity?.map((item) => (
+            <li key={item.id} className="px-3 py-2 text-sm">
+              <span className="text-neutral-900">{item.summary ?? item.action}</span>
+              <span className="ml-2 text-xs text-neutral-500">
+                {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
+              </span>
+            </li>
+          ))}
         </ul>
       </section>
     </div>
