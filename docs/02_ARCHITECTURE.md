@@ -330,7 +330,7 @@ three are in near-term scope ([[04_ROADMAP]] M2).
 | Lead scoring | M2 | Deterministic-ish scoring from research + audit. |
 | Sales assistant | M3 | Sales-prep packet + outreach drafting. |
 | Meeting preparation | Built 2026-08-18 | `agents/meeting_brief.py` — auto-runs when a lead-side meeting is booked, synthesizing existing lead info (no new data fetched). See [[05_DECISIONS]] (Calendar Integration). |
-| Creative director | M4/deferred | Design brief drafting — high judgment, expect heavy edits. |
+| Creative director | Built 2026-08-19 | `agents/creative_director.py` — creative concept, visual/brand/colour/typography/image/layout/UX direction, tone of voice, visual hierarchy, CTA strategy, things to avoid, references, with an explicit FACTS/ASSUMPTIONS/RECOMMENDATIONS split. High judgment, expect edits — DRAFT→APPROVED review gate before it's treated as final. See [[05_DECISIONS]]. |
 | Copywriter | M4 | Per-page copy drafts from intake + research. |
 | Website builder | M5 | Assembles a site from template + brief + copy, not a from-scratch generator. |
 | Technical QA | M5 | Automated checks (build/links/mobile) — assists, doesn't replace stage 17. |

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, PROJECT_STAGES, type Client, type Project, type ProjectStage, type User } from "@/lib/api";
 
@@ -133,7 +134,11 @@ export default function ProjectsPage() {
             )}
             {projects.map((project) => (
               <tr key={project.id}>
-                <td className="px-3 py-2 font-medium text-neutral-900">{project.name}</td>
+                <td className="px-3 py-2 font-medium text-neutral-900">
+                  <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">
+                    {project.name}
+                  </Link>
+                </td>
                 <td className="px-3 py-2 text-neutral-600">{project.client_business_name}</td>
                 <td className="px-3 py-2">
                   <select

@@ -163,10 +163,30 @@ spec with no re-keying.
       failed LLM call never blocks scheduling. See [[05_DECISIONS]] for
       the full design and why Google Calendar/per-user/one-directional
       is the "simplest appropriate" scope.
+- [x] Creative Director — built ahead of client intake (which two other
+      in-flight branches were touching at the same time), same rationale
+      as Calendar/Client Management above: the piece that's ready to
+      build now, built now. `agents/creative_director.py` /
+      `modules/creative_directions/`: turns the business record, latest
+      website audit, and latest sales-audit research for a project's
+      client into a practical, client-specific creative direction
+      (concept, visual/brand/colour/typography/image/layout/UX
+      direction, tone of voice, recommended visual hierarchy, recommended
+      CTA strategy, things to avoid, references) — explicit FACTS vs.
+      ASSUMPTIONS vs. RECOMMENDATIONS throughout, never presenting an
+      assumption as a fact. Target audience/business goals are
+      operator-entered at generation time until client intake exists to
+      supply them structurally (see [[05_DECISIONS]]) — their absence is
+      flagged for review rather than silently producing a generic
+      direction. DRAFT → APPROVED status gate with in-place editing
+      (`PATCH /creative-directions/{id}`) is the "review and edit before
+      continuing" step, surfaced on a new `/dashboard/projects/[id]`
+      page (the first project detail page).
 - [ ] Client intake form → auto-creates a project record.
 - [ ] Post-sale research agent.
 - [ ] Design brief, sitemap, and copy drafts generated from intake +
-      research, for operator sign-off before build.
+      research, for operator sign-off before build. Creative Director
+      (above) is the direction this consumes once built.
 
 ## M5 — Website build + QA + approval
 

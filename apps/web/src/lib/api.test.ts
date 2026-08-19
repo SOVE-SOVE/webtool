@@ -130,5 +130,68 @@ describe("api", () => {
         expect.anything(),
       );
     });
+
+    it("generateCreativeDirection posts to /api/v1/projects/:id/creative-directions with an empty body by default", async () => {
+      const fetchMock = stubOk({ id: "cd1" });
+      await api.generateCreativeDirection("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/creative-directions"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({}) }),
+      );
+    });
+
+    it("generateCreativeDirection sends operator-supplied context when given", async () => {
+      const fetchMock = stubOk({ id: "cd1" });
+      await api.generateCreativeDirection("p1", { target_audience: "Homeowners", business_goals: "More calls" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/creative-directions"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ target_audience: "Homeowners", business_goals: "More calls" }),
+        }),
+      );
+    });
+
+    it("listCreativeDirections gets /api/v1/projects/:id/creative-directions", async () => {
+      const fetchMock = stubOk([]);
+      await api.listCreativeDirections("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/creative-directions"),
+        expect.anything(),
+      );
+    });
+
+    it("updateCreativeDirection patches /api/v1/creative-directions/:id", async () => {
+      const fetchMock = stubOk({ id: "cd1" });
+      await api.updateCreativeDirection("cd1", { creative_concept: "Revised concept" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/creative-directions/cd1"),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ creative_concept: "Revised concept" }),
+        }),
+      );
+    });
+
+    it("approveCreativeDirection posts to /api/v1/creative-directions/:id/approve", async () => {
+      const fetchMock = stubOk({ id: "cd1", status: "approved" });
+      await api.approveCreativeDirection("cd1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/creative-directions/cd1/approve"),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    it("getProject gets /api/v1/projects/:id", async () => {
+      const fetchMock = stubOk({ id: "p1" });
+      await api.getProject("p1");
+
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/v1/projects/p1"), expect.anything());
+    });
   });
 });
