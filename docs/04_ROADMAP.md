@@ -329,14 +329,37 @@ Goal: stages 15–18. First real reusable output.
       low ~1.16:1 contrast ratio, real transferred bytes) was correct.
       Surfaced as a "Technical QA" panel on the website page: a
       pass/fail badge, counts, and every check grouped by category.
-- [ ] Operator approval gate, then a secure shareable client-preview
-      link with feedback capture.
+- [x] Operator approval gate — grew into a full human-approval-workflow
+      system (`modules/approvals/`) rather than a single gate: seven
+      checkpoints (client brief, creative direction, sitemap, generated
+      website, QA, client review, final deployment), each recording
+      who/when/notes and, for the three that didn't already have it
+      (website, QA, deployment), a new schema field for it. No stage
+      can be silently skipped or bypassed — every approval action
+      checks its own prerequisites server-side and 400s with exactly
+      what's missing, and the deployment gate independently re-verifies
+      all six prior checkpoints' *current* state rather than trusting
+      an earlier gate already covered it. See [[05_DECISIONS]].
+- [ ] A secure shareable client-preview link with feedback capture —
+      still not built. "Client review" today is an operator recording
+      that the client approved (by email/call/etc, see
+      [[03_AGENT_RULES]]'s existing "Client approval communication"
+      note), not the client viewing/interacting with anything
+      themselves — there's no client-facing surface in this app at all
+      yet.
 
 ## M6 — Deployment + maintenance
 
 Goal: stages 19–20. Close the loop to revenue.
 
-- [ ] One-step deploy to hosting, tied to client approval.
+- [ ] One-step deploy to hosting, tied to client approval — the
+      *approval* half of this now exists (`modules/deployments/`,
+      roadmap M5's approval-workflow entry): creating a `Deployment` row
+      is already gated on every prior checkpoint including client
+      review, and is itself checkpoint 7's approval record. What's
+      still missing is the actual hosting/publish action — `status`
+      stays `"pending"` forever right now, since "do not add automatic
+      deployment yet" held for this pass too.
 - [ ] Payment/invoicing (Stripe) tied to the deploy step.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.

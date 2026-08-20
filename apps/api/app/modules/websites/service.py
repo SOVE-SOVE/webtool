@@ -1,5 +1,6 @@
 import copy
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -15,13 +16,24 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
-from app.modules.design_briefs.models import DesignBrief
+from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.projects.models import Project
+from app.modules.qa_reports.models import QaReport
 from app.modules.sitemaps.models import Sitemap, SitemapStatus
 from app.modules.websites.models import Website
-from app.modules.websites.schemas import GenerateWebsiteRequest, SectionUpdate, WebsiteRead, WebsiteSummary
+from app.modules.websites.schemas import (
+    ApproveWebsiteRequest,
+    GenerateWebsiteRequest,
+    SectionUpdate,
+    WebsiteRead,
+    WebsiteSummary,
+)
 
-_READ_OPTIONS = (joinedload(Website.generated_by_user),)
+_READ_OPTIONS = (
+    joinedload(Website.generated_by_user),
+    joinedload(Website.approved_by_user),
+    joinedload(Website.client_approved_by_user),
+)
 
 
 def _split(text: str | None) -> list[str]:
@@ -383,9 +395,11 @@ def update_section(
         raise HTTPException(status_code=404, detail="Section not found on this website version")
 
     changed = False
+    content_changed = False
     if data.config is not None:
         slot["config"] = {**slot["config"], **data.config}
         changed = True
+        content_changed = True
     if data.approved is not None and data.approved != slot["approved"]:
         slot["approved"] = data.approved
         changed = True
@@ -402,6 +416,28 @@ def update_section(
         anti_slop = _recompute_anti_slop(website.config)
         website.anti_slop_score = anti_slop.score
         website.flagged_for_review = not anti_slop.passed
+
+        reverted = []
+        if content_changed:
+            # A section's own `approved` flag toggling alone isn't a
+            # content change — only actually editing what a section
+            # says invalidates the whole-version sign-offs, same "edit
+            # reverts approval" contract as every other approval
+            # checkpoint (docs/05_DECISIONS.md).
+            if website.approved:
+                website.approved = False
+                website.approved_by_user_id = None
+                website.approved_at = None
+                reverted.append("website")
+            if website.client_approved:
+                website.client_approved = False
+                website.client_approved_by_user_id = None
+                website.client_approved_at = None
+                reverted.append("client review")
+
+        summary = f"Updated a {slot['type']} section" + (" and approved it" if data.approved else "")
+        if reverted:
+            summary += f" — reverted {' and '.join(reverted)} approval, needs re-approval"
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -409,10 +445,96 @@ def update_section(
             entity_type="project",
             entity_id=website.project_id,
             action="website_section_updated",
-            summary=f"Updated a {slot['type']} section" + (" and approved it" if data.approved else ""),
+            summary=summary,
         )
         db.commit()
 
+    return get_website(db, workspace_id, website_id)
+
+
+def approve_website(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, website_id: uuid.UUID, request: ApproveWebsiteRequest
+) -> WebsiteRead | None:
+    """Approval checkpoint 4 ("Generated website"). Requires the brief,
+    the latest creative direction, and the latest sitemap to currently
+    be approved — the same prerequisite chain website generation itself
+    resolves against, made an explicit gate here per "do not bypass the
+    approval system for convenience"."""
+    website = _get_website_in_workspace(db, workspace_id, website_id)
+    if website is None:
+        return None
+
+    brief = _get_design_brief(db, website.project_id)
+    creative_direction = _resolve_creative_direction(db, workspace_id, website.project_id, None)
+    sitemap = _resolve_sitemap(db, workspace_id, website.project_id, None)
+
+    missing = []
+    if brief is None or brief.status != BriefStatus.APPROVED:
+        missing.append("client brief")
+    if creative_direction is None or creative_direction.status != CreativeDirectionStatus.APPROVED:
+        missing.append("creative direction")
+    if sitemap is None or sitemap.status != SitemapStatus.APPROVED:
+        missing.append("sitemap")
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot approve this website until the following are approved first: {', '.join(missing)}.",
+        )
+
+    website.approved = True
+    website.approved_by_user_id = actor_id
+    website.approved_at = datetime.now(timezone.utc)
+    website.approval_notes = request.notes
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=website.project_id,
+        action="website_approved",
+        summary="Approved generated website",
+    )
+    db.commit()
+    return get_website(db, workspace_id, website_id)
+
+
+def client_approve_website(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, website_id: uuid.UUID, request: ApproveWebsiteRequest
+) -> WebsiteRead | None:
+    """Approval checkpoint 6 ("Client review") — recorded by an
+    operator on the client's behalf (see Website.client_approved_by_user_id's
+    docstring). Requires this version to already be operator-approved
+    (checkpoint 4) and its latest QA report to be human-approved
+    (checkpoint 5)."""
+    website = _get_website_in_workspace(db, workspace_id, website_id)
+    if website is None:
+        return None
+
+    if not website.approved:
+        raise HTTPException(status_code=400, detail="Cannot record client approval until the generated website itself is approved.")
+
+    latest_qa = db.scalar(
+        select(QaReport).where(QaReport.website_id == website.id).order_by(QaReport.created_at.desc())
+    )
+    if latest_qa is None or not latest_qa.human_approved:
+        raise HTTPException(status_code=400, detail="Cannot record client approval until QA has been approved for this version.")
+
+    website.client_approved = True
+    website.client_approved_by_user_id = actor_id
+    website.client_approved_at = datetime.now(timezone.utc)
+    website.client_approval_notes = request.notes
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=website.project_id,
+        action="website_client_approved",
+        summary="Recorded client approval",
+    )
+    db.commit()
     return get_website(db, workspace_id, website_id)
 
 
@@ -443,6 +565,8 @@ def list_websites(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -
             flagged_for_review=w.flagged_for_review,
             generated_by_user_name=w.generated_by_user.name if w.generated_by_user else None,
             generated_at=w.generated_at,
+            approved=w.approved,
+            client_approved=w.client_approved,
         )
         for w in websites
     ]
@@ -471,4 +595,12 @@ def get_website(db: Session, workspace_id: uuid.UUID, website_id: uuid.UUID) -> 
         generated_by_user_name=website.generated_by_user.name if website.generated_by_user else None,
         generated_at=website.generated_at,
         updated_at=website.updated_at,
+        approved=website.approved,
+        approved_by_user_name=website.approved_by_user.name if website.approved_by_user else None,
+        approved_at=website.approved_at,
+        approval_notes=website.approval_notes,
+        client_approved=website.client_approved,
+        client_approved_by_user_name=website.client_approved_by_user.name if website.client_approved_by_user else None,
+        client_approved_at=website.client_approved_at,
+        client_approval_notes=website.client_approval_notes,
     )

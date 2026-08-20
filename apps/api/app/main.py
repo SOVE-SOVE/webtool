@@ -6,12 +6,14 @@ from app.core.logging import configure_logging, logger
 from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.modules.activity_log.routes import router as activity_router
+from app.modules.approvals.routes import router as approvals_router
 from app.modules.auth.routes import router as auth_router
 from app.modules.businesses.routes import router as businesses_router
 from app.modules.calendar.routes import router as calendar_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.creative_directions.routes import router as creative_directions_router
 from app.modules.dashboard.routes import router as dashboard_router
+from app.modules.deployments.routes import router as deployments_router
 from app.modules.design_briefs.routes import router as design_briefs_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
@@ -74,3 +76,5 @@ app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
 app.include_router(websites_router)
 app.include_router(qa_reports_router)
+app.include_router(deployments_router)
+app.include_router(approvals_router)

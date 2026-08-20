@@ -312,6 +312,19 @@ def update_creative_direction(
     if changed_fields:
         brief.edited_by_user_id = actor_id
         brief.edited_at = datetime.now(timezone.utc)
+
+        reverted_approval = False
+        if brief.status == CreativeDirectionStatus.APPROVED:
+            # The approved direction is the source of truth downstream
+            # (sitemap/website generation) — once its content actually
+            # changes, that sign-off no longer describes what's in
+            # front of the operator, same "edit reverts approval"
+            # contract as DesignBrief.status. See docs/05_DECISIONS.md.
+            brief.status = CreativeDirectionStatus.DRAFT
+            brief.approved_by_user_id = None
+            brief.approved_at = None
+            reverted_approval = True
+
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -319,7 +332,8 @@ def update_creative_direction(
             entity_type="project",
             entity_id=brief.project_id,
             action="creative_direction_edited",
-            summary=f"Edited creative direction: {', '.join(changed_fields)}",
+            summary=f"Edited creative direction: {', '.join(changed_fields)}"
+            + (" — reverted to draft, needs re-approval" if reverted_approval else ""),
         )
         db.commit()
 

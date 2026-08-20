@@ -36,6 +36,11 @@ class QaReportRead(BaseModel):
     generated_by_user_name: str | None
     created_at: datetime
 
+    human_approved: bool
+    approved_by_user_name: str | None
+    approved_at: datetime | None
+    approval_notes: str | None
+
 
 class QaReportSummary(BaseModel):
     id: uuid.UUID
@@ -46,3 +51,8 @@ class QaReportSummary(BaseModel):
     skipped_count: int
     generated_by_user_name: str | None
     created_at: datetime
+    human_approved: bool
+
+
+class ApproveQaReportRequest(BaseModel):
+    notes: str | None = None

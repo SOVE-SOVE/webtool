@@ -1,19 +1,26 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.agents import technical_qa
+from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.design_briefs.models import DesignBrief
 from app.modules.projects.models import Project
 from app.modules.qa_reports.models import QaReport
-from app.modules.qa_reports.schemas import GenerateQaReportRequest, QaReportRead, QaReportSummary
+from app.modules.qa_reports.schemas import (
+    ApproveQaReportRequest,
+    GenerateQaReportRequest,
+    QaReportRead,
+    QaReportSummary,
+)
 from app.modules.websites.models import Website
 
-_READ_OPTIONS = (joinedload(QaReport.generated_by_user),)
+_READ_OPTIONS = (joinedload(QaReport.generated_by_user), joinedload(QaReport.approved_by_user))
 
 
 def _get_website_in_workspace(db: Session, workspace_id: uuid.UUID, website_id: uuid.UUID) -> Website | None:
@@ -85,6 +92,47 @@ def run_qa(
     return get_qa_report(db, workspace_id, report.id)
 
 
+def approve_qa_report(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, report_id: uuid.UUID, request: ApproveQaReportRequest
+) -> QaReportRead | None:
+    """Approval checkpoint 5 ("QA") — a human sign-off on *this specific
+    report*, distinct from its own automated `passed` verdict. Refuses
+    to approve a report that didn't pass (a critical issue is present)
+    and requires the website itself to already be approved (checkpoint
+    4) — "do not bypass the approval system for convenience" applies to
+    QA exactly as much as to any other stage."""
+    report = db.scalar(_base_query(workspace_id).where(QaReport.id == report_id))
+    if report is None:
+        return None
+
+    if not report.passed:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot approve a QA report with unresolved critical issues — fix them and re-run QA first.",
+        )
+
+    website = db.scalar(select(Website).where(Website.id == report.website_id))
+    if website is None or not website.approved:
+        raise HTTPException(status_code=400, detail="Cannot approve QA until the generated website itself is approved.")
+
+    report.human_approved = True
+    report.approved_by_user_id = actor_id
+    report.approved_at = datetime.now(timezone.utc)
+    report.approval_notes = request.notes
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=website.project_id,
+        action="qa_report_approved",
+        summary="Approved QA report",
+    )
+    db.commit()
+    return get_qa_report(db, workspace_id, report_id)
+
+
 def _base_query(workspace_id: uuid.UUID):
     return (
         select(QaReport)
@@ -111,6 +159,7 @@ def list_qa_reports(db: Session, workspace_id: uuid.UUID, website_id: uuid.UUID)
             skipped_count=(r.report or {}).get("skipped_count", 0),
             generated_by_user_name=r.generated_by_user.name if r.generated_by_user else None,
             created_at=r.created_at,
+            human_approved=r.human_approved,
         )
         for r in reports
     ]
@@ -134,4 +183,8 @@ def get_qa_report(db: Session, workspace_id: uuid.UUID, report_id: uuid.UUID) ->
         generated_by_user_id=r.generated_by_user_id,
         generated_by_user_name=r.generated_by_user.name if r.generated_by_user else None,
         created_at=r.created_at,
+        human_approved=r.human_approved,
+        approved_by_user_name=r.approved_by_user.name if r.approved_by_user else None,
+        approved_at=r.approved_at,
+        approval_notes=r.approval_notes,
     )

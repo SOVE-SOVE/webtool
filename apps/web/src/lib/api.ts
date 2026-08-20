@@ -738,6 +738,16 @@ export type Website = {
   generated_by_user_name: string | null;
   generated_at: string;
   updated_at: string;
+
+  approved: boolean;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  approval_notes: string | null;
+
+  client_approved: boolean;
+  client_approved_by_user_name: string | null;
+  client_approved_at: string | null;
+  client_approval_notes: string | null;
 };
 
 export type WebsiteSummary = {
@@ -747,12 +757,18 @@ export type WebsiteSummary = {
   flagged_for_review: boolean;
   generated_by_user_name: string | null;
   generated_at: string;
+  approved: boolean;
+  client_approved: boolean;
 };
 
 export type GenerateWebsiteRequest = {
   sitemap_id?: string;
   creative_direction_id?: string;
   force_regenerate_all?: boolean;
+};
+
+export type ApproveWebsiteRequest = {
+  notes?: string;
 };
 
 export type SectionUpdate = {
@@ -790,11 +806,21 @@ export type QaReport = {
   generated_by_user_id: string | null;
   generated_by_user_name: string | null;
   created_at: string;
+
+  human_approved: boolean;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  approval_notes: string | null;
+};
+
+export type ApproveQaReportRequest = {
+  notes?: string;
 };
 
 export type QaReportSummary = {
   id: string;
   passed: boolean;
+  human_approved: boolean;
   passed_count: number;
   failed_count: number;
   warning_count: number;
@@ -805,6 +831,52 @@ export type QaReportSummary = {
 
 export type GenerateQaReportRequest = {
   preview_url?: string;
+};
+
+export const APPROVAL_STAGES = [
+  "client_brief",
+  "creative_direction",
+  "sitemap",
+  "generated_website",
+  "qa",
+  "client_review",
+  "deployment",
+] as const;
+export type ApprovalStage = (typeof APPROVAL_STAGES)[number];
+
+export type ApprovalCheckpoint = {
+  stage: ApprovalStage;
+  label: string;
+  approved: boolean;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  version_label: string | null;
+  notes: string | null;
+  blocked_reason: string | null;
+};
+
+export type ProjectApprovalStatus = {
+  project_id: string;
+  checkpoints: ApprovalCheckpoint[];
+  can_deploy: boolean;
+  missing_for_deployment: string[];
+};
+
+export type Deployment = {
+  id: string;
+  website_id: string;
+  environment: string;
+  url: string | null;
+  status: string;
+  deployed_at: string | null;
+  approved_by_user_name: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type CreateDeploymentRequest = {
+  environment?: string;
+  notes?: string;
 };
 
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
@@ -1021,6 +1093,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  approveWebsite: (websiteId: string, data?: ApproveWebsiteRequest) =>
+    request<Website>(`/api/v1/websites/${websiteId}/approve`, { method: "POST", body: JSON.stringify(data ?? {}) }),
+  clientApproveWebsite: (websiteId: string, data?: ApproveWebsiteRequest) =>
+    request<Website>(`/api/v1/websites/${websiteId}/client-approve`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
 
   generateQaReport: (websiteId: string, data?: GenerateQaReportRequest) =>
     request<QaReport>(`/api/v1/websites/${websiteId}/qa-reports`, {
@@ -1029,6 +1108,17 @@ export const api = {
     }),
   listQaReports: (websiteId: string) => request<QaReportSummary[]>(`/api/v1/websites/${websiteId}/qa-reports`),
   getQaReport: (id: string) => request<QaReport>(`/api/v1/qa-reports/${id}`),
+  approveQaReport: (id: string, data?: ApproveQaReportRequest) =>
+    request<QaReport>(`/api/v1/qa-reports/${id}/approve`, { method: "POST", body: JSON.stringify(data ?? {}) }),
+
+  getProjectApprovals: (projectId: string) => request<ProjectApprovalStatus>(`/api/v1/projects/${projectId}/approvals`),
+
+  createDeployment: (projectId: string, data?: CreateDeploymentRequest) =>
+    request<Deployment>(`/api/v1/projects/${projectId}/deployments`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listDeployments: (projectId: string) => request<Deployment[]>(`/api/v1/projects/${projectId}/deployments`),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

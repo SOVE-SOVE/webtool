@@ -20,6 +20,13 @@ export default function ProjectWebsitePage() {
   const [qaReport, setQaReport] = useState<QaReport | null>(null);
   const [runningQa, setRunningQa] = useState(false);
   const [qaError, setQaError] = useState<string | null>(null);
+  const [approvingQa, setApprovingQa] = useState(false);
+  const [qaApproveError, setQaApproveError] = useState<string | null>(null);
+
+  const [approvingWebsite, setApprovingWebsite] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [clientApproving, setClientApproving] = useState(false);
+  const [clientApproveError, setClientApproveError] = useState<string | null>(null);
 
   function loadLatestQaReport(websiteId: string) {
     api
@@ -65,6 +72,53 @@ export default function ProjectWebsitePage() {
       setQaError("Couldn't run the QA check.");
     } finally {
       setRunningQa(false);
+    }
+  }
+
+  async function handleApproveQa() {
+    if (!qaReport) return;
+    setApprovingQa(true);
+    setQaApproveError(null);
+    try {
+      setQaReport(await api.approveQaReport(qaReport.id));
+    } catch {
+      setQaApproveError("Couldn't approve this QA report — it may still have unresolved critical issues.");
+    } finally {
+      setApprovingQa(false);
+    }
+  }
+
+  // Unlike handleWebsiteChange (used for section edits/regenerates),
+  // approving the whole version is a sign-off action, not a content
+  // change — it must not clear the QA report that's already displayed.
+  function applyWebsiteApproval(updated: Website) {
+    setWebsite(updated);
+    api.listWebsites(projectId).then(setVersions).catch(() => {});
+  }
+
+  async function handleApproveWebsite() {
+    if (!website) return;
+    setApprovingWebsite(true);
+    setApproveError(null);
+    try {
+      applyWebsiteApproval(await api.approveWebsite(website.id));
+    } catch {
+      setApproveError("Couldn't approve — the brief, creative direction, and sitemap all need to be approved first.");
+    } finally {
+      setApprovingWebsite(false);
+    }
+  }
+
+  async function handleClientApprove() {
+    if (!website) return;
+    setClientApproving(true);
+    setClientApproveError(null);
+    try {
+      applyWebsiteApproval(await api.clientApproveWebsite(website.id));
+    } catch {
+      setClientApproveError("Couldn't record client approval — the website and QA both need to be approved first.");
+    } finally {
+      setClientApproving(false);
     }
   }
 
@@ -168,6 +222,48 @@ export default function ProjectWebsitePage() {
       )}
 
       {website && (
+        <div className="mt-6 rounded-md border border-neutral-200 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                website.approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+              }`}
+            >
+              {website.approved ? `Approved by ${website.approved_by_user_name}` : "Not approved"}
+            </span>
+            {!website.approved && (
+              <button
+                onClick={handleApproveWebsite}
+                disabled={approvingWebsite}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {approvingWebsite ? "Approving…" : "Approve website"}
+              </button>
+            )}
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                website.client_approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+              }`}
+            >
+              {website.client_approved ? `Client approved (recorded by ${website.client_approved_by_user_name})` : "Client review not recorded"}
+            </span>
+            {website.approved && !website.client_approved && (
+              <button
+                onClick={handleClientApprove}
+                disabled={clientApproving}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                title="Record that the client has reviewed and approved this version"
+              >
+                {clientApproving ? "Recording…" : "Record client approval"}
+              </button>
+            )}
+          </div>
+          {approveError && <p className="mt-2 text-sm text-red-600">{approveError}</p>}
+          {clientApproveError && <p className="mt-2 text-sm text-red-600">{clientApproveError}</p>}
+        </div>
+      )}
+
+      {website && (
         <div className="mt-6">
           <WebsiteView website={website} onChange={handleWebsiteChange} />
         </div>
@@ -195,6 +291,32 @@ export default function ProjectWebsitePage() {
           {qaReport && (
             <div className="mt-3">
               <QaReportView report={qaReport} />
+              <div className="mt-3 flex items-center gap-3">
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-medium ${
+                    qaReport.human_approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {qaReport.human_approved ? `QA approved by ${qaReport.approved_by_user_name}` : "QA not approved"}
+                </span>
+                {!qaReport.human_approved && (
+                  <button
+                    onClick={handleApproveQa}
+                    disabled={approvingQa || !qaReport.passed || !website.approved}
+                    title={
+                      !website.approved
+                        ? "Approve the website itself first"
+                        : !qaReport.passed
+                          ? "This report has unresolved critical issues"
+                          : undefined
+                    }
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    {approvingQa ? "Approving…" : "Approve QA"}
+                  </button>
+                )}
+              </div>
+              {qaApproveError && <p className="mt-2 text-sm text-red-600">{qaApproveError}</p>}
             </div>
           )}
         </div>

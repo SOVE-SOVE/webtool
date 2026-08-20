@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.modules.qa_reports import service
-from app.modules.qa_reports.schemas import GenerateQaReportRequest, QaReportRead, QaReportSummary
+from app.modules.qa_reports.schemas import (
+    ApproveQaReportRequest,
+    GenerateQaReportRequest,
+    QaReportRead,
+    QaReportSummary,
+)
 from app.modules.users.models import User
 from app.modules.websites import service as websites_service
 
@@ -49,6 +54,19 @@ def get_qa_report(
     db: Session = Depends(get_db),
 ) -> QaReportRead:
     report = service.get_qa_report(db, current_user.workspace_id, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="QA report not found")
+    return report
+
+
+@router.post("/api/v1/qa-reports/{report_id}/approve", response_model=QaReportRead)
+def approve_qa_report(
+    report_id: uuid.UUID,
+    body: ApproveQaReportRequest = ApproveQaReportRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QaReportRead:
+    report = service.approve_qa_report(db, current_user.workspace_id, current_user.id, report_id, body)
     if report is None:
         raise HTTPException(status_code=404, detail="QA report not found")
     return report

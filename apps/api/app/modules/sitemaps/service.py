@@ -276,6 +276,19 @@ def _next_order_index(sitemap: Sitemap, parent_page_id: uuid.UUID | None) -> int
     return max((p.order_index for p in siblings), default=-1) + 1
 
 
+def _revert_approval(sitemap: Sitemap) -> bool:
+    """Structural edits to an approved sitemap invalidate that sign-off
+    — same "edit reverts approval" contract as DesignBrief.status and
+    CreativeDirectionBrief.status (see docs/05_DECISIONS.md). Returns
+    whether it actually reverted anything, for the activity-log summary."""
+    if sitemap.status != SitemapStatus.APPROVED:
+        return False
+    sitemap.status = SitemapStatus.DRAFT
+    sitemap.approved_by_user_id = None
+    sitemap.approved_at = None
+    return True
+
+
 def add_page(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, sitemap_id: uuid.UUID, data: SitemapPageCreate
 ) -> SitemapRead | None:
@@ -308,6 +321,7 @@ def add_page(
         required_functionality=_join(data.required_functionality),
     )
     db.add(page)
+    reverted = _revert_approval(sitemap)
 
     activity_service.record(
         db,
@@ -316,7 +330,7 @@ def add_page(
         entity_type="project",
         entity_id=sitemap.project_id,
         action="sitemap_page_added",
-        summary=f"Added page '{data.title}' to sitemap",
+        summary=f"Added page '{data.title}' to sitemap" + (" — reverted to draft, needs re-approval" if reverted else ""),
     )
     db.commit()
     return get_sitemap(db, workspace_id, sitemap_id)
@@ -371,6 +385,7 @@ def update_page(
             changed = True
 
     if changed:
+        reverted = _revert_approval(sitemap)
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -378,7 +393,7 @@ def update_page(
             entity_type="project",
             entity_id=sitemap.project_id,
             action="sitemap_page_edited",
-            summary=f"Edited sitemap page '{page.title}'",
+            summary=f"Edited sitemap page '{page.title}'" + (" — reverted to draft, needs re-approval" if reverted else ""),
         )
         db.commit()
 
@@ -404,6 +419,7 @@ def delete_page(
 
     title = page.title
     db.delete(page)
+    reverted = _revert_approval(sitemap)
 
     activity_service.record(
         db,
@@ -412,7 +428,7 @@ def delete_page(
         entity_type="project",
         entity_id=sitemap.project_id,
         action="sitemap_page_removed",
-        summary=f"Removed page '{title}' from sitemap",
+        summary=f"Removed page '{title}' from sitemap" + (" — reverted to draft, needs re-approval" if reverted else ""),
     )
     db.commit()
     return get_sitemap(db, workspace_id, sitemap_id)
@@ -454,6 +470,7 @@ def reorder_pages(
             page.parent_page_id = new_parent_id
         page.order_index = item.order_index
 
+    reverted = _revert_approval(sitemap)
     activity_service.record(
         db,
         workspace_id=workspace_id,
@@ -461,7 +478,7 @@ def reorder_pages(
         entity_type="project",
         entity_id=sitemap.project_id,
         action="sitemap_pages_reordered",
-        summary="Reordered sitemap pages",
+        summary="Reordered sitemap pages" + (" — reverted to draft, needs re-approval" if reverted else ""),
     )
     db.commit()
     return get_sitemap(db, workspace_id, sitemap_id)

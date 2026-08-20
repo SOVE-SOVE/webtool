@@ -399,6 +399,33 @@ def test_approve_sitemap(authed_client, monkeypatch):
     assert any(a["action"] == "sitemap_approved" for a in activity)
 
 
+def test_editing_an_approved_sitemap_reverts_it_to_draft(authed_client, monkeypatch):
+    _patch_sitemap_agent(monkeypatch)
+    project = _create_project_without_lead(authed_client)
+    sitemap = authed_client.post(f"/api/v1/projects/{project['id']}/sitemaps").json()
+    authed_client.post(f"/api/v1/sitemaps/{sitemap['id']}/approve")
+
+    res = authed_client.patch(
+        f"/api/v1/sitemaps/{sitemap['id']}/pages/{sitemap['pages'][0]['id']}", json={"title": "Updated title"}
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "draft"
+    assert res.json()["approved_by_user_name"] is None
+
+
+def test_adding_a_page_to_an_approved_sitemap_reverts_it_to_draft(authed_client, monkeypatch):
+    _patch_sitemap_agent(monkeypatch)
+    project = _create_project_without_lead(authed_client)
+    sitemap = authed_client.post(f"/api/v1/projects/{project['id']}/sitemaps").json()
+    authed_client.post(f"/api/v1/sitemaps/{sitemap['id']}/approve")
+
+    res = authed_client.post(
+        f"/api/v1/sitemaps/{sitemap['id']}/pages", json={"title": "New Page", "slug": "new-page", "purpose": "x"}
+    )
+    assert res.status_code == 201
+    assert res.json()["status"] == "draft"
+
+
 def test_sitemaps_are_workspace_isolated(authed_client, other_authed_client, monkeypatch):
     _patch_sitemap_agent(monkeypatch)
     project = _create_project_without_lead(authed_client)

@@ -162,6 +162,122 @@ job here is to surface that, not to gate on it.
 
 ---
 
+## 2026-08-20 — Human approval workflow: seven checkpoints, no schema-level fabrication, deployment gate re-verifies current state
+
+**Decision:** Built `modules/approvals/` plus new approval fields/
+actions on `Website`, `QaReport`, and `Deployment` for the seven
+checkpoints the operator specified: client brief, creative direction,
+sitemap, generated website, QA, client review, final deployment. Three
+of these (brief, creative direction, sitemap) already had `status`/
+`approved_by_user_id`/`approved_at` columns from earlier work — no
+schema change there, just two real gaps found and closed:
+
+- **`CreativeDirectionBrief.status` never reverted to `DRAFT` on edit**
+  — `update_creative_direction` updated `edited_at`/`edited_by_user_id`
+  but left an already-`APPROVED` row `APPROVED` after a content change,
+  unlike `DesignBrief`'s existing (correct) behavior. Fixed to match.
+- **`Sitemap.status` never reverted either** — none of `add_page`/
+  `update_page`/`delete_page`/`reorder_pages` touched `status`, so an
+  approved sitemap silently stayed "approved" through structural edits.
+  Fixed via a shared `_revert_approval` helper called from all four.
+
+Both fixes are exactly "if the underlying content changes
+substantially, require approval again" — a requirement that turned out
+to already be a real, if partial, contract in this codebase (via
+`DesignBrief`), just inconsistently applied.
+
+**The four new checkpoints, and why they live where they do:**
+
+- **Generated website** (`Website.approved`) — the operator's own
+  content/design sign-off. Distinct from a section's own `approved`
+  flag inside `config` (roadmap M5's earlier "regenerate a section
+  without destroying approved ones" feature) — that's fine-grained
+  content review; this is the whole-version gate later checkpoints
+  require. Editing a section's *content* (not just toggling its own
+  `approved` flag) on an already-approved version reverts `approved`
+  (and `client_approved`) back to `False` — same "edit reverts
+  approval" contract as the three pre-existing checkpoints.
+- **QA** (`QaReport.human_approved`) — a human sign-off distinct from
+  the report's own automated `passed` verdict (`ready_for_client_review`
+  from the Anti-Slop/QA work). `approve_qa_report` refuses outright when
+  `passed` is `False` — a critical issue can't be rubber-stamped past,
+  which is "a website should not be considered ready for client review
+  until critical QA issues are resolved" enforced at the data layer, not
+  just documented as a rule.
+- **Client review** (`Website.client_approved_by_user_id`, etc.) —
+  there's no client login anywhere in this app (see
+  [[03_AGENT_RULES]]'s "Client approval communication" note: relaying
+  feedback is fine to draft, the client doesn't have their own
+  account), so this is an *operator* recording that the client approved
+  — by email, call, whatever channel — not the client's own action.
+  Lives on `Website` alongside checkpoint 4 rather than a separate
+  table, since both are fundamentally "is this version okay to proceed"
+  checks on the same underlying artifact, just from different
+  reviewers.
+- **Final deployment** (`modules/deployments/`, previously just a bare
+  `Deployment` model with no service or routes at all) — creating a row
+  *is* the approval record for this checkpoint. `create_deployment`
+  refuses unless `modules/approvals/service.py` reports every one of
+  the other six checkpoints currently approved, re-checked fresh at
+  deployment time rather than trusted from an earlier gate — a real
+  edge case this catches: the brief could be edited (reverting its own
+  approval) *after* the website/QA/client-review were all approved, and
+  a deployment attempted after that must still be blocked even though
+  nothing about the deployment gate itself changed. No real hosting/
+  publish action happens — `status` stays `"pending"`, per "do not add
+  automatic deployment yet" (still holding from the website-generation
+  and QA passes).
+
+**The aggregation service** (`get_project_approval_status`) is a plain
+query function, not a new generic "Approval" table — every checkpoint's
+real state already lives on its own natural row (`DesignBrief`/
+`CreativeDirectionBrief`/`Sitemap`/`Website`/`QaReport`/`Deployment`),
+matching this repo's established preference for narrow, purpose-built
+columns over a shared polymorphic table (see the activity_log entries
+below — this is the same call made again, for the same reason).
+`can_deploy` is computed by checking all six prerequisite checkpoints'
+*current* independent state rather than trusting that the last one
+approved (client review) implies the rest still hold — deliberately not
+relying on the sequential gating each individual approve-action already
+enforces, for the same "brief edited after the fact" reason the
+deployment gate re-checks fresh. Each checkpoint's own approval only
+reverts on edits to *that* entity — there's no cross-entity cascading
+invalidation (editing the brief doesn't retroactively un-approve a
+sitemap that was generated from it). That's a deliberate, narrower
+scope: the operator-specified requirement is about each stage's own
+versioned content, and a full reactive dependency-invalidation graph
+across all six is a materially bigger feature nothing in the request
+asked for.
+
+**Frontend:** an `ApprovalPipelineView` on the main project page — the
+single place all seven checkpoints are visible at a glance, each
+showing why it's blocked when it is — plus a `Deploy` button gated on
+`can_deploy` with the missing stages listed in its tooltip when
+disabled. Approve/client-approve/approve-QA actions live on the
+existing website page next to the content they're approving, not on
+the pipeline view itself (which stays read-only status, not an action
+surface). Verified end to end in a real browser through the entire
+sequence — brief → creative direction → sitemap → website → QA →
+client review → deployment — confirming each checkpoint only flips
+`true` once its own action succeeds and the `Deploy` button is
+genuinely disabled until all six are green.
+
+**Why:** "the system must never automatically publish a client website
+without human approval" needed to be a hard, checkable gate, not
+scattered `status` fields nobody was required to check before acting —
+this is that gate made explicit and centrally queryable.
+
+**Alternatives considered:** a generic polymorphic `Approval` table
+(`entity_type`/`entity_id`/`approved_by`/`approved_at`) — rejected for
+the same reason `activity_log` was originally rejected as a global
+table (see the 2026-08-16 multi-user entry below) and only narrowly
+reversed for one specific need: three of the seven checkpoints already
+had purpose-built columns, and forcing those into a generic shape would
+mean either migrating working columns for no functional gain or running
+two parallel approval representations side by side.
+
+---
+
 ## 2026-08-20 — Technical QA: static checks always run, live-preview checks reported as skipped (not hidden) until deployment exists
 
 **Decision:** Built `agents/technical_qa.py` + `modules/qa_reports/`

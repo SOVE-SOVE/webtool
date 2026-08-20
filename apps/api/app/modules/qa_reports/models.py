@@ -38,5 +38,17 @@ class QaReport(Base):
     generated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # Approval checkpoint 5 ("QA") — a human sign-off distinct from
+    # `passed` (the automated ready_for_client_review verdict). An
+    # operator approves *this specific report*, not just "QA in
+    # general"; modules/qa_reports/service.py refuses to approve a
+    # report where `passed` is False, so a critical failure can't be
+    # rubber-stamped past (docs/05_DECISIONS.md).
+    human_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_notes: Mapped[str | None] = mapped_column(Text)
+
     website: Mapped["Website"] = relationship(back_populates="qa_reports")
-    generated_by_user: Mapped["User | None"] = relationship()
+    generated_by_user: Mapped["User | None"] = relationship(foreign_keys=[generated_by_user_id])
+    approved_by_user: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])

@@ -280,3 +280,113 @@ class TestWorkspaceIsolation:
             other_authed_client.post(f"/api/v1/websites/{website['id']}/sections/{section_id}/regenerate").status_code
             == 404
         )
+
+
+CREATIVE_DIRECTION_LLM_OUTPUT = {
+    "facts": ["Riverside Plumbing is a residential plumbing business."],
+    "assumptions": [],
+    "creative_concept": "A dependable, no-nonsense local tradie brand.",
+    "visual_direction": "Clean, high-contrast, utilitarian.",
+    "brand_personality": ["Trustworthy", "Prompt"],
+    "colour_direction": "Deep blue with an amber accent.",
+    "typography_direction": "A confident, legible sans-serif.",
+    "image_direction": "Real photos of the crew and completed jobs.",
+    "layout_direction": "Short, scannable homepage.",
+    "ux_direction": "One-tap call button pinned on mobile.",
+    "tone_of_voice": "Plain-spoken, direct.",
+    "visual_hierarchy": "Phone number first, services second.",
+    "cta_strategy": "Primary CTA is 'Call now', repeated throughout.",
+    "things_to_avoid": ["Generic corporate stock photos"],
+    "references_inspiration": ["Local trade-service sites"],
+}
+
+
+def _create_fully_approved_website(authed_client, monkeypatch):
+    """A project with brief, creative direction, and sitemap all
+    approved, plus a generated (but not yet approved) website — the
+    starting point for approval-checkpoint tests."""
+    monkeypatch.setattr(
+        "app.agents.creative_director.generate_structured", lambda **kwargs: dict(CREATIVE_DIRECTION_LLM_OUTPUT)
+    )
+    project, _ = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+    authed_client.post(f"/api/v1/projects/{project['id']}/brief/approve")
+    cd = authed_client.post(f"/api/v1/projects/{project['id']}/creative-directions").json()
+    authed_client.post(f"/api/v1/creative-directions/{cd['id']}/approve")
+    website = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+    return project, website
+
+
+class TestApproveWebsite:
+    def test_requires_auth(self, client):
+        res = client.post("/api/v1/websites/00000000-0000-0000-0000-000000000000/approve")
+        assert res.status_code == 401
+
+    def test_blocked_when_prior_checkpoints_are_missing(self, authed_client, monkeypatch):
+        project, _ = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+        # Sitemap is approved by the helper, but brief/creative direction are not.
+        website = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+        assert res.status_code == 400
+        assert "client brief" in res.json()["detail"]
+        assert "creative direction" in res.json()["detail"]
+
+    def test_happy_path_records_who_when_and_notes(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/approve", json={"notes": "Looks great, ship it"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["approved"] is True
+        assert body["approved_by_user_name"] == "Ada Admin"
+        assert body["approved_at"] is not None
+        assert body["approval_notes"] == "Looks great, ship it"
+
+    def test_editing_a_sections_content_reverts_website_approval(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+        hero_id = website["pages"][0]["sections"][0]["id"]
+
+        res = authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{hero_id}", json={"config": {"heading": "New heading"}}
+        )
+        assert res.status_code == 200
+        assert res.json()["approved"] is False
+
+    def test_toggling_a_sections_own_approved_flag_does_not_revert_website_approval(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+        hero_id = website["pages"][0]["sections"][0]["id"]
+
+        res = authed_client.patch(f"/api/v1/websites/{website['id']}/sections/{hero_id}", json={"approved": True})
+        assert res.status_code == 200
+        assert res.json()["approved"] is True
+
+
+class TestClientApproveWebsite:
+    def test_blocked_until_website_itself_is_approved(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/client-approve")
+        assert res.status_code == 400
+        assert "approved" in res.json()["detail"]
+
+    def test_blocked_until_qa_is_approved(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/client-approve")
+        assert res.status_code == 400
+        assert "QA" in res.json()["detail"]
+
+    def test_happy_path(self, authed_client, monkeypatch):
+        _, website = _create_fully_approved_website(authed_client, monkeypatch)
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+        qa = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        authed_client.post(f"/api/v1/qa-reports/{qa['id']}/approve")
+
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/client-approve", json={"notes": "Client signed off via email"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["client_approved"] is True
+        assert body["client_approved_by_user_name"] == "Ada Admin"
+        assert body["client_approval_notes"] == "Client signed off via email"

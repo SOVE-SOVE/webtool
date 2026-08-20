@@ -118,3 +118,76 @@ class TestWorkspaceIsolation:
         assert other_authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").status_code == 404
         assert other_authed_client.get(f"/api/v1/websites/{website['id']}/qa-reports").status_code == 404
         assert other_authed_client.get(f"/api/v1/qa-reports/{report['id']}").status_code == 404
+
+
+CREATIVE_DIRECTION_LLM_OUTPUT = {
+    "facts": ["Riverside Plumbing is a residential plumbing business."],
+    "assumptions": [],
+    "creative_concept": "A dependable, no-nonsense local tradie brand.",
+    "visual_direction": "Clean, high-contrast, utilitarian.",
+    "brand_personality": ["Trustworthy", "Prompt"],
+    "colour_direction": "Deep blue with an amber accent.",
+    "typography_direction": "A confident, legible sans-serif.",
+    "image_direction": "Real photos of the crew and completed jobs.",
+    "layout_direction": "Short, scannable homepage.",
+    "ux_direction": "One-tap call button pinned on mobile.",
+    "tone_of_voice": "Plain-spoken, direct.",
+    "visual_hierarchy": "Phone number first, services second.",
+    "cta_strategy": "Primary CTA is 'Call now', repeated throughout.",
+    "things_to_avoid": ["Generic corporate stock photos"],
+    "references_inspiration": ["Local trade-service sites"],
+}
+
+
+def _create_approved_website(authed_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.creative_director.generate_structured", lambda **kwargs: dict(CREATIVE_DIRECTION_LLM_OUTPUT)
+    )
+    project, website = _create_website(authed_client, monkeypatch)
+    authed_client.post(f"/api/v1/projects/{project['id']}/brief/approve")
+    cd = authed_client.post(f"/api/v1/projects/{project['id']}/creative-directions").json()
+    authed_client.post(f"/api/v1/creative-directions/{cd['id']}/approve")
+    authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+    return project, website
+
+
+class TestApproveQaReport:
+    def test_requires_auth(self, client):
+        res = client.post("/api/v1/qa-reports/00000000-0000-0000-0000-000000000000/approve")
+        assert res.status_code == 401
+
+    def test_rejects_a_report_with_unresolved_critical_issues(self, authed_client, monkeypatch):
+        project, website = _create_approved_website(authed_client, monkeypatch)
+        hero_id = website["pages"][0]["sections"][0]["id"]
+        authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{hero_id}",
+            json={"config": {"primaryCta": {"label": "Pricing", "href": "/pricing"}}},
+        )
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        assert report["passed"] is False
+
+        res = authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve")
+        assert res.status_code == 400
+        assert "critical" in res.json()["detail"].lower()
+
+    def test_rejects_when_website_is_not_yet_approved(self, authed_client, monkeypatch):
+        _, website = _create_website(authed_client, monkeypatch)
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+
+        res = authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve")
+        assert res.status_code == 400
+        assert "approved" in res.json()["detail"].lower()
+
+    def test_happy_path_records_who_when_and_notes(self, authed_client, monkeypatch):
+        _, website = _create_approved_website(authed_client, monkeypatch)
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+
+        res = authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve", json={"notes": "Reviewed, all good"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["human_approved"] is True
+        assert body["approved_by_user_name"] == "Ada Admin"
+        assert body["approval_notes"] == "Reviewed, all good"
+
+        summary = authed_client.get(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        assert summary[0]["human_approved"] is True

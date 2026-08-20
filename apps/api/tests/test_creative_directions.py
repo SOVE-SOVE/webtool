@@ -205,6 +205,22 @@ def test_approve_creative_direction(authed_client, monkeypatch):
     assert any(a["action"] == "creative_direction_approved" for a in activity)
 
 
+def test_editing_an_approved_creative_direction_reverts_it_to_draft(authed_client, monkeypatch):
+    _patch_creative_director(monkeypatch)
+    project = _create_project_without_lead(authed_client)
+    brief = authed_client.post(f"/api/v1/projects/{project['id']}/creative-directions").json()
+    authed_client.post(f"/api/v1/creative-directions/{brief['id']}/approve")
+
+    res = authed_client.patch(
+        f"/api/v1/creative-directions/{brief['id']}", json={"creative_concept": "A revised concept"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "draft"
+    assert body["approved_by_user_name"] is None
+    assert body["approved_at"] is None
+
+
 def test_generate_creative_direction_uses_intake_brief_when_not_overridden(authed_client, monkeypatch):
     _patch_creative_director(monkeypatch)
     project = _create_project_without_lead(authed_client)

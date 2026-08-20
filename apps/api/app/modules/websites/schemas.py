@@ -76,6 +76,16 @@ class WebsiteRead(BaseModel):
     generated_at: datetime
     updated_at: datetime
 
+    approved: bool
+    approved_by_user_name: str | None
+    approved_at: datetime | None
+    approval_notes: str | None
+
+    client_approved: bool
+    client_approved_by_user_name: str | None
+    client_approved_at: datetime | None
+    client_approval_notes: str | None
+
 
 class WebsiteSummary(BaseModel):
     """Lightweight row for the version-history list — no section detail."""
@@ -86,6 +96,12 @@ class WebsiteSummary(BaseModel):
     flagged_for_review: bool
     generated_by_user_name: str | None
     generated_at: datetime
+    approved: bool
+    client_approved: bool
+
+
+class ApproveWebsiteRequest(BaseModel):
+    notes: str | None = None
 
 
 class SectionUpdate(BaseModel):

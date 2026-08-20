@@ -8,7 +8,13 @@ from app.db.session import get_db
 from app.modules.projects import service as projects_service
 from app.modules.users.models import User
 from app.modules.websites import service
-from app.modules.websites.schemas import GenerateWebsiteRequest, SectionUpdate, WebsiteRead, WebsiteSummary
+from app.modules.websites.schemas import (
+    ApproveWebsiteRequest,
+    GenerateWebsiteRequest,
+    SectionUpdate,
+    WebsiteRead,
+    WebsiteSummary,
+)
 
 router = APIRouter(tags=["websites"])
 
@@ -75,6 +81,32 @@ def update_section(
     db: Session = Depends(get_db),
 ) -> WebsiteRead:
     website = service.update_section(db, current_user.workspace_id, current_user.id, website_id, section_id, data)
+    if website is None:
+        raise HTTPException(status_code=404, detail="Website not found")
+    return website
+
+
+@router.post("/api/v1/websites/{website_id}/approve", response_model=WebsiteRead)
+def approve_website(
+    website_id: uuid.UUID,
+    body: ApproveWebsiteRequest = ApproveWebsiteRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WebsiteRead:
+    website = service.approve_website(db, current_user.workspace_id, current_user.id, website_id, body)
+    if website is None:
+        raise HTTPException(status_code=404, detail="Website not found")
+    return website
+
+
+@router.post("/api/v1/websites/{website_id}/client-approve", response_model=WebsiteRead)
+def client_approve_website(
+    website_id: uuid.UUID,
+    body: ApproveWebsiteRequest = ApproveWebsiteRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WebsiteRead:
+    website = service.client_approve_website(db, current_user.workspace_id, current_user.id, website_id, body)
     if website is None:
         raise HTTPException(status_code=404, detail="Website not found")
     return website

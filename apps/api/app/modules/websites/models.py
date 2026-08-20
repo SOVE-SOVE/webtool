@@ -55,12 +55,34 @@ class Website(Base):
     generated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # Approval checkpoint 4 ("Generated website", docs/05_DECISIONS.md's
+    # human-approval-workflow entry) — the operator's own sign-off that
+    # this version's content/design is good, distinct from a section's
+    # own `approved` flag inside `config` (that's fine-grained content
+    # review; this is the whole-version gate later checkpoints require).
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_notes: Mapped[str | None] = mapped_column(Text)
+
+    # Approval checkpoint 6 ("Client review") — recorded by an operator
+    # on the client's behalf (there's no client login in this app; see
+    # docs/03_AGENT_RULES.md's "Client approval communication" note),
+    # so `client_approved_by_user_id` is still an internal User, not the
+    # client themself.
+    client_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    client_approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    client_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    client_approval_notes: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     project: Mapped["Project"] = relationship(back_populates="websites")
-    generated_by_user: Mapped["User | None"] = relationship()
+    generated_by_user: Mapped["User | None"] = relationship(foreign_keys=[generated_by_user_id])
+    approved_by_user: Mapped["User | None"] = relationship(foreign_keys=[approved_by_user_id])
+    client_approved_by_user: Mapped["User | None"] = relationship(foreign_keys=[client_approved_by_user_id])
     qa_reports: Mapped[list["QaReport"]] = relationship(back_populates="website")
     deployments: Mapped[list["Deployment"]] = relationship(back_populates="website")
