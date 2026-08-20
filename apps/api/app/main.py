@@ -17,6 +17,7 @@ from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.projects.routes import router as projects_router
+from app.modules.qa_reports.routes import router as qa_reports_router
 from app.modules.sales_audits.routes import router as sales_audits_router
 from app.modules.sitemaps.routes import router as sitemaps_router
 from app.modules.tasks.routes import router as tasks_router
@@ -72,3 +73,4 @@ app.include_router(design_briefs_router)
 app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
 app.include_router(websites_router)
+app.include_router(qa_reports_router)

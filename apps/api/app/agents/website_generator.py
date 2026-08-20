@@ -115,11 +115,23 @@ class GeneratedSection(BaseModel):
     approved: bool = False
 
 
+class PageSeo(BaseModel):
+    """Built entirely from real, already-collected fields — a title tag
+    is navigational metadata, not a business claim, so mechanically
+    composing/truncating one carries none of the fabrication risk a
+    body-copy claim would. `meta_description` is left null (not
+    invented) when there's no real description to summarize."""
+
+    title: str
+    meta_description: str | None = None
+
+
 class GeneratedPage(BaseModel):
     sitemap_page_id: str
     name: str
     slug: str
     page_type: PageTypeLiteral
+    seo: PageSeo
     sections: list[GeneratedSection]
 
 
@@ -147,6 +159,26 @@ def _find_page_by_type(pages: list[SitemapPageContent], page_type: str) -> Sitem
 def _contact_href(pages: list[SitemapPageContent]) -> str:
     contact = _find_page_by_type(pages, "contact")
     return f"/{contact.slug}" if contact else "#contact"
+
+
+_META_DESCRIPTION_MAX = 155
+
+
+def _build_seo(page: SitemapPageContent, business_name: str, brief: BriefContent) -> PageSeo:
+    title = business_name if page.page_type == "home" else f"{page.title} | {business_name}"
+
+    description = None
+    if page.page_type == "home":
+        description = brief.business_description
+    elif page.page_type == "about":
+        description = brief.about_content
+    if description and len(description) > _META_DESCRIPTION_MAX:
+        # A mechanical truncation on a word boundary, not a rewrite —
+        # never adds or changes a claim, just shortens where it's cut.
+        truncated = description[:_META_DESCRIPTION_MAX].rsplit(" ", 1)[0]
+        description = f"{truncated}…"
+
+    return PageSeo(title=title, meta_description=description)
 
 
 def _looks_like_list(text: str | None, min_items: int = 2, max_items: int = 8) -> list[str] | None:
@@ -335,12 +367,16 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
     for sitemap_page in input.pages:
         sections, missing = _build_page_sections(sitemap_page, input.brief, input.business_name, contact_href)
         missing_information.extend(missing)
+        seo = _build_seo(sitemap_page, input.business_name, input.brief)
+        if not seo.meta_description:
+            missing_information.append(f"{sitemap_page.title}: no meta description on file yet.")
         pages.append(
             GeneratedPage(
                 sitemap_page_id=sitemap_page.id,
                 name=sitemap_page.title,
                 slug=sitemap_page.slug,
                 page_type=sitemap_page.page_type,
+                seo=seo,
                 sections=sections,
             )
         )

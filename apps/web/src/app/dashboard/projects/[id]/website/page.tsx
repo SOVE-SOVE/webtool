@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, type Website, type WebsiteSummary } from "@/lib/api";
+import { api, type QaReport, type Website, type WebsiteSummary } from "@/lib/api";
 import { WebsiteView } from "@/components/WebsiteView";
+import { QaReportView } from "@/components/QaReportView";
 
 export default function ProjectWebsitePage() {
   const params = useParams<{ id: string }>();
@@ -16,6 +17,23 @@ export default function ProjectWebsitePage() {
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
+  const [qaReport, setQaReport] = useState<QaReport | null>(null);
+  const [runningQa, setRunningQa] = useState(false);
+  const [qaError, setQaError] = useState<string | null>(null);
+
+  function loadLatestQaReport(websiteId: string) {
+    api
+      .listQaReports(websiteId)
+      .then((reports) => {
+        if (reports.length === 0) {
+          setQaReport(null);
+          return;
+        }
+        api.getQaReport(reports[0].id).then(setQaReport).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
   function loadVersions(selectId?: string) {
     api
       .listWebsites(projectId)
@@ -23,15 +41,32 @@ export default function ProjectWebsitePage() {
         setVersions(list);
         const target = selectId ?? list[0]?.id;
         if (target) {
-          api.getWebsite(target).then(setWebsite).catch(() => {});
+          api.getWebsite(target).then((w) => {
+            setWebsite(w);
+            loadLatestQaReport(w.id);
+          }).catch(() => {});
         } else {
           setWebsite(null);
+          setQaReport(null);
         }
       })
       .catch(() => setLoadError("Couldn't load this project's websites."));
   }
 
   useEffect(() => loadVersions(), [projectId]);
+
+  async function handleRunQa() {
+    if (!website) return;
+    setRunningQa(true);
+    setQaError(null);
+    try {
+      setQaReport(await api.generateQaReport(website.id));
+    } catch {
+      setQaError("Couldn't run the QA check.");
+    } finally {
+      setRunningQa(false);
+    }
+  }
 
   async function handleGenerate(forceRegenerateAll: boolean) {
     setGenerating(true);
@@ -50,7 +85,10 @@ export default function ProjectWebsitePage() {
   }
 
   function handleSelectVersion(id: string) {
-    api.getWebsite(id).then(setWebsite).catch(() => {});
+    api.getWebsite(id).then((w) => {
+      setWebsite(w);
+      loadLatestQaReport(w.id);
+    }).catch(() => {});
   }
 
   // Approving/editing a section mutates the current version in place
@@ -59,6 +97,11 @@ export default function ProjectWebsitePage() {
   // and stays selected, instead of the dropdown quietly going stale.
   function handleWebsiteChange(updated: Website) {
     setWebsite(updated);
+    // The content just changed (edit/approve/regenerate) — any existing
+    // QA report was run against the version before this change, so
+    // clear it rather than keep showing a pass/fail badge that no
+    // longer describes what's on screen.
+    setQaReport(null);
     api
       .listWebsites(projectId)
       .then(setVersions)
@@ -127,6 +170,33 @@ export default function ProjectWebsitePage() {
       {website && (
         <div className="mt-6">
           <WebsiteView website={website} onChange={handleWebsiteChange} />
+        </div>
+      )}
+
+      {website && (
+        <div className="mt-8 border-t border-neutral-200 pt-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-900">Technical QA</h2>
+            <button
+              onClick={handleRunQa}
+              disabled={runningQa}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {runningQa ? "Running…" : qaReport ? "Re-run QA check" : "Run QA check"}
+            </button>
+          </div>
+          {qaError && <p className="mt-2 text-sm text-red-600">{qaError}</p>}
+          {!qaReport && !runningQa && (
+            <p className="mt-3 text-sm text-neutral-500">
+              No QA check run against this version yet — content and structure checks only until a live preview
+              URL exists (roadmap M6 deployment).
+            </p>
+          )}
+          {qaReport && (
+            <div className="mt-3">
+              <QaReportView report={qaReport} />
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -57,7 +57,8 @@ class TestNeverFabricates:
         )
         types = {s.type for p in result.output.pages for s in p.sections}
         assert types.isdisjoint({"pricing", "team", "portfolio", "gallery", "stats", "logos"})
-        assert len(result.output.missing_information) == 6
+        no_source_messages = [m for m in result.output.missing_information if "no real source data exists" in m]
+        assert len(no_source_messages) == 6
 
     def test_testimonial_text_is_used_verbatim_with_blank_not_invented_attribution(self):
         result = run(
@@ -188,6 +189,51 @@ class TestNavigationAndFooter:
             )
         )
         assert result.output.navigation.config["cta"] == {"label": "Get a quote", "href": "/contact"}
+
+
+class TestSeo:
+    def test_home_page_title_is_just_the_business_name(self):
+        result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=[_page()]))
+        assert result.output.pages[0].seo.title == "Riverside Plumbing"
+
+    def test_other_pages_combine_page_title_and_business_name(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                pages=[_page(page_type="services", slug="services", title="Services")],
+            )
+        )
+        assert result.output.pages[0].seo.title == "Services | Riverside Plumbing"
+
+    def test_meta_description_uses_real_business_description_verbatim_when_short(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(business_description="Licensed local plumbers serving Ipswich since 2011."),
+                pages=[_page()],
+            )
+        )
+        assert result.output.pages[0].seo.meta_description == "Licensed local plumbers serving Ipswich since 2011."
+
+    def test_meta_description_is_truncated_on_a_word_boundary_never_mid_word(self):
+        long_description = "A " + "very " * 40 + "thorough description of the business and everything it offers."
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(business_description=long_description),
+                pages=[_page()],
+            )
+        )
+        description = result.output.pages[0].seo.meta_description
+        assert description is not None
+        assert len(description) <= 156
+        assert description.endswith("…")
+        assert long_description.startswith(description[:-1])
+
+    def test_missing_meta_description_is_flagged_not_invented(self):
+        result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=[_page()]))
+        assert result.output.pages[0].seo.meta_description is None
+        assert any("no meta description on file yet" in m for m in result.output.missing_information)
 
 
 class TestAntiSlopIntegration:

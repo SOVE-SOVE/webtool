@@ -118,3 +118,143 @@ async def fetch_page_signals(url: str) -> PageSignals:
         return PageSignals(error=str(exc))
     except Exception as exc:  # navigation timeouts etc. surface as generic errors too
         return PageSignals(error=str(exc))
+
+
+DESKTOP_VIEWPORT = {"width": 1440, "height": 900}
+TABLET_VIEWPORT = {"width": 768, "height": 1024}
+
+# Minimal, real WCAG relative-luminance contrast check over a sample of
+# text elements — not a full axe-core-style audit, but genuinely
+# measured against the live page rather than guessed.
+_CONTRAST_SAMPLE_JS = """
+() => {
+  function luminance(rgbString) {
+    const nums = rgbString.match(/[\\d.]+/g);
+    if (!nums) return null;
+    const [r, g, b] = nums.slice(0, 3).map(Number).map((c) => {
+      c = c / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrastRatio(a, b) {
+    const la = luminance(a);
+    const lb = luminance(b);
+    if (la === null || lb === null) return null;
+    const lighter = Math.max(la, lb);
+    const darker = Math.min(la, lb);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+  const candidates = Array.from(document.querySelectorAll('h1, h2, h3, p, a, button, label')).slice(0, 30);
+  let minRatio = null;
+  for (const el of candidates) {
+    if (!el.textContent || !el.textContent.trim()) continue;
+    const color = getComputedStyle(el).color;
+    let bgEl = el;
+    let bg = null;
+    while (bgEl) {
+      const bgColor = getComputedStyle(bgEl).backgroundColor;
+      if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') { bg = bgColor; break; }
+      bgEl = bgEl.parentElement;
+    }
+    const ratio = contrastRatio(color, bg || 'rgb(255, 255, 255)');
+    if (ratio !== null && (minRatio === null || ratio < minRatio)) minRatio = ratio;
+  }
+  return minRatio;
+}
+"""
+
+
+@dataclass
+class QaPageSignals:
+    https: bool | None = None
+    desktop_overflow: bool | None = None
+    tablet_overflow: bool | None = None
+    mobile_overflow: bool | None = None
+    console_errors: list[str] | None = None
+    broken_internal_links: list[str] | None = None
+    min_contrast_ratio: float | None = None
+    total_transfer_bytes: int | None = None
+    error: str | None = None
+
+
+async def fetch_qa_signals(base_url: str, page_paths: list[str]) -> QaPageSignals:
+    """
+    Drives a real headless browser against `base_url` (the site's first
+    page) plus every other path in `page_paths`, for agents/technical_qa.py's
+    live-preview checks. `base_url` must already be the exact URL for
+    the first entry in `page_paths`. Same SSRF guard as fetch_page_signals
+    — this fetches an operator-supplied preview URL server-side too.
+    """
+    try:
+        _check_url_is_public(base_url)
+        parsed = urlparse(base_url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+
+        console_errors: list[str] = []
+        transfer_bytes = 0
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                page = await browser.new_page(viewport=DESKTOP_VIEWPORT)
+                page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+
+                async def _on_response(response):
+                    nonlocal transfer_bytes
+                    try:
+                        length = response.headers.get("content-length")
+                        if length:
+                            transfer_bytes += int(length)
+                    except Exception:
+                        pass
+
+                page.on("response", _on_response)
+
+                await page.goto(base_url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                final_url = page.url
+
+                desktop_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+                min_contrast_ratio = await page.evaluate(_CONTRAST_SAMPLE_JS)
+
+                await page.set_viewport_size(TABLET_VIEWPORT)
+                tablet_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+                await page.set_viewport_size(MOBILE_VIEWPORT)
+                mobile_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+
+                broken_links: list[str] = []
+                for path in page_paths:
+                    target = f"{origin}{path}"
+                    if target == base_url or target == final_url:
+                        continue
+                    try:
+                        link_response = await page.request.get(target, timeout=NAVIGATION_TIMEOUT_MS)
+                        if link_response.status >= 400:
+                            broken_links.append(path)
+                    except Exception:
+                        broken_links.append(path)
+
+                return QaPageSignals(
+                    https=final_url.startswith("https://"),
+                    desktop_overflow=desktop_overflow,
+                    tablet_overflow=tablet_overflow,
+                    mobile_overflow=mobile_overflow,
+                    console_errors=console_errors,
+                    broken_internal_links=broken_links,
+                    min_contrast_ratio=min_contrast_ratio,
+                    total_transfer_bytes=transfer_bytes or None,
+                )
+            finally:
+                await browser.close()
+    except PlaywrightError as exc:
+        return QaPageSignals(error=str(exc))
+    except UrlNotAllowedError as exc:
+        return QaPageSignals(error=str(exc))
+    except Exception as exc:
+        return QaPageSignals(error=str(exc))

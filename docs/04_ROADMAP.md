@@ -295,7 +295,40 @@ Goal: stages 15–18. First real reusable output.
       Verified end-to-end in a real browser (not just the 31 backend +
       existing frontend tests) — that pass caught and fixed a real bug
       where regenerating a section didn't refresh the version dropdown.
-- [ ] Automated QA checks (build, links, mobile) from [[tests]].
+- [x] Automated QA checks (build, links, mobile) from [[tests]] —
+      `agents/technical_qa.py` / `modules/qa_reports/`: six categories
+      (performance, responsiveness, accessibility, SEO, functionality,
+      security), each check reported as pass/fail/warning/skipped with
+      a severity and recommended fix — nothing is ever silently
+      omitted, including what can't be checked yet (see below).
+      Deterministic, no LLM call. Most checks run statically against
+      the generated config: real, fully-static wins here include
+      broken-internal-link detection (every href checked against the
+      site's actual page slugs), missing alt text, unlabeled form
+      fields, duplicate `<h1>`s, exposed-secret and injected-script
+      scanning, and (closing a real gap found while building this)
+      page titles/meta descriptions, now generated from real brief
+      fields only — see [[05_DECISIONS]]. Checks that need a rendered
+      page (real asset weight, computed colour contrast, console
+      errors, cross-viewport overflow, robots.txt/sitemap.xml) only run
+      given a live `preview_url`, via a new `fetch_qa_signals` in
+      `integrations/browser.py` reusing `fetch_page_signals`'s SSRF
+      guard; without one — true for every site today, since M6
+      deployment doesn't exist yet — they're reported `skipped`, never
+      dropped from the report. `ready_for_client_review` is false
+      whenever any check both failed and is `critical` severity,
+      matching "not ready until critical issues are resolved" verbatim.
+      One QA report per run (not overwritten), same versioning
+      convention as `Website`. Verified for real: the live-check
+      pipeline was run against a deliberately broken local HTML fixture
+      (wide overflowing div, a console.error, a low-contrast paragraph,
+      a real broken link) outside the test suite — same reasoning as
+      why `fetch_page_signals` itself has never been test-suite-driven
+      — and every signal it reported (overflow at all 3 viewports,
+      the exact console message, the exact broken path, a genuinely
+      low ~1.16:1 contrast ratio, real transferred bytes) was correct.
+      Surfaced as a "Technical QA" panel on the website page: a
+      pass/fail badge, counts, and every check grouped by category.
 - [ ] Operator approval gate, then a secure shareable client-preview
       link with feedback capture.
 

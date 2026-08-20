@@ -699,11 +699,17 @@ export type WebsiteSection = {
   approved: boolean;
 };
 
+export type PageSeo = {
+  title: string;
+  meta_description: string | null;
+};
+
 export type WebsitePage = {
   sitemap_page_id: string;
   name: string;
   slug: string;
   page_type: PageType;
+  seo: PageSeo;
   sections: WebsiteSection[];
 };
 
@@ -752,6 +758,53 @@ export type GenerateWebsiteRequest = {
 export type SectionUpdate = {
   config?: Record<string, unknown>;
   approved?: boolean;
+};
+
+export const QA_CATEGORIES = ["performance", "responsiveness", "accessibility", "seo", "functionality", "security"] as const;
+export type QaCategory = (typeof QA_CATEGORIES)[number];
+
+export const QA_CHECK_STATUSES = ["pass", "fail", "warning", "skipped"] as const;
+export type QaCheckStatus = (typeof QA_CHECK_STATUSES)[number];
+
+export type QaCheck = {
+  category: QaCategory;
+  name: string;
+  status: QaCheckStatus;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  message: string;
+  recommended_fix: string | null;
+  location: string | null;
+};
+
+export type QaReport = {
+  id: string;
+  website_id: string;
+  kind: string;
+  passed: boolean;
+  checks: QaCheck[];
+  passed_count: number;
+  failed_count: number;
+  warning_count: number;
+  skipped_count: number;
+  preview_url: string | null;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  created_at: string;
+};
+
+export type QaReportSummary = {
+  id: string;
+  passed: boolean;
+  passed_count: number;
+  failed_count: number;
+  warning_count: number;
+  skipped_count: number;
+  generated_by_user_name: string | null;
+  created_at: string;
+};
+
+export type GenerateQaReportRequest = {
+  preview_url?: string;
 };
 
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
@@ -968,6 +1021,14 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  generateQaReport: (websiteId: string, data?: GenerateQaReportRequest) =>
+    request<QaReport>(`/api/v1/websites/${websiteId}/qa-reports`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listQaReports: (websiteId: string) => request<QaReportSummary[]>(`/api/v1/websites/${websiteId}/qa-reports`),
+  getQaReport: (id: string) => request<QaReport>(`/api/v1/qa-reports/${id}`),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

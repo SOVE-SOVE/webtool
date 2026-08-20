@@ -138,6 +138,7 @@ def _output_to_config(output: website_generator.WebsiteGeneratorOutput, authenti
                 "name": page.name,
                 "slug": page.slug,
                 "page_type": page.page_type,
+                "seo": page.seo.model_dump(),
                 "sections": [_section_to_dict(s) for s in page.sections],
             }
             for page in output.pages

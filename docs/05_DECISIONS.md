@@ -162,6 +162,117 @@ job here is to surface that, not to gate on it.
 
 ---
 
+## 2026-08-20 — Technical QA: static checks always run, live-preview checks reported as skipped (not hidden) until deployment exists
+
+**Decision:** Built `agents/technical_qa.py` + `modules/qa_reports/`
+(roadmap M5's "Automated QA checks"). Every check falls into one of two
+modes:
+
+- **Static** — inspects the generated config directly, always runs.
+  Real, fully-mechanical wins: broken-internal-link detection (every
+  `href` found anywhere in a section's config, walked the same way
+  `agents/anti_slop.py` walks for media, checked against the site's own
+  page slugs — external/mailto/tel/anchor links are never flagged,
+  since only internal routing can be verified without fetching
+  anything); missing alt text and unlabeled form fields (both
+  accessibility-critical, both fully knowable from the config); more
+  than one `hero` section on a page (a duplicate `<h1>`, since Hero is
+  the only section that renders one); exposed-secret and injected-
+  script/`javascript:` scanning across every string in the config. A
+  few checks (keyboard accessibility, semantic HTML, no unsafe client-
+  side rendering) are reported `pass` "verified by construction" — true
+  because `packages/site-templates` only ever renders native
+  interactive elements and never raw/unescaped HTML, not because
+  anything was tested live; the message says so explicitly rather than
+  implying a real interaction test happened.
+- **Live** — needs a rendered page (real asset weight, computed colour
+  contrast, console errors, cross-viewport overflow, robots.txt/
+  sitemap.xml reachability), so only runs given a `preview_url`. A new
+  `fetch_qa_signals` in `integrations/browser.py` reuses
+  `fetch_page_signals`'s SSRF guard (checked before the browser even
+  launches) and adds: overflow checks at desktop/tablet/mobile
+  viewports, a real WCAG relative-luminance contrast sample over a
+  page's visible text elements, console-error capture, an actual fetch
+  of every other internal page, and summed `content-length` for total
+  page weight.
+
+**"Do not automatically hide failures" applies to what can't be
+checked yet, not just to what fails**: every live-only check still
+appears in the report with `status: "skipped"` and an explanation when
+there's no `preview_url` — nothing is silently absent. This mattered
+enough to need a real bug fix mid-build: three static-check functions
+(`Colour contrast`, `Console errors`, `Served over HTTPS`) originally
+appended their own "skipped" placeholder *unconditionally*, so once a
+`preview_url` was supplied both the placeholder and the live check's
+real pass/fail result ended up in the same report under the same name
+— duplicate, contradictory entries for the same check. Fixed by only
+adding the static placeholder when there's no `preview_url` to run the
+live version instead.
+
+Since there's no build/hosting step yet (roadmap M6), `preview_url` is
+always `None` in practice today — canonical URLs, Open Graph images,
+and robots.txt/sitemap.xml are reported `skipped`/"not applicable
+before deployment" rather than failed, per the operator's own "where
+appropriate"/"where testable" phrasing for exactly these checks.
+
+**A real gap found and closed while building this**: neither the
+sitemap nor the generator captured a per-page `<title>`/meta
+description anywhere, so there was nothing honest for the new "Page
+titles"/"Meta descriptions" checks to inspect. Extended
+`agents/website_generator.py`'s `GeneratedPage` with a `seo` field —
+`title` mechanically composed from real fields only (`business_name`
+for Home, `"{page.title} | {business_name}"` elsewhere — navigational
+metadata, not a business claim, so composing/truncating it carries none
+of the fabrication risk a body-copy claim would), `meta_description`
+left `null` (never invented) when there's no real description to
+summarize, truncated on a word boundary when there is one. Missing
+descriptions now show up in `missing_information` the same way every
+other real gap does.
+
+**`ready_for_client_review` is false whenever any check both failed
+and is `critical` severity** — matches "a website should not be
+considered ready for client review until critical QA issues are
+resolved" verbatim; warnings and skips never block it on their own.
+One `QaReport` row per run, not overwritten, same versioning convention
+as `Website`/`Sitemap`/`CreativeDirectionBrief` — a website version can
+be re-checked after an edit without losing the history of prior runs.
+
+**Testing**: static checks and the pure signal→check mapping functions
+(`_responsiveness_checks_from_signals` etc. — these take a constructed
+`QaPageSignals`, not a URL, so they're genuinely real Python-level
+tests, no mocking needed) are covered by 47 pytest tests. `browser.py`'s
+actual Playwright driver is verified the same way `fetch_page_signals`
+already was (see `tests/test_website_audit_ssrf.py`): the SSRF-
+rejection contract is a real pytest test, but real page rendering isn't
+— its own SSRF guard blocks `localhost`, so a permanent pytest test
+would need to bypass a security control just to run. Instead it was
+verified manually, for real: a deliberately broken local static HTML
+fixture (a 2000px-wide div, `console.error("intentional test error")`,
+`#eee`-on-white text, a link to a genuinely 404'ing page) served via
+`python -m http.server`, audited with the SSRF check monkeypatched off
+for that one throwaway call. Every signal came back correct — overflow
+`True` at all three viewports, the exact console message, the exact
+broken path (and *not* a false positive on the real `/about` page,
+which 301-redirects before 200ing), a contrast ratio of ~1.16:1 (genuinely
+below the 4.5:1 WCAG AA floor), and the real transferred byte count.
+
+**Why:** [[01_REQUIREMENTS]]'s quality floor and the operator's own "a
+website should not be considered ready for client review until critical
+QA issues are resolved" needed the same treatment Anti-Slop gave content
+quality — explicit, checkable rules instead of a hope that the generator
+got everything right.
+
+**Alternatives considered:** gating every check on a live preview (i.e.
+doing nothing pre-deployment) — rejected; most of what actually matters
+today (broken links, missing alt text, unlabeled forms, exposed
+secrets) is fully knowable from the config alone, and waiting for M6 to
+report any of it would leave real, fixable problems unreported for
+months. An LLM-judged QA pass — rejected for the same reason
+`agents/lead_score.py`/`agents/anti_slop.py` are deterministic: "ready
+for client review" needs a floor that can't drift between runs.
+
+---
+
 ## 2026-08-20 — Website generation: deterministic assembly, per-section versioning, no live preview yet
 
 **Decision:** Built `agents/website_generator.py` + `modules/websites/`

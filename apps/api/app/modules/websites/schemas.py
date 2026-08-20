@@ -33,11 +33,17 @@ class SectionRead(BaseModel):
     approved: bool
 
 
+class PageSeoRead(BaseModel):
+    title: str
+    meta_description: str | None
+
+
 class PageRead(BaseModel):
     sitemap_page_id: str
     name: str
     slug: str
     page_type: str
+    seo: PageSeoRead
     sections: list[SectionRead]
 
 
