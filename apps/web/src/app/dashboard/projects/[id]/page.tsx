@@ -417,6 +417,24 @@ export default function ProjectDetailPage() {
       </section>
 
       <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Website</h2>
+            <p className="text-xs text-neutral-500">
+              Generated from the approved sitemap, brief, and creative direction above — every section is
+              reviewable and editable, never a locked mockup.
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/projects/${projectId}/website`}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+          >
+            Open website
+          </Link>
+        </div>
+      </section>
+
+      <section className="mt-8">
         <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>
         <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
           {activity && activity.length === 0 && (

@@ -162,6 +162,102 @@ job here is to surface that, not to gate on it.
 
 ---
 
+## 2026-08-20 — Website generation: deterministic assembly, per-section versioning, no live preview yet
+
+**Decision:** Built `agents/website_generator.py` + `modules/websites/`
+(roadmap M5's "site generation from brief + sitemap + copy + client
+assets"). Given a project's approved (or latest) `Sitemap`, `DesignBrief`,
+and `CreativeDirectionBrief`, it assembles one `packages/site-templates`
+section list per sitemap page plus a shared navigation/footer, using
+only fields that already exist on those rows — never a paraphrase, never
+an invented fact. Concretely: a `services_content` blob only becomes a
+`serviceCards` grid when it's actually shaped like a short list (2-8
+lines under 120 chars each — `_looks_like_list`); otherwise it becomes a
+Hero subheading, since forcing unstructured prose into card titles would
+invent structure that isn't there. Sections this system has no honest
+source for yet — pricing, team, portfolio, stock imagery with real alt
+text, stats — are never built at all; the sitemap's `key_sections` hints
+requesting them are turned into `missing_information` entries instead.
+Every generation is run through `agents/anti_slop.py` before being
+returned, so a caller never has to remember to check separately.
+
+**Deterministic, not LLM-drafted** — unlike `agents/sitemap.py` and
+`agents/creative_director.py`. This step only ever copies or lightly
+reshapes fields that already exist rather than drafting new prose, so an
+LLM call would add nothing but a new fabrication surface (a paraphrase
+is still an invention) and a flakiness/cost source for zero benefit.
+
+**Versioning:** `Website` already allowed multiple rows per project (no
+unique constraint), so "store generated versions so previous versions
+can be reviewed" needed no new versioning mechanism — just generation
+metadata (`generated_by_user_id`/`generated_at`,
+migration `bf7f04e11e67`). Each section within the stored `config` JSON
+carries its own `id` and `approved` flag. A full regeneration carries
+forward every already-approved section by default, matched back into
+the fresh output by `(page slug, section type)` since a fresh generation
+always mints new ids — opt into `force_regenerate_all` to discard them
+instead. A single section can be regenerated on its own: the whole site
+is regenerated internally (the agent is stateless, so there's no cheaper
+single-section path), the fresh replacement for that one `(page, type)`
+slot is spliced into a copy of the current version, and everything else
+— ids, approvals, edits — carries over untouched. If the sitemap/brief
+changed enough that the fresh output no longer has a matching slot, the
+regenerate 400s with an explicit "source data may have changed" message
+rather than silently deleting the section. Approving a section or
+hand-editing its `config` (shallow-merged, "editable output, not a
+locked mockup") mutates the current version's JSON in place — no new
+row — which surfaced a real SQLAlchemy gotcha worth remembering: mutating
+a dict reachable from a JSON column, then reassigning the column to
+`{**old}` to "trigger" change detection, doesn't work, because by that
+point the "old" value SQLAlchemy compares against is the same
+already-mutated object graph, so the values compare equal and the
+UPDATE is silently skipped. `sqlalchemy.orm.attributes.flag_modified`
+is the actual fix — it forces the UPDATE regardless of that equality
+check.
+
+**No LLM rate limiting on these routes** — unlike sitemap/creative-
+direction/outreach generation, which sit behind
+`enforce_generation_rate_limit`: this agent makes no paid API call, so
+there's no budget to protect.
+
+**Frontend:** a dedicated `/dashboard/projects/[id]/website` page
+(not inlined into the main project page like brief/creative-direction/
+sitemap — this needed materially more room per section) with a version
+picker, quality-score/issues panel, missing-information panel, and one
+card per section with Approve/Edit/Regenerate actions. Edit is a raw
+JSON config textarea, not a live visual preview or a bespoke form per
+section type — the dashboard doesn't depend on `packages/site-templates`
+(no npm workspace wiring exists yet to import it, and 17 bespoke edit
+forms was out of scope for this pass). Verified in a real Chrome browser
+against a real local Postgres + FastAPI + Next.js stack, not just the 31
+new backend tests — sitemap generation itself needs a real `LLM_API_KEY`
+this environment doesn't have, so the sitemap fixture for that walkthrough
+was seeded directly via the ORM (the same shape `agents/sitemap.py`
+would have produced) rather than through its own generation endpoint;
+website generation itself has no LLM dependency, so everything from
+"Generate website" onward exercised the real code path end to end. That
+pass caught a real bug no backend test could have: the frontend's
+`onChange` handler updated the displayed website but never refreshed the
+version-history dropdown, so a just-created version from a section
+regenerate silently didn't appear in the list — fixed by refreshing the
+version list alongside the website on every change.
+
+**Why:** this is the first system in the app that turns already-collected
+information into the actual deliverable, so the "never fabricate, flag
+what's missing" contract established by Anti-Slop and the component
+library's `validateSection` had to be load-bearing here, not aspirational
+— see [[00_VISION]]'s "AI slop is unacceptable."
+
+**Alternatives considered:** an LLM pass to smooth over/paraphrase brief
+content into more natural section copy — rejected for the same reason
+the agent itself is deterministic; a rephrase is still a fabrication risk
+with no way to verify it stayed faithful to the source. A live
+`packages/site-templates`-rendered preview in the dashboard — deferred,
+not rejected; it needs an npm workspace (or equivalent) linking
+`apps/web` to `packages/site-templates` that doesn't exist yet, and nothing about the JSON-editor approach blocks adding one later.
+
+---
+
 ## 2026-08-19 — Anti-Slop quality evaluator: deterministic rules over section configs, missing content flagged instead of invented
 
 **Decision:** Built `agents/anti_slop.py` as a deterministic rules

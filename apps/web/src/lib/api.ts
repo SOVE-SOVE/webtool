@@ -682,6 +682,78 @@ export type SitemapPageOrderItem = {
   parent_page_id?: string | null;
 };
 
+export const WEBSITE_STATUSES = ["draft", "live"] as const;
+export type WebsiteStatus = (typeof WEBSITE_STATUSES)[number];
+
+export const QUALITY_ISSUE_SEVERITIES = ["high", "medium", "low"] as const;
+export type QualityIssueSeverity = (typeof QUALITY_ISSUE_SEVERITIES)[number];
+
+// Matches packages/site-templates' SiteSection shape — `config` is
+// whatever that section type's fields are (heading, services, etc.),
+// left as a plain object here since the dashboard doesn't render a
+// live preview (see docs/05_DECISIONS.md), only structured content.
+export type WebsiteSection = {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  approved: boolean;
+};
+
+export type WebsitePage = {
+  sitemap_page_id: string;
+  name: string;
+  slug: string;
+  page_type: PageType;
+  sections: WebsiteSection[];
+};
+
+export type QualityIssue = {
+  category: string;
+  rule: string;
+  severity: QualityIssueSeverity;
+  message: string;
+  location: string | null;
+};
+
+export type Website = {
+  id: string;
+  project_id: string;
+  status: WebsiteStatus;
+  navigation: WebsiteSection;
+  footer: WebsiteSection;
+  pages: WebsitePage[];
+  missing_information: string[];
+  anti_slop_score: number;
+  anti_slop_passed: boolean;
+  anti_slop_issues: QualityIssue[];
+  flagged_for_review: boolean;
+  sources_note: string | null;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  updated_at: string;
+};
+
+export type WebsiteSummary = {
+  id: string;
+  status: WebsiteStatus;
+  anti_slop_score: number | null;
+  flagged_for_review: boolean;
+  generated_by_user_name: string | null;
+  generated_at: string;
+};
+
+export type GenerateWebsiteRequest = {
+  sitemap_id?: string;
+  creative_direction_id?: string;
+  force_regenerate_all?: boolean;
+};
+
+export type SectionUpdate = {
+  config?: Record<string, unknown>;
+  approved?: boolean;
+};
+
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
 export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
 
@@ -880,6 +952,21 @@ export const api = {
     request<Sitemap>(`/api/v1/sitemaps/${sitemapId}/pages/reorder`, {
       method: "PATCH",
       body: JSON.stringify({ items }),
+    }),
+
+  generateWebsite: (projectId: string, data?: GenerateWebsiteRequest) =>
+    request<Website>(`/api/v1/projects/${projectId}/websites`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listWebsites: (projectId: string) => request<WebsiteSummary[]>(`/api/v1/projects/${projectId}/websites`),
+  getWebsite: (id: string) => request<Website>(`/api/v1/websites/${id}`),
+  regenerateWebsiteSection: (websiteId: string, sectionId: string) =>
+    request<Website>(`/api/v1/websites/${websiteId}/sections/${sectionId}/regenerate`, { method: "POST" }),
+  updateWebsiteSection: (websiteId: string, sectionId: string, data: SectionUpdate) =>
+    request<Website>(`/api/v1/websites/${websiteId}/sections/${sectionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>

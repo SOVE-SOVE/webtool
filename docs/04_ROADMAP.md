@@ -262,9 +262,39 @@ Goal: stages 15–18. First real reusable output.
       glassmorphism/rounded-corners/animation. Missing required content
       is reported separately as `missing_information`, never scored as
       a defect — this system flags gaps, it never fabricates to fill
-      them. Not yet wired into the generator (roadmap item below) or
-      exposed as a route. See [[05_DECISIONS]].
-- [ ] Site generation from brief + sitemap + copy + client assets.
+      them. Now wired into the generator below (every generation and
+      section-regeneration runs through it). See [[05_DECISIONS]].
+- [x] Site generation from brief + sitemap + copy + client assets —
+      `agents/website_generator.py` / `modules/websites/`: given a
+      project's approved sitemap (falling back to the latest one, same
+      resolution convention as creative direction), assembles navigation
+      + footer + one section list per sitemap page using
+      `packages/site-templates`' section shapes, composing only real
+      brief/sitemap fields — a service page with an unstructured prose
+      blob gets a Hero with that text as its subheading rather than
+      invented service cards, and sections with no honest source
+      (pricing, team, portfolio, stock imagery with real alt text) are
+      simply not built, with the gap reported in `missing_information`
+      instead. Deterministic like the lead-scoring/audit agents, not
+      LLM-drafted — see [[05_DECISIONS]] for why. Every generation is a
+      new versioned `Website` row (same "newest reviewed first"
+      convention as Sitemap/CreativeDirectionBrief) so prior versions
+      stay reviewable; approving or hand-editing a section's content
+      mutates that version in place instead. A full regeneration carries
+      forward every already-approved section by default (opt into
+      `force_regenerate_all` to discard them), and a single section can
+      be regenerated on its own — matched back into the fresh output by
+      (page, section type), which creates a new version but leaves every
+      other section, including its id and approval state, untouched.
+      Surfaced on a dedicated `/dashboard/projects/[id]/website` page
+      (not the main project page, unlike brief/creative-direction/
+      sitemap — this needed materially more room): version picker, a
+      quality-score/issues panel, a missing-information panel, and one
+      card per section with Approve/Edit (a JSON config editor — no live
+      visual preview yet, see [[05_DECISIONS]])/Regenerate actions.
+      Verified end-to-end in a real browser (not just the 31 backend +
+      existing frontend tests) — that pass caught and fixed a real bug
+      where regenerating a section didn't refresh the version dropdown.
 - [ ] Automated QA checks (build, links, mobile) from [[tests]].
 - [ ] Operator approval gate, then a secure shareable client-preview
       link with feedback capture.
