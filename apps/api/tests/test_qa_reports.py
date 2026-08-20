@@ -191,3 +191,97 @@ class TestApproveQaReport:
 
         summary = authed_client.get(f"/api/v1/websites/{website['id']}/qa-reports").json()
         assert summary[0]["human_approved"] is True
+
+
+class TestContentEditRevertsQaApproval:
+    """Editing a section after QA was signed off invalidates that
+    sign-off — the report was run against the content as it was before
+    the edit, and leaving it approved lets unreviewed content through
+    both the client-review gate and the pre-deploy critical-issue check."""
+
+    def test_editing_a_section_clears_the_qa_sign_off(self, authed_client, monkeypatch):
+        _, website = _create_approved_website(authed_client, monkeypatch)
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve")
+
+        full = authed_client.get(f"/api/v1/websites/{website['id']}").json()
+        section = full["pages"][0]["sections"][0]
+        authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{section['id']}",
+            json={"config": {**section["config"], "heading": "Edited after QA"}},
+        )
+
+        assert authed_client.get(f"/api/v1/qa-reports/{report['id']}").json()["human_approved"] is False
+
+    def test_client_approval_is_refused_until_qa_is_re_run_and_re_approved(self, authed_client, monkeypatch):
+        _, website = _create_approved_website(authed_client, monkeypatch)
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve")
+
+        full = authed_client.get(f"/api/v1/websites/{website['id']}").json()
+        section = full["pages"][0]["sections"][0]
+        authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{section['id']}",
+            json={"config": {**section["config"], "heading": "Edited after QA"}},
+        )
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/client-approve")
+        assert res.status_code == 400
+        assert "QA" in res.json()["detail"]
+
+    def test_toggling_a_sections_approved_flag_alone_does_not_clear_qa(self, authed_client, monkeypatch):
+        _, website = _create_approved_website(authed_client, monkeypatch)
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve")
+
+        full = authed_client.get(f"/api/v1/websites/{website['id']}").json()
+        section = full["pages"][0]["sections"][0]
+        authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{section['id']}", json={"approved": True}
+        )
+
+        assert authed_client.get(f"/api/v1/qa-reports/{report['id']}").json()["human_approved"] is True
+
+
+class TestNonRootHomeSlug:
+    """A sitemap whose home page has an ordinary slug ("home", not the
+    empty string) is what the operator UI actually produces — it must
+    still reach a passing QA report, not dead-end on a broken link the
+    generator itself created."""
+
+    def test_qa_passes_and_the_whole_chain_can_be_approved(self, authed_client, monkeypatch):
+        sitemap_output = {
+            "overview": "A compact site for a residential plumber.",
+            "pages": [
+                {**SITEMAP_LLM_OUTPUT["pages"][0], "slug": "home"},
+                SITEMAP_LLM_OUTPUT["pages"][1],
+            ],
+        }
+        monkeypatch.setattr(
+            "app.agents.sitemap.generate_structured", lambda **kwargs: dict(sitemap_output)
+        )
+        monkeypatch.setattr(
+            "app.agents.creative_director.generate_structured", lambda **kwargs: dict(CREATIVE_DIRECTION_LLM_OUTPUT)
+        )
+        project = _create_project_without_lead(authed_client)
+        authed_client.patch(f"/api/v1/projects/{project['id']}/brief", json=_REAL_BRIEF)
+        sitemap = authed_client.post(f"/api/v1/projects/{project['id']}/sitemaps").json()
+        authed_client.post(f"/api/v1/sitemaps/{sitemap['id']}/approve")
+        website = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+        authed_client.post(f"/api/v1/projects/{project['id']}/brief/approve")
+        cd = authed_client.post(f"/api/v1/projects/{project['id']}/creative-directions").json()
+        authed_client.post(f"/api/v1/creative-directions/{cd['id']}/approve")
+        authed_client.post(f"/api/v1/websites/{website['id']}/approve")
+
+        report = authed_client.post(f"/api/v1/websites/{website['id']}/qa-reports").json()
+        broken = [c for c in report["checks"] if c["name"] == "Internal links resolve"]
+        assert broken and broken[0]["status"] == "pass", broken
+        assert report["passed"] is True
+
+        assert authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve").status_code == 200
+        assert authed_client.post(f"/api/v1/websites/{website['id']}/client-approve").status_code == 200
+
+        approvals = authed_client.get(f"/api/v1/projects/{project['id']}/approvals").json()
+        assert approvals["can_deploy"] is True, approvals["missing_for_deployment"]
+        assert authed_client.post(f"/api/v1/projects/{project['id']}/deployments").status_code == 201

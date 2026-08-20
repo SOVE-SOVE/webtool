@@ -160,14 +160,21 @@ def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID
     (mock today — see integrations/deployment.py). Only a `pending` or
     previously-`failed` deployment can be (re-)executed; a `success`ful
     one is immutable history, and re-running a `running` one isn't
-    supported (the synchronous mock never leaves that state persisted,
-    so in practice this only guards against a duplicate request).
+    supported.
     """
     deployment = _get_deployment_in_workspace(db, workspace_id, deployment_id)
     if deployment is None:
         return None
-    if deployment.status not in ("pending", "failed"):
-        raise HTTPException(status_code=400, detail=f"Cannot execute a deployment that is already '{deployment.status}'.")
+
+    # Row lock, not a plain read: without it two requests arriving
+    # together both see "pending" and both publish the same deployment.
+    # The lock is held until this transaction commits, so the loser
+    # re-reads the winner's final status and is refused.
+    current_status = db.execute(
+        select(Deployment.status).where(Deployment.id == deployment.id).with_for_update()
+    ).scalar_one()
+    if current_status not in ("pending", "failed"):
+        raise HTTPException(status_code=400, detail=f"Cannot execute a deployment that is already '{current_status}'.")
 
     provider = get_deployment_provider()
     _run_provider(deployment, provider)

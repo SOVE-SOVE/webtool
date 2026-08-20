@@ -179,8 +179,8 @@ export default function CalendarPage() {
     try {
       const updated = await api.generateMeetingBrief(selectedMeeting.id);
       setSelectedMeeting(updated);
-    } catch {
-      setMeetingError("Couldn't generate a meeting brief.");
+    } catch (err) {
+      setMeetingError(err instanceof ApiError ? err.message : "Couldn't generate a meeting brief.");
     } finally {
       setMeetingBusy(false);
     }

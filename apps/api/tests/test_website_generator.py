@@ -265,3 +265,50 @@ class TestAntiSlopIntegration:
         assert first.output.footer.config == second.output.footer.config
         assert first.output.anti_slop.score == second.output.anti_slop.score
         assert first.output.missing_information == second.output.missing_information
+
+
+class TestNavigationLinksResolve:
+    """The generated nav must only link to pages that exist — a link to a
+    slug no page has is a critical technical-QA failure, which blocks QA
+    approval and with it client review and the whole deployment gate."""
+
+    def test_logo_links_to_the_home_page_slug_not_a_hardcoded_root(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                pages=[_page(slug="home"), _page(id="p2", title="Contact", slug="contact", page_type="contact")],
+            )
+        )
+        assert result.output.navigation.config["logo"]["href"] == "/home"
+
+    def test_logo_still_links_to_root_when_the_home_page_serves_at_root(self):
+        result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=[_page(slug="")]))
+        assert result.output.navigation.config["logo"]["href"] == "/"
+
+    def test_every_generated_href_points_at_a_real_page(self):
+        pages = [
+            _page(slug="home"),
+            _page(id="p2", title="Services", slug="our-services", page_type="services"),
+            _page(id="p3", title="Contact", slug="get-in-touch", page_type="contact"),
+        ]
+        result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=pages))
+        known = {p.slug for p in pages}
+
+        def hrefs(config):
+            if isinstance(config, dict):
+                for key, value in config.items():
+                    if key == "href" and isinstance(value, str):
+                        yield value
+                    else:
+                        yield from hrefs(value)
+            elif isinstance(config, list):
+                for item in config:
+                    yield from hrefs(item)
+
+        sections = [result.output.navigation, result.output.footer]
+        sections += [s for page in result.output.pages for s in page.sections]
+        for section in sections:
+            for href in hrefs(section.config):
+                if href.startswith(("http://", "https://", "mailto:", "tel:", "#")):
+                    continue
+                assert href.lstrip("/") in known, f"{section.type} links to missing page {href!r}"

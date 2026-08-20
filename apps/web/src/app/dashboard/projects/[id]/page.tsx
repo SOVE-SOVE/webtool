@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
+  ApiError,
   PROJECT_STAGES,
   type ActivityItem,
   type Brief,
@@ -119,8 +120,8 @@ export default function ProjectDetailPage() {
       setTargetAudience("");
       setBusinessGoals("");
       setAdditionalNotes("");
-    } catch {
-      setGenerateError("Couldn't generate a creative direction.");
+    } catch (err) {
+      setGenerateError(err instanceof ApiError ? err.message : "Couldn't generate a creative direction.");
     } finally {
       setGenerating(false);
     }
@@ -144,8 +145,8 @@ export default function ProjectDetailPage() {
       setShowGenerateSitemapForm(false);
       setSitemapCreativeDirectionId("");
       setSitemapAdditionalNotes("");
-    } catch {
-      setGenerateSitemapError("Couldn't generate a sitemap.");
+    } catch (err) {
+      setGenerateSitemapError(err instanceof ApiError ? err.message : "Couldn't generate a sitemap.");
     } finally {
       setGeneratingSitemap(false);
     }

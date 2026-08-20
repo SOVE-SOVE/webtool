@@ -195,3 +195,35 @@ def test_sales_audits_are_workspace_isolated(authed_client, other_authed_client,
     assert other_authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits").status_code == 404
     assert other_authed_client.get(f"/api/v1/leads/{lead['id']}/sales-audits").status_code == 404
     assert other_authed_client.get(f"/api/v1/sales-audits/{audit_id}").status_code == 404
+
+
+class TestLlmUnavailable:
+    """Every AI generation route funnels LLM failures into an actionable
+    503 — never an opaque 500, and never a partially-saved result."""
+
+    def test_missing_api_key_returns_503_with_a_readable_reason(self, authed_client, monkeypatch):
+        monkeypatch.setattr("app.core.settings.settings.llm_api_key", "")
+        monkeypatch.setattr("app.integrations.search.search_business", lambda query: None)
+        lead = authed_client.post("/api/v1/leads", json={"business_name": "No Key Co"}).json()
+
+        res = authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits")
+        assert res.status_code == 503
+        assert "LLM_API_KEY" in res.json()["detail"]
+
+    def test_api_failure_returns_503_and_saves_nothing(self, authed_client, monkeypatch):
+        from app.integrations.llm import LlmUnavailableError
+
+        def _fail(**kwargs):
+            raise LlmUnavailableError("AI generation is unavailable — the Claude API returned 429.")
+
+        monkeypatch.setattr("app.agents.sales_audit.generate_structured", _fail)
+        monkeypatch.setattr("app.integrations.search.search_business", lambda query: None)
+        lead = authed_client.post("/api/v1/leads", json={"business_name": "Broke Co"}).json()
+
+        res = authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits")
+        assert res.status_code == 503
+        assert "429" in res.json()["detail"]
+
+        assert authed_client.get(f"/api/v1/leads/{lead['id']}/sales-audits").json() == []
+        assert authed_client.get(f"/api/v1/leads/{lead['id']}/website-audits").json() == []
+        assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "new"

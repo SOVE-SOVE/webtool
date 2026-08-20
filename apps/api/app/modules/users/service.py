@@ -1,11 +1,11 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import hash_password
-from app.modules.users.models import User
+from app.modules.users.models import User, UserRole
 from app.modules.users.schemas import UserCreate, UserUpdate
 
 
@@ -56,6 +56,23 @@ def update_user_role(
     user = db.scalar(select(User).where(User.id == user_id, User.workspace_id == workspace_id))
     if user is None:
         return None
+
+    # Demoting the only admin (including yourself) leaves the workspace
+    # with nobody who can add users, restore a role, or change workspace
+    # settings — and there's no signup or super-admin to recover from
+    # that, so it's a permanent lockout. Refuse rather than allow it.
+    if user.role == UserRole.ADMIN and data.role != UserRole.ADMIN:
+        remaining_admins = db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.workspace_id == workspace_id, User.role == UserRole.ADMIN, User.id != user.id)
+        )
+        if not remaining_admins:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is the workspace's only admin — promote someone else to admin first.",
+            )
+
     user.role = data.role
     db.commit()
     db.refresh(user)

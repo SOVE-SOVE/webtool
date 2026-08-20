@@ -322,3 +322,56 @@ class TestMockDeploymentProvider:
             assert False, "expected NotImplementedError"
         except NotImplementedError:
             pass
+
+
+class TestConcurrentExecution:
+    def test_two_simultaneous_executes_publish_the_deployment_only_once(
+        self, authed_client, admin_user, monkeypatch
+    ):
+        """Without a row lock both requests read "pending" and both run
+        the provider — two real publishes of the same deployment once a
+        provider that actually publishes exists. The slow provider keeps
+        the requests genuinely overlapping."""
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+
+        from fastapi.testclient import TestClient
+
+        from app.integrations.deployment import MockDeploymentProvider
+        from app.main import app
+        from tests.conftest import ADMIN_PASSWORD
+
+        class _SlowProvider(MockDeploymentProvider):
+            def deploy(self, bundle):
+                time.sleep(0.3)
+                return super().deploy(bundle)
+
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        monkeypatch.setattr(
+            "app.modules.deployments.service.get_deployment_provider", lambda: _SlowProvider()
+        )
+
+        clients = []
+        for _ in range(4):
+            c = TestClient(app)
+            c.__enter__()
+            c.post("/api/v1/auth/login", json={"email": admin_user.email, "password": ADMIN_PASSWORD})
+            clients.append(c)
+        try:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = [
+                    pool.submit(c.post, f"/api/v1/deployments/{prepared['id']}/execute") for c in clients
+                ]
+                statuses = [f.result().status_code for f in futures]
+        finally:
+            for c in clients:
+                c.__exit__(None, None, None)
+
+        assert statuses.count(200) == 1
+        assert statuses.count(400) == 3
+
+        activity = authed_client.get(
+            f"/api/v1/activity?entity_type=project&entity_id={project['id']}"
+        ).json()
+        assert sum(1 for a in activity if a["action"] == "deployment_succeeded") == 1

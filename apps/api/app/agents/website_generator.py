@@ -161,6 +161,18 @@ def _contact_href(pages: list[SitemapPageContent]) -> str:
     return f"/{contact.slug}" if contact else "#contact"
 
 
+def _home_href(pages: list[SitemapPageContent]) -> str:
+    """
+    The logo links to whatever the sitemap actually calls the home page,
+    not a hardcoded "/" — only a sitemap whose home page slug happens to
+    be empty serves at the root, and agents/technical_qa.py rightly
+    fails a link to a slug no page has (critical, blocks QA approval and
+    therefore the whole deployment gate).
+    """
+    home = _find_page_by_type(pages, "home") or (pages[0] if pages else None)
+    return f"/{home.slug}" if home else "/"
+
+
 _META_DESCRIPTION_MAX = 155
 
 
@@ -337,7 +349,7 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
         for p in input.pages
         if p.nav_placement in ("primary_nav", "primary_and_footer")
     ]
-    nav_config: dict = {"logo": {"label": input.business_name, "href": "/"}, "links": nav_links}
+    nav_config: dict = {"logo": {"label": input.business_name, "href": _home_href(input.pages)}, "links": nav_links}
     contact_page = _find_page_by_type(input.pages, "contact")
     if contact_page and contact_page.primary_cta:
         nav_config["cta"] = {"label": contact_page.primary_cta, "href": contact_href}

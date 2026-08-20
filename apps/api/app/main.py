@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from app.core.logging import configure_logging, logger
 from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
+from app.integrations.llm import LlmUnavailableError
 from app.modules.activity_log.routes import router as activity_router
 from app.modules.approvals.routes import router as approvals_router
 from app.modules.auth.routes import router as auth_router
@@ -33,6 +34,35 @@ configure_logging()
 app = FastAPI(title="Web Design OS API")
 
 
+@app.exception_handler(LlmUnavailableError)
+async def llm_unavailable_handler(request: Request, exc: LlmUnavailableError) -> JSONResponse:
+    """
+    Every AI generation route (sales audit, outreach, follow-up, meeting
+    brief, creative direction, sitemap) funnels its LLM failures here so
+    the operator gets an actionable "couldn't generate, here's why"
+    instead of a bare 500. Nothing partial is stored — the request's
+    transaction rolls back untouched.
+    """
+    logger.warning("LLM unavailable on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+def _with_cors(request: Request, response: JSONResponse) -> JSONResponse:
+    """
+    Starlette runs the bare-`Exception` handler in ServerErrorMiddleware,
+    which sits *outside* CORSMiddleware — so without this the browser
+    rejects a 500 as a cross-origin failure and the web app sees an
+    opaque network error it can't report, instead of the error the API
+    actually sent.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin in settings.allowed_origins_list:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """
@@ -40,7 +70,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     traceback, while still logging the real exception for the operator.
     """
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    return _with_cors(request, JSONResponse(status_code=500, content={"detail": "Internal server error"}))
 
 app.add_middleware(
     CORSMiddleware,

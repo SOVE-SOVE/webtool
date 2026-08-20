@@ -21,18 +21,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    setChecking(true);
+    setLoadError(null);
     api
       .me()
       .then(setMe)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
           router.push("/login");
+          return;
         }
+        // Anything else — API down, 500, network blip — must say so.
+        // Falling through to `if (!me) return null` renders a blank
+        // page with no explanation and no way out.
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Couldn't reach the API. Check that it's running, then try again.",
+        );
       })
       .finally(() => setChecking(false));
-  }, [router]);
+  }, [router, retryCount]);
 
   async function handleLogout() {
     await api.logout();
@@ -41,6 +54,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (checking) {
     return <main className="p-8 text-sm text-neutral-500">Loading…</main>;
+  }
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8">
+        <div className="max-w-sm space-y-3 text-center">
+          <h1 className="text-lg font-semibold text-neutral-900">Can&apos;t load your workspace</h1>
+          <p className="text-sm text-neutral-600">{loadError}</p>
+          <button
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            Try again
+          </button>
+        </div>
+      </main>
+    );
   }
 
   if (!me) return null;

@@ -387,6 +387,21 @@ def _find_slot(config: dict | None, section_id: str) -> tuple[dict | None, str |
     return None, None
 
 
+def _revert_qa_approvals(db: Session, website_id: uuid.UUID) -> bool:
+    """Clears the human QA sign-off on every report for this website
+    version. Returns whether anything was actually reverted, for the
+    activity-log summary."""
+    reports = db.scalars(
+        select(QaReport).where(QaReport.website_id == website_id, QaReport.human_approved.is_(True))
+    ).all()
+    for report in reports:
+        report.human_approved = False
+        report.approved_by_user_id = None
+        report.approved_at = None
+        report.approval_notes = None
+    return bool(reports)
+
+
 def update_section(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, website_id: uuid.UUID, section_id: str, data: SectionUpdate
 ) -> WebsiteRead | None:
@@ -438,6 +453,14 @@ def update_section(
                 website.client_approved_by_user_id = None
                 website.client_approved_at = None
                 reverted.append("client review")
+            # The QA sign-off is per-report, and every report for this
+            # version was run against the content as it was *before*
+            # this edit — leaving it approved would let edited content
+            # pass client_approve_website's QA gate and
+            # deployments/checks.py's critical-issue check on a report
+            # that never saw it.
+            if _revert_qa_approvals(db, website.id):
+                reverted.append("QA")
 
         summary = f"Updated a {slot['type']} section" + (" and approved it" if data.approved else "")
         if reverted:
