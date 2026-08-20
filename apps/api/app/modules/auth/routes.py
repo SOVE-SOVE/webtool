@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.auth import create_session_token, get_current_user, verify_password
+from app.core.auth import create_session_token, get_current_user, verify_password_or_dummy
 from app.core.logging import logger
+from app.core.rate_limit import (
+    clear_login_failures,
+    login_attempt_blocked,
+    record_login_failure,
+)
 from app.core.settings import settings
 from app.db.session import get_db
 from app.modules.auth.schemas import LoginRequest, MeResponse
@@ -24,13 +29,25 @@ def _to_me(user: User) -> MeResponse:
 
 
 @router.post("/login", response_model=MeResponse)
-def login(data: LoginRequest, response: Response, db: Session = Depends(get_db)) -> MeResponse:
+def login(
+    data: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)
+) -> MeResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    if login_attempt_blocked(data.email, client_ip):
+        logger.warning("Login blocked by rate limit for %s from %s", data.email, client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed sign-in attempts. Try again in a few minutes.",
+        )
+
     user = get_by_email(db, data.email)
-    valid_password = user is not None and verify_password(data.password, user.password_hash)
-    if user is None or not valid_password:
-        logger.warning("Failed login attempt for %s", data.email)
+    # Runs a bcrypt check either way — see verify_password_or_dummy.
+    if not verify_password_or_dummy(data.password, user.password_hash if user else None):
+        record_login_failure(data.email, client_ip)
+        logger.warning("Failed login attempt for %s from %s", data.email, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    clear_login_failures(data.email, client_ip)
     logger.info("User %s logged in", user.id)
     token = create_session_token(user.id)
     response.set_cookie(

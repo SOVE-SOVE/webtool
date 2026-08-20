@@ -1,4 +1,12 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Signing keys that are public knowledge (this file, .env.example) or
+# trivially guessable. A session cookie is only a signed user id, so
+# whoever knows the key can mint a valid session for any user without a
+# password — see app/core/auth.py.
+_SESSION_SECRET_MIN_LENGTH = 32
+_UNSAFE_SESSION_SECRETS = {"", "change-me-in-.env", "changeme", "secret", "dev", "test"}
 
 
 class Settings(BaseSettings):
@@ -60,6 +68,24 @@ class Settings(BaseSettings):
     # publishes through (see app/integrations/deployment.py). Only
     # "mock" is implemented today; no real hosting account exists yet.
     deploy_provider: str = "mock"
+
+    @field_validator("session_secret")
+    @classmethod
+    def _reject_unsafe_session_secret(cls, value: str) -> str:
+        """
+        Refuse to start rather than silently signing sessions with a key
+        an attacker already has. The old default was reachable three
+        ways that all looked like a working app: no .env on the process's
+        working directory, `cp .env.example .env` (which ships the key
+        blank), or a deploy that sets every other env var but this one.
+        """
+        if value in _UNSAFE_SESSION_SECRETS or len(value) < _SESSION_SECRET_MIN_LENGTH:
+            raise ValueError(
+                "SESSION_SECRET is unset, a known placeholder, or too short. It must be at least "
+                f"{_SESSION_SECRET_MIN_LENGTH} characters of random text — generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+        return value
 
     @property
     def allowed_origins_list(self) -> list[str]:

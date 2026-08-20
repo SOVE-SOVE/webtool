@@ -45,8 +45,53 @@ class _InMemoryRateLimiter:
                 )
             calls.append(now)
 
+    def over_limit(self, key: str, max_calls: int, window_seconds: int) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            calls = self._calls[key]
+            while calls and now - calls[0] > window_seconds:
+                calls.popleft()
+            return len(calls) >= max_calls
+
+    def record(self, key: str) -> None:
+        with self._lock:
+            self._calls[key].append(time.monotonic())
+
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._calls.pop(key, None)
+
 
 _generation_limiter = _InMemoryRateLimiter()
+
+# Failed logins only — a correct password clears the counter, so normal
+# use never trips this and an operator can't be locked out by someone
+# else guessing at their address. Two buckets: per-account stops a
+# targeted guessing run, per-IP stops one host sweeping many addresses.
+_login_limiter = _InMemoryRateLimiter()
+_LOGIN_WINDOW_SECONDS = 15 * 60
+_MAX_FAILURES_PER_ACCOUNT = 10
+_MAX_FAILURES_PER_IP = 30
+
+
+def _login_keys(email: str, client_ip: str) -> tuple[str, str]:
+    return f"account:{email.lower()}:{client_ip}", f"ip:{client_ip}"
+
+
+def login_attempt_blocked(email: str, client_ip: str) -> bool:
+    account_key, ip_key = _login_keys(email, client_ip)
+    return _login_limiter.over_limit(
+        account_key, _MAX_FAILURES_PER_ACCOUNT, _LOGIN_WINDOW_SECONDS
+    ) or _login_limiter.over_limit(ip_key, _MAX_FAILURES_PER_IP, _LOGIN_WINDOW_SECONDS)
+
+
+def record_login_failure(email: str, client_ip: str) -> None:
+    for key in _login_keys(email, client_ip):
+        _login_limiter.record(key)
+
+
+def clear_login_failures(email: str, client_ip: str) -> None:
+    _login_limiter.clear(_login_keys(email, client_ip)[0])
 
 
 def enforce_generation_rate_limit(current_user: User = Depends(get_current_user)) -> User:

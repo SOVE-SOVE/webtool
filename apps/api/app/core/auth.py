@@ -21,6 +21,23 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
+# A real bcrypt hash of a value nothing can log in with, computed once at
+# import. See verify_password_or_dummy.
+_DUMMY_HASH = bcrypt.hashpw(uuid.uuid4().bytes + uuid.uuid4().bytes, bcrypt.gensalt()).decode()
+
+
+def verify_password_or_dummy(plain: str, hashed: str | None) -> bool:
+    """
+    Always spends one bcrypt verification, even when no user matched the
+    submitted email. Skipping the hash for an unknown email made login
+    answer ~140x faster in that case, which told an unauthenticated
+    caller exactly which email addresses are real accounts — the
+    identical "Invalid credentials" body hid nothing.
+    """
+    matched = bcrypt.checkpw(plain.encode(), (hashed or _DUMMY_HASH).encode())
+    return matched and hashed is not None
+
+
 def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.session_secret, salt="wdos-session")
 

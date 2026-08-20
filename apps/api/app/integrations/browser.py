@@ -22,18 +22,78 @@ class UrlNotAllowedError(ValueError):
     """Raised for a `website_url` that isn't a safe audit target — see `_check_url_is_public`."""
 
 
+def _parse_ip_literal(hostname: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """
+    Parses `hostname` as an IP literal the way a browser does, or returns
+    None if it's a real DNS name.
+
+    This has to match Chromium rather than `getaddrinfo`, because the two
+    disagree. Per the WHATWG URL spec a dotted host whose last part is
+    numeric is an IPv4 address, and each part is hex for an `0x` prefix,
+    octal for a leading `0`, decimal otherwise. `0177.0.0.1` is therefore
+    127.0.0.1 to the browser, while macOS `getaddrinfo` reads it as
+    177.0.0.1 — a public address. Validating the resolver's answer and
+    then letting Chromium re-resolve the name let that difference through
+    as a real SSRF: the guard passed and the browser fetched loopback.
+    """
+    if hostname.startswith("[") and hostname.endswith("]"):
+        hostname = hostname[1:-1]
+    try:
+        return ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+
+    parts = hostname.split(".")
+    if parts and parts[-1] == "":  # a single trailing dot is allowed
+        parts = parts[:-1]
+    if not parts or len(parts) > 4:
+        return None
+
+    numbers: list[int] = []
+    for part in parts:
+        lowered = part.lower()
+        try:
+            if lowered.startswith("0x"):
+                numbers.append(int(lowered[2:] or "0", 16))
+            elif lowered.startswith("0") and len(lowered) > 1:
+                numbers.append(int(lowered[1:], 8))
+            else:
+                numbers.append(int(lowered, 10))
+        except ValueError:
+            return None  # a non-numeric part means this is a DNS name
+
+    # The last part absorbs the remaining low-order bytes ("127.1" is
+    # 127.0.0.1), so only it may exceed a single byte.
+    if any(n > 255 for n in numbers[:-1]) or numbers[-1] >= 256 ** (4 - len(numbers) + 1):
+        return None
+    value = numbers[-1]
+    for index, number in enumerate(numbers[:-1]):
+        value += number << (8 * (3 - index))
+    return ipaddress.ip_address(value)
+
+
+def _reject_if_not_public(hostname: str, ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
+    # is_global, rather than enumerating private/loopback/link-local/...:
+    # the enumerated form silently allowed anything the list forgot, such
+    # as the 100.64.0.0/10 carrier-grade NAT range.
+    if not ip.is_global:
+        raise UrlNotAllowedError(
+            f"{hostname} resolves to a non-public address ({ip}) — not an allowed audit target"
+        )
+
+
 def _check_url_is_public(url: str) -> None:
     """
     SSRF guard, docs/06_SECURITY.md — `website_url` is operator-entered
     on a business record, but this app fetches it server-side with a
     real browser, so a malicious or mistaken entry (`http://localhost`,
     a cloud metadata address, an internal service) must not be able to
-    make this server hit internal infrastructure. Resolves the hostname
-    and rejects anything that isn't a public, routable address; an IP
-    literal is checked directly. Known gap: this only checks the
-    initial target, not addresses reached via redirect during
-    navigation — full protection would need per-request interception,
-    which is a larger change than this pass covers.
+    make this server hit internal infrastructure. An IP literal is
+    parsed and checked directly (see `_parse_ip_literal`); a DNS name is
+    resolved and every address it answers with must be public. Known
+    gap: this only checks the initial target, not addresses reached via
+    redirect during navigation — full protection would need per-request
+    interception, which is a larger change than this pass covers.
     """
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
@@ -44,15 +104,20 @@ def _check_url_is_public(url: str) -> None:
     if hostname.lower() == "localhost":
         raise UrlNotAllowedError("localhost is not an allowed audit target")
 
+    literal = _parse_ip_literal(hostname)
+    if literal is not None:
+        # Don't also resolve it — the resolver's reading of an ambiguous
+        # literal is exactly what disagrees with the browser's.
+        _reject_if_not_public(hostname, literal)
+        return
+
     try:
         resolved = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
         raise UrlNotAllowedError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
 
-    for family, _, _, _, sockaddr in resolved:
-        ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            raise UrlNotAllowedError(f"{hostname} resolves to a non-public address ({ip}) — not an allowed audit target")
+    for _, _, _, _, sockaddr in resolved:
+        _reject_if_not_public(hostname, ipaddress.ip_address(sockaddr[0]))
 
 
 @dataclass

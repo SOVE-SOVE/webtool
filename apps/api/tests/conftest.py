@@ -8,7 +8,9 @@ app.core.settings.settings is built once at import time.
 import os
 
 os.environ["DATABASE_URL"] = "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
-os.environ["SESSION_SECRET"] = "test-session-secret"
+# Long enough to satisfy the Settings validator's minimum — see
+# app/core/settings.py; a short/placeholder secret now refuses to start.
+os.environ["SESSION_SECRET"] = "test-session-secret-not-used-in-any-real-deployment"
 # Blank regardless of what the developer's own .env has configured —
 # tests that need a key set it themselves via monkeypatch, and the
 # "key not configured" behavior needs to be reachable no matter what's
