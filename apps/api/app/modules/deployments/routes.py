@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.modules.deployments import service
-from app.modules.deployments.schemas import CreateDeploymentRequest, DeploymentRead
+from app.modules.deployments.schemas import CreateDeploymentRequest, DeploymentRead, RollbackDeploymentRequest
 from app.modules.projects import service as projects_service
 from app.modules.users.models import User
 
@@ -35,3 +35,40 @@ def list_deployments(
     if projects_service.get_project(db, current_user.workspace_id, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return service.list_deployments(db, current_user.workspace_id, project_id)
+
+
+@router.get("/api/v1/deployments/{deployment_id}", response_model=DeploymentRead)
+def get_deployment(
+    deployment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeploymentRead:
+    deployment = service.get_deployment(db, current_user.workspace_id, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment
+
+
+@router.post("/api/v1/deployments/{deployment_id}/execute", response_model=DeploymentRead)
+def execute_deployment(
+    deployment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeploymentRead:
+    deployment = service.execute_deployment(db, current_user.workspace_id, current_user.id, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment
+
+
+@router.post("/api/v1/projects/{project_id}/deployments/rollback", response_model=DeploymentRead, status_code=201)
+def rollback_deployment(
+    project_id: uuid.UUID,
+    body: RollbackDeploymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeploymentRead:
+    deployment = service.rollback_deployment(db, current_user.workspace_id, current_user.id, project_id, body)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return deployment

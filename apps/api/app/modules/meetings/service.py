@@ -17,6 +17,7 @@ from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import Meeting, MeetingBrief, MeetingStatus, MeetingType
 from app.modules.meetings.schemas import MeetingBriefRead, MeetingCreate, MeetingRead, MeetingUpdate
 from app.modules.outreach.models import OutreachMessage
+from app.modules.pipeline import service as pipeline_service
 from app.modules.projects.models import Project
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.users.service import require_user_in_workspace
@@ -469,6 +470,12 @@ def create_meeting(
             entity_id=lead.id,
             action="status_changed",
             summary=f"{previous_status.value} -> meeting (meeting booked)",
+        )
+        pipeline_service.record_lead_event(
+            db,
+            lead_id=lead.id,
+            kind="status_changed",
+            summary=f"{previous_status.value} -> {lead.status.value}",
         )
 
     db.flush()

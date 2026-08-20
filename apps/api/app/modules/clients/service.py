@@ -9,6 +9,7 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.clients.schemas import ClientCreate, ClientRead, ClientUpdate
 from app.modules.leads.models import Lead, LeadStatus
+from app.modules.pipeline import service as pipeline_service
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
@@ -76,7 +77,14 @@ def create_client(
         if lead.business.client is not None:
             raise HTTPException(status_code=409, detail="This lead has already been converted to a client")
         business = lead.business
+        previous_lead_status = lead.status
         lead.status = LeadStatus.WON
+        pipeline_service.record_lead_event(
+            db,
+            lead_id=lead.id,
+            kind="status_changed",
+            summary=f"{previous_lead_status.value} -> {lead.status.value} (converted to client)",
+        )
         # Converting a lead is the "deal closed" event — record it as a
         # won opportunity so it counts toward the dashboard's won-projects
         # and revenue metrics, whether or not a price was captured.

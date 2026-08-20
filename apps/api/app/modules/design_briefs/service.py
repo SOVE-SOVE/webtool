@@ -9,6 +9,7 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.design_briefs.schemas import BriefIntakeStart, BriefRead, BriefUpdate
+from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 
 # Every intake field the brief tracks (BriefIntakeStart's extra
@@ -172,10 +173,10 @@ def approve_brief(
     brief.approved_by_user_id = actor_id
 
     # Approving the brief is what "design begins" waits on — advance the
-    # project past intake so the pipeline reflects it, same pattern as
-    # ProjectUpdate's stage-change logging.
-    if project.stage == ProjectStage.INTAKE:
-        project.stage = ProjectStage.BRIEF
+    # project past intake so the pipeline reflects it.
+    projects_service.advance_stage(
+        db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.BRIEF
+    )
 
     activity_service.record(
         db,

@@ -19,7 +19,8 @@ from app.modules.creative_directions.schemas import (
 )
 from app.modules.design_briefs.models import DesignBrief
 from app.modules.leads.models import Lead
-from app.modules.projects.models import Project
+from app.modules.projects import service as projects_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.website_audits.models import WebsiteAudit
 
@@ -360,6 +361,11 @@ def approve_creative_direction(
             action="creative_direction_approved",
             summary="Approved creative direction",
         )
+        project = db.get(Project, brief.project_id)
+        if project is not None:
+            projects_service.advance_stage(
+                db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DESIGN
+            )
         db.commit()
 
     return get_creative_direction(db, workspace_id, brief_id)

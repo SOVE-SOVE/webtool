@@ -14,7 +14,8 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import DesignBrief
-from app.modules.projects.models import Project
+from app.modules.projects import service as projects_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
 from app.modules.sitemaps.schemas import (
     GenerateSitemapRequest,
@@ -502,6 +503,11 @@ def approve_sitemap(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, s
             action="sitemap_approved",
             summary="Approved sitemap",
         )
+        project = db.get(Project, sitemap.project_id)
+        if project is not None:
+            projects_service.advance_stage(
+                db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DESIGN
+            )
         db.commit()
 
     return get_sitemap(db, workspace_id, sitemap_id)

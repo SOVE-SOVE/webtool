@@ -151,3 +151,174 @@ class TestWorkspaceIsolation:
 
         assert other_authed_client.post(f"/api/v1/projects/{project['id']}/deployments").status_code == 404
         assert other_authed_client.get(f"/api/v1/projects/{project['id']}/deployments").status_code == 404
+
+
+class TestExecuteDeployment:
+    def test_requires_auth(self, client):
+        res = client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/execute")
+        assert res.status_code == 401
+
+    def test_unknown_deployment_404s(self, authed_client):
+        res = authed_client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/execute")
+        assert res.status_code == 404
+
+    def test_happy_path_marks_success_sets_url_and_advances_project_to_deployed(self, authed_client, monkeypatch):
+        project, website = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        assert prepared["status"] == "pending"
+
+        res = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "success"
+        assert body["target"] == "mock"
+        assert body["url"] is not None and body["url"].endswith(".mock-deploy.internal")
+        assert body["error_message"] is None
+        assert body["completed_at"] is not None
+        assert body["deployed_at"] is not None
+        assert body["result"]["provider"] == "mock"
+
+        project_after = authed_client.get(f"/api/v1/projects/{project['id']}").json()
+        assert project_after["stage"] == "deployed"
+
+    def test_cannot_execute_an_already_succeeded_deployment_again(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute")
+
+        res = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute")
+        assert res.status_code == 400
+
+    def test_workspace_isolated(self, authed_client, other_authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+
+        res = other_authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute")
+        assert res.status_code == 404
+
+    def test_get_single_deployment(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+
+        res = authed_client.get(f"/api/v1/deployments/{prepared['id']}")
+        assert res.status_code == 200
+        assert res.json()["id"] == prepared["id"]
+
+
+class TestRollbackDeployment:
+    def test_requires_a_previously_successful_deployment(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        # Never executed — still "pending", not a valid rollback target.
+
+        res = authed_client.post(
+            f"/api/v1/projects/{project['id']}/deployments/rollback", json={"target_deployment_id": prepared["id"]}
+        )
+        assert res.status_code == 400
+
+    def test_unknown_target_404s(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        res = authed_client.post(
+            f"/api/v1/projects/{project['id']}/deployments/rollback",
+            json={"target_deployment_id": "00000000-0000-0000-0000-000000000000"},
+        )
+        assert res.status_code == 404
+
+    def test_happy_path_redeploys_the_target_version(self, authed_client, monkeypatch):
+        project, website = _build_deployable_project(authed_client, monkeypatch)
+        first = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        authed_client.post(f"/api/v1/deployments/{first['id']}/execute")
+
+        res = authed_client.post(
+            f"/api/v1/projects/{project['id']}/deployments/rollback", json={"target_deployment_id": first["id"]}
+        )
+        assert res.status_code == 201
+        body = res.json()
+        assert body["status"] == "success"
+        assert body["website_id"] == website["id"]
+        assert body["rollback_of_deployment_id"] == first["id"]
+
+        deployments = authed_client.get(f"/api/v1/projects/{project['id']}/deployments").json()
+        assert len(deployments) == 2
+
+
+class TestPreDeployChecks:
+    """Unit coverage for the pre-deploy check functions themselves —
+    the happy-path integration tests above only exercise the case where
+    every check passes, since a real generated website never has empty
+    pages or secret-shaped content."""
+
+    def test_required_assets_flags_a_website_with_no_pages(self):
+        from app.modules.deployments.checks import check_required_assets
+        from app.modules.websites.models import Website
+
+        assert check_required_assets(Website(config={"pages": []})) != []
+        assert check_required_assets(Website(config={"pages": [{"slug": "home"}]})) == []
+
+    def test_no_exposed_secrets_flags_an_aws_key_but_not_ordinary_copy(self):
+        from app.modules.deployments.checks import check_no_exposed_secrets
+        from app.modules.websites.models import Website
+
+        clean = Website(config={"pages": [{"sections": [{"config": {"body": "Our secret to 20 years in business."}}]}]})
+        assert check_no_exposed_secrets(clean) == []
+
+        leaked = Website(config={"pages": [{"sections": [{"config": {"body": "key=AKIAABCDEFGHIJKLMNOP"}}]}]})
+        assert check_no_exposed_secrets(leaked) != []
+
+    def test_required_configuration_domain_check_only_blocks_for_a_non_mock_provider(self):
+        from app.modules.deployments.checks import check_required_configuration
+        from app.modules.design_briefs.models import DesignBrief
+        from app.modules.websites.models import Website
+
+        website = Website(config={"pages": [{"slug": "home"}]})
+        no_domain_brief = DesignBrief(domain=None)
+
+        assert check_required_configuration(website, no_domain_brief, "production", "mock") == []
+        assert check_required_configuration(website, no_domain_brief, "production", "real-host") != []
+        assert check_required_configuration(website, DesignBrief(domain="example.com"), "production", "real-host") == []
+
+    def test_critical_qa_resolved_requires_a_report_with_no_critical_fails(self):
+        from app.modules.deployments.checks import check_critical_qa_resolved
+        from app.modules.qa_reports.models import QaReport
+
+        assert check_critical_qa_resolved(None) != []
+
+        failing = QaReport(report={"checks": [{"status": "fail", "severity": "critical"}]})
+        assert check_critical_qa_resolved(failing) != []
+
+        passing = QaReport(report={"checks": [{"status": "fail", "severity": "low"}]})
+        assert check_critical_qa_resolved(passing) == []
+
+
+class TestMockDeploymentProvider:
+    def test_deploy_returns_a_clearly_fake_mock_url_and_never_hits_the_network(self):
+        from app.integrations.deployment import DeploymentBundle, MockDeploymentProvider
+
+        provider = MockDeploymentProvider()
+        outcome = provider.deploy(
+            DeploymentBundle(business_slug="Riverside Plumbing", environment="production", config={"pages": [{"slug": "home"}]})
+        )
+        assert outcome.ok is True
+        assert outcome.target == "mock"
+        assert outcome.url == "https://riverside-plumbing-production.mock-deploy.internal"
+        assert outcome.detail["pages_deployed"] == 1
+
+    def test_deploy_fails_cleanly_with_no_pages(self):
+        from app.integrations.deployment import DeploymentBundle, MockDeploymentProvider
+
+        outcome = MockDeploymentProvider().deploy(
+            DeploymentBundle(business_slug="Empty Co", environment="production", config={"pages": []})
+        )
+        assert outcome.ok is False
+        assert outcome.error is not None
+
+    def test_unconfigured_provider_name_raises_instead_of_silently_falling_back(self, monkeypatch):
+        from app.core.settings import settings
+        from app.integrations.deployment import get_deployment_provider
+
+        monkeypatch.setattr(settings, "deploy_provider", "vercel")
+        try:
+            get_deployment_provider()
+            assert False, "expected NotImplementedError"
+        except NotImplementedError:
+            pass

@@ -13,6 +13,7 @@ from app.core.settings import settings
 from app.integrations import search as search_integration
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
+from app.modules.leads import service as leads_service
 from app.modules.leads.models import Lead
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.sales_audits.schemas import SalesAuditRead
@@ -77,6 +78,7 @@ def generate_sales_audit(
 
     audit_result = website_audit_agent.run(WebsiteAuditInput(website_url=business.website_url))
     website_audit_row = website_audits_service.create_from_agent_output(db, lead.id, audit_result.output)
+    leads_service.mark_researched(db, workspace_id=workspace_id, actor_id=actor_id, lead=lead)
 
     score_result = lead_score_agent.run(LeadScoreInput(website_audit=audit_result.output))
     lead.score = score_result.output.score

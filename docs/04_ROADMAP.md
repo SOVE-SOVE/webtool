@@ -352,14 +352,23 @@ Goal: stages 15–18. First real reusable output.
 
 Goal: stages 19–20. Close the loop to revenue.
 
-- [ ] One-step deploy to hosting, tied to client approval — the
-      *approval* half of this now exists (`modules/deployments/`,
-      roadmap M5's approval-workflow entry): creating a `Deployment` row
-      is already gated on every prior checkpoint including client
-      review, and is itself checkpoint 7's approval record. What's
-      still missing is the actual hosting/publish action — `status`
-      stays `"pending"` forever right now, since "do not add automatic
-      deployment yet" held for this pass too.
+- [x] One-step deploy to hosting, tied to client approval. Deployment is
+      now a real prepare/execute lifecycle, not just the checkpoint-7
+      approval record: `POST .../deployments` still gates on every prior
+      checkpoint (unchanged) plus new pre-deploy checks
+      (`modules/deployments/checks.py` — required assets/config, no
+      secret-shaped content in the generated site, a domain on file
+      where a real target would need one, the specific QA report's own
+      critical-issue count) and creates a `pending` row; a separate
+      `POST .../deployments/{id}/execute` actually publishes it through
+      `integrations/deployment.py`'s provider abstraction, landing on
+      `success`/`failed` with a URL or error. Only `MockDeploymentProvider`
+      exists — no real hosting account is configured, so nothing here is
+      a live, publicly reachable site; a real provider is a new class
+      behind the same interface, not a flag that makes this one lie.
+      Rollback/version selection re-runs a prior *successful* deployment
+      of an older website version, re-verifying that version's own
+      approval/QA/client-review flags first. See [[05_DECISIONS]].
 - [ ] Payment/invoicing (Stripe) tied to the deploy step.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.

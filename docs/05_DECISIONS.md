@@ -21,6 +21,97 @@ why it lost.
 
 ---
 
+## 2026-08-20 — Real deployment system (roadmap M6); `Project.stage` and `Lead.status` now advance automatically through the pipeline; `pipeline_events` finally gets writers
+
+**Decision:** Three pieces of work, done together because the third
+depends on the first two actually existing:
+
+1. **Deployment system** (`modules/deployments/`). Previously a stub —
+   `POST .../deployments` created a `status="pending"` row and nothing
+   ever changed it. Now: `integrations/deployment.py` defines a
+   `DeploymentProvider` interface (`deploy(bundle) -> DeploymentOutcome`)
+   with one implementation, `MockDeploymentProvider` — no real hosting
+   account is configured, so this is the only provider that exists, and
+   it never makes a network call or claims a real publish (every result
+   carries `target="mock"` and an obviously-fake `.mock-deploy.internal`
+   URL). `settings.deploy_provider` is the real extension point for a
+   future host; pointing it at anything but `"mock"` raises rather than
+   silently no-opping. `Deployment` gained `target`, `result` (JSON),
+   `error_message`, `started_at`/`completed_at`, and
+   `rollback_of_deployment_id` (migration `0b9dfd5a2170`). The lifecycle
+   is now prepare (`POST .../deployments`, unchanged approval gate, plus
+   new `modules/deployments/checks.py` — required assets/config exist, no
+   secret-shaped content in the generated site's JSON, a domain on file
+   where a *real* target would need one, the specific QA report's own
+   critical-issue count) → execute (`POST .../deployments/{id}/execute`,
+   `pending`/`failed` only, lands on `success`/`failed`) → rollback
+   (`POST .../deployments/rollback`, re-runs a prior *successful*
+   deployment of an older website version after re-verifying that
+   version's own approval/QA/client-review flags, not the project's
+   current ones). The domain check only blocks for a non-mock provider —
+   existing tests deploy without a domain configured, and the mock
+   never publishes anywhere a real domain would matter; the check and
+   its own unit tests exist regardless, so flipping it on for a real
+   provider is a one-line change.
+2. **`Project.stage` and `Lead.status` now move forward automatically.**
+   Before this, only two transitions existed anywhere in the codebase:
+   client conversion set a new project to `INTAKE`, and brief approval
+   bumped `INTAKE -> BRIEF` — every later stage (`DESIGN` through
+   `COMPLETE`) was dead, and `LeadStatus.RESEARCHED` was never set by
+   anything despite existing. `modules/projects/service.py` gained
+   `advance_stage()` — forward-only (never regresses a stage that's
+   already further along), used by every downstream approval/generation
+   action: creative direction approval and sitemap approval -> `DESIGN`;
+   website generation -> `DEVELOPMENT`; website approval -> `QA`; QA
+   approval -> `CLIENT_REVIEW`; client review -> `READY_TO_DEPLOY`;
+   successful deployment execution -> `DEPLOYED`. `modules/leads/service.py`
+   gained the same "forward only" `mark_researched()`, called from
+   `sales_audits.generate_sales_audit` right after the website audit
+   runs, mirroring `meetings/service.py`'s existing `_PRE_MEETING_STATUSES`
+   pattern for the `MEETING` bump. `REVISIONS`/`MAINTENANCE`/`COMPLETE`
+   stay operator-only (`ProjectUpdate`'s existing manual PATCH) — nothing
+   automatically produces "client asked for changes" or "project is
+   done."
+3. **`pipeline_events` gets writers.** This table (`modules/pipeline/`)
+   existed since the multi-user migration with a docstring describing
+   exactly this purpose ("stage-transition history for a lead or
+   project," deliberately not the polymorphic `activity_log`) but
+   nothing ever inserted into it. `modules/pipeline/service.py` now has
+   `record_project_event`/`record_lead_event`, called everywhere
+   `Project.stage` or `Lead.status` actually changes — inside
+   `advance_stage`/`mark_researched` for the automatic paths, and
+   alongside the existing `activity_log` calls for the manual ones
+   (`ProjectUpdate`'s stage PATCH, `LeadUpdate`'s status PATCH, client
+   conversion's `-> WON`, meeting booking's `-> MEETING`). It still has
+   no routes — `activity_log` remains the user-facing history feed (it
+   already logs `stage_changed`/`status_changed`); this is the backend-
+   only stage-transition record the table was always meant to be.
+
+**Why:** requested directly — "the human approval workflow," "the
+website deployment system," and "connect the complete Web Design OS
+workflow end-to-end," in that order, auditing the existing
+implementation before changing it. The approval-workflow half of (1)
+was already essentially complete (all seven checkpoints, versioned
+re-approval, deployment gating, frontend `ApprovalPipelineView` — see
+roadmap M5's entry) and needed no changes; only the actual publish
+action was a stub. `Project.stage`'s dead middle was found by grepping
+every `ProjectStage.` reference in `app/modules` and seeing brief
+approval was the *only* write past the default — the pipeline view
+existed but nothing fed it past the second stage.
+
+**Alternatives considered:** Making the deployment `checks.py` domain
+check unconditionally blocking — rejected; it would 400 the existing
+happy-path deployment test (which never sets a domain) for a
+requirement that only has teeth once a real host exists to care where
+it's published. A generic "advance to any explicitly-requested stage"
+helper callable from routes — rejected in favor of hardcoding each
+call site's target stage next to the action that earns it (creative
+direction approval always means `DESIGN`, never a caller-supplied
+value), since the pipeline's stage meanings are fixed by the operator's
+12-stage spec, not something a caller should get to override per call.
+
+---
+
 ## 2026-08-19 — Client intake + Creative Director merged same day: Creative Director now defaults target audience/goals from the intake brief
 
 **Decision:** These two M4 features were built concurrently on separate

@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
-from app.modules.leads.models import Lead, LeadPriority
+from app.modules.leads.models import Lead, LeadPriority, LeadStatus
 from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate
+from app.modules.pipeline import service as pipeline_service
 from app.modules.users.service import require_user_in_workspace
 
 
@@ -118,6 +119,9 @@ def update_lead(
             action="status_changed",
             summary=f"{lead.status.value} -> {data.status.value}",
         )
+        pipeline_service.record_lead_event(
+            db, lead_id=lead.id, kind="status_changed", summary=f"{lead.status.value} -> {data.status.value}"
+        )
         lead.status = data.status
 
     if data.priority is not None:
@@ -169,6 +173,33 @@ def archive_lead(
         db.commit()
         db.refresh(lead)
     return _to_read(lead)
+
+
+def mark_researched(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
+    """
+    The first website audit / sales audit generated for a lead is the
+    "research done" event — bumps status forward only from NEW, same
+    "only forward, never regress a further-along lead" contract as
+    meetings/service.py's `_PRE_MEETING_STATUSES` bump to MEETING. A
+    lead already RESEARCHED or further along (qualified, contacted,
+    won, ...) isn't touched by re-running research.
+    """
+    if lead.status != LeadStatus.NEW:
+        return
+    previous = lead.status
+    lead.status = LeadStatus.RESEARCHED
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=lead.id,
+        action="status_changed",
+        summary=f"{previous.value} -> {lead.status.value} (research generated)",
+    )
+    pipeline_service.record_lead_event(
+        db, lead_id=lead.id, kind="status_changed", summary=f"{previous.value} -> {lead.status.value}"
+    )
 
 
 def unarchive_lead(

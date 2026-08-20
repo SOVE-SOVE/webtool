@@ -17,7 +17,8 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
-from app.modules.projects.models import Project
+from app.modules.projects import service as projects_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
 from app.modules.sitemaps.models import Sitemap, SitemapStatus
 from app.modules.websites.models import Website
@@ -280,6 +281,9 @@ def generate_website(
         action="website_generated",
         summary=f"Generated website for {project.name} ({len(config['pages'])} pages, quality score {anti_slop.score})",
     )
+    projects_service.advance_stage(
+        db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DEVELOPMENT
+    )
     db.commit()
     return get_website(db, workspace_id, website.id)
 
@@ -495,6 +499,11 @@ def approve_website(
         action="website_approved",
         summary="Approved generated website",
     )
+    project = db.get(Project, website.project_id)
+    if project is not None:
+        projects_service.advance_stage(
+            db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.QA
+        )
     db.commit()
     return get_website(db, workspace_id, website_id)
 
@@ -534,6 +543,11 @@ def client_approve_website(
         action="website_client_approved",
         summary="Recorded client approval",
     )
+    project = db.get(Project, website.project_id)
+    if project is not None:
+        projects_service.advance_stage(
+            db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.READY_TO_DEPLOY
+        )
     db.commit()
     return get_website(db, workspace_id, website_id)
 

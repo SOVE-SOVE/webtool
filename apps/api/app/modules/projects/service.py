@@ -7,10 +7,46 @@ from sqlalchemy.orm import Session, joinedload
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
-from app.modules.projects.models import Project
+from app.modules.pipeline import service as pipeline_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.projects.schemas import ProjectCreate, ProjectRead, ProjectUpdate
 from app.modules.tasks.models import Task
 from app.modules.users.service import require_user_in_workspace
+
+_STAGE_ORDER = list(ProjectStage)
+
+
+def advance_stage(
+    db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, project: Project, new_stage: ProjectStage
+) -> None:
+    """
+    Moves a project's stage forward only — never regresses a stage
+    that's already further along (or re-triggers the same one), same
+    "only forward" contract as meetings/service.py's lead-status bump.
+    This is the single place every generation/approval action in the
+    delivery pipeline (brief, creative direction, sitemap, website, QA,
+    client review, deployment) nudges the project's stage — connecting
+    those modules' own approval state to the pipeline view instead of
+    leaving `Project.stage` static past BRIEF. An operator's manual
+    stage change (ProjectUpdate, below) is unrestricted and separate —
+    only the automatic nudges use this guard.
+    """
+    if _STAGE_ORDER.index(new_stage) <= _STAGE_ORDER.index(project.stage):
+        return
+    previous = project.stage
+    project.stage = new_stage
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=project.id,
+        action="stage_changed",
+        summary=f"{previous.value} -> {new_stage.value}",
+    )
+    pipeline_service.record_project_event(
+        db, project_id=project.id, kind="stage_changed", summary=f"{previous.value} -> {new_stage.value}"
+    )
 
 # Seeded on every new project so INTAKE never starts as an empty to-do
 # list — the concrete first steps of docs/01_REQUIREMENTS.md stage 9
@@ -136,6 +172,12 @@ def update_project(
             entity_type="project",
             entity_id=project.id,
             action="stage_changed",
+            summary=f"{project.stage.value} -> {data.stage.value}",
+        )
+        pipeline_service.record_project_event(
+            db,
+            project_id=project.id,
+            kind="stage_changed",
             summary=f"{project.stage.value} -> {data.stage.value}",
         )
         project.stage = data.stage

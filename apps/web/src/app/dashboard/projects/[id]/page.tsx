@@ -9,6 +9,7 @@ import {
   type ActivityItem,
   type Brief,
   type CreativeDirectionBrief,
+  type Deployment,
   type Project,
   type ProjectApprovalStatus,
   type ProjectStage,
@@ -18,6 +19,7 @@ import {
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
 import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
+import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { SitemapView } from "@/components/SitemapView";
 
 export default function ProjectDetailPage() {
@@ -30,8 +32,7 @@ export default function ProjectDetailPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
-  const [deploying, setDeploying] = useState(false);
-  const [deployError, setDeployError] = useState<string | null>(null);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -80,23 +81,15 @@ export default function ProjectDetailPage() {
       .catch(() => {});
     loadCreativeDirections();
     loadSitemaps();
+    loadApprovalsAndDeployments();
+  }
+
+  function loadApprovalsAndDeployments() {
     api.getProjectApprovals(projectId).then(setApprovalStatus).catch(() => {});
+    api.listDeployments(projectId).then(setDeployments).catch(() => {});
   }
 
   useEffect(load, [projectId]);
-
-  async function handleDeploy() {
-    setDeploying(true);
-    setDeployError(null);
-    try {
-      await api.createDeployment(projectId);
-      api.getProjectApprovals(projectId).then(setApprovalStatus).catch(() => {});
-    } catch {
-      setDeployError("Couldn't deploy — a required approval is still missing.");
-    } finally {
-      setDeploying(false);
-    }
-  }
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
@@ -206,23 +199,12 @@ export default function ProjectDetailPage() {
       {approvalStatus && (
         <section className="mt-6 rounded-md border border-neutral-200 p-4">
           <ApprovalPipelineView status={approvalStatus} />
-          {(() => {
-            const deployment = approvalStatus.checkpoints.find((c) => c.stage === "deployment");
-            const alreadyDeployed = deployment?.approved ?? false;
-            return (
-              <div className="mt-3 flex items-center gap-3 border-t border-neutral-100 pt-3">
-                <button
-                  onClick={handleDeploy}
-                  disabled={!approvalStatus.can_deploy || deploying || alreadyDeployed}
-                  title={approvalStatus.can_deploy ? undefined : `Missing: ${approvalStatus.missing_for_deployment.join(", ")}`}
-                  className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-                >
-                  {deploying ? "Deploying…" : alreadyDeployed ? "Deployment recorded" : "Deploy"}
-                </button>
-                {deployError && <p className="text-sm text-red-600">{deployError}</p>}
-              </div>
-            );
-          })()}
+          <DeploymentPanel
+            projectId={projectId}
+            approvalStatus={approvalStatus}
+            deployments={deployments}
+            onChanged={loadApprovalsAndDeployments}
+          />
         </section>
       )}
 

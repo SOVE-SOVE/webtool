@@ -10,7 +10,8 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.design_briefs.models import DesignBrief
-from app.modules.projects.models import Project
+from app.modules.projects import service as projects_service
+from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
 from app.modules.qa_reports.schemas import (
     ApproveQaReportRequest,
@@ -129,6 +130,11 @@ def approve_qa_report(
         action="qa_report_approved",
         summary="Approved QA report",
     )
+    project = db.get(Project, website.project_id)
+    if project is not None:
+        projects_service.advance_stage(
+            db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.CLIENT_REVIEW
+        )
     db.commit()
     return get_qa_report(db, workspace_id, report_id)
 

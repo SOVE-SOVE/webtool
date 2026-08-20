@@ -862,13 +862,22 @@ export type ProjectApprovalStatus = {
   missing_for_deployment: string[];
 };
 
+export const DEPLOYMENT_STATUSES = ["pending", "running", "success", "failed"] as const;
+export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
+
 export type Deployment = {
   id: string;
   website_id: string;
   environment: string;
+  target: string;
   url: string | null;
-  status: string;
+  status: DeploymentStatus;
+  result: Record<string, unknown> | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
   deployed_at: string | null;
+  rollback_of_deployment_id: string | null;
   approved_by_user_name: string | null;
   notes: string | null;
   created_at: string;
@@ -876,6 +885,11 @@ export type Deployment = {
 
 export type CreateDeploymentRequest = {
   environment?: string;
+  notes?: string;
+};
+
+export type RollbackDeploymentRequest = {
+  target_deployment_id: string;
   notes?: string;
 };
 
@@ -1119,6 +1133,13 @@ export const api = {
       body: JSON.stringify(data ?? {}),
     }),
   listDeployments: (projectId: string) => request<Deployment[]>(`/api/v1/projects/${projectId}/deployments`),
+  getDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}`),
+  executeDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/execute`, { method: "POST" }),
+  rollbackDeployment: (projectId: string, data: RollbackDeploymentRequest) =>
+    request<Deployment>(`/api/v1/projects/${projectId}/deployments/rollback`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

@@ -94,6 +94,26 @@ def test_generate_sales_audit_happy_path(authed_client, monkeypatch):
     assert any(a["action"] == "lead_score_computed" and "55/100" in a["summary"] for a in activity)
 
 
+def test_generate_sales_audit_bumps_a_new_lead_to_researched(authed_client, monkeypatch):
+    _patch_happy_path(monkeypatch)
+    lead = _create_lead(authed_client)
+    assert lead["status"] == "new"
+
+    authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits")
+    lead_after = authed_client.get(f"/api/v1/leads/{lead['id']}").json()
+    assert lead_after["status"] == "researched"
+
+
+def test_generate_sales_audit_never_regresses_a_further_along_lead(authed_client, monkeypatch):
+    _patch_happy_path(monkeypatch)
+    lead = _create_lead(authed_client)
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"status": "qualified"})
+
+    authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits")
+    lead_after = authed_client.get(f"/api/v1/leads/{lead['id']}").json()
+    assert lead_after["status"] == "qualified"
+
+
 def test_generate_sales_audit_no_website_skips_audit(authed_client, monkeypatch):
     monkeypatch.setattr("app.agents.sales_audit.generate_structured", lambda **kwargs: dict(FAKE_LLM_OUTPUT))
     monkeypatch.setattr("app.integrations.search.search_business", lambda query: None)

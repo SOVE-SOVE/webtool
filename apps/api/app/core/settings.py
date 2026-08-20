@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # docs/06_SECURITY.md: never store an OAuth token in plaintext.
     calendar_token_encryption_key: str = ""
 
+    # deployment — which provider modules/deployments/service.py
+    # publishes through (see app/integrations/deployment.py). Only
+    # "mock" is implemented today; no real hosting account exists yet.
+    deploy_provider: str = "mock"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
