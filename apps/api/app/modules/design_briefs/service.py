@@ -85,14 +85,20 @@ def _active_project_for_client(db: Session, client_id: uuid.UUID) -> Project | N
     )
 
 
-def _apply_fields_where_empty(brief: DesignBrief, data: BriefIntakeStart) -> None:
+def _apply_fields_where_empty(brief: DesignBrief, data: BriefIntakeStart) -> bool:
     """Pre-fill that never clobbers: writes a supplied value only where
-    the brief's own field is still empty."""
+    the brief's own field is still empty. Returns whether anything was
+    actually written, so the caller can log it — a silent content change
+    with no history entry is exactly what the activity log exists to
+    prevent."""
+    changed = False
     for field, value in data.model_dump(exclude_unset=True).items():
         if field not in _BRIEF_FIELDS or value in (None, ""):
             continue
         if getattr(brief, field) in (None, ""):
             setattr(brief, field, value)
+            changed = True
+    return changed
 
 
 def start_intake(
@@ -121,8 +127,24 @@ def start_intake(
         if existing is not None:
             brief = _get_or_create_draft(db, existing)
             # Only fills gaps — an operator's own answers are never
-            # overwritten by re-running the pre-fill.
-            _apply_fields_where_empty(brief, data)
+            # overwritten by re-running the pre-fill. An *approved* brief
+            # is skipped entirely: it's the signed-off source of truth the
+            # creative direction, sitemap, and website generator all read
+            # from, so quietly writing new fields into it would let content
+            # drift out from under the approval (the same stale-approval
+            # bypass `update_brief` guards against by reverting to draft).
+            # Changing an approved brief is the explicit PATCH, not a side
+            # effect of re-opening intake.
+            if brief.status != BriefStatus.APPROVED and _apply_fields_where_empty(brief, data):
+                activity_service.record(
+                    db,
+                    workspace_id=workspace_id,
+                    user_id=actor_id,
+                    entity_type="project",
+                    entity_id=existing.id,
+                    action="brief_updated",
+                    summary="Brief pre-filled from the client record on re-opening intake",
+                )
             db.commit()
             return BriefRead.from_model(_load_brief(db, brief.id))
 

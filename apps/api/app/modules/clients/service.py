@@ -79,6 +79,21 @@ def create_client(
         business = lead.business
         previous_lead_status = lead.status
         lead.status = LeadStatus.WON
+        # Both histories, same as every other status transition (see
+        # leads/service.py's `_advance_status` and meetings/service.py):
+        # activity_log is the lead's user-facing feed, pipeline_events the
+        # backend stage record. Without the activity row, the single most
+        # important event in a lead's life — winning it — was invisible on
+        # the lead's own history, showing only on the new client/project.
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="lead",
+            entity_id=lead.id,
+            action="status_changed",
+            summary=f"{previous_lead_status.value} -> {lead.status.value} (converted to client)",
+        )
         pipeline_service.record_lead_event(
             db,
             lead_id=lead.id,

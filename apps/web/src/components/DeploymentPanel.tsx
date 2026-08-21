@@ -93,11 +93,17 @@ export function DeploymentPanel({
                     {d.environment} · via {d.target}
                     {d.rollback_of_deployment_id && " · rollback"}
                   </span>
-                  {d.url && (
-                    <a href={d.url} target="_blank" rel="noreferrer" className="underline">
-                      {d.url}
-                    </a>
-                  )}
+                  {/* A mock deployment's URL is not a reachable site (see
+                      integrations/deployment.py) — rendering it as a normal
+                      link would read as "your site is live, click here". */}
+                  {d.url &&
+                    (d.target === "mock" ? (
+                      <span className="font-mono">{d.url}</span>
+                    ) : (
+                      <a href={d.url} target="_blank" rel="noreferrer" className="underline">
+                        {d.url}
+                      </a>
+                    ))}
                 </div>
                 <div className="flex items-center gap-2">
                   {(d.status === "pending" || d.status === "failed") && (
@@ -120,6 +126,10 @@ export function DeploymentPanel({
                   )}
                 </div>
               </div>
+              {/* The provider's own account of what it did. The mock one
+                  says outright that nothing was published; showing a green
+                  "SUCCESS" without it reads as a real launch. */}
+              {typeof d.result?.note === "string" && <p className="mt-1 font-medium">{d.result.note}</p>}
               {d.error_message && <p className="mt-1 text-red-700">{d.error_message}</p>}
               {d.notes && <p className="mt-1 text-neutral-500">{d.notes}</p>}
             </li>

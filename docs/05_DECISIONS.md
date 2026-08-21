@@ -21,6 +21,120 @@ why it lost.
 
 ---
 
+## 2026-08-21 — Capstone pass: the 22-stage pipeline traced end to end, four broken handoffs fixed, one permanent test that walks the whole chain
+
+**Decision:** A final correctness pass over the complete pipeline —
+every stage from "lead entered by hand" to "project marked maintained"
+— walked continuously rather than module by module, judging each
+handoff against one rule: *automate the repetitive work, keep human
+control over important decisions.* No new capability was added. Four
+genuine defects were found and fixed, all of the same family: something
+that should have carried forward, or been surfaced, silently didn't.
+
+1. **Winning a lead left no trace on the lead's own history**
+   (`modules/clients/service.py`). Converting a lead to a client set
+   `Lead.status = WON` and recorded a `pipeline_event`, but no
+   `activity_log` row — every other status transition in the system
+   (`mark_researched`, `mark_contacted`, `mark_replied`, the meeting
+   bump, the manual PATCH) records both. So the single most important
+   event in a lead's life was invisible on the lead's history feed,
+   showing only as "client created" and "project created" on two other
+   entities. The 2026-08-20 entry below already described this call site
+   as recording an activity row alongside the pipeline event; it didn't.
+   Now it does.
+
+2. **Re-opening intake wrote into an already-approved brief**
+   (`modules/design_briefs/service.py`). Pass 4's idempotent
+   `start_intake` gap-fills the brief from the client record on every
+   re-run, and the Clients page's "Open intake" button sends real fields
+   (business name, location, contact email/phone). On an *approved*
+   brief that quietly changed the signed-off content — with no history
+   entry and no revert — while `update_brief` right below it reverts an
+   approved brief to draft for exactly this reason. The approved brief
+   is what the creative direction, sitemap, and website generator all
+   read from, so this was the same stale-approval bypass the 2026-08-21
+   QA review fixed for website sections. The gap-fill now skips an
+   approved brief entirely (changing one is the explicit PATCH, not a
+   side effect of navigation), and a gap-fill that *does* change a draft
+   now records `brief_updated`.
+
+3. **A call-to-action button that goes nowhere**
+   (`agents/website_generator.py`). Every CTA the generator builds
+   points at the contact page; with no contact page in the sitemap it
+   fell back to a hardcoded `"#contact"` anchor that no generated page
+   defines. `agents/technical_qa.py` can't catch it — its internal-link
+   check skips `#` fragments by design — and nothing appeared in
+   `missing_information`, so a dead button could ship through every
+   approval gate unremarked. Same class as the nav-logo `"/"` bug fixed
+   on 2026-08-21, and found by auditing the rest of the generator for
+   it. With nowhere honest to point, the CTA is now simply not built and
+   the gap is reported once in `missing_information` — the module's own
+   stated rule for content it has no source for.
+
+4. **Regenerating one section cleared the "needs review" flag**
+   (`modules/websites/service.py`). The new version carries the previous
+   one's `missing_information` forward and `get_website` goes on
+   displaying it, but `flagged_for_review` was recomputed from the
+   Anti-Slop verdict alone — so regenerating any section dropped the
+   badge on a site that still had unfilled gaps.
+
+**Also verified, unchanged:** the meeting brief still degrades correctly
+now that every generator raises `LlmUnavailableError` — `_generate_brief`
+catches broad `Exception`, and `LlmUnavailableError` is a `RuntimeError`,
+so a missing key, a configured-but-failing key, and a working key were
+each exercised and each behave as designed (facts always assembled, only
+the discovery half degrades). A sales-audit LLM failure leaves zero
+partial rows despite stages 2-5 sharing one transaction. Each of the six
+prerequisite checkpoints refuses deployment by name. Anti-Slop catches a
+hand-edited fabricated testimonial and an unverifiable superlative, and
+its score is on the same payload the operator approves from. The SSRF
+guard covers both browser entry points, which are the only two.
+
+**A new permanent test, `tests/test_end_to_end_workflow.py::
+test_all_22_stages_with_invariants`,** replaces the previous partial
+walk. It is deliberately one long test rather than several: a handoff
+that breaks in the middle only shows up when the chain is walked
+continuously, with each stage's real output as the next stage's input.
+Alongside the stage walk it asserts the four standing invariants (no
+false success, no fabricated content, no unapproved deployment, an
+auditable history) — including a named-transition check on the activity
+log, which is what makes defect 1 above fail loudly if it returns.
+
+**Why:** this is the last pass before the tool is trusted with real
+client work. Every finding here is a case where a human was nominally in
+control but not actually informed — an approval covering content that
+had since changed, a dead button nobody was told about, a "reviewed"
+badge that cleared itself, a won deal with no record on the lead. None
+of them break a test or throw an error; they just quietly degrade the
+operator's picture of what's true, which is the failure mode this system
+can least afford.
+
+**Alternatives considered:**
+
+- *Applying the intake gap-fill and reverting the approval to draft*,
+  mirroring `update_brief`. Rejected: clicking a navigation button
+  ("Open intake") would silently un-approve a signed-off brief, which is
+  a worse surprise than not pre-filling. Not writing at all keeps
+  content and sign-off in sync with no side effect either way.
+- *Keeping the `"#contact"` CTA and only reporting it.* Rejected — the
+  gap report is the point, but shipping a button that does nothing when
+  clicked isn't made acceptable by mentioning it in a list elsewhere.
+- *Building maintenance monitoring* (uptime, broken links) to fill
+  stage 22. Explicitly out of scope: [[04_ROADMAP]] M6 already lists it
+  as not built, and the brief for this pass was correctness, not new
+  capability.
+
+**Known limitations confirmed, not fixed:** Anti-Slop is a
+deterministic pattern matcher, so a plausible-sounding invented claim
+with no trigger word or number ("family owned since 1952") passes — the
+real guarantee against fabrication is structural (the generator only
+copies brief fields; it never drafts prose), and Anti-Slop is the second
+net over hand edits, not the first. `agents/anti_slop.py` also only
+inspects page sections, not the navigation/footer configs. Neither is a
+regression; both are the documented shape of the design.
+
+---
+
 ## 2026-08-21 — Daily-use pass: the Overview answers "what do I do next", outreach keeps its own lead status, "Start intake" stops duplicating projects, launch gets a checklist, Projects/Clients get search
 
 **Decision:** Five changes aimed squarely at operator time-per-day, not

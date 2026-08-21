@@ -312,3 +312,47 @@ class TestNavigationLinksResolve:
                 if href.startswith(("http://", "https://", "mailto:", "tel:", "#")):
                     continue
                 assert href.lstrip("/") in known, f"{section.type} links to missing page {href!r}"
+
+    def _cta_pages(self):
+        """A sitemap the operator can plausibly build that has no contact
+        page — every CTA this generator makes points at one."""
+        return [
+            _page(slug="home", primary_cta="Get a quote", secondary_cta="See our work"),
+            _page(id="p2", title="About", slug="about", page_type="about"),
+        ]
+
+    def test_no_dead_cta_when_the_sitemap_has_no_contact_page(self):
+        """The CTA href used to fall back to a hardcoded "#contact"
+        anchor that no generated page defines — a button that silently
+        goes nowhere, and one technical QA can't catch because its link
+        check skips "#" fragments. With nowhere honest to point, the CTA
+        is simply not built."""
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(calls_to_action=["Call us today"]),
+                pages=self._cta_pages(),
+            )
+        )
+        home = result.output.pages[0]
+        hero = next(s for s in home.sections if s.type == "hero")
+        assert "primaryCta" not in hero.config
+        assert "secondaryCta" not in hero.config
+        assert not any(s.type == "cta" for s in home.sections)
+        assert "cta" not in result.output.navigation.config
+
+    def test_the_missing_contact_page_is_reported_not_silently_dropped(self):
+        result = run(
+            WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=self._cta_pages())
+        )
+        assert any("no contact page" in m for m in result.output.missing_information)
+
+    def test_ctas_are_built_normally_once_a_contact_page_exists(self):
+        pages = [
+            _page(slug="home", primary_cta="Get a quote"),
+            _page(id="p2", title="Contact", slug="get-in-touch", page_type="contact"),
+        ]
+        result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=pages))
+        hero = next(s for s in result.output.pages[0].sections if s.type == "hero")
+        assert hero.config["primaryCta"] == {"label": "Get a quote", "href": "/get-in-touch"}
+        assert not any("no contact page" in m for m in result.output.missing_information)

@@ -229,6 +229,24 @@ class TestRegenerateSection:
         res = authed_client.post(f"/api/v1/websites/{website['id']}/sections/does-not-exist/regenerate")
         assert res.status_code == 404
 
+    def test_regenerating_a_section_keeps_the_needs_review_flag_on_a_version_with_gaps(
+        self, authed_client, monkeypatch
+    ):
+        """The new version carries the old one's `missing_information`
+        forward and get_website goes on displaying it, so the summary
+        flag has to agree — otherwise regenerating any section quietly
+        clears the "needs review" badge on a site that still has gaps."""
+        project, _ = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+        v1 = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+        assert v1["missing_information"], "fixture should have unfilled content gaps"
+        assert v1["flagged_for_review"] is True
+
+        hero = v1["pages"][0]["sections"][0]
+        v2 = authed_client.post(f"/api/v1/websites/{v1['id']}/sections/{hero['id']}/regenerate").json()
+        assert v2["missing_information"]
+        summaries = authed_client.get(f"/api/v1/projects/{project['id']}/websites").json()
+        assert next(v for v in summaries if v["id"] == v2["id"])["flagged_for_review"] is True
+
 
 class TestRegenerateWholeWebsitePreservesApprovals:
     def test_approved_sections_survive_a_full_regenerate_by_default(self, authed_client, monkeypatch):

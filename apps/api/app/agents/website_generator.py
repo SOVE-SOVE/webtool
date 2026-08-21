@@ -156,9 +156,19 @@ def _find_page_by_type(pages: list[SitemapPageContent], page_type: str) -> Sitem
     return next((p for p in pages if p.page_type == page_type), None)
 
 
-def _contact_href(pages: list[SitemapPageContent]) -> str:
+def _contact_href(pages: list[SitemapPageContent]) -> str | None:
+    """
+    Every CTA this generator builds points at the contact page. When the
+    sitemap has no contact page there is nowhere honest to send a
+    visitor, so this returns None and the CTA is *not built* — the same
+    "no real source, so don't build it, report the gap instead" rule the
+    module docstring states for content. It previously fell back to a
+    hardcoded "#contact" anchor, which no generated page ever defines:
+    a button that silently goes nowhere, and one agents/technical_qa.py
+    can't catch because its link check skips "#" fragments by design.
+    """
     contact = _find_page_by_type(pages, "contact")
-    return f"/{contact.slug}" if contact else "#contact"
+    return f"/{contact.slug}" if contact else None
 
 
 def _home_href(pages: list[SitemapPageContent]) -> str:
@@ -228,7 +238,9 @@ _NO_SOURCE_SECTION_HINTS = {
 # ---------------------------------------------------------------------
 
 
-def _build_hero(page: SitemapPageContent, brief: BriefContent, business_name: str, contact_href: str) -> GeneratedSection:
+def _build_hero(
+    page: SitemapPageContent, brief: BriefContent, business_name: str, contact_href: str | None
+) -> GeneratedSection:
     subheading: str | None = None
     if page.page_type == "home":
         heading = business_name
@@ -245,10 +257,11 @@ def _build_hero(page: SitemapPageContent, brief: BriefContent, business_name: st
     config: dict = {"heading": heading}
     if subheading:
         config["subheading"] = subheading
-    if page.primary_cta:
-        config["primaryCta"] = {"label": page.primary_cta, "href": contact_href}
-    if page.secondary_cta:
-        config["secondaryCta"] = {"label": page.secondary_cta, "href": contact_href}
+    if contact_href:
+        if page.primary_cta:
+            config["primaryCta"] = {"label": page.primary_cta, "href": contact_href}
+        if page.secondary_cta:
+            config["secondaryCta"] = {"label": page.secondary_cta, "href": contact_href}
     return _section("hero", config)
 
 
@@ -256,7 +269,7 @@ def _build_page_sections(
     page: SitemapPageContent,
     brief: BriefContent,
     business_name: str,
-    contact_href: str,
+    contact_href: str | None,
 ) -> tuple[list[GeneratedSection], list[str]]:
     sections: list[GeneratedSection] = [_build_hero(page, brief, business_name, contact_href)]
     missing: list[str] = []
@@ -320,7 +333,7 @@ def _build_page_sections(
         }
         sections.append(_section("contact", {"details": details, "form": form}))
 
-    if page.page_type == "home" and brief.calls_to_action:
+    if page.page_type == "home" and brief.calls_to_action and contact_href:
         cta_text = brief.calls_to_action[0]
         sections.append(_section("cta", {"heading": cta_text, "primaryCta": {"label": cta_text, "href": contact_href}}))
 
@@ -375,6 +388,16 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
     pages: list[GeneratedPage] = []
     missing_information: list[str] = []
     anti_slop_pages: list[AntiSlopPageInput] = []
+
+    # Reported once for the whole site rather than per-CTA: the fix is a
+    # single sitemap change, not one edit per button.
+    if contact_href is None and (
+        input.brief.calls_to_action or any(p.primary_cta or p.secondary_cta for p in input.pages)
+    ):
+        missing_information.append(
+            "The sitemap has no contact page, so no call-to-action button was built — every CTA this system "
+            "generates points at the contact page. Add a contact page to the sitemap and regenerate."
+        )
 
     for sitemap_page in input.pages:
         sections, missing = _build_page_sections(sitemap_page, input.brief, input.business_name, contact_href)

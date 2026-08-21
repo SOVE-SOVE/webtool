@@ -342,7 +342,13 @@ def regenerate_section(
         project_id=current.project_id,
         config=new_config,
         anti_slop_score=anti_slop.score,
-        flagged_for_review=not anti_slop.passed,
+        # Carried forward from the config, not taken from `result` — the
+        # fresh generation's flag describes a whole regenerated site, not
+        # this one swapped section merged into the existing version.
+        # Without the missing_information term, regenerating any section
+        # silently cleared the "needs review" flag on a version that still
+        # has unfilled gaps (which get_website goes on displaying).
+        flagged_for_review=bool(new_config.get("missing_information")) or not anti_slop.passed,
         sources_note=current.sources_note,
         generated_by_user_id=actor_id,
     )
