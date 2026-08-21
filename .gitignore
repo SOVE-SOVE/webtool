@@ -27,5 +27,9 @@ venv/
 # tooling artifacts
 .playwright-mcp/
 
+# launcher runtime state (pid files, logs) — see scripts/README.md
+scripts/.run/
+scripts/.logs/
+
 # claude worktrees
 .claude/worktrees/

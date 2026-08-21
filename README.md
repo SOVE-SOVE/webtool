@@ -49,6 +49,13 @@ email/password from the seed step above. That admin can create
 teammate accounts from Settings once signed in — see
 `docs/01_REQUIREMENTS.md` "Multi-user & workspace".
 
+### After the one-time setup: a one-click launcher
+
+Once the steps above have been done once, `scripts/` has a
+start/stop launcher (macOS and Windows) that starts Postgres, the API,
+and the web app together, waits until they're actually ready, and
+opens the app in your browser — see [`scripts/README.md`](scripts/README.md).
+
 ## Checks
 
 ```
