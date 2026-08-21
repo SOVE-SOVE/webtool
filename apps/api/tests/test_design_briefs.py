@@ -141,3 +141,72 @@ def test_approve_unknown_project_404s(authed_client):
         "/api/v1/projects/00000000-0000-0000-0000-000000000000/brief/approve"
     )
     assert res.status_code == 404
+
+
+# --- duplicate-project guard ------------------------------------------
+#
+# "Start intake" used to create a brand new Project on every click, with
+# no guard and no way to delete the duplicates. See
+# docs/05_DECISIONS.md (2026-08-21).
+
+
+def _project_ids(authed_client, client_id):
+    return [p["id"] for p in authed_client.get("/api/v1/projects").json() if p["client_id"] == client_id]
+
+
+def test_start_intake_twice_reuses_the_existing_project(authed_client):
+    client_id = _create_client(authed_client)
+
+    first = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={"business_name": "Coastal Cafe"}).json()
+    second = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={"business_name": "Coastal Cafe"}).json()
+
+    assert second["project_id"] == first["project_id"]
+    assert len(_project_ids(authed_client, client_id)) == 1
+
+
+def test_repeat_intake_fills_gaps_without_overwriting_operator_answers(authed_client):
+    client_id = _create_client(authed_client)
+    brief = authed_client.post(
+        f"/api/v1/clients/{client_id}/intake", json={"business_name": "Coastal Cafe"}
+    ).json()
+    project_id = brief["project_id"]
+    authed_client.patch(f"/api/v1/projects/{project_id}/brief", json={"business_name": "Coastal Cafe Pty Ltd"})
+
+    again = authed_client.post(
+        f"/api/v1/clients/{client_id}/intake",
+        json={"business_name": "Coastal Cafe", "industry": "Hospitality"},
+    ).json()
+
+    assert again["business"]["fields"]["business_name"] == "Coastal Cafe Pty Ltd"  # kept
+    assert again["business"]["fields"]["industry"] == "Hospitality"  # gap filled
+
+
+def test_force_new_starts_a_genuinely_additional_project(authed_client):
+    client_id = _create_client(authed_client)
+    first = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={}).json()
+
+    second = authed_client.post(
+        f"/api/v1/clients/{client_id}/intake", json={"force_new": True, "project_name": "Coastal Cafe Rebrand"}
+    ).json()
+
+    assert second["project_id"] != first["project_id"]
+    assert len(_project_ids(authed_client, client_id)) == 2
+
+
+def test_a_finished_project_does_not_block_a_new_one(authed_client):
+    client_id = _create_client(authed_client)
+    first = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={}).json()
+    authed_client.patch(f"/api/v1/projects/{first['project_id']}", json={"stage": "complete"})
+
+    second = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={}).json()
+    assert second["project_id"] != first["project_id"]
+
+
+def test_start_intake_seeds_the_same_starter_checklist_as_a_lead_conversion(authed_client):
+    from app.modules.projects.service import DEFAULT_INTAKE_TASK_TITLES
+
+    client_id = _create_client(authed_client)
+    brief = authed_client.post(f"/api/v1/clients/{client_id}/intake", json={}).json()
+
+    tasks = [t for t in authed_client.get("/api/v1/tasks").json() if t["project_id"] == brief["project_id"]]
+    assert sorted(t["title"] for t in tasks) == sorted(DEFAULT_INTAKE_TASK_TITLES)

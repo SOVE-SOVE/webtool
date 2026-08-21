@@ -75,8 +75,10 @@ export default function ClientDetailPage() {
 
   // Pre-fills the intake with whatever the CRM already knows about this
   // business — never fabricated, just copied from the existing record —
-  // so the operator isn't re-typing what's already on file.
-  async function handleStartIntake() {
+  // so the operator isn't re-typing what's already on file. Without
+  // forceNew the API reuses this client's unfinished project rather than
+  // creating a duplicate, so a double-click is harmless.
+  async function handleStartIntake(forceNew = false) {
     if (!business) return;
     setStartingIntake(true);
     setError(null);
@@ -90,6 +92,7 @@ export default function ClientDetailPage() {
         contact_phone: business.phone || undefined,
         existing_website_url: business.website_url || undefined,
         existing_social_profiles: business.social_links || undefined,
+        force_new: forceNew || undefined,
       });
       router.push(`/dashboard/projects/${brief.project_id}`);
     } catch {
@@ -102,6 +105,9 @@ export default function ClientDetailPage() {
   if (!clientRecord || !business) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
 
   const clientProjects = projects.filter((p) => p.client_id === clientId);
+  const activeProject = clientProjects.find(
+    (p) => p.stage !== "maintenance" && p.stage !== "complete",
+  );
 
   return (
     <div className="p-6">
@@ -240,13 +246,32 @@ export default function ClientDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-neutral-900">Projects</h2>
-          <button
-            onClick={handleStartIntake}
-            disabled={startingIntake}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-          >
-            {startingIntake ? "Starting…" : "Start intake"}
-          </button>
+          <div className="flex items-center gap-3">
+            {activeProject && (
+              <button
+                onClick={() => {
+                  if (
+                    confirm(
+                      `${activeProject.name} is still in progress. Start a separate, additional project for this client?`,
+                    )
+                  ) {
+                    handleStartIntake(true);
+                  }
+                }}
+                disabled={startingIntake}
+                className="text-xs text-neutral-500 hover:text-neutral-900 hover:underline disabled:opacity-50"
+              >
+                Start another project
+              </button>
+            )}
+            <button
+              onClick={() => handleStartIntake()}
+              disabled={startingIntake}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {startingIntake ? "Starting…" : activeProject ? "Open intake" : "Start intake"}
+            </button>
+          </div>
         </div>
         <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
           {clientProjects.length === 0 && (

@@ -202,6 +202,72 @@ def mark_researched(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID
     )
 
 
+# Sending outreach / receiving a reply only bumps a lead forward from a
+# status genuinely *behind* the new one — never regresses a lead that's
+# already at meeting/proposal/won/lost, and never drags a NURTURE lead
+# (a deliberate parking state, not a pipeline position) back into the
+# active funnel. Same contract as `mark_researched` above and
+# meetings/service.py's `_PRE_MEETING_STATUSES`.
+_PRE_CONTACTED_STATUSES = (LeadStatus.NEW, LeadStatus.RESEARCHED, LeadStatus.QUALIFIED)
+_PRE_REPLIED_STATUSES = (*_PRE_CONTACTED_STATUSES, LeadStatus.CONTACTED)
+
+
+def _advance_status(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    lead: Lead,
+    new_status: LeadStatus,
+    allowed_from: tuple[LeadStatus, ...],
+    reason: str,
+) -> None:
+    if lead.status not in allowed_from:
+        return
+    previous = lead.status
+    lead.status = new_status
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=lead.id,
+        action="status_changed",
+        summary=f"{previous.value} -> {new_status.value} ({reason})",
+    )
+    pipeline_service.record_lead_event(
+        db, lead_id=lead.id, kind="status_changed", summary=f"{previous.value} -> {new_status.value}"
+    )
+
+
+def mark_contacted(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
+    """Marking outreach as sent is the "we've made contact" event — the
+    operator already did the sending, so the status shouldn't also have
+    to be flipped by hand afterwards."""
+    _advance_status(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        lead=lead,
+        new_status=LeadStatus.CONTACTED,
+        allowed_from=_PRE_CONTACTED_STATUSES,
+        reason="outreach sent",
+    )
+
+
+def mark_replied(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
+    """Recording a reply to outreach is the "they responded" event."""
+    _advance_status(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        lead=lead,
+        new_status=LeadStatus.REPLIED,
+        allowed_from=_PRE_REPLIED_STATUSES,
+        reason="reply received",
+    )
+
+
 def unarchive_lead(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, lead_id: uuid.UUID
 ) -> LeadRead | None:

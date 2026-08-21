@@ -190,9 +190,10 @@ def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID
             action="deployment_succeeded",
             summary=f"Deployed to {deployment.environment} via {deployment.target}: {deployment.url}",
         )
-        projects_service.advance_stage(
+        if projects_service.advance_stage(
             db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DEPLOYED
-        )
+        ):
+            projects_service.create_launch_tasks(db, project.id)
     else:
         activity_service.record(
             db,
@@ -280,9 +281,10 @@ def rollback_deployment(
             action="deployment_succeeded",
             summary=f"Rolled back and redeployed to {deployment.environment}: {deployment.url}",
         )
-        projects_service.advance_stage(
+        if projects_service.advance_stage(
             db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DEPLOYED
-        )
+        ):
+            projects_service.create_launch_tasks(db, project.id)
     else:
         activity_service.record(
             db,

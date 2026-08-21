@@ -132,10 +132,12 @@ def test_full_pipeline_lead_to_deployment(authed_client, db_session, monkeypatch
     assert outreach["subject"] == FAKE_EMAIL_OUTPUT["subject"]
     authed_client.post(f"/api/v1/outreach/{outreach['id']}/approve")
     authed_client.post(f"/api/v1/outreach/{outreach['id']}/mark-sent")
-    # Sending outreach doesn't itself advance lead status (only booking a
-    # meeting or converting to a client does) — still RESEARCHED.
+    # Marking outreach sent is the "we've made contact" event — the
+    # operator already did the sending, so the status follows on its own
+    # rather than needing a second manual edit (docs/05_DECISIONS.md,
+    # 2026-08-21).
     lead = authed_client.get(f"/api/v1/leads/{lead_id}").json()
-    assert lead["status"] == "researched"
+    assert lead["status"] == "contacted"
 
     # MEETING — booking one bumps the lead to MEETING and generates a brief.
     meeting = authed_client.post(
@@ -251,5 +253,6 @@ def test_full_pipeline_lead_to_deployment(authed_client, db_session, monkeypatch
     lead_events = db_session.query(PipelineEvent).filter(PipelineEvent.lead_id == lead_id).order_by(PipelineEvent.created_at).all()
     lead_event_summaries = [e.summary for e in lead_events]
     assert "new -> researched" in lead_event_summaries
-    assert "researched -> meeting" in lead_event_summaries
+    assert "researched -> contacted" in lead_event_summaries
+    assert "contacted -> meeting" in lead_event_summaries
     assert "meeting -> won (converted to client)" in lead_event_summaries

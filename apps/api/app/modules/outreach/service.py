@@ -18,6 +18,7 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.contacts.models import Contact
 from app.modules.interactions.models import Interaction, InteractionKind
+from app.modules.leads import service as leads_service
 from app.modules.leads.models import Lead
 from app.modules.outreach.models import FollowUp, FollowUpStatus, OutreachChannel, OutreachMessage, OutreachStatus
 from app.modules.outreach.schemas import FollowUpBuckets, FollowUpRead, OutreachMessageRead
@@ -260,6 +261,7 @@ def mark_outreach_sent(
             summary=f"{message.channel.value} outreach sent",
         )
     )
+    leads_service.mark_contacted(db, workspace_id=workspace_id, actor_id=actor_id, lead=message.lead)
     activity_service.record(
         db,
         workspace_id=workspace_id,
@@ -293,6 +295,7 @@ def mark_outreach_replied(
             summary=f"Reply received to {message.channel.value} outreach",
         )
     )
+    leads_service.mark_replied(db, workspace_id=workspace_id, actor_id=actor_id, lead=message.lead)
     activity_service.record(
         db,
         workspace_id=workspace_id,

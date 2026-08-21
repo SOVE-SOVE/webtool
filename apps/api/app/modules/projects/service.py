@@ -18,7 +18,7 @@ _STAGE_ORDER = list(ProjectStage)
 
 def advance_stage(
     db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, project: Project, new_stage: ProjectStage
-) -> None:
+) -> bool:
     """
     Moves a project's stage forward only — never regresses a stage
     that's already further along (or re-triggers the same one), same
@@ -30,9 +30,14 @@ def advance_stage(
     leaving `Project.stage` static past BRIEF. An operator's manual
     stage change (ProjectUpdate, below) is unrestricted and separate —
     only the automatic nudges use this guard.
+
+    Returns whether the stage actually moved, so a caller can hang
+    once-per-project side effects (e.g. seeding the launch checklist on
+    the first successful deploy) off the real transition rather than
+    re-running them on every repeat call.
     """
     if _STAGE_ORDER.index(new_stage) <= _STAGE_ORDER.index(project.stage):
-        return
+        return False
     previous = project.stage
     project.stage = new_stage
     activity_service.record(
@@ -47,6 +52,7 @@ def advance_stage(
     pipeline_service.record_project_event(
         db, project_id=project.id, kind="stage_changed", summary=f"{previous.value} -> {new_stage.value}"
     )
+    return True
 
 # Seeded on every new project so INTAKE never starts as an empty to-do
 # list — the concrete first steps of docs/01_REQUIREMENTS.md stage 9
@@ -56,6 +62,18 @@ DEFAULT_INTAKE_TASK_TITLES = [
     "Confirm project scope and deliverables with client",
     "Collect brand assets and content from client",
     "Schedule kickoff/intake call",
+]
+
+# Seeded the first time a project actually reaches DEPLOYED — the
+# handover/admin steps that happen after the site is live and are the
+# easiest to forget once the build itself is done. Same "starting
+# checklist, not a fixed workflow" contract as the intake list above.
+DEFAULT_LAUNCH_TASK_TITLES = [
+    "Hand over domain, hosting, and CMS logins to the client",
+    "Set up analytics and confirm it's recording traffic",
+    "Send the client the live URL and a short handover note",
+    "Send the final invoice",
+    "Ask the client for a testimonial and a Google review",
 ]
 
 
@@ -80,6 +98,14 @@ def _to_read(project: Project) -> ProjectRead:
 def create_default_tasks(db: Session, project_id: uuid.UUID) -> None:
     """Seeds the initial INTAKE task checklist for a newly created project."""
     for title in DEFAULT_INTAKE_TASK_TITLES:
+        db.add(Task(project_id=project_id, title=title))
+
+
+def create_launch_tasks(db: Session, project_id: uuid.UUID) -> None:
+    """Seeds the post-launch handover checklist. Only ever called behind
+    a successful `advance_stage(... DEPLOYED)`, which returns True once
+    per project, so a redeploy or rollback never duplicates these."""
+    for title in DEFAULT_LAUNCH_TASK_TITLES:
         db.add(Task(project_id=project_id, title=title))
 
 

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Client, type Lead, type User } from "@/lib/api";
+import { filterClients, UNASSIGNED } from "@/lib/filters";
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[] | null>(null);
@@ -17,6 +18,9 @@ export default function ClientsPage() {
   const [wonPrice, setWonPrice] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
 
   function load() {
     api
@@ -69,6 +73,11 @@ export default function ClientsPage() {
     await api.updateClient(id, { assigned_user_id: assigneeId || null });
     load();
   }
+
+  const visibleClients = useMemo(
+    () => (clients === null ? null : filterClients(clients, { search, assignee: assigneeFilter })),
+    [clients, search, assigneeFilter],
+  );
 
   return (
     <div className="p-6">
@@ -160,10 +169,32 @@ export default function ClientsPage() {
         </form>
       )}
 
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <input
+          placeholder="Search business or billing email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-72 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+        />
+        <select
+          value={assigneeFilter}
+          onChange={(e) => setAssigneeFilter(e.target.value)}
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        >
+          <option value="">Anyone assigned</option>
+          <option value={UNASSIGNED}>Unassigned</option>
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      {clients && (
-        <table className="mt-6 w-full border border-neutral-200 text-left text-sm">
+      {visibleClients && (
+        <table className="mt-4 w-full border border-neutral-200 text-left text-sm">
           <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <tr>
               <th className="px-3 py-2">Business</th>
@@ -174,14 +205,14 @@ export default function ClientsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
-            {clients.length === 0 && (
+            {visibleClients.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
-                  No clients yet.
+                  {clients && clients.length === 0 ? "No clients yet." : "No clients match."}
                 </td>
               </tr>
             )}
-            {clients.map((client) => (
+            {visibleClients.map((client) => (
               <tr key={client.id}>
                 <td className="px-3 py-2 font-medium text-neutral-900">
                   <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">

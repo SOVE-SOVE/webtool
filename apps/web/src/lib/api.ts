@@ -332,7 +332,10 @@ export type BriefFields = {
 };
 
 export type BriefUpdate = BriefFields;
-export type BriefIntakeStart = BriefFields & { project_name?: string };
+// force_new opts in to an additional project for a client who already
+// has an unfinished one; without it the API returns the existing
+// project's brief rather than creating a duplicate project.
+export type BriefIntakeStart = BriefFields & { project_name?: string; force_new?: boolean };
 
 export type BriefFieldValue = string | string[] | null;
 
@@ -470,11 +473,16 @@ export type CalendarEvent = {
   href: string;
 };
 
+// Server-ranked: the API returns these already ordered most-urgent
+// first, so the Overview renders them in the order received rather than
+// re-sorting client side.
 export type AttentionItem = {
-  kind: "task" | "stale_lead";
+  kind: "task" | "stale_lead" | "follow_up" | "meeting" | "project";
+  label: string;
   id: string;
   title: string;
   detail: string;
+  action: string;
   href: string;
 };
 
@@ -969,11 +977,12 @@ export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
   contacted_leads: number;
-  meetings: number;
+  upcoming_meetings: number;
   won_projects: number;
   active_projects: number;
   revenue_cents: number;
   tasks_needing_attention: number;
+  follow_ups_due: number;
   needs_attention: AttentionItem[];
 };
 

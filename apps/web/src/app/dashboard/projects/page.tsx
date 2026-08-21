@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   api,
   PROJECT_STAGE_LABELS,
@@ -11,6 +11,7 @@ import {
   type ProjectStage,
   type User,
 } from "@/lib/api";
+import { filterProjects, UNASSIGNED } from "@/lib/filters";
 
 function formatPrice(cents: number | null): string {
   return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
@@ -26,6 +27,11 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState<ProjectStage | "">("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [showFinished, setShowFinished] = useState(false);
 
   function load() {
     api
@@ -65,6 +71,19 @@ export default function ProjectsPage() {
     await api.updateProject(id, { assigned_user_id: assigneeId || null });
     load();
   }
+
+  const visibleProjects = useMemo(
+    () =>
+      projects === null
+        ? null
+        : filterProjects(projects, {
+            search,
+            stage: stageFilter,
+            assignee: assigneeFilter,
+            showFinished,
+          }),
+    [projects, search, stageFilter, assigneeFilter, showFinished],
+  );
 
   return (
     <div className="p-6">
@@ -124,10 +143,53 @@ export default function ProjectsPage() {
         </form>
       )}
 
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <input
+          placeholder="Search project, client, package…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-72 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+        />
+        <select
+          value={stageFilter}
+          onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        >
+          <option value="">All stages</option>
+          {PROJECT_STAGES.map((stage) => (
+            <option key={stage} value={stage}>
+              {PROJECT_STAGE_LABELS[stage]}
+            </option>
+          ))}
+        </select>
+        <select
+          value={assigneeFilter}
+          onChange={(e) => setAssigneeFilter(e.target.value)}
+          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        >
+          <option value="">Anyone assigned</option>
+          <option value={UNASSIGNED}>Unassigned</option>
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+          <input
+            type="checkbox"
+            checked={showFinished}
+            onChange={(e) => setShowFinished(e.target.checked)}
+            disabled={stageFilter !== ""}
+          />
+          Show finished
+        </label>
+      </div>
+
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      {projects && (
-        <table className="mt-6 w-full border border-neutral-200 text-left text-sm">
+      {visibleProjects && (
+        <table className="mt-4 w-full border border-neutral-200 text-left text-sm">
           <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
             <tr>
               <th className="px-3 py-2">Project</th>
@@ -140,14 +202,14 @@ export default function ProjectsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
-            {projects.length === 0 && (
+            {visibleProjects.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-3 py-6 text-center text-neutral-500">
-                  No projects yet.
+                  {projects && projects.length === 0 ? "No projects yet." : "No projects match."}
                 </td>
               </tr>
             )}
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <tr key={project.id}>
                 <td className="px-3 py-2 font-medium text-neutral-900">
                   <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">

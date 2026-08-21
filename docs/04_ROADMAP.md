@@ -57,7 +57,7 @@ the note on that entry above. Don't read the two as the same thing.
       does the same job (see and move a record through its stages) with
       far less UI work, which matters more at this scale. Revisit only
       if list-scanning stops being fast enough as volume grows.
-- [x] Overview dashboard: the 8 metrics the operator asked for (total/
+- [x] Overview dashboard: the metrics the operator asked for (total/
       qualified/contacted leads, meetings, won/active projects, revenue,
       tasks needing attention) plus a "Needs your attention" list
       (overdue/undated tasks, leads stale 5+ days). Pulled forward from
@@ -65,7 +65,13 @@ the note on that entry above. Don't read the two as the same thing.
       [[05_DECISIONS]] for exact metric definitions and the schema gap
       that was found and fixed while building it (lead→client
       conversion now records a won opportunity, or won-projects/revenue
-      could never move through the UI at all).
+      could never move through the UI at all). Reworked 2026-08-21 into
+      a ranked "Do this next" list covering follow-ups, imminent
+      meetings, and each unfinished project's first unmet approval gate
+      alongside the original two signals — every row carries the
+      concrete next action and links to the screen where it's done. The
+      "meetings" tile (every meeting ever booked) became "upcoming
+      meetings", and "follow-ups due" was added. See [[05_DECISIONS]].
 - [ ] Activity log per prospect/project (what happened, when) —
       partially done: the lead detail page (added alongside the lead-
       management rework, see [[05_DECISIONS]]) now surfaces a per-lead
@@ -125,7 +131,12 @@ Goal: stages 5–7 stop eating time, sending still stays human.
       surfaced as OVERDUE/DUE TODAY/UPCOMING on the new `/dashboard/
       follow-ups` page (and a "Generate follow-up" action on the lead
       detail page). Every drafting/lifecycle/follow-up action is
-      recorded in the activity log with the responsible user.
+      recorded in the activity log with the responsible user. Overdue
+      and due-today follow-ups also surface on the Overview as of
+      2026-08-21 — until then they were only visible to someone who
+      thought to open the follow-ups page, which defeats the point of a
+      reminder. Marking outreach sent/replied now also advances the
+      lead's own status, which previously had to be done by hand.
 
 ## M4 — Intake → project → brief/sitemap/copy
 

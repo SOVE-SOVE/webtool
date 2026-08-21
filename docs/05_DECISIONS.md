@@ -21,6 +21,143 @@ why it lost.
 
 ---
 
+## 2026-08-21 — Daily-use pass: the Overview answers "what do I do next", outreach keeps its own lead status, "Start intake" stops duplicating projects, launch gets a checklist, Projects/Clients get search
+
+**Decision:** Five changes aimed squarely at operator time-per-day, not
+feature coverage. Ranked and picked by (frequency × time saved) ÷
+effort, for a two-person shop using this every working day.
+
+1. **The Overview now answers "what should I do next?"**
+   (`modules/dashboard/`). The "Needs your attention" list previously
+   covered exactly two signals — due/undated tasks and leads stale 5+
+   days — which meant the entire delivery half of the business, and the
+   whole `FollowUp` module, were invisible from the screen an operator
+   opens first. It now aggregates five kinds of open loop: overdue and
+   due-today **follow-ups**, **meetings** starting within 48 hours,
+   **tasks**, **stale leads**, and — new — the single most useful next
+   action for every unfinished **project**.
+
+   Each row carries an `action` (the imperative next step, e.g.
+   "Review the QA report and sign it off") and an `href` to the exact
+   screen where it's done, rather than a bare section index; stale-lead
+   rows now deep-link to the lead instead of the leads list, and their
+   suggested action varies with how far the lead actually got. The list
+   is ranked server-side and rendered in the order received: a broken
+   deployment first, then overdue follow-ups, imminent meetings,
+   blocked project gates, overdue tasks, follow-ups due today,
+   upcoming tasks, stale leads.
+
+   The per-project row is a "first unmet gate" waterfall over the same
+   checkpoint sequence `modules/approvals/service.py` reports for a
+   single project (brief → creative direction → sitemap → website → QA →
+   client review → deploy), with a failed deployment short-circuiting
+   ahead of everything. Deliberately **one row per project**, never
+   seven, so the list stays a to-do list rather than a status dump; a
+   project with every approval in and a successful deployment drops off
+   entirely. It's a batched implementation (Postgres `DISTINCT ON`, one
+   query per entity type for all projects at once) rather than N calls
+   into the approvals service — `approvals/service.py` remains the
+   authority on a single project's full checkpoint detail, and the two
+   must be kept in step if a checkpoint is ever added or reordered.
+
+   Two metric tiles changed. `meetings` — a count of *every* meeting
+   ever booked, a number that only went up and that nobody could act on
+   — became **`upcoming_meetings`** (still scheduled, in the future).
+   **`follow_ups_due`** was added, since follow-ups had no presence on
+   the dashboard at all. `AttentionItem` gained `label` and `action`;
+   the frontend's hardcoded "Task"/"Stale lead" ternary is gone.
+
+2. **Marking outreach sent/replied now moves the lead's status**
+   (`modules/outreach/service.py` → new `mark_contacted`/`mark_replied`
+   in `modules/leads/service.py`). Previously both recorded an
+   `Interaction` and touched nothing on the `Lead`, so `CONTACTED` and
+   `REPLIED` were unreachable except by hand-flipping a dropdown — an
+   extra edit after every single send, and one that gets forgotten,
+   which then corrupts the funnel counts *and* the stale-lead detector
+   that keys off `updated_at`. Forward-only, same contract as
+   `mark_researched` and `meetings/service.py`'s
+   `_PRE_MEETING_STATUSES`: a lead already at meeting/proposal/won/lost
+   isn't dragged backwards, and a `NURTURE` lead stays parked
+   (`NURTURE` is a deliberate side state, not a pipeline position).
+
+   This automates *bookkeeping only*. The operator still does the
+   sending, and still clicks "Mark sent" — no outreach is ever
+   dispatched by the system (docs/03_AGENT_RULES.md). The prior
+   `test_end_to_end_workflow.py` assertion that outreach *doesn't*
+   advance status was codifying the gap, and was updated.
+
+3. **"Start intake" is idempotent** (`modules/design_briefs/service.py`).
+   It created a brand new `Project` on every click, with no guard and no
+   delete route — so a double-click, or clicking it for a client who
+   already had a live project, silently produced permanent duplicates.
+   It now reuses the client's existing unfinished project (anything not
+   at `MAINTENANCE`/`COMPLETE`) and returns that project's brief,
+   filling only the brief fields that are still empty so a re-run never
+   clobbers an operator's own answers. A genuinely additional project
+   for a repeat client is the explicit `force_new` opt-in, surfaced as a
+   confirm-gated "Start another project" secondary action that only
+   appears when a live project exists; the primary button reads "Open
+   intake" instead of "Start intake" in that case. Intake now also seeds
+   `DEFAULT_INTAKE_TASK_TITLES`, which only the lead-conversion path did
+   before — the two ways of creating a project were inconsistent.
+
+4. **A successful first deploy seeds a launch/handover checklist**
+   (`DEFAULT_LAUNCH_TASK_TITLES` in `modules/projects/service.py`).
+   `DEFAULT_INTAKE_TASK_TITLES` was the only stage transition seeding a
+   checklist; launch is the other point where a pile of easily-forgotten
+   manual admin follows (hand over logins, set up analytics, send the
+   live URL, invoice, ask for a testimonial) — including the two that
+   directly cost money if skipped. `advance_stage()` now returns whether
+   the stage actually moved, so the seed hangs off the real transition
+   and a redeploy or rollback can't duplicate it.
+
+5. **Search and filtering on Projects and Clients.** Leads already had
+   search + status/priority/assignee filters + sortable columns;
+   Projects and Clients had none. Both now have text search (project
+   name/client/package; business name/billing email) and an assignee
+   filter incl. "Unassigned"; Projects also has a stage filter and hides
+   `maintenance`/`complete` by default so finished work stops burying
+   live work. The predicates live in `apps/web/src/lib/filters.ts` as
+   pure functions so they're unit-testable without a DOM — the existing
+   Vitest setup has no jsdom, and adding one for this wasn't warranted.
+
+**Why:** The operators' stated priority is revenue per human-hour. Every
+item above removes a repeated manual action (a second status edit after
+every send), a repeated decision ("what should I be doing?"), or a
+cleanup cost (duplicate projects that can't be deleted). Nothing here
+adds a new capability — it removes friction from capabilities that
+already existed but were either invisible (follow-ups, delivery gates)
+or required redundant bookkeeping.
+
+**Alternatives considered:**
+
+- *Per-project rows for every unmet checkpoint* instead of just the
+  first. Rejected: seven rows for one project turns a to-do list into a
+  status report, and only the first is actionable anyway.
+- *Calling `approvals.get_project_approval_status` per project* rather
+  than batching. Rejected on query count (7 × N); the batched version is
+  a fixed ~7 queries regardless of project count. The duplication is
+  accepted and flagged in both files, matching the tolerance already
+  documented in `approvals/service.py` for its own "latest row" resolvers.
+- *An "unassigned lead" attention row.* Rejected: with two operators,
+  an unassigned lead isn't blocked — it's just unlabelled — and every
+  newly added lead would flood the list.
+- *A nav badge counting due follow-ups.* Rejected: it costs a fetch on
+  every page to duplicate what the Overview already says.
+- *409-ing a repeat "Start intake"* instead of reusing the project.
+  Rejected: an error page is worse for the operator than just landing
+  them on the intake they already started.
+- *Keyboard shortcuts.* The brief ranked these lowest, and nothing in
+  these flows is repetitive enough per-session to earn the muscle
+  memory. Skipped rather than forced.
+
+**Not done, deliberately:** rate limiting on the expensive generation
+routes and the near-total absence of responsive CSS both remain open
+from the 2026-08-20 QA review — neither is an operator-time problem, and
+both want their own pass.
+
+---
+
 ## 2026-08-20 — Real deployment system (roadmap M6); `Project.stage` and `Lead.status` now advance automatically through the pipeline; `pipeline_events` finally gets writers
 
 **Decision:** Three pieces of work, done together because the third

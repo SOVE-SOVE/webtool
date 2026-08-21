@@ -167,6 +167,19 @@ describe("api", () => {
       );
     });
 
+    it("startIntake sends force_new when starting an additional project", async () => {
+      const fetchMock = stubOk({ id: "b1", project_id: "p2" });
+      await api.startIntake("c1", { force_new: true, project_name: "Coastal Cafe Rebrand" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/clients/c1/intake"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ force_new: true, project_name: "Coastal Cafe Rebrand" }),
+        }),
+      );
+    });
+
     it("listCreativeDirections gets /api/v1/projects/:id/creative-directions", async () => {
       const fetchMock = stubOk([]);
       await api.listCreativeDirections("p1");

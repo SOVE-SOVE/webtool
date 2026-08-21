@@ -330,3 +330,72 @@ def test_follow_ups_workspace_isolated(authed_client, other_authed_client, monke
     other_buckets = other_authed_client.get("/api/v1/follow-ups").json()
     all_ids = [f["id"] for f in other_buckets["overdue"] + other_buckets["due_today"] + other_buckets["upcoming"]]
     assert follow_up["id"] not in all_ids
+
+
+# --- lead status bookkeeping ------------------------------------------
+#
+# Marking outreach sent/replied is the operator recording something they
+# already did by hand; the lead's own status shouldn't then need a second
+# manual edit. Forward-only, same contract as leads/service.py's
+# `mark_researched` and meetings/service.py's `_PRE_MEETING_STATUSES`.
+
+
+def _sent_message(authed_client, monkeypatch, lead):
+    _patch_email(monkeypatch)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-sent")
+    return message
+
+
+def test_marking_outreach_sent_moves_the_lead_to_contacted(authed_client, monkeypatch):
+    lead = _create_qualified_lead(authed_client)
+    _sent_message(authed_client, monkeypatch, lead)
+
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "contacted"
+
+
+def test_marking_outreach_sent_advances_an_untouched_new_lead(authed_client, monkeypatch):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Fresh Co"}).json()
+    assert lead["status"] == "new"
+    _sent_message(authed_client, monkeypatch, lead)
+
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "contacted"
+
+
+def test_marking_outreach_replied_moves_the_lead_to_replied(authed_client, monkeypatch):
+    lead = _create_qualified_lead(authed_client)
+    message = _sent_message(authed_client, monkeypatch, lead)
+
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-replied")
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "replied"
+
+
+def test_outreach_never_regresses_a_lead_that_is_further_along(authed_client, monkeypatch):
+    lead = _create_qualified_lead(authed_client)
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"status": "proposal"})
+
+    message = _sent_message(authed_client, monkeypatch, lead)
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "proposal"
+
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-replied")
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "proposal"
+
+
+def test_outreach_leaves_a_nurture_lead_parked(authed_client, monkeypatch):
+    """NURTURE is a deliberate parking state, not a pipeline position —
+    touching base shouldn't drag it back into the active funnel."""
+    lead = _create_qualified_lead(authed_client)
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"status": "nurture"})
+
+    _sent_message(authed_client, monkeypatch, lead)
+    assert authed_client.get(f"/api/v1/leads/{lead['id']}").json()["status"] == "nurture"
+
+
+def test_lead_status_bump_is_recorded_in_the_activity_log(authed_client, monkeypatch):
+    lead = _create_qualified_lead(authed_client)
+    _sent_message(authed_client, monkeypatch, lead)
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(
+        a["action"] == "status_changed" and "outreach sent" in (a["summary"] or "") for a in activity
+    )

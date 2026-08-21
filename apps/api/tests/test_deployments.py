@@ -375,3 +375,47 @@ class TestConcurrentExecution:
             f"/api/v1/activity?entity_type=project&entity_id={project['id']}"
         ).json()
         assert sum(1 for a in activity if a["action"] == "deployment_succeeded") == 1
+
+
+class TestLaunchChecklist:
+    """The post-launch handover steps are the easiest to forget once the
+    build itself is done — seeded once, the first time a project
+    actually reaches DEPLOYED. See docs/05_DECISIONS.md (2026-08-21)."""
+
+    def _launch_tasks(self, authed_client, project_id):
+        from app.modules.projects.service import DEFAULT_LAUNCH_TASK_TITLES
+
+        tasks = authed_client.get("/api/v1/tasks").json()
+        return [
+            t for t in tasks if t["project_id"] == project_id and t["title"] in DEFAULT_LAUNCH_TASK_TITLES
+        ]
+
+    def test_a_successful_deploy_seeds_the_handover_checklist(self, authed_client, monkeypatch):
+        from app.modules.projects.service import DEFAULT_LAUNCH_TASK_TITLES
+
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        assert self._launch_tasks(authed_client, project["id"]) == []
+
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute")
+
+        titles = sorted(t["title"] for t in self._launch_tasks(authed_client, project["id"]))
+        assert titles == sorted(DEFAULT_LAUNCH_TASK_TITLES)
+
+    def test_a_redeploy_does_not_duplicate_the_checklist(self, authed_client, monkeypatch):
+        from app.modules.projects.service import DEFAULT_LAUNCH_TASK_TITLES
+
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        first = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        authed_client.post(f"/api/v1/deployments/{first['id']}/execute")
+
+        second = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        authed_client.post(f"/api/v1/deployments/{second['id']}/execute")
+
+        assert len(self._launch_tasks(authed_client, project["id"])) == len(DEFAULT_LAUNCH_TASK_TITLES)
+
+    def test_a_prepared_but_unexecuted_deployment_seeds_nothing(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        authed_client.post(f"/api/v1/projects/{project['id']}/deployments")
+
+        assert self._launch_tasks(authed_client, project["id"]) == []

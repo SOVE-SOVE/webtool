@@ -157,6 +157,10 @@ class BriefIntakeStart(BriefUpdate):
     much or as little as known when the project is first created."""
 
     project_name: str | None = None
+    # Opt-in to a genuinely additional project for a client who already
+    # has an unfinished one; without it, starting intake again returns
+    # the existing project's brief rather than duplicating the project.
+    force_new: bool = False
 
 
 class BriefSection(BaseModel):
