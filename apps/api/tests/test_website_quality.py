@@ -77,6 +77,17 @@ def test_unreachable_site_produces_only_availability_finding():
     assert result.flagged_for_review is True
 
 
+def test_no_website_on_record_produces_no_findings_and_no_spurious_missing_field_claims():
+    """website_reachable=None (no URL at all — see agents/business_research.py) must not fall
+    through to the falsy-checks below and report "missing title"/"missing meta description"
+    for a page that was never expected to exist."""
+    result = website_quality_agent.run(
+        WebsiteQualityInput(website_reachable=None, page_title=None, meta_description=None)
+    )
+
+    assert result.output.findings == []
+
+
 def test_clean_site_produces_no_findings():
     result = website_quality_agent.run(
         WebsiteQualityInput(

@@ -20,3 +20,16 @@ def list_score_results(
     if discovery_service.get_discovered_business(db, current_user.workspace_id, business_id) is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return service.list_score_results(db, business_id)
+
+
+@router.post("", response_model=OpportunityScoreResultRead, status_code=201)
+def run_opportunity_score(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> OpportunityScoreResultRead:
+    try:
+        result = service.run_opportunity_score(db, current_user.workspace_id, current_user.id, business_id)
+    except service.NoResearchAvailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return result

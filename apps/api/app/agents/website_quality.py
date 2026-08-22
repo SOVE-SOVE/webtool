@@ -87,6 +87,19 @@ def run(input: WebsiteQualityInput) -> AgentResult[WebsiteQualityOutput]:
             notes="Website was unreachable during research — audit limited to availability.",
         )
 
+    if input.website_reachable is None:
+        # No website URL on record at all — there's no page to check
+        # HTTPS/mobile/title/etc against, so producing findings for
+        # those would misreport "missing" page-level details on a page
+        # that was never expected to exist. The absence of a website
+        # entirely is opportunity_score.py's signal to weigh, not a
+        # website-quality finding.
+        return AgentResult(
+            output=WebsiteQualityOutput(findings=[], summary="No website on record — nothing to audit."),
+            confidence=1.0,
+            notes="No website URL on record — quality analysis needs a page to inspect.",
+        )
+
     findings: list[Finding] = []
 
     if input.https is False:

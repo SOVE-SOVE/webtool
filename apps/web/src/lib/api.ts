@@ -1354,4 +1354,8 @@ export const api = {
     }),
   listOpportunityScores: (discoveredBusinessId: string) =>
     request<OpportunityScoreResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`),
+  runOpportunityScore: (discoveredBusinessId: string) =>
+    request<OpportunityScoreResult>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`, {
+      method: "POST",
+    }),
 };

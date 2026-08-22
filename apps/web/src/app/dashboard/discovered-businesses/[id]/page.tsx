@@ -8,6 +8,8 @@ import {
   ApiError,
   type BusinessResearchResult,
   type DiscoveredBusiness,
+  type OpportunityScoreCategory,
+  type OpportunityScoreResult,
   type QualityFindingSeverity,
   type WebsiteQualityAudit,
 } from "@/lib/api";
@@ -17,6 +19,13 @@ const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
   high: "bg-orange-100 text-orange-800",
   medium: "bg-amber-100 text-amber-800",
   low: "bg-neutral-100 text-neutral-600",
+};
+
+const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
+  hot: "bg-red-100 text-red-800",
+  warm: "bg-amber-100 text-amber-800",
+  cold: "bg-blue-100 text-blue-800",
+  review: "bg-neutral-200 text-neutral-700",
 };
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
@@ -51,9 +60,11 @@ export default function DiscoveredBusinessDetailPage() {
   const [business, setBusiness] = useState<DiscoveredBusiness | null>(null);
   const [research, setResearch] = useState<BusinessResearchResult[] | null>(null);
   const [audits, setAudits] = useState<WebsiteQualityAudit[] | null>(null);
+  const [scores, setScores] = useState<OpportunityScoreResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [researching, setResearching] = useState(false);
   const [auditing, setAuditing] = useState(false);
+  const [scoring, setScoring] = useState(false);
 
   function load() {
     if (!params.id) return;
@@ -66,6 +77,10 @@ export default function DiscoveredBusinessDetailPage() {
       .listQualityAudits(params.id)
       .then(setAudits)
       .catch(() => setError("Couldn't load quality audits for this business."));
+    api
+      .listOpportunityScores(params.id)
+      .then(setScores)
+      .catch(() => setError("Couldn't load opportunity scores for this business."));
   }
 
   useEffect(load, [params.id]);
@@ -98,8 +113,23 @@ export default function DiscoveredBusinessDetailPage() {
     }
   }
 
+  async function handleScore() {
+    if (!params.id) return;
+    setScoring(true);
+    setError(null);
+    try {
+      await api.runOpportunityScore(params.id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't score this business.");
+    } finally {
+      setScoring(false);
+    }
+  }
+
   const latest = research && research.length > 0 ? research[0] : null;
   const latestAudit = audits && audits.length > 0 ? audits[0] : null;
+  const latestScore = scores && scores.length > 0 ? scores[0] : null;
 
   return (
     <div className="p-6">
@@ -151,7 +181,24 @@ export default function DiscoveredBusinessDetailPage() {
               >
                 {auditing ? "Auditing…" : "Audit quality"}
               </button>
+              <button
+                onClick={handleScore}
+                disabled={scoring || !latest}
+                title={!latest ? "Run research first" : undefined}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {scoring ? "Scoring…" : "Score opportunity"}
+              </button>
             </div>
+            {latestScore && (
+              <div className="mt-2">
+                <span
+                  className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
+                >
+                  {latestScore.category} · {latestScore.overall_score}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -223,6 +270,46 @@ export default function DiscoveredBusinessDetailPage() {
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+      )}
+
+      {latestScore && (
+        <div className="mt-6 max-w-2xl border border-neutral-200 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-900">Opportunity score</h2>
+            <span className="text-xs text-neutral-400">{new Date(latestScore.scored_at).toLocaleString()}</span>
+          </div>
+
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className={`rounded-full px-3 py-1 text-sm font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
+            >
+              {latestScore.category}
+            </span>
+            <span className="text-2xl font-semibold text-neutral-900">{latestScore.overall_score}</span>
+            <span className="text-xs text-neutral-500">
+              {Math.round(latestScore.confidence * 100)}% confidence
+            </span>
+          </div>
+
+          <p className="mt-2 text-sm text-neutral-700">{latestScore.recommendation_reason}</p>
+
+          <ListSection title="Positive signals" items={latestScore.positive_signals} tone="confirmed" />
+          <ListSection title="Negative signals" items={latestScore.negative_signals} tone="inferred" />
+
+          {latestScore.factors.length > 0 && (
+            <div className="mt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Score breakdown</h3>
+              <ul className="mt-1 space-y-1">
+                {latestScore.factors.map((factor, i) => (
+                  <li key={i} className="flex justify-between text-sm">
+                    <span className="text-neutral-700">{factor.explanation}</span>
+                    <span className="ml-2 shrink-0 text-neutral-500">+{factor.points}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
