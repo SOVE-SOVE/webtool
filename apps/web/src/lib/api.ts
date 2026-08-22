@@ -986,6 +986,144 @@ export type DashboardOverview = {
   needs_attention: AttentionItem[];
 };
 
+// Lead Intelligence (Phase 2) — top-of-funnel pipeline: a DiscoverySearch
+// runs a provider adapter and produces DiscoveredBusiness rows, a
+// reviewable list that is never auto-imported into `businesses`/`leads`.
+// This pass only wires the read-side (list/get) — search creation and
+// the provider adapters land in the business-discovery capability.
+export const DISCOVERY_SEARCH_STATUSES = ["pending", "running", "completed", "failed"] as const;
+export type DiscoverySearchStatus = (typeof DISCOVERY_SEARCH_STATUSES)[number];
+
+export const DISCOVERED_BUSINESS_STATUSES = [
+  "new",
+  "researched",
+  "audited",
+  "scored",
+  "approved",
+  "rejected",
+  "archived",
+  "imported",
+] as const;
+export type DiscoveredBusinessStatus = (typeof DISCOVERED_BUSINESS_STATUSES)[number];
+
+export const OPPORTUNITY_SCORE_CATEGORIES = ["hot", "warm", "cold", "review"] as const;
+export type OpportunityScoreCategory = (typeof OPPORTUNITY_SCORE_CATEGORIES)[number];
+
+export type DiscoverySearch = {
+  id: string;
+  query_label: string | null;
+  location: string | null;
+  industry: string | null;
+  business_type: string | null;
+  keywords: string | null;
+  min_score: number | null;
+  max_score: number | null;
+  has_website: boolean | null;
+  website_outdated: boolean | null;
+  provider: string;
+  status: DiscoverySearchStatus;
+  result_count: number;
+  error_message: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type DiscoveredBusiness = {
+  id: string;
+  discovery_search_id: string;
+  name: string;
+  industry: string | null;
+  business_type: string | null;
+  website_url: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+  social_links: string | null;
+  source_provider: string;
+  source_query: string | null;
+  source_external_id: string | null;
+  duplicate_of_business_id: string | null;
+  duplicate_of_discovered_business_id: string | null;
+  status: DiscoveredBusinessStatus;
+  opportunity_score: number | null;
+  score_category: OpportunityScoreCategory | null;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  imported_lead_id: string | null;
+  discovered_at: string;
+  updated_at: string;
+};
+
+export type BusinessResearchResult = {
+  id: string;
+  discovered_business_id: string;
+  official_website_url: string | null;
+  website_reachable: boolean | null;
+  https: boolean | null;
+  http_status: number | null;
+  page_title: string | null;
+  meta_description: string | null;
+  mobile_viewport_present: boolean | null;
+  contact_cta_present: boolean | null;
+  estimated_site_age: string | null;
+  appears_template_or_placeholder: boolean | null;
+  technical_issues: string[];
+  social_presence: string[];
+  confirmed_facts: string[];
+  inferred_facts: string[];
+  unavailable_fields: string[];
+  research_error: string | null;
+  researched_at: string;
+};
+
+export type QualityFindingSeverity = "low" | "medium" | "high" | "critical";
+
+export type QualityFinding = {
+  category: string;
+  severity: QualityFindingSeverity;
+  message: string;
+  evidence: string;
+  confidence: number;
+};
+
+export type WebsiteQualityAudit = {
+  id: string;
+  discovered_business_id: string;
+  business_research_id: string | null;
+  findings: QualityFinding[];
+  summary: string | null;
+  issue_count: number;
+  critical_count: number;
+  audited_at: string;
+};
+
+export type ScoreFactorDirection = "positive" | "negative";
+
+export type ScoreFactor = {
+  factor: string;
+  points: number;
+  direction: ScoreFactorDirection;
+  explanation: string;
+};
+
+export type OpportunityScoreResult = {
+  id: string;
+  discovered_business_id: string;
+  overall_score: number;
+  category: OpportunityScoreCategory;
+  confidence: number;
+  positive_signals: string[];
+  negative_signals: string[];
+  factors: ScoreFactor[];
+  recommendation_reason: string;
+  scored_at: string;
+};
+
 export const api = {
   login: (email: string, password: string) =>
     request<Me>("/api/v1/auth/login", {
@@ -1180,4 +1318,16 @@ export const api = {
     request<ActivityItem[]>(
       `/api/v1/activity${filter ? `?entity_type=${filter.entity_type}&entity_id=${filter.entity_id}` : ""}`,
     ),
+
+  listDiscoverySearches: () => request<DiscoverySearch[]>("/api/v1/discovery-searches"),
+  getDiscoverySearch: (id: string) => request<DiscoverySearch>(`/api/v1/discovery-searches/${id}`),
+  listDiscoveredBusinesses: (searchId: string) =>
+    request<DiscoveredBusiness[]>(`/api/v1/discovery-searches/${searchId}/results`),
+  getDiscoveredBusiness: (id: string) => request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}`),
+  listBusinessResearch: (discoveredBusinessId: string) =>
+    request<BusinessResearchResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/research`),
+  listQualityAudits: (discoveredBusinessId: string) =>
+    request<WebsiteQualityAudit[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/quality-audits`),
+  listOpportunityScores: (discoveredBusinessId: string) =>
+    request<OpportunityScoreResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`),
 };

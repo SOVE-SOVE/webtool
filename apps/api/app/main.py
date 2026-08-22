@@ -9,6 +9,7 @@ from app.integrations.llm import LlmUnavailableError
 from app.modules.activity_log.routes import router as activity_router
 from app.modules.approvals.routes import router as approvals_router
 from app.modules.auth.routes import router as auth_router
+from app.modules.business_research.routes import router as business_research_router
 from app.modules.businesses.routes import router as businesses_router
 from app.modules.calendar.routes import router as calendar_router
 from app.modules.clients.routes import router as clients_router
@@ -16,8 +17,10 @@ from app.modules.creative_directions.routes import router as creative_directions
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.deployments.routes import router as deployments_router
 from app.modules.design_briefs.routes import router as design_briefs_router
+from app.modules.discovery.routes import discovered_businesses_router, router as discovery_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
+from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.qa_reports.routes import router as qa_reports_router
@@ -26,6 +29,7 @@ from app.modules.sitemaps.routes import router as sitemaps_router
 from app.modules.tasks.routes import router as tasks_router
 from app.modules.users.routes import router as users_router
 from app.modules.website_audits.routes import router as website_audits_router
+from app.modules.website_quality.routes import router as website_quality_router
 from app.modules.websites.routes import router as websites_router
 from app.modules.workspaces.routes import router as workspaces_router
 
@@ -108,3 +112,8 @@ app.include_router(websites_router)
 app.include_router(qa_reports_router)
 app.include_router(deployments_router)
 app.include_router(approvals_router)
+app.include_router(discovery_router)
+app.include_router(discovered_businesses_router)
+app.include_router(business_research_router)
+app.include_router(website_quality_router)
+app.include_router(opportunity_scoring_router)
