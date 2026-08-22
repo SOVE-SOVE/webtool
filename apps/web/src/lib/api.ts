@@ -1072,6 +1072,37 @@ export type DiscoveredBusiness = {
   updated_at: string;
 };
 
+// One row of the dedicated review interface (Phase 2 checkpoint) — the
+// latest research/quality/score context folded in so an operator can
+// decide approve/reject/archive/import without opening each business.
+export type DiscoveredBusinessReviewItem = {
+  id: string;
+  name: string;
+  industry: string | null;
+  suburb: string | null;
+  state: string | null;
+  website_url: string | null;
+  status: DiscoveredBusinessStatus;
+  source_provider: string;
+  discovered_at: string;
+  imported_lead_id: string | null;
+  reviewed_by_user_name: string | null;
+  reviewed_at: string | null;
+  researched_at: string | null;
+  research_error: string | null;
+  quality_summary: string | null;
+  key_problems: string[];
+  opportunity_score: number | null;
+  score_category: OpportunityScoreCategory | null;
+  confidence: number | null;
+  recommended_sales_angle: string | null;
+};
+
+export type BulkApproveResult = {
+  approved: DiscoveredBusiness[];
+  not_found: string[];
+};
+
 export type BusinessResearchResult = {
   id: string;
   discovered_business_id: string;
@@ -1357,5 +1388,26 @@ export const api = {
   runOpportunityScore: (discoveredBusinessId: string) =>
     request<OpportunityScoreResult>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`, {
       method: "POST",
+    }),
+
+  listReviewItems: (opts?: { includeArchived?: boolean }) =>
+    request<DiscoveredBusinessReviewItem[]>(
+      `/api/v1/discovered-businesses${opts?.includeArchived ? "?include_archived=true" : ""}`,
+    ),
+  approveDiscoveredBusiness: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
+  rejectDiscoveredBusiness: (id: string, notes?: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ notes }),
+    }),
+  archiveDiscoveredBusiness: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/archive`, { method: "POST" }),
+  importDiscoveredBusiness: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/import`, { method: "POST" }),
+  bulkApproveDiscoveredBusinesses: (businessIds: string[]) =>
+    request<BulkApproveResult>("/api/v1/discovered-businesses/bulk-approve", {
+      method: "POST",
+      body: JSON.stringify({ business_ids: businessIds }),
     }),
 };

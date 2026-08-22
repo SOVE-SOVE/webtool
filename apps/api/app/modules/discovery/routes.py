@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -8,7 +9,14 @@ from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.integrations.discovery.registry import UnknownProviderError
 from app.modules.discovery import service
-from app.modules.discovery.schemas import DiscoveredBusinessRead, DiscoverySearchCreate, DiscoverySearchRead
+from app.modules.discovery.schemas import (
+    BulkApproveRequest,
+    BulkApproveResult,
+    DiscoveredBusinessRead,
+    DiscoveredBusinessReviewRead,
+    DiscoverySearchCreate,
+    DiscoverySearchRead,
+)
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/discovery-searches", tags=["discovery"])
@@ -65,11 +73,92 @@ def list_discovered_businesses(
 discovered_businesses_router = APIRouter(prefix="/api/v1/discovered-businesses", tags=["discovery"])
 
 
+class RejectRequest(BaseModel):
+    notes: str | None = None
+
+
+@discovered_businesses_router.get("", response_model=list[DiscoveredBusinessReviewRead])
+def list_review_items(
+    include_archived: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[DiscoveredBusinessReviewRead]:
+    """The dedicated review interface's backing list — every discovered business
+    across every search in the workspace, with research/quality/score context."""
+    return service.list_review_items(db, current_user.workspace_id, include_archived=include_archived)
+
+
+@discovered_businesses_router.post("/bulk-approve", response_model=BulkApproveResult)
+def bulk_approve(
+    data: BulkApproveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkApproveResult:
+    return service.bulk_approve(db, current_user.workspace_id, current_user.id, data.business_ids)
+
+
 @discovered_businesses_router.get("/{business_id}", response_model=DiscoveredBusinessRead)
 def get_discovered_business(
     business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> DiscoveredBusinessRead:
     business = service.get_discovered_business(db, current_user.workspace_id, business_id)
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.post("/{business_id}/approve", response_model=DiscoveredBusinessRead)
+def approve_business(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DiscoveredBusinessRead:
+    try:
+        business = service.approve_business(db, current_user.workspace_id, current_user.id, business_id)
+    except service.InvalidReviewActionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.post("/{business_id}/reject", response_model=DiscoveredBusinessRead)
+def reject_business(
+    business_id: uuid.UUID,
+    data: RejectRequest = RejectRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DiscoveredBusinessRead:
+    try:
+        business = service.reject_business(db, current_user.workspace_id, current_user.id, business_id, data.notes)
+    except service.InvalidReviewActionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.post("/{business_id}/archive", response_model=DiscoveredBusinessRead)
+def archive_business(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DiscoveredBusinessRead:
+    try:
+        business = service.archive_business(db, current_user.workspace_id, current_user.id, business_id)
+    except service.InvalidReviewActionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.post("/{business_id}/import", response_model=DiscoveredBusinessRead)
+def import_to_lead(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DiscoveredBusinessRead:
+    try:
+        business = service.import_to_lead(db, current_user.workspace_id, current_user.id, business_id)
+    except service.CannotImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except service.DuplicateLeadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if business is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return business

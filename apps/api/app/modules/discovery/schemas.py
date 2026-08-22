@@ -75,3 +75,50 @@ class DiscoveredBusinessRead(BaseModel):
     imported_lead_id: uuid.UUID | None
     discovered_at: datetime
     updated_at: datetime
+
+
+class DiscoveredBusinessReviewRead(BaseModel):
+    """
+    One row of the human-review interface (docs/04_ROADMAP.md Lead
+    Intelligence stage 5) — DiscoveredBusinessRead's fields plus the
+    latest research/quality/score context needed to review a prospect
+    without opening its detail page: website audit summary, key
+    problems, confidence, a recommended sales angle, and the research
+    date. Built by modules/discovery/service.py from the latest row in
+    each of the three prior stages — never re-computed here.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    industry: str | None
+    suburb: str | None
+    state: str | None
+    website_url: str | None
+    status: DiscoveredBusinessStatus
+    source_provider: str
+    discovered_at: datetime
+    imported_lead_id: uuid.UUID | None
+    reviewed_by_user_name: str | None
+    reviewed_at: datetime | None
+
+    researched_at: datetime | None
+    research_error: str | None
+
+    quality_summary: str | None
+    key_problems: list[str]
+
+    opportunity_score: int | None
+    score_category: OpportunityScoreCategory | None
+    confidence: float | None
+    recommended_sales_angle: str | None
+
+
+class BulkApproveRequest(BaseModel):
+    business_ids: list[uuid.UUID]
+
+
+class BulkApproveResult(BaseModel):
+    approved: list[DiscoveredBusinessRead]
+    not_found: list[uuid.UUID]
