@@ -26,6 +26,12 @@ def test_extract_name_splits_on_pipe_and_dash():
     assert _extract_name("Just A Plain Title") == "Just A Plain Title"
 
 
+def test_extract_name_splits_on_colon():
+    """Found via a live Gold Coast test run: "Gold Coast Plumbing Company:
+    Your Trusted Gold Coast Plumber" wasn't being split on the colon."""
+    assert _extract_name("Gold Coast Plumbing Company: Your Trusted Gold Coast Plumber") == "Gold Coast Plumbing Company"
+
+
 def test_extract_name_truncates_to_column_length():
     long_title = "A" * 400
     assert len(_extract_name(long_title)) == 255
@@ -149,6 +155,32 @@ def test_find_existing_business_match_none_when_no_overlap(db_session, workspace
 
     result = NormalizedBusinessResult(name="Totally Different Co", suburb="Nowhere")
     assert dedup.find_existing_business_match(db_session, workspace.id, result) is None
+
+
+def test_name_only_match_skipped_when_neither_side_has_location(db_session, workspace):
+    """Found via a live Gold Coast test run: two genuinely different
+    plumbing businesses (different websites) were both titled "Plumber
+    Gold Coast" by Brave Search, which never supplies suburb/state.
+    Matching on name alone with no location signal falsely flagged them
+    as duplicates and silently blocked importing the second one."""
+    business = Business(workspace_id=workspace.id, name="Plumber Gold Coast", website_url="https://one.example")
+    db_session.add(business)
+    db_session.commit()
+
+    result = NormalizedBusinessResult(name="Plumber Gold Coast", website_url="https://two.example")
+    assert dedup.find_existing_business_match(db_session, workspace.id, result) is None
+
+
+def test_name_only_match_still_applies_when_result_has_location(db_session, workspace):
+    business = Business(workspace_id=workspace.id, name="Plumber Gold Coast", suburb="Southport", state="QLD")
+    db_session.add(business)
+    db_session.commit()
+
+    result = NormalizedBusinessResult(name="Plumber Gold Coast", suburb="Southport", state="QLD")
+    match = dedup.find_existing_business_match(db_session, workspace.id, result)
+
+    assert match is not None
+    assert match.id == business.id
 
 
 # --- Route-level: invalid searches, empty results, successful discovery -----

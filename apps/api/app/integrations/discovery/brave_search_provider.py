@@ -22,16 +22,19 @@ import re
 from app.integrations import search as search_integration
 from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
 
-_TITLE_SPLIT_RE = re.compile(r"\s+[|–—-]\s+")
+_TITLE_SPLIT_RE = re.compile(r"\s+[|–—-]\s+|:\s+")
 MAX_NAME_LENGTH = 255
 
 
 def _extract_name(title: str) -> str:
     """
-    Search-result titles are often "Business Name | Site Section" or
-    "Business Name - tagline" — take the first segment, since that's
-    consistently the business name in practice, and truncate to the
-    column's max length rather than guessing at a cleaner name.
+    Search-result titles are often "Business Name | Site Section",
+    "Business Name - tagline", or "Business Name: tagline" — take the
+    first segment, since that's consistently the business name in
+    practice (found via a live test run: "Gold Coast Plumbing Company:
+    Your Trusted Gold Coast Plumber" wasn't being split on the colon),
+    and truncate to the column's max length rather than guessing at a
+    cleaner name.
     """
     first_segment = _TITLE_SPLIT_RE.split(title.strip(), maxsplit=1)[0].strip()
     name = first_segment or title.strip()

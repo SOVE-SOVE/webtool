@@ -6,7 +6,15 @@ strength:
 
 1. `website_url` or `phone`, normalized — a strong signal on its own.
 2. Normalized name + suburb + state (`dedup_key`) — the fallback when
-   neither of the above is available or matches.
+   neither of the above is available or matches, and *only* when the
+   result carries real location context (see `_has_location_context`
+   below — a live Gold Coast test run found two genuinely different
+   plumbing businesses both titled "Plumber Gold Coast" by a search
+   provider that never fills in suburb/state; matching on name alone
+   with no location collided them and silently blocked importing one).
+   Name-only matching with no location signal is a false-positive risk
+   too high to accept — better to risk a rare true duplicate slipping
+   through than to routinely block real, distinct businesses.
 
 Checked against two different tables, because a discovered candidate can
 duplicate either:
@@ -61,6 +69,10 @@ def compute_dedup_key(name: str, suburb: str | None, state: str | None) -> str:
     return f"{normalize_name(name)}|{(suburb or '').strip().lower()}|{(state or '').strip().lower()}"
 
 
+def _has_location_context(suburb: str | None, state: str | None) -> bool:
+    return bool((suburb or "").strip() or (state or "").strip())
+
+
 def find_existing_business_match(
     db: Session, workspace_id: uuid.UUID, result: NormalizedBusinessResult
 ) -> Business | None:
@@ -74,6 +86,8 @@ def find_existing_business_match(
         if normalized_phone and normalize_phone(business.phone) == normalized_phone:
             return business
 
+    if not _has_location_context(result.suburb, result.state):
+        return None
     dedup_key = compute_dedup_key(result.name, result.suburb, result.state)
     for business in candidates:
         if compute_dedup_key(business.name, business.suburb, business.state) == dedup_key:
@@ -99,6 +113,9 @@ def find_duplicate_discovered_business(
             return business
         if normalized_phone and normalize_phone(business.phone) == normalized_phone:
             return business
+
+    if not _has_location_context(result.suburb, result.state):
+        return None
     for business in candidates:
         if business.dedup_key == dedup_key:
             return business
