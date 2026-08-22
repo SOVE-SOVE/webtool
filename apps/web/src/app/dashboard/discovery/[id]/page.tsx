@@ -59,7 +59,12 @@ export default function DiscoverySearchDetailPage() {
             {results.map((business) => (
               <tr key={business.id}>
                 <td className="px-3 py-2">
-                  <div className="font-medium text-neutral-900">{business.name}</div>
+                  <Link
+                    href={`/dashboard/discovered-businesses/${business.id}`}
+                    className="font-medium text-neutral-900 hover:underline"
+                  >
+                    {business.name}
+                  </Link>
                   {business.industry && <div className="text-xs text-neutral-500">{business.industry}</div>}
                 </td>
                 <td className="px-3 py-2 text-neutral-600">

@@ -323,3 +323,92 @@ async def fetch_qa_signals(base_url: str, page_paths: list[str]) -> QaPageSignal
         return QaPageSignals(error=str(exc))
     except Exception as exc:
         return QaPageSignals(error=str(exc))
+
+
+@dataclass
+class ResearchPageSignals:
+    """Real, measured signals for Lead Intelligence's website research
+    stage (agents/business_research.py) — a different signal set from
+    PageSignals: this needs actual page *content* (contact links, social
+    links, footer text) to answer "does this business have a contact
+    path / social presence / obvious placeholder content", not just
+    load/metadata signals."""
+
+    final_url: str | None = None
+    https: bool | None = None
+    http_status: int | None = None
+    title: str | None = None
+    meta_description: str | None = None
+    viewport_meta_present: bool | None = None
+    mobile_overflow: bool | None = None
+    generator_meta: str | None = None
+    contact_cta_present: bool | None = None
+    social_links: list[str] | None = None
+    body_text: str | None = None
+    error: str | None = None
+
+
+async def fetch_research_signals(url: str) -> ResearchPageSignals:
+    """
+    Same navigation/SSRF-guard shape as fetch_page_signals, plus DOM
+    inspection for business-research signals: a contact path
+    (mailto/tel link or a <form>), social-platform links found on the
+    page, the <meta name="generator"> tag (many site builders/CMSs emit
+    one), and the page's visible text (the caller — agents/
+    business_research.py — regex-searches this for a copyright year and
+    obvious placeholder content; done in Python rather than in-page JS
+    so the matching logic stays testable without a browser).
+    """
+    try:
+        _check_url_is_public(url)
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                page = await browser.new_page(viewport=MOBILE_VIEWPORT)
+                response = await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+
+                title = await page.title()
+                meta_description = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"description\"]')?.content ?? null"
+                )
+                viewport_meta_present = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"viewport\"]') !== null"
+                )
+                mobile_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+                generator_meta = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"generator\"]')?.content ?? null"
+                )
+                contact_cta_present = await page.evaluate(
+                    "() => !!document.querySelector('a[href^=\"mailto:\"], a[href^=\"tel:\"], form')"
+                )
+                social_links = await page.evaluate(
+                    "() => Array.from(document.querySelectorAll('a[href]'))"
+                    ".map(a => a.href)"
+                    ".filter(href => /facebook\\.com|instagram\\.com|linkedin\\.com|(?:twitter|x)\\.com|tiktok\\.com/i.test(href))"
+                )
+                body_text = await page.evaluate("() => document.body ? document.body.innerText : null")
+
+                final_url = page.url
+                return ResearchPageSignals(
+                    final_url=final_url,
+                    https=final_url.startswith("https://"),
+                    http_status=response.status if response else None,
+                    title=title or None,
+                    meta_description=meta_description,
+                    viewport_meta_present=viewport_meta_present,
+                    mobile_overflow=mobile_overflow,
+                    generator_meta=generator_meta,
+                    contact_cta_present=contact_cta_present,
+                    social_links=sorted(set(social_links)) if social_links else [],
+                    body_text=body_text,
+                )
+            finally:
+                await browser.close()
+    except PlaywrightError as exc:
+        return ResearchPageSignals(error=str(exc))
+    except UrlNotAllowedError as exc:
+        return ResearchPageSignals(error=str(exc))
+    except Exception as exc:
+        return ResearchPageSignals(error=str(exc))

@@ -1341,6 +1341,10 @@ export const api = {
   getDiscoveredBusiness: (id: string) => request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}`),
   listBusinessResearch: (discoveredBusinessId: string) =>
     request<BusinessResearchResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/research`),
+  runBusinessResearch: (discoveredBusinessId: string) =>
+    request<BusinessResearchResult>(`/api/v1/discovered-businesses/${discoveredBusinessId}/research`, {
+      method: "POST",
+    }),
   listQualityAudits: (discoveredBusinessId: string) =>
     request<WebsiteQualityAudit[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/quality-audits`),
   listOpportunityScores: (discoveredBusinessId: string) =>
