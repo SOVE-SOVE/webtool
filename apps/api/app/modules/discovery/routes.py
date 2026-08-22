@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
+from app.integrations.discovery.registry import UnknownProviderError
 from app.modules.discovery import service
-from app.modules.discovery.schemas import DiscoveredBusinessRead, DiscoverySearchRead
+from app.modules.discovery.schemas import DiscoveredBusinessRead, DiscoverySearchCreate, DiscoverySearchRead
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/discovery-searches", tags=["discovery"])
@@ -17,6 +19,27 @@ def list_discovery_searches(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[DiscoverySearchRead]:
     return service.list_discovery_searches(db, current_user.workspace_id)
+
+
+@router.post("", response_model=DiscoverySearchRead, status_code=201)
+def create_discovery_search(
+    data: DiscoverySearchCreate,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> DiscoverySearchRead:
+    """
+    Creates and immediately runs a search — synchronous for now (the
+    provider call is a single bounded HTTP request, same shape as Sales
+    Audit generation). The `jobs` queue (see app/modules/jobs/) exists
+    for a future asynchronous/scheduled path without needing a route
+    change; nothing here uses it yet.
+    """
+    try:
+        return service.create_and_run_search(db, current_user.workspace_id, current_user.id, data)
+    except service.InvalidSearchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UnknownProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{search_id}", response_model=DiscoverySearchRead)

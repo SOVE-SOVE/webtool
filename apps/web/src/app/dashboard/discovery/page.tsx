@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, type DiscoverySearch } from "@/lib/api";
+import { api, ApiError, type DiscoverySearch } from "@/lib/api";
 
 const STATUS_LABEL: Record<DiscoverySearch["status"], string> = {
   pending: "Pending",
@@ -19,13 +19,51 @@ function criteriaSummary(search: DiscoverySearch): string {
 export default function DiscoverySearchesPage() {
   const [searches, setSearches] = useState<DiscoverySearch[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [industry, setIndustry] = useState("");
+  const [location, setLocation] = useState("");
+  const [businessType, setBusinessType] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [hasWebsite, setHasWebsite] = useState<"" | "true" | "false">("");
+
+  function load() {
     api
       .listDiscoverySearches()
       .then(setSearches)
       .catch(() => setError("Couldn't load discovery searches."));
-  }, []);
+  }
+
+  useEffect(load, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    setSaving(true);
+    try {
+      await api.createDiscoverySearch({
+        industry: industry || undefined,
+        location: location || undefined,
+        business_type: businessType || undefined,
+        keywords: keywords || undefined,
+        has_website: hasWebsite === "" ? undefined : hasWebsite === "true",
+        query_label: [industry, location].filter(Boolean).join(" — ") || undefined,
+      });
+      setIndustry("");
+      setLocation("");
+      setBusinessType("");
+      setKeywords("");
+      setHasWebsite("");
+      setShowForm(false);
+      load();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Couldn't run this search.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="p-6">
@@ -36,14 +74,69 @@ export default function DiscoverySearchesPage() {
             Find businesses that might be a good fit for a website redesign, before they enter the CRM.
           </p>
         </div>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+        >
+          {showForm ? "Cancel" : "New search"}
+        </button>
       </div>
+
+      {showForm && (
+        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-2 gap-3 border border-neutral-200 p-4">
+          <p className="col-span-2 text-xs text-neutral-500">
+            e.g. industry &ldquo;Plumbing&rdquo; + location &ldquo;Gold Coast&rdquo; finds plumbing businesses on
+            the Gold Coast. At least one of industry, location, business type, or keywords is required.
+          </p>
+          <input
+            placeholder="Industry (e.g. Plumbing)"
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+          <input
+            placeholder="Location (e.g. Gold Coast)"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+          <input
+            placeholder="Business type"
+            value={businessType}
+            onChange={(e) => setBusinessType(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+          <input
+            placeholder="Keywords"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          />
+          <select
+            value={hasWebsite}
+            onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
+            className="col-span-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Website: don&apos;t care</option>
+            <option value="true">Only businesses with a website</option>
+            <option value="false">Only businesses without a website</option>
+          </select>
+          {formError && <p className="col-span-2 text-sm text-red-600">{formError}</p>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="col-span-2 rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {saving ? "Searching…" : "Run search"}
+          </button>
+        </form>
+      )}
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       {searches && searches.length === 0 && (
         <div className="mt-6 rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
-          No discovery searches yet. Running a search (e.g. &ldquo;plumbing businesses on the Gold
-          Coast&rdquo;) is the next capability to land here.
+          No discovery searches yet. Try &ldquo;plumbing businesses on the Gold Coast&rdquo; above.
         </div>
       )}
 
@@ -69,6 +162,7 @@ export default function DiscoverySearchesPage() {
                     {search.query_label ?? criteriaSummary(search)}
                   </Link>
                   <div className="text-xs text-neutral-500">{criteriaSummary(search)}</div>
+                  {search.error_message && <div className="text-xs text-red-600">{search.error_message}</div>}
                 </td>
                 <td className="px-3 py-2 text-neutral-600">{search.provider}</td>
                 <td className="px-3 py-2 text-neutral-600">{STATUS_LABEL[search.status]}</td>

@@ -6,6 +6,23 @@ from pydantic import BaseModel, ConfigDict
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
 
 
+class DiscoverySearchCreate(BaseModel):
+    """At least one of location/industry/business_type/keywords must be
+    set — enforced in the service layer, not here, so the error message
+    can name exactly what's missing."""
+
+    query_label: str | None = None
+    location: str | None = None
+    industry: str | None = None
+    business_type: str | None = None
+    keywords: str | None = None
+    min_score: int | None = None
+    max_score: int | None = None
+    has_website: bool | None = None
+    website_outdated: bool | None = None
+    provider: str | None = None
+
+
 class DiscoverySearchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

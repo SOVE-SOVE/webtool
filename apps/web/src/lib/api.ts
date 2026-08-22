@@ -1009,6 +1009,19 @@ export type DiscoveredBusinessStatus = (typeof DISCOVERED_BUSINESS_STATUSES)[num
 export const OPPORTUNITY_SCORE_CATEGORIES = ["hot", "warm", "cold", "review"] as const;
 export type OpportunityScoreCategory = (typeof OPPORTUNITY_SCORE_CATEGORIES)[number];
 
+export type DiscoverySearchCreate = {
+  query_label?: string;
+  location?: string;
+  industry?: string;
+  business_type?: string;
+  keywords?: string;
+  min_score?: number;
+  max_score?: number;
+  has_website?: boolean;
+  website_outdated?: boolean;
+  provider?: string;
+};
+
 export type DiscoverySearch = {
   id: string;
   query_label: string | null;
@@ -1320,6 +1333,8 @@ export const api = {
     ),
 
   listDiscoverySearches: () => request<DiscoverySearch[]>("/api/v1/discovery-searches"),
+  createDiscoverySearch: (data: DiscoverySearchCreate) =>
+    request<DiscoverySearch>("/api/v1/discovery-searches", { method: "POST", body: JSON.stringify(data) }),
   getDiscoverySearch: (id: string) => request<DiscoverySearch>(`/api/v1/discovery-searches/${id}`),
   listDiscoveredBusinesses: (searchId: string) =>
     request<DiscoveredBusiness[]>(`/api/v1/discovery-searches/${searchId}/results`),
