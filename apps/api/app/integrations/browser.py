@@ -345,6 +345,7 @@ class ResearchPageSignals:
     contact_cta_present: bool | None = None
     social_links: list[str] | None = None
     body_text: str | None = None
+    load_time_ms: int | None = None
     error: str | None = None
 
 
@@ -389,6 +390,10 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     ".filter(href => /facebook\\.com|instagram\\.com|linkedin\\.com|(?:twitter|x)\\.com|tiktok\\.com/i.test(href))"
                 )
                 body_text = await page.evaluate("() => document.body ? document.body.innerText : null")
+                load_time_ms = await page.evaluate(
+                    "() => { const nav = performance.getEntriesByType('navigation')[0]; "
+                    "return nav ? Math.round(nav.duration) : null; }"
+                )
 
                 final_url = page.url
                 return ResearchPageSignals(
@@ -403,6 +408,7 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     contact_cta_present=contact_cta_present,
                     social_links=sorted(set(social_links)) if social_links else [],
                     body_text=body_text,
+                    load_time_ms=load_time_ms,
                 )
             finally:
                 await browser.close()

@@ -43,6 +43,7 @@ class BusinessResearchAgentOutput(BaseModel):
     meta_description: str | None = None
     mobile_viewport_present: bool | None = None
     contact_cta_present: bool | None = None
+    load_time_ms: int | None = None
     estimated_site_age: str | None = None
     appears_template_or_placeholder: bool | None = None
     technical_issues: list[str] = []
@@ -164,6 +165,11 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
     else:
         unavailable.append("Social media presence (none found on the page — may still exist elsewhere)")
 
+    if signals.load_time_ms is not None:
+        confirmed.append(f"Page load time: {signals.load_time_ms}ms")
+    else:
+        unavailable.append("Page load time")
+
     estimated_site_age = None
     copyright_year = _find_copyright_year(signals.body_text)
     if copyright_year is not None:
@@ -200,6 +206,7 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
         meta_description=signals.meta_description,
         mobile_viewport_present=signals.viewport_meta_present,
         contact_cta_present=signals.contact_cta_present,
+        load_time_ms=signals.load_time_ms,
         estimated_site_age=estimated_site_age,
         appears_template_or_placeholder=appears_template_or_placeholder,
         technical_issues=technical_issues,

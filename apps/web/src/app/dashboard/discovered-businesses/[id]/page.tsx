@@ -3,7 +3,21 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, ApiError, type BusinessResearchResult, type DiscoveredBusiness } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  type BusinessResearchResult,
+  type DiscoveredBusiness,
+  type QualityFindingSeverity,
+  type WebsiteQualityAudit,
+} from "@/lib/api";
+
+const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
+  critical: "bg-red-100 text-red-800",
+  high: "bg-orange-100 text-orange-800",
+  medium: "bg-amber-100 text-amber-800",
+  low: "bg-neutral-100 text-neutral-600",
+};
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
   return (
@@ -36,8 +50,10 @@ export default function DiscoveredBusinessDetailPage() {
   const params = useParams<{ id: string }>();
   const [business, setBusiness] = useState<DiscoveredBusiness | null>(null);
   const [research, setResearch] = useState<BusinessResearchResult[] | null>(null);
+  const [audits, setAudits] = useState<WebsiteQualityAudit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [researching, setResearching] = useState(false);
+  const [auditing, setAuditing] = useState(false);
 
   function load() {
     if (!params.id) return;
@@ -46,6 +62,10 @@ export default function DiscoveredBusinessDetailPage() {
       .listBusinessResearch(params.id)
       .then(setResearch)
       .catch(() => setError("Couldn't load research for this business."));
+    api
+      .listQualityAudits(params.id)
+      .then(setAudits)
+      .catch(() => setError("Couldn't load quality audits for this business."));
   }
 
   useEffect(load, [params.id]);
@@ -64,7 +84,22 @@ export default function DiscoveredBusinessDetailPage() {
     }
   }
 
+  async function handleAudit() {
+    if (!params.id) return;
+    setAuditing(true);
+    setError(null);
+    try {
+      await api.runQualityAudit(params.id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't audit this business.");
+    } finally {
+      setAuditing(false);
+    }
+  }
+
   const latest = research && research.length > 0 ? research[0] : null;
+  const latestAudit = audits && audits.length > 0 ? audits[0] : null;
 
   return (
     <div className="p-6">
@@ -100,13 +135,21 @@ export default function DiscoveredBusinessDetailPage() {
             <span className="inline-block rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
               {business.status}
             </span>
-            <div className="mt-2">
+            <div className="mt-2 flex gap-2">
               <button
                 onClick={handleResearch}
                 disabled={researching}
                 className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
               >
                 {researching ? "Researching…" : latest ? "Research again" : "Run research"}
+              </button>
+              <button
+                onClick={handleAudit}
+                disabled={auditing || !latest}
+                title={!latest ? "Run research first" : undefined}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {auditing ? "Auditing…" : "Audit quality"}
               </button>
             </div>
           </div>
@@ -149,6 +192,38 @@ export default function DiscoveredBusinessDetailPage() {
           <ListSection title="Technical issues" items={latest.technical_issues} tone="inferred" />
           <ListSection title="Social presence" items={latest.social_presence} tone="confirmed" />
           <ListSection title="Unavailable" items={latest.unavailable_fields} tone="unavailable" />
+        </div>
+      )}
+
+      {latestAudit && (
+        <div className="mt-6 max-w-2xl border border-neutral-200 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-900">Website quality audit</h2>
+            <span className="text-xs text-neutral-400">{new Date(latestAudit.audited_at).toLocaleString()}</span>
+          </div>
+          <p className="mt-2 text-sm text-neutral-700">{latestAudit.summary}</p>
+
+          {latestAudit.findings.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {latestAudit.findings.map((finding, i) => (
+                <li key={i} className="border border-neutral-100 p-2.5 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${SEVERITY_STYLE[finding.severity]}`}
+                    >
+                      {finding.severity}
+                    </span>
+                    <span className="text-xs uppercase tracking-wide text-neutral-400">{finding.category}</span>
+                    <span className="ml-auto text-xs text-neutral-400">
+                      {Math.round(finding.confidence * 100)}% confidence
+                    </span>
+                  </div>
+                  <p className="mt-1 text-neutral-900">{finding.message}</p>
+                  <p className="mt-0.5 text-xs text-neutral-500">Evidence: {finding.evidence}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

@@ -44,6 +44,10 @@ class BusinessResearchResult(Base):
     meta_description: Mapped[str | None] = mapped_column(Text)
     mobile_viewport_present: Mapped[bool | None] = mapped_column(Boolean)
     contact_cta_present: Mapped[bool | None] = mapped_column(Boolean)
+    # Real, measured navigation timing (like website_audits.load_time_ms)
+    # — never a fabricated Lighthouse-style score, per that column's own
+    # comment on why page_speed_score there is deliberately left unused.
+    load_time_ms: Mapped[int | None] = mapped_column(Integer)
     # A description, not a number — e.g. "likely 5+ years (copyright
     # year 2019 found in footer)". Never a fabricated exact age.
     estimated_site_age: Mapped[str | None] = mapped_column(String(255))

@@ -80,6 +80,7 @@ def test_research_full_signals_classification(monkeypatch):
             contact_cta_present=True,
             social_links=["https://facebook.com/gcplumbing"],
             body_text="Copyright © 2019 Gold Coast Plumbing Co. All rights reserved.",
+            load_time_ms=900,
         )
 
     monkeypatch.setattr("app.agents.business_research.fetch_research_signals", fake_fetch)
@@ -91,6 +92,7 @@ def test_research_full_signals_classification(monkeypatch):
     assert output.https is True
     assert output.mobile_viewport_present is True
     assert output.contact_cta_present is True
+    assert output.load_time_ms == 900
     assert output.social_presence == ["https://facebook.com/gcplumbing"]
     assert output.estimated_site_age is not None
     assert "2019" in output.estimated_site_age

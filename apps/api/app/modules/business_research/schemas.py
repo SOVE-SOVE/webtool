@@ -22,6 +22,7 @@ class BusinessResearchResultRead(BaseModel):
     meta_description: str | None
     mobile_viewport_present: bool | None
     contact_cta_present: bool | None
+    load_time_ms: int | None
     estimated_site_age: str | None
     appears_template_or_placeholder: bool | None
 
@@ -47,6 +48,7 @@ class BusinessResearchResultRead(BaseModel):
             meta_description=result.meta_description,
             mobile_viewport_present=result.mobile_viewport_present,
             contact_cta_present=result.contact_cta_present,
+            load_time_ms=result.load_time_ms,
             estimated_site_age=result.estimated_site_age,
             appears_template_or_placeholder=result.appears_template_or_placeholder,
             technical_issues=_split(result.technical_issues),

@@ -63,6 +63,7 @@ def run_research(
         meta_description=output.meta_description,
         mobile_viewport_present=output.mobile_viewport_present,
         contact_cta_present=output.contact_cta_present,
+        load_time_ms=output.load_time_ms,
         estimated_site_age=output.estimated_site_age,
         appears_template_or_placeholder=output.appears_template_or_placeholder,
         technical_issues=_split(output.technical_issues),

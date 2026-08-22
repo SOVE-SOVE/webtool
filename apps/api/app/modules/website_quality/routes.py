@@ -20,3 +20,16 @@ def list_quality_audits(
     if discovery_service.get_discovered_business(db, current_user.workspace_id, business_id) is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return service.list_quality_audits(db, business_id)
+
+
+@router.post("", response_model=WebsiteQualityAuditRead, status_code=201)
+def run_quality_audit(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> WebsiteQualityAuditRead:
+    try:
+        audit = service.run_quality_audit(db, current_user.workspace_id, current_user.id, business_id)
+    except service.NoResearchAvailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if audit is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return audit

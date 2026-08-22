@@ -1083,6 +1083,7 @@ export type BusinessResearchResult = {
   meta_description: string | null;
   mobile_viewport_present: boolean | null;
   contact_cta_present: boolean | null;
+  load_time_ms: number | null;
   estimated_site_age: string | null;
   appears_template_or_placeholder: boolean | null;
   technical_issues: string[];
@@ -1347,6 +1348,10 @@ export const api = {
     }),
   listQualityAudits: (discoveredBusinessId: string) =>
     request<WebsiteQualityAudit[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/quality-audits`),
+  runQualityAudit: (discoveredBusinessId: string) =>
+    request<WebsiteQualityAudit>(`/api/v1/discovered-businesses/${discoveredBusinessId}/quality-audits`, {
+      method: "POST",
+    }),
   listOpportunityScores: (discoveredBusinessId: string) =>
     request<OpportunityScoreResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`),
 };
