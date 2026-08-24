@@ -901,8 +901,12 @@ export type RollbackDeploymentRequest = {
   notes?: string;
 };
 
+// The three first-contact channels a qualified lead can be drafted for.
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
-export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
+// "follow_up" is a fourth, drafted-message-only channel (see api docs on
+// generateOutreach below) — not offered as a first-contact option, so it
+// stays out of OUTREACH_CHANNELS, but a message can carry it.
+export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number] | "follow_up";
 
 export const OUTREACH_STATUSES = [
   "drafted",
@@ -939,6 +943,15 @@ export type OutreachMessage = {
   replied_at: string | null;
   closed_by_user_name: string | null;
   closed_at: string | null;
+};
+
+export type OutreachMessageUpdate = {
+  subject?: string;
+  body?: string;
+  opening_line?: string;
+  key_points?: string[];
+  objection_handling?: string[];
+  suggested_close?: string;
 };
 
 export type PreviousOutreachSummary = {
@@ -1350,6 +1363,8 @@ export const api = {
       body: JSON.stringify({ channel }),
     }),
   listOutreach: (leadId: string) => request<OutreachMessage[]>(`/api/v1/leads/${leadId}/outreach`),
+  updateOutreach: (id: string, data: OutreachMessageUpdate) =>
+    request<OutreachMessage>(`/api/v1/outreach/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   approveOutreach: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/approve`, { method: "POST" }),
   markOutreachSent: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/mark-sent`, { method: "POST" }),
   markOutreachReplied: (id: string) =>

@@ -20,6 +20,22 @@ class OutreachGenerateRequest(BaseModel):
     channel: OutreachChannel
 
 
+class OutreachMessageUpdate(BaseModel):
+    """
+    Operator edit before sending — the "edit everything before it goes
+    out" requirement. Only fields relevant to the message's own channel
+    are meaningful, but any subset may be sent; unset fields are left
+    untouched (see modules/outreach/service.py::update_outreach).
+    """
+
+    subject: str | None = None
+    body: str | None = None
+    opening_line: str | None = None
+    key_points: list[str] | None = None
+    objection_handling: list[str] | None = None
+    suggested_close: str | None = None
+
+
 class OutreachMessageRead(BaseModel):
     id: uuid.UUID
     lead_id: uuid.UUID
@@ -149,7 +165,7 @@ class SnoozeFollowUpRequest(BaseModel):
 
 
 def _excerpt_for(m) -> str:
-    if m.channel == OutreachChannel.EMAIL:
+    if m.channel in (OutreachChannel.EMAIL, OutreachChannel.FOLLOW_UP):
         return m.subject or "(email, no subject)"
     return m.opening_line or "(talking points)"
 

@@ -1,5 +1,7 @@
 # Decisions
 
+added agent-to-agent trust boundary because upstream errors like a bad lead score could otherwise propagate silently into outreach drafts"
+
 A running log of decisions and the reasoning behind them, so later work
 doesn't silently re-litigate settled questions. Newest entries at the
 top. Each entry: date, decision, why, alternatives considered (if any).
@@ -18,6 +20,62 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 **Alternatives considered:** (optional) what else was on the table and
 why it lost.
 ```
+
+---
+
+## 2026-08-24 — Outreach system request: extended the existing M3 feature (fourth channel = follow-up message drafting, plus editing) instead of rebuilding
+
+**Decision:** A request came in to "build an AI-assisted outreach
+system" — email/phone/in-person/follow-up drafts grounded only in real
+findings, editable before sending, history stored, never auto-sent. That
+system already existed (M3, 2026-08-18: `agents/outreach.py` /
+`modules/outreach/`). Rather than building a parallel or replacement
+system, extended the existing one to close its two actual gaps against
+the request:
+
+1. **Follow-up MESSAGE drafting**, added as a fourth
+   `OutreachChannel.FOLLOW_UP` value alongside email/phone/in_person —
+   same `EmailDraft` output shape as email, own prompt
+   (`agents/prompts/outreach_follow_up.md`) with guardrails specific to
+   follow-ups (never claim a reply/read/urgency the prior-outreach record
+   doesn't actually show). `generate_outreach` refuses with a 400 when no
+   prior outreach exists for the lead — a follow-up message referencing
+   contact that never happened is exactly the fabricated-relationship
+   invention this feature exists to prevent, so it's enforced structurally
+   rather than left to the prompt. Deliberately kept separate from
+   `agents/follow_up.py`/`follow_ups` (the existing next-touch scheduling
+   recommendation) — that's a different, already-correct concept and nothing
+   about it changed.
+2. **Editing before send**, which had no route at all —
+   `PATCH /api/v1/outreach/{id}`. Refuses once a message has actually gone
+   out (SENT/REPLIED/FOLLOW_UP_DUE/CLOSED — editing then would misrepresent
+   what was really sent) and reverts an APPROVED message back to DRAFTED on
+   edit, matching the "content changed → approval no longer covers it"
+   contract this codebase already applies everywhere else (brief, creative
+   direction, sitemap, website sections — see several entries below).
+
+Storage, lifecycle (DRAFTED → APPROVED → SENT → REPLIED/FOLLOW_UP_DUE →
+CLOSED), guardrail prompts for the other three channels, and "store
+generated outreach history" (one `OutreachMessage` row per generation,
+never overwritten) were all already correct and untouched.
+
+**Why:** [[03_AGENT_RULES]]'s "check 05_DECISIONS/07_SESSION_LOG before
+starting work" exists precisely to prevent this class of accidental
+rebuild. Both gaps closed are read directly off the request's own
+wording ("follow-up message" as one of four generated types; "allow the
+operator to edit everything before sending") against what the existing
+code actually did, not assumed.
+
+**Alternatives considered:** Making `agents/follow_up.py` draft message
+content itself instead of adding a fourth outreach channel — rejected;
+it would conflate two contracts (a scheduling recommendation vs. a
+send-ready draft) that the existing schema already keeps cleanly
+separate (`FollowUp` vs. `OutreachMessage`), and `FollowUp.channel`
+would then need to exclude its own table's new "value" nonsensically.
+Allowing edits on a SENT message (with a "this changes the historical
+record" warning) instead of refusing outright — rejected; every other
+send-adjacent checkpoint in this app (approve, deploy) treats "already
+happened" as immutable, not warn-and-allow.
 
 ---
 

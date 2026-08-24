@@ -27,6 +27,7 @@ from app.modules.outreach.schemas import (
     FollowUpCandidateRead,
     FollowUpRead,
     OutreachMessageRead,
+    OutreachMessageUpdate,
 )
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.website_audits.models import WebsiteAudit
@@ -59,6 +60,10 @@ _ALTERNATE_CHANNEL = {
     OutreachChannel.EMAIL: OutreachChannel.PHONE,
     OutreachChannel.PHONE: OutreachChannel.EMAIL,
     OutreachChannel.IN_PERSON: OutreachChannel.EMAIL,
+    # A drafted follow-up MESSAGE (subject/body, like EMAIL) — see
+    # OutreachChannel.FOLLOW_UP's docstring in models.py — went stale the
+    # same way an unanswered email did.
+    OutreachChannel.FOLLOW_UP: OutreachChannel.PHONE,
 }
 
 NEEDS_FOLLOW_UP_SCAN_LIMIT = 50
@@ -133,7 +138,7 @@ def _to_sales_audit_output(report: SalesAuditReport | None) -> SalesAuditOutput 
 
 
 def _history_excerpt(m: OutreachMessage) -> str:
-    if m.channel == OutreachChannel.EMAIL:
+    if m.channel in (OutreachChannel.EMAIL, OutreachChannel.FOLLOW_UP):
         return f"Subject: {m.subject!r}. Body: {m.body}"
     points = ", ".join(_split(m.key_points))
     return f"Opening: {m.opening_line!r}. Key points: {points}"
@@ -153,6 +158,17 @@ def generate_outreach(
         return None
     business = lead.business
 
+    history = _lead_outreach_history(db, lead.id)
+    if channel == OutreachChannel.FOLLOW_UP and not history:
+        # A follow-up message that references contact which never happened
+        # would be exactly the fabricated-relationship invention this
+        # feature must never produce — refuse structurally rather than
+        # trust the prompt alone.
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot draft a follow-up message — no prior outreach exists for this lead yet.",
+        )
+
     latest_website_audit = db.scalar(
         select(WebsiteAudit).where(WebsiteAudit.lead_id == lead.id).order_by(WebsiteAudit.audited_at.desc()).limit(1)
     )
@@ -162,7 +178,6 @@ def generate_outreach(
         .order_by(SalesAuditReport.generated_at.desc())
         .limit(1)
     )
-    history = _lead_outreach_history(db, lead.id)
 
     result = outreach_agent.run(
         OutreachInput(
@@ -202,7 +217,7 @@ def generate_outreach(
         prompt_version=outreach_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )
-    if channel == OutreachChannel.EMAIL:
+    if channel in (OutreachChannel.EMAIL, OutreachChannel.FOLLOW_UP):
         message.subject = output.subject
         message.body = output.body
     else:
@@ -251,6 +266,59 @@ def get_outreach(db: Session, workspace_id: uuid.UUID, message_id: uuid.UUID) ->
     message = _get_outreach_message(db, workspace_id, message_id)
     if message is None:
         return None
+    return OutreachMessageRead.from_model(message, message.flagged_for_review, message.review_notes)
+
+
+def update_outreach(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, message_id: uuid.UUID, update: OutreachMessageUpdate
+) -> OutreachMessageRead | None:
+    """
+    Operator edit before sending. Refused once the message has actually
+    gone out (SENT/REPLIED/FOLLOW_UP_DUE/CLOSED) — editing the row past
+    that point would misrepresent what was really sent, the same reason
+    every other checkpoint in this app reverts approval instead of
+    allowing silent drift after the fact. Editing an APPROVED draft
+    reverts it to DRAFTED, same "content changed, approval no longer
+    covers it" contract used across the rest of this codebase (brief,
+    creative direction, sitemap, website sections).
+    """
+    message = _get_outreach_message(db, workspace_id, message_id)
+    if message is None:
+        return None
+    if message.status not in (OutreachStatus.DRAFTED, OutreachStatus.APPROVED):
+        raise HTTPException(status_code=400, detail=f"Cannot edit outreach in status {message.status.value}")
+
+    fields = update.model_dump(exclude_unset=True)
+    if "subject" in fields:
+        message.subject = fields["subject"]
+    if "body" in fields:
+        message.body = fields["body"]
+    if "opening_line" in fields:
+        message.opening_line = fields["opening_line"]
+    if "key_points" in fields:
+        message.key_points = "\n".join(fields["key_points"]) if fields["key_points"] else None
+    if "objection_handling" in fields:
+        message.objection_handling = "\n".join(fields["objection_handling"]) if fields["objection_handling"] else None
+    if "suggested_close" in fields:
+        message.suggested_close = fields["suggested_close"]
+
+    reverted = message.status == OutreachStatus.APPROVED
+    if reverted:
+        message.status = OutreachStatus.DRAFTED
+        message.approved_by_user_id = None
+        message.approved_at = None
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=message.lead_id,
+        action="outreach_edited",
+        summary=f"Edited {message.channel.value} outreach" + (" — approval reverted to draft" if reverted else ""),
+    )
+    db.commit()
+    db.refresh(message)
     return OutreachMessageRead.from_model(message, message.flagged_for_review, message.review_notes)
 
 
@@ -575,7 +643,10 @@ def _build_candidate(
     elif lead.status == LeadStatus.CONTACTED:
         last_channel = last_message.channel if last_message else OutreachChannel.EMAIL
         channel = _ALTERNATE_CHANNEL[last_channel]
-        reason = f"No reply {days_quiet} day(s) after {last_channel.value} outreach — try {channel.value} instead."
+        reason = (
+            f"No reply {days_quiet} day(s) after {last_channel.value.replace('_', ' ')} outreach — "
+            f"try {channel.value.replace('_', ' ')} instead."
+        )
     elif lead.status == LeadStatus.PROPOSAL:
         reason = f"Proposal stage with no contact in {days_quiet} day(s) — chase a decision."
         channel = OutreachChannel.PHONE

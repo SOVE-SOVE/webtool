@@ -14,6 +14,7 @@ from app.modules.outreach.schemas import (
     FollowUpRead,
     OutreachGenerateRequest,
     OutreachMessageRead,
+    OutreachMessageUpdate,
     SnoozeFollowUpRequest,
 )
 from app.modules.users.models import User
@@ -52,6 +53,19 @@ def get_outreach(
     db: Session = Depends(get_db),
 ) -> OutreachMessageRead:
     message = service.get_outreach(db, current_user.workspace_id, message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Outreach message not found")
+    return message
+
+
+@router.patch("/api/v1/outreach/{message_id}", response_model=OutreachMessageRead)
+def update_outreach(
+    message_id: uuid.UUID,
+    body: OutreachMessageUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> OutreachMessageRead:
+    message = service.update_outreach(db, current_user.workspace_id, current_user.id, message_id, body)
     if message is None:
         raise HTTPException(status_code=404, detail="Outreach message not found")
     return message
