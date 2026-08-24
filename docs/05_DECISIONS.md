@@ -155,6 +155,78 @@ happened" as immutable, not warn-and-allow.
 
 ---
 
+## 2026-08-25 — Email outreach integration: provider adapter, explicit operator send action separate from approval, per-attempt send history
+
+**Decision:** Built the actual dispatch path for EMAIL-channel outreach
+(`app/integrations/email.py`, plus `modules/outreach/service.py`'s
+`send_outreach_email`). Before this, `agents/outreach.py` could draft an
+email and `approve_outreach`/`mark_outreach_sent` could record its
+lifecycle, but nothing in the app ever actually sent one — "mark sent"
+was pure bookkeeping for a message the operator sent by hand outside the
+app. This closes that gap with a real provider integration:
+
+1. **Adapter architecture**, mirroring `integrations/deployment.py`'s
+   shape exactly: an `EmailProvider` interface, a `MockEmailProvider`
+   (default, never makes a network call, records every message on
+   itself for tests) and a `ResendEmailProvider` (the one real provider,
+   per [[02_ARCHITECTURE]]'s integration list), selected by
+   `get_email_provider()` off `settings.email_provider`. Never a
+   concrete provider referenced from the service layer. An unconfigured
+   or unknown provider raises (`EmailProviderError`) rather than
+   silently falling back to mock — same "fail loud on misconfiguration"
+   contract `get_deployment_provider()` already established.
+2. **Compose is a distinct step from send.** `compose_email()` validates
+   and packages an already-drafted/approved subject/body/recipient into
+   an `EmailMessage` — it never invents content; that's still
+   `agents/outreach.py`'s job. A `ResendEmailProvider` network error or
+   non-2xx response is caught inside the provider and returned as a
+   failed `EmailSendOutcome`, never raised past it — a provider hiccup
+   is recorded like any other send failure, not an unhandled exception.
+3. **Sending is a separate explicit action from approving, never
+   combined.** `send_outreach_email` requires `status == APPROVED` —
+   never `DRAFTED` — enforcing [[03_AGENT_RULES]]'s "the operator must
+   explicitly approve a message before sending" as a hard 400, not a
+   convention. Approving and sending are two distinct operator clicks on
+   two distinct existing/new endpoints (`/approve`, then
+   `/send-email`), so there is no path where approval itself triggers a
+   send.
+4. **Every send attempt is its own `EmailSend` row** (new table), not a
+   field on `OutreachMessage`. A failed attempt leaves the message at
+   `APPROVED` — retryable — and records `error_message` on its own row;
+   a success flips the message to `SENT` via the same
+   `_apply_sent_side_effects` helper `mark_outreach_sent` already used
+   (Interaction + lead `CONTACTED` bump + activity log), refactored out
+   so a system-dispatched send and an operator's manual "I sent it
+   myself" bookkeeping produce identical downstream effects. This is
+   the "record sent email" / "email history" / "failure handling"
+   requirement made structural: a lead's email history is the full
+   sequence of attempts, successes and failures both, never overwritten
+   on retry. `GET /api/v1/leads/{id}/emails` surfaces it, newest first.
+5. **Recipient resolution never invents an address.** The primary
+   contact's email if one's on file, else the business's own email,
+   else a 400 before any provider is even touched — same "flag the gap,
+   don't fabricate" posture the rest of this codebase holds.
+
+**Why:** the operator-stated requirement was explicit — "never send
+AI-generated outreach automatically without explicit operator action" —
+and the previous state (a "mark sent" that sent nothing) meant the app
+couldn't actually dispatch email at all, only track that a human did it
+elsewhere. Splitting approve/send into two actions, and failed sends
+into their own retryable rows, makes both the approval gate and the
+failure-handling requirement checkable rather than aspirational.
+
+**Alternatives considered:** Folding send outcome fields directly onto
+`OutreachMessage` (a `send_status`/`send_error` pair) instead of a new
+`email_sends` table — rejected: a retry would either overwrite the
+previous failure's record or need ad hoc versioning, and "email
+history" was an explicit, separate requirement from the message's own
+lifecycle status. Auto-sending immediately on approval (one action
+instead of two) — rejected outright; it's exactly the "never send
+automatically" case the requirement calls out, even if approval already
+implies operator intent.
+
+---
+
 ## 2026-08-22 — Lead Intelligence (Phase 2): discover → research → audit → score → human review → CRM import, plus the job queue
 
 **Decision:** Built the layer upstream of the existing sales pipeline —

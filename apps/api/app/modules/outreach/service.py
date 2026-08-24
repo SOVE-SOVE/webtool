@@ -14,6 +14,7 @@ from app.agents.outreach import PriorOutreachSummary as OutreachPriorOutreachSum
 from app.agents.sales_audit import SalesAuditOutput
 from app.agents.website_audit import WebsiteAuditOutput
 from app.core.settings import settings
+from app.integrations.email import EmailComposeError, compose_email, get_email_provider
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.contacts.models import Contact
@@ -21,8 +22,17 @@ from app.modules.interactions.models import Interaction, InteractionKind
 from app.modules.leads import service as leads_service
 from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import Meeting, MeetingStatus
-from app.modules.outreach.models import FollowUp, FollowUpStatus, OutreachChannel, OutreachMessage, OutreachStatus
+from app.modules.outreach.models import (
+    EmailSend,
+    EmailSendStatus,
+    FollowUp,
+    FollowUpStatus,
+    OutreachChannel,
+    OutreachMessage,
+    OutreachStatus,
+)
 from app.modules.outreach.schemas import (
+    EmailSendRead,
     FollowUpBuckets,
     FollowUpCandidateRead,
     FollowUpRead,
@@ -101,9 +111,23 @@ def _get_outreach_message(db: Session, workspace_id: uuid.UUID, message_id: uuid
     )
 
 
+def _primary_contact(db: Session, business_id: uuid.UUID) -> Contact | None:
+    return db.scalar(select(Contact).where(Contact.business_id == business_id).order_by(Contact.created_at).limit(1))
+
+
 def _primary_contact_name(db: Session, business_id: uuid.UUID) -> str | None:
-    contact = db.scalar(select(Contact).where(Contact.business_id == business_id).order_by(Contact.created_at).limit(1))
+    contact = _primary_contact(db, business_id)
     return contact.name if contact else None
+
+
+def _resolve_recipient_email(db: Session, business: Business) -> str | None:
+    """The primary contact's email if one's on file, else the business's
+    own email — never invented. Used by `send_outreach_email` to decide
+    who an approved EMAIL outreach message actually goes to."""
+    contact = _primary_contact(db, business.id)
+    if contact and contact.email:
+        return contact.email
+    return business.email
 
 
 def _to_website_audit_output(audit: WebsiteAudit | None) -> WebsiteAuditOutput | None:
@@ -349,15 +373,15 @@ def approve_outreach(
     return OutreachMessageRead.from_model(message, message.flagged_for_review, message.review_notes)
 
 
-def mark_outreach_sent(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, message_id: uuid.UUID
-) -> OutreachMessageRead | None:
-    message = _get_outreach_message(db, workspace_id, message_id)
-    if message is None:
-        return None
-    if message.status not in (OutreachStatus.DRAFTED, OutreachStatus.APPROVED):
-        raise HTTPException(status_code=400, detail=f"Cannot mark outreach in status {message.status.value} as sent")
-
+def _apply_sent_side_effects(
+    db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID, message: OutreachMessage, action: str, summary: str
+) -> None:
+    """Shared "this outreach actually went out" bookkeeping — the
+    Interaction row, the lead's CONTACTED status bump, and the activity
+    log entry. Used both by the manual `mark_outreach_sent` (operator
+    sent it themselves, any channel) and `send_outreach_email` (the
+    system dispatched it through the email adapter) so a lead's history
+    reads the same either way."""
     message.status = OutreachStatus.SENT
     message.sent_by_user_id = actor_id
     message.sent_at = datetime.now(timezone.utc)
@@ -376,12 +400,123 @@ def mark_outreach_sent(
         user_id=actor_id,
         entity_type="lead",
         entity_id=message.lead_id,
+        action=action,
+        summary=summary,
+    )
+
+
+def mark_outreach_sent(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, message_id: uuid.UUID
+) -> OutreachMessageRead | None:
+    message = _get_outreach_message(db, workspace_id, message_id)
+    if message is None:
+        return None
+    if message.status not in (OutreachStatus.DRAFTED, OutreachStatus.APPROVED):
+        raise HTTPException(status_code=400, detail=f"Cannot mark outreach in status {message.status.value} as sent")
+
+    _apply_sent_side_effects(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        message=message,
         action="outreach_sent",
         summary=f"Marked {message.channel.value} outreach as sent",
     )
     db.commit()
     db.refresh(message)
     return OutreachMessageRead.from_model(message, message.flagged_for_review, message.review_notes)
+
+
+def send_outreach_email(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, message_id: uuid.UUID
+) -> EmailSendRead:
+    """
+    The explicit operator action that actually dispatches an approved
+    EMAIL outreach message through integrations/email.py's provider
+    adapter. Requires `status == APPROVED` — never DRAFTED — which is
+    the hard gate on "the operator must explicitly approve a message
+    before sending" and "never send AI-generated outreach automatically"
+    (docs/03_AGENT_RULES.md): approval and send are two separate,
+    explicit clicks, not one action that both approves and sends.
+
+    Every attempt — success or failure — is recorded as its own
+    `EmailSend` row (the "record sent email" / "email history" /
+    "failure handling" requirements). A failed send leaves the message
+    at APPROVED so the operator can fix the underlying problem (e.g. no
+    recipient on file) and retry; it never silently drops back to
+    DRAFTED or gets stuck unrecoverable.
+    """
+    message = _get_outreach_message(db, workspace_id, message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Outreach message not found")
+    if message.channel != OutreachChannel.EMAIL:
+        raise HTTPException(status_code=400, detail="Only EMAIL-channel outreach can be sent through this integration")
+    if message.status != OutreachStatus.APPROVED:
+        raise HTTPException(
+            status_code=400, detail=f"Outreach must be APPROVED before sending — currently {message.status.value}"
+        )
+
+    business = message.lead.business
+    recipient = _resolve_recipient_email(db, business)
+
+    try:
+        email = compose_email(to=recipient, subject=message.subject, body=message.body)
+    except EmailComposeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    provider = get_email_provider()
+    outcome = provider.send(email)
+
+    email_send = EmailSend(
+        outreach_message_id=message.id,
+        lead_id=message.lead_id,
+        to_email=email.to,
+        from_email=email.from_address,
+        subject=email.subject,
+        body=email.body,
+        provider=outcome.provider,
+        status=EmailSendStatus.SENT if outcome.success else EmailSendStatus.FAILED,
+        provider_message_id=outcome.provider_message_id,
+        error_message=outcome.error_message,
+        sent_by_user_id=actor_id,
+    )
+    db.add(email_send)
+
+    if outcome.success:
+        _apply_sent_side_effects(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor_id,
+            message=message,
+            action="email_sent",
+            summary=f"Sent email outreach to {email.to}",
+        )
+    else:
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="lead",
+            entity_id=message.lead_id,
+            action="email_send_failed",
+            summary=f"Failed to send email outreach to {email.to}: {outcome.error_message}",
+        )
+
+    db.commit()
+    db.refresh(email_send)
+    return EmailSendRead.from_model(email_send)
+
+
+def list_email_history(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> list[EmailSendRead]:
+    query = (
+        select(EmailSend)
+        .join(Lead, EmailSend.lead_id == Lead.id)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id, EmailSend.lead_id == lead_id)
+        .options(joinedload(EmailSend.sent_by_user))
+        .order_by(EmailSend.created_at.desc())
+    )
+    return [EmailSendRead.from_model(s) for s in db.scalars(query)]
 
 
 def mark_outreach_replied(

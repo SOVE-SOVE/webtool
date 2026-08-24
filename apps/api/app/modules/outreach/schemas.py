@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.modules.outreach.models import FollowUpStatus, OutreachChannel, OutreachStatus
+from app.modules.outreach.models import EmailSendStatus, FollowUpStatus, OutreachChannel, OutreachStatus
 
 SNOOZE_MIN_DAYS = 1
 SNOOZE_MAX_DAYS = 30
@@ -134,6 +134,38 @@ class FollowUpRead(BaseModel):
             generated_at=f.generated_at,
             resolved_by_user_name=f.resolved_by_user.name if f.resolved_by_user else None,
             resolved_at=f.resolved_at,
+        )
+
+
+class EmailSendRead(BaseModel):
+    id: uuid.UUID
+    outreach_message_id: uuid.UUID
+    lead_id: uuid.UUID
+    to_email: str
+    from_email: str
+    subject: str
+    provider: str
+    status: EmailSendStatus
+    provider_message_id: str | None
+    error_message: str | None
+    sent_by_user_name: str | None
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, s) -> "EmailSendRead":
+        return cls(
+            id=s.id,
+            outreach_message_id=s.outreach_message_id,
+            lead_id=s.lead_id,
+            to_email=s.to_email,
+            from_email=s.from_email,
+            subject=s.subject,
+            provider=s.provider,
+            status=s.status,
+            provider_message_id=s.provider_message_id,
+            error_message=s.error_message,
+            sent_by_user_name=s.sent_by_user.name if s.sent_by_user else None,
+            created_at=s.created_at,
         )
 
 
