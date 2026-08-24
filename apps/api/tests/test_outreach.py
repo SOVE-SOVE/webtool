@@ -222,6 +222,180 @@ def test_cannot_close_already_closed_outreach(authed_client, monkeypatch):
     assert authed_client.post(f"/api/v1/outreach/{message_id}/close").status_code == 400
 
 
+# --- follow-up MESSAGE (drafted content, channel="follow_up") ------------
+#
+# Distinct from the "follow-ups" section below, which tests
+# agents/follow_up.py — the scheduling recommendation (channel/due date/
+# what to cover). This is the fourth outreach channel: an actual drafted
+# follow-up message, same EmailDraft shape as email.
+
+
+FAKE_FOLLOW_UP_EMAIL = {
+    "subject": "Following up — riversideplumbing.example",
+    "body": "Hi again, just following up on my note last week about your site's missing mobile viewport tag. "
+    "Still happy to walk through options whenever suits — a quick call this week or next?",
+}
+
+
+def _patch_follow_up_email(monkeypatch, output=None):
+    monkeypatch.setattr("app.agents.outreach.generate_structured", lambda **kwargs: dict(output or FAKE_FOLLOW_UP_EMAIL))
+
+
+def test_generate_follow_up_message_requires_prior_outreach(authed_client, monkeypatch):
+    _patch_follow_up_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)  # never contacted
+
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"})
+    assert res.status_code == 400
+    assert "no prior outreach" in res.json()["detail"].lower()
+
+
+def test_generate_follow_up_message_happy_path(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    first = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{first['id']}/mark-sent")
+
+    _patch_follow_up_email(monkeypatch)
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"})
+    assert res.status_code == 201
+    body = res.json()
+    assert body["channel"] == "follow_up"
+    assert body["status"] == "drafted"
+    assert body["subject"] == FAKE_FOLLOW_UP_EMAIL["subject"]
+    assert body["body"] == FAKE_FOLLOW_UP_EMAIL["body"]
+    # Same lifecycle as every other channel — drafting only.
+    assert authed_client.post(f"/api/v1/outreach/{body['id']}/approve").status_code == 200
+
+
+def test_generate_follow_up_message_workspace_isolated(authed_client, other_authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    first = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{first['id']}/mark-sent")
+
+    _patch_follow_up_email(monkeypatch)
+    assert (
+        other_authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"}).status_code
+        == 404
+    )
+
+
+# --- editing (operator edits everything before it goes out) --------------
+
+
+def test_edit_outreach_requires_auth(client):
+    res = client.patch(
+        "/api/v1/outreach/00000000-0000-0000-0000-000000000000", json={"subject": "new"}
+    )
+    assert res.status_code == 401
+
+
+def test_edit_outreach_unknown_message_404s(authed_client):
+    res = authed_client.patch(
+        "/api/v1/outreach/00000000-0000-0000-0000-000000000000", json={"subject": "new"}
+    )
+    assert res.status_code == 404
+
+
+def test_edit_email_outreach_updates_subject_and_body(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = authed_client.patch(
+        f"/api/v1/outreach/{message['id']}",
+        json={"subject": "Edited subject", "body": "Edited body text."},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["subject"] == "Edited subject"
+    assert body["body"] == "Edited body text."
+    assert body["status"] == "drafted"
+
+    fetched = authed_client.get(f"/api/v1/outreach/{message['id']}").json()
+    assert fetched["subject"] == "Edited subject"
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(a["action"] == "outreach_edited" for a in activity)
+
+
+def test_edit_talking_points_outreach_updates_list_fields(authed_client, monkeypatch):
+    _patch_talking_points(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "phone"}).json()
+
+    res = authed_client.patch(
+        f"/api/v1/outreach/{message['id']}",
+        json={
+            "opening_line": "New opening",
+            "key_points": ["Point one", "Point two"],
+            "objection_handling": ["Objection A — response A"],
+            "suggested_close": "New close.",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["opening_line"] == "New opening"
+    assert body["key_points"] == ["Point one", "Point two"]
+    assert body["objection_handling"] == ["Objection A — response A"]
+    assert body["suggested_close"] == "New close."
+
+
+def test_edit_outreach_partial_update_leaves_other_fields_untouched(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"subject": "Only subject changed"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["subject"] == "Only subject changed"
+    assert body["body"] == FAKE_EMAIL["body"]
+
+
+def test_edit_approved_outreach_reverts_it_to_drafted(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    approved = authed_client.post(f"/api/v1/outreach/{message['id']}/approve").json()
+    assert approved["status"] == "approved"
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Changed after approval."})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "drafted"
+    assert body["approved_by_user_name"] is None
+    assert body["approved_at"] is None
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(
+        a["action"] == "outreach_edited" and "reverted" in (a["summary"] or "") for a in activity
+    )
+
+
+def test_cannot_edit_outreach_once_sent(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-sent")
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Too late."})
+    assert res.status_code == 400
+
+    unchanged = authed_client.get(f"/api/v1/outreach/{message['id']}").json()
+    assert unchanged["body"] == FAKE_EMAIL["body"]
+
+
+def test_edit_outreach_workspace_isolated(authed_client, other_authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = other_authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Hijacked."})
+    assert res.status_code == 404
+
+
 # --- follow-ups -----------------------------------------------------------
 
 

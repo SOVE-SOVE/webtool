@@ -41,6 +41,7 @@ const OUTREACH_CHANNEL_LABELS: Record<OutreachChannel, string> = {
   email: "Draft email",
   phone: "Draft phone talking points",
   in_person: "Draft in-person talking points",
+  follow_up: "Draft follow-up message",
 };
 
 const OUTREACH_STATUS_LABELS: Record<OutreachMessage["status"], string> = {
@@ -82,6 +83,15 @@ export default function LeadDetailPage() {
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [expandedOutreachId, setExpandedOutreachId] = useState<string | null>(null);
   const [outreachActionId, setOutreachActionId] = useState<string | null>(null);
+
+  const [editingOutreachId, setEditingOutreachId] = useState<string | null>(null);
+  const [editSubject, setEditSubject] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editOpeningLine, setEditOpeningLine] = useState("");
+  const [editKeyPoints, setEditKeyPoints] = useState("");
+  const [editObjectionHandling, setEditObjectionHandling] = useState("");
+  const [editSuggestedClose, setEditSuggestedClose] = useState("");
+  const [savingOutreachEdit, setSavingOutreachEdit] = useState(false);
 
   const [generatingFollowUp, setGeneratingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
@@ -192,6 +202,45 @@ export default function LeadDetailPage() {
       setOutreachError(err instanceof ApiError ? err.message : "That action didn't go through.");
     } finally {
       setOutreachActionId(null);
+    }
+  }
+
+  function startEditOutreach(message: OutreachMessage) {
+    setEditSubject(message.subject ?? "");
+    setEditBody(message.body ?? "");
+    setEditOpeningLine(message.opening_line ?? "");
+    setEditKeyPoints(message.key_points.join("\n"));
+    setEditObjectionHandling(message.objection_handling.join("\n"));
+    setEditSuggestedClose(message.suggested_close ?? "");
+    setOutreachError(null);
+    setEditingOutreachId(message.id);
+  }
+
+  function cancelEditOutreach() {
+    setEditingOutreachId(null);
+  }
+
+  async function handleSaveOutreachEdit(message: OutreachMessage) {
+    setSavingOutreachEdit(true);
+    setOutreachError(null);
+    try {
+      const patch =
+        message.channel === "email" || message.channel === "follow_up"
+          ? { subject: editSubject, body: editBody }
+          : {
+              opening_line: editOpeningLine,
+              key_points: editKeyPoints.split("\n").map((s) => s.trim()).filter(Boolean),
+              objection_handling: editObjectionHandling.split("\n").map((s) => s.trim()).filter(Boolean),
+              suggested_close: editSuggestedClose,
+            };
+      const updated = await api.updateOutreach(message.id, patch);
+      setOutreachMessages((prev) => (prev ?? []).map((m) => (m.id === message.id ? updated : m)));
+      setEditingOutreachId(null);
+      refreshActivity();
+    } catch (err) {
+      setOutreachError(err instanceof ApiError ? err.message : "Couldn't save the edit.");
+    } finally {
+      setSavingOutreachEdit(false);
     }
   }
 
@@ -608,6 +657,16 @@ export default function LeadDetailPage() {
                   {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
                 </button>
               ))}
+              {outreachMessages && outreachMessages.length > 0 && (
+                <button
+                  onClick={() => handleGenerateOutreach("follow_up")}
+                  disabled={generatingChannel !== null}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
+                >
+                  {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
+                </button>
+              )}
             </div>
           </div>
           {outreachError && <p className="mt-2 text-sm text-red-600">{outreachError}</p>}
@@ -638,10 +697,84 @@ export default function LeadDetailPage() {
                       </span>
                     </div>
                   </div>
-                  {expanded && (
+                  {expanded && editingOutreachId === message.id && (
+                    <div className="mt-3">
+                      {message.channel === "email" || message.channel === "follow_up" ? (
+                        <div className="space-y-2">
+                          <input
+                            value={editSubject}
+                            onChange={(e) => setEditSubject(e.target.value)}
+                            placeholder="Subject"
+                            className={inputClass}
+                          />
+                          <textarea
+                            value={editBody}
+                            onChange={(e) => setEditBody(e.target.value)}
+                            placeholder="Body"
+                            rows={6}
+                            className={inputClass}
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            value={editOpeningLine}
+                            onChange={(e) => setEditOpeningLine(e.target.value)}
+                            placeholder="Opening line"
+                            className={inputClass}
+                          />
+                          <textarea
+                            value={editKeyPoints}
+                            onChange={(e) => setEditKeyPoints(e.target.value)}
+                            placeholder="Key points — one per line"
+                            rows={4}
+                            className={inputClass}
+                          />
+                          <textarea
+                            value={editObjectionHandling}
+                            onChange={(e) => setEditObjectionHandling(e.target.value)}
+                            placeholder="Objection handling — one per line"
+                            rows={3}
+                            className={inputClass}
+                          />
+                          <input
+                            value={editSuggestedClose}
+                            onChange={(e) => setEditSuggestedClose(e.target.value)}
+                            placeholder="Suggested close"
+                            className={inputClass}
+                          />
+                        </div>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => handleSaveOutreachEdit(message)}
+                          disabled={savingOutreachEdit}
+                          className="rounded-md border border-neutral-900 bg-neutral-900 px-2.5 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+                        >
+                          {savingOutreachEdit ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          onClick={cancelEditOutreach}
+                          disabled={savingOutreachEdit}
+                          className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {expanded && editingOutreachId !== message.id && (
                     <div className="mt-3">
                       <OutreachMessageView message={message} />
                       <div className="mt-3 flex gap-2">
+                        {(message.status === "drafted" || message.status === "approved") && (
+                          <button
+                            onClick={() => startEditOutreach(message)}
+                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+                          >
+                            Edit
+                          </button>
+                        )}
                         {message.status === "drafted" && (
                           <button
                             onClick={() => handleOutreachAction(message.id, "approve")}

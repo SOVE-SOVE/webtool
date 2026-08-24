@@ -19,6 +19,10 @@ class OutreachChannel(str, enum.Enum):
     EMAIL = "email"
     PHONE = "phone"
     IN_PERSON = "in_person"
+    # A drafted follow-up MESSAGE (subject/body, like EMAIL) — distinct from
+    # FollowUp.channel below, which recommends the next touch's channel and
+    # is never itself "follow_up". Only valid on OutreachMessage.channel.
+    FOLLOW_UP = "follow_up"
 
 
 class OutreachStatus(str, enum.Enum):
