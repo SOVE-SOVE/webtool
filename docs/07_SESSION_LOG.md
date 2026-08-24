@@ -263,6 +263,51 @@ orthogonal, matching how the existing code already separated them.
 
 ---
 
+## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a sales-funnel-only dashboard with a prioritized "do this next" queue
+**Mode:** worktree
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/modules/sales_dashboard (new), apps/api/app/modules/sales_opportunities (new schemas/service/routes — model already existed), apps/api/app/modules/leads/service.py, apps/api/app/modules/clients/service.py, apps/api/app/main.py, apps/web/src/app/dashboard/sales (new), apps/web/src/app/dashboard/layout.tsx, apps/web/src/app/dashboard/page.tsx, apps/web/src/lib/api.ts
+**What happened:** Built `GET /api/v1/dashboard/sales`, a lead-funnel-only
+counterpart to the existing Overview (`modules/dashboard/`, which spans
+delivery too): new/hot/needs-follow-up/upcoming-meeting/proposal/won/
+lost counts and lists, a decided-only conversion rate, estimated vs.
+actual revenue, 7-day outreach activity, and a ranked "do this next"
+queue (overdue follow-up > imminent meeting > hot uncontacted lead >
+follow-up due today > stale proposal > stale new lead, opportunity-
+ordered within each tier). See docs/05_DECISIONS.md for the full
+reasoning, especially the estimated-revenue gap this closed.
+Frontend: `/dashboard/sales` page + nav link, reusing the Overview's
+"do this next" list styling. Verified in a real browser against a real
+local Postgres + FastAPI + Next.js stack (own isolated dev DB, not the
+shared one — see below) — logged in, created a hot lead, an overdue
+follow-up, an upcoming meeting, a logged proposal, a won conversion, and
+a lost opportunity, and confirmed every count/list/queue-ranking matched
+by hand, with zero console errors.
+**Blockers/issues:** The shared local `webdesignos_test`/`webdesignos`
+Postgres databases had live state from a concurrent worktree session
+(`email-integration`, mid-flight on an `email_sends` table) — ran all
+verification (586 backend tests, 42 frontend tests, the browser smoke
+test) against throwaway `_salescc`-suffixed databases instead of
+touching that shared state, and dropped them afterward. Worth a
+standing fix later: give each worktree/session its own test DB by
+default instead of relying on ad hoc suffixing. Separately, a full-suite
+run (585/586, unrelated to this work) hit a pre-existing flake in
+`test_dashboard.py::test_overdue_follow_up_surfaces_with_its_suggested_action`
+(authored 2026-08-21, untouched here) — it computes "days overdue" via
+local `date.today()` while the server computes it from UTC `now()`, so
+it fails whenever local and UTC disagree on the current calendar date
+(true at the time of this session, ~08:00 AEST). Not fixed here — out of
+this session's scope — but worth a follow-up since it'll flake for any
+UTC+ timezone every morning.
+**Next up:** None — this closes out the M1-M3 "find → qualify → contact
+→ follow up → book → close" checkpoint. `docs/04_ROADMAP.md` doesn't
+yet have a distinct "Phase 3" milestone heading (the phase numbering
+used in this request doesn't map 1:1 to the M0-M7 milestones there);
+worth reconciling the two numbering schemes next time the roadmap is
+touched.
+
+---
+
 ## 2026-08-25 — Email outreach integration: adapter architecture, send action, per-attempt history
 **Mode:** worktree
 **Merge to main after:** yes — pending review

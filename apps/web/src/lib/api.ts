@@ -553,7 +553,7 @@ export type CalendarEvent = {
 // first, so the Overview renders them in the order received rather than
 // re-sorting client side.
 export type AttentionItem = {
-  kind: "task" | "stale_lead" | "follow_up" | "meeting" | "project";
+  kind: "task" | "stale_lead" | "follow_up" | "meeting" | "project" | "hot_lead" | "stale_proposal" | "new_lead";
   label: string;
   id: string;
   title: string;
@@ -1086,6 +1086,112 @@ export type DashboardOverview = {
   needs_attention: AttentionItem[];
 };
 
+export const OPPORTUNITY_STATUSES = ["open", "won", "lost"] as const;
+export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
+
+export type SalesOpportunity = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  tier: string | null;
+  proposed_price_cents: number | null;
+  status: OpportunityStatus;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+export type SalesOpportunityCreate = {
+  tier?: string;
+  proposed_price_cents?: number;
+};
+
+// Sales Command Centre (Phase 3) — the sales-funnel-only counterpart to
+// DashboardOverview above, which spans the whole business. See
+// apps/api/app/modules/sales_dashboard/service.py for every field's
+// exact definition.
+export type SalesLeadSummary = {
+  id: string;
+  business_name: string;
+  status: LeadStatus;
+  priority: LeadPriority;
+  score: number | null;
+  updated_at: string;
+  assigned_user_name: string | null;
+};
+
+export type SalesFollowUpDue = {
+  lead_id: string;
+  business_name: string;
+  due_date: string;
+  overdue: boolean;
+  suggested_next_action: string;
+};
+
+export type SalesMeetingSummary = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  title: string;
+  scheduled_at: string;
+};
+
+export type SalesProposalSummary = {
+  lead_id: string;
+  business_name: string;
+  opportunity_id: string | null;
+  tier: string | null;
+  proposed_price_cents: number | null;
+  since: string;
+};
+
+export type SalesDealSummary = {
+  lead_id: string;
+  business_name: string;
+  proposed_price_cents: number | null;
+  tier: string | null;
+  closed_at: string | null;
+};
+
+export type SalesOutreachActivityItem = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  kind: "sent" | "replied";
+  channel: OutreachChannel | null;
+  occurred_at: string;
+  summary: string | null;
+};
+
+export type SalesOutreachActivity = {
+  sent_last_7_days: number;
+  replied_last_7_days: number;
+  reply_rate_pct: number | null;
+  recent: SalesOutreachActivityItem[];
+};
+
+export type SalesDashboard = {
+  new_leads_count: number;
+  hot_leads_count: number;
+  needs_follow_up_count: number;
+  upcoming_meetings_count: number;
+  proposals_count: number;
+  won_deals_count: number;
+  lost_deals_count: number;
+  conversion_rate_pct: number | null;
+  estimated_revenue_cents: number;
+  actual_revenue_cents: number;
+  new_leads: SalesLeadSummary[];
+  hot_leads: SalesLeadSummary[];
+  needs_follow_up: SalesFollowUpDue[];
+  upcoming_meetings: SalesMeetingSummary[];
+  proposals: SalesProposalSummary[];
+  recent_won: SalesDealSummary[];
+  recent_lost: SalesDealSummary[];
+  outreach_activity: SalesOutreachActivity;
+  do_this_next: AttentionItem[];
+};
+
 // Lead Intelligence (Phase 2) — top-of-funnel pipeline: a DiscoverySearch
 // runs a provider adapter and produces DiscoveredBusiness rows, a
 // reviewable list that is never auto-imported into `businesses`/`leads`.
@@ -1327,6 +1433,7 @@ export const api = {
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
+  salesDashboard: () => request<SalesDashboard>("/api/v1/dashboard/sales"),
 
   listMeetings: (opts?: { leadId?: string; projectId?: string }) => {
     const params = new URLSearchParams();
@@ -1478,6 +1585,15 @@ export const api = {
   resolveFollowUp: (id: string) => request<FollowUp>(`/api/v1/follow-ups/${id}/resolve`, { method: "POST" }),
   snoozeFollowUp: (id: string, days: number) =>
     request<FollowUp>(`/api/v1/follow-ups/${id}/snooze`, { method: "POST", body: JSON.stringify({ days }) }),
+
+  createOpportunity: (leadId: string, data: SalesOpportunityCreate) =>
+    request<SalesOpportunity>(`/api/v1/leads/${leadId}/opportunities`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listOpportunities: (leadId: string) => request<SalesOpportunity[]>(`/api/v1/leads/${leadId}/opportunities`),
+  markOpportunityLost: (id: string) =>
+    request<SalesOpportunity>(`/api/v1/opportunities/${id}/mark-lost`, { method: "POST" }),
 
   listUsers: () => request<User[]>("/api/v1/users"),
   createUser: (data: UserCreate) =>
