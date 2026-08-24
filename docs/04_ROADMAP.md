@@ -384,12 +384,57 @@ Goal: stages 19–20. Close the loop to revenue.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.
 
+## M7 — Lead Intelligence: automated prospect discovery
+
+Goal: stage 1 (PROSPECT) stops being "the operator thinks of a business
+by hand." Upstream of M2 — M2 automates research/audit/score for a lead
+already sitting in the CRM; M7 finds and vets the candidate *before* it
+becomes a lead at all, kept in its own `discovered_businesses` subtree
+until a human explicitly imports one.
+
+- [x] Discovery: `DiscoveryProvider` adapter interface (never a concrete
+      provider referenced by the service layer) with
+      `BraveSearchDiscoveryProvider` as the one real adapter today —
+      `modules/discovery/`. Normalized results, deduplicated against
+      both existing CRM businesses and prior discoveries in the same
+      workspace.
+- [x] Research: real DOM-inspected signals (official site,
+      reachability, HTTPS, metadata, mobile viewport, contact/social
+      presence) classified as confirmed / inferred / unavailable, never
+      asserted as fact beyond what was actually measured — cached for 7
+      days rather than re-fetched. `agents/business_research.py`.
+- [x] Website quality audit: deterministic, evidence-based findings
+      (availability, security, mobile, performance, conversion path,
+      business info, visual structure) — `agents/website_quality.py`.
+- [x] Opportunity scoring: deterministic, no LLM call, same philosophy
+      as M2's lead score — plus a separate evidence-completeness flag
+      that routes a low-confidence score to a human instead of trusting
+      the number outright. `agents/opportunity_score.py`.
+- [x] Human review + CRM import: a review list (approve/reject/archive,
+      bulk-approve), and import creates a `Business` + `Lead` (reusing a
+      matched existing `Business` rather than duplicating it), carrying
+      the research forward as a real `WebsiteAudit` row.
+- [x] Job queue (`apps/api/app/jobs/` — `SKIP LOCKED` claim, retry with
+      an attempt cap) built as part of this milestone, per the design
+      docs/02_ARCHITECTURE.md §4 had described since 2026-08-16 but no
+      prior milestone had implemented. Exists so scheduled discovery has
+      somewhere to run; nothing schedules discovery through it yet.
+- [ ] Scheduled/recurring discovery runs (the poller doesn't drive
+      discovery yet — sources are run on demand only).
+- [ ] A second real provider behind `DiscoveryProvider` (Google Places,
+      ABN lookup, ...) — only Brave Search exists today.
+
+See [[05_DECISIONS]]'s 2026-08-22 entry for the full per-stage
+reasoning and commit-by-commit breakdown.
+
 ## Explicitly not roadmapped
 
 - Multi-tenant/team features — this is a one-operator system by design.
-- A generic no-code site builder, a custom CMS, a multi-agent
-  orchestration framework, or a job queue — see "what this is
-  deliberately not" in [[02_ARCHITECTURE]].
+- A generic no-code site builder, a custom CMS, or a multi-agent
+  orchestration framework — see "what this is deliberately not" in
+  [[02_ARCHITECTURE]]. (A job queue *was* on this list until M7 — see
+  above; it turned out to be the right call once scheduled discovery
+  needed somewhere to run.)
 - Anything that doesn't map to a pipeline stage in [[00_VISION]].
 
 Record why a milestone's scope changed in [[05_DECISIONS]] rather than
