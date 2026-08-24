@@ -423,8 +423,13 @@ def test_meeting_synced_when_assigned_user_has_calendar_connected(authed_client,
         assert calendar_id == "primary"
         return "google-event-123"
 
-    monkeypatch.setattr("app.modules.meetings.service.google_calendar.refresh_access_token", fake_refresh)
-    monkeypatch.setattr("app.modules.meetings.service.google_calendar.create_event", fake_create_event)
+    # Patched at the canonical module (app.integrations.google_calendar)
+    # rather than an importer's local name — modules/meetings/service.py
+    # now goes through app.integrations.calendar.registry's
+    # GoogleCalendarProvider (the default provider), which calls these
+    # same functions internally.
+    monkeypatch.setattr("app.integrations.google_calendar.refresh_access_token", fake_refresh)
+    monkeypatch.setattr("app.integrations.google_calendar.create_event", fake_create_event)
 
     lead_id = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()["id"]
     res = authed_client.post(
@@ -454,7 +459,7 @@ def test_meeting_creation_survives_calendar_sync_failure(authed_client, admin_us
     def failing_refresh(refresh_token):
         raise google_calendar.GoogleCalendarError("token expired")
 
-    monkeypatch.setattr("app.modules.meetings.service.google_calendar.refresh_access_token", failing_refresh)
+    monkeypatch.setattr("app.integrations.google_calendar.refresh_access_token", failing_refresh)
 
     lead_id = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()["id"]
     res = authed_client.post(

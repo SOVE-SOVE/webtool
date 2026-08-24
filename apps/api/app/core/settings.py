@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # refresh token at rest. See app/core/crypto.py and
     # docs/06_SECURITY.md: never store an OAuth token in plaintext.
     calendar_token_encryption_key: str = ""
+    # Which adapter modules/meetings/service.py syncs calendar events
+    # through — see app/integrations/calendar/registry.py. Defaults to
+    # "google" (the real integration above, itself gated on whether a
+    # user has actually connected their calendar) to preserve existing
+    # behavior; set to "mock" for local dev/tests without a real Google
+    # account — see integrations/calendar/mock_provider.py.
+    calendar_provider: str = "google"
 
     # deployment — which provider modules/deployments/service.py
     # publishes through (see app/integrations/deployment.py). Only

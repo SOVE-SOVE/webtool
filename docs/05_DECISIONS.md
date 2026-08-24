@@ -23,6 +23,82 @@ why it lost.
 
 ---
 
+## 2026-08-25 — Calendar integration retrofit onto a provider-adapter architecture; meeting attendees and reminders
+
+**Decision:** Superseded the 2026-08-18 calendar entry's "one provider,
+one adapter, until a second is actually needed" call. A second is now
+needed — a `MockCalendarProvider` for development/testing without a
+real Google account — and the operator asked directly for a
+swappable-provider architecture with no provider hard-coded into the
+domain logic. Retrofit the existing, already-working Google Calendar
+integration (`modules/calendar/`, `integrations/google_calendar.py` —
+both untouched) behind a new `CalendarProvider` `Protocol` +
+dict-registry pair (`integrations/calendar/base.py` +
+`integrations/calendar/registry.py`), the exact same shape
+`integrations/discovery/` already uses for business-discovery
+providers. `modules/meetings/service.py` now calls
+`calendar_registry.get_provider()` and codes only against
+`CalendarEventInput`/`CalendarProvider` — it no longer imports
+`integrations.google_calendar` or `modules.calendar.connections` at
+all. `GoogleCalendarProvider` wraps the existing OAuth/HTTP client
+unchanged; `MockCalendarProvider` is always "connected," never makes a
+network call, and returns an obviously-synthetic
+`mock-event-<uuid4>` id — the same "can't be mistaken for the real
+thing" contract `integrations/deployment.py`'s `MockDeploymentProvider`
+already established. New `settings.calendar_provider` (default
+`"google"`, not `"mock"` — unlike `deploy_provider`, Google Calendar
+here is a real, already-working integration, so defaulting away from
+it would silently regress existing behavior; `CALENDAR_PROVIDER=mock`
+is the explicit local-dev/test opt-in).
+
+Also added, since the operator's spec named them explicitly and
+neither existed: `MeetingAttendee` (`meeting_attendees` table — name,
+email, organizer flag; purely informational) and `MeetingReminder`
+(`meeting_reminders` table — `remind_at`, optional note,
+`acknowledged_at`). Attendee emails are carried on
+`CalendarEventInput.attendee_emails` for provider awareness but
+`GoogleCalendarProvider._to_meeting_event` deliberately drops them
+before calling `google_calendar.create_event` — the existing "never
+send a calendar invite email" guarantee
+(`integrations/google_calendar.py`'s module docstring) had to survive
+the refactor unchanged, not get an opt-out via a new field. Reminders
+are `IN_APP`-channel only: this app has no email/SMS/push delivery
+integration anywhere, so a reminder is a stored time that becomes
+visible once due (`GET /api/v1/meetings/reminders/due`, surfaced as a
+banner on the calendar page) — never a claim that a notification was
+actually sent. "Meeting history" itself needed no new mechanism:
+`activity_log` (`entity_type="meeting"`) already recorded every
+scheduled/updated/status_changed/cancelled/brief_generated event;
+`GET /api/v1/meetings` gained optional `lead_id`/`project_id` filters
+so the lead and project detail pages could each get a "Meetings"
+section (new) showing that entity's full meeting history, past and
+upcoming.
+
+**Why:** the operator asked directly for "Design the system so Google
+Calendar and other calendar providers can be added cleanly. Do not
+hard-code a provider into the domain logic. Provide a mock calendar
+provider for development/testing" — an explicit, direct instruction
+that supersedes the earlier internal call, the same way
+`integrations/discovery/`'s Protocol+registry pattern was chosen for
+exactly this reason when Lead Intelligence needed it. Keeping the
+"no invite emails" and "no fake reminder delivery" guarantees intact
+through the refactor matters more here than usual: an adapter
+architecture that silently made either easier to violate would be a
+regression dressed up as a feature.
+
+**Alternatives considered:** A generic `notification_channel` field on
+`MeetingReminder` covering email/SMS/push — rejected; every one of
+those would need a real sending integration this app doesn't have, and
+adding the field without the integration would be the exact "claims a
+capability nothing backs" pattern this codebase consistently avoids
+(see Anti-Slop, the mock deployment/discovery providers, Sales Audit's
+sourcing discipline). Passing `attendee_emails` all the way into
+Google's real `attendees` field — rejected outright per the operator's
+own prior "no unnecessary emails" instruction; attendee tracking is a
+CRM/informational feature here, not an invite-sending one.
+
+---
+
 ## 2026-08-24 — Outreach system request: extended the existing M3 feature (fourth channel = follow-up message drafting, plus editing) instead of rebuilding
 
 **Decision:** A request came in to "build an AI-assisted outreach

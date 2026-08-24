@@ -16,6 +16,7 @@ import {
   type Lead,
   type LeadPriority,
   type LeadStatus,
+  type Meeting,
   type OutreachChannel,
   type OutreachMessage,
   type PipelineEvent,
@@ -99,6 +100,8 @@ export default function LeadDetailPage() {
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [latestFollowUp, setLatestFollowUp] = useState<FollowUp | null>(null);
 
+  const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+
   const [clients, setClients] = useState<Client[]>([]);
   const [showConvertForm, setShowConvertForm] = useState(false);
   const [convertBillingEmail, setConvertBillingEmail] = useState("");
@@ -129,6 +132,7 @@ export default function LeadDetailPage() {
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
+    api.listMeetings({ leadId }).then(setMeetings).catch(() => {});
   }
 
   function refreshActivity() {
@@ -869,6 +873,32 @@ export default function LeadDetailPage() {
           )}
         </section>
       )}
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900">Meetings</h2>
+          <Link href="/dashboard/calendar" className="text-xs text-neutral-500 hover:underline">
+            Schedule on calendar →
+          </Link>
+        </div>
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {meetings && meetings.length === 0 && (
+            <li className="px-3 py-3 text-sm text-neutral-500">No meetings scheduled yet.</li>
+          )}
+          {meetings?.map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span className="text-neutral-900">
+                {m.title}
+                <span className="ml-2 text-xs text-neutral-500">
+                  {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
+                  {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
+                </span>
+              </span>
+              {m.outcome && <span className="shrink-0 text-xs text-neutral-500">{m.outcome}</span>}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>

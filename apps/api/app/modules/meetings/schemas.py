@@ -1,13 +1,61 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, model_validator
 
-from app.modules.meetings.models import MeetingBrief, MeetingStatus, MeetingType
+from app.modules.meetings.models import MeetingBrief, ReminderChannel, MeetingStatus, MeetingType
 
 
 def _split(text: str) -> list[str]:
     return [p for p in text.split("\n") if p]
+
+
+class MeetingAttendeeCreate(BaseModel):
+    email: EmailStr
+    name: str | None = None
+    is_organizer: bool = False
+
+
+class MeetingAttendeeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str | None
+    email: str
+    is_organizer: bool
+    created_at: datetime
+
+
+class MeetingReminderCreate(BaseModel):
+    remind_at: datetime
+    channel: ReminderChannel = ReminderChannel.IN_APP
+    note: str | None = None
+
+
+class MeetingReminderRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    remind_at: datetime
+    channel: ReminderChannel
+    note: str | None
+    acknowledged_at: datetime | None
+    created_at: datetime
+
+
+class DueReminderRead(BaseModel):
+    """A reminder that's come due, with enough meeting context to show
+    in a standalone list (e.g. the calendar page) without a second
+    lookup — see service.list_due_reminders."""
+
+    id: uuid.UUID
+    remind_at: datetime
+    channel: ReminderChannel
+    note: str | None
+    meeting_id: uuid.UUID
+    meeting_title: str
+    meeting_scheduled_at: datetime
+    meeting_context: str
 
 
 class MeetingBriefRead(BaseModel):
@@ -82,6 +130,11 @@ class MeetingCreate(BaseModel):
     # present-vs-omitted convention.
     assigned_user_id: uuid.UUID | None = None
     notes: str | None = None
+    # Optional convenience — attendees/reminders can also be added
+    # individually after creation via POST /meetings/{id}/attendees and
+    # /meetings/{id}/reminders.
+    attendees: list[MeetingAttendeeCreate] = []
+    reminders: list[MeetingReminderCreate] = []
 
     @model_validator(mode="after")
     def _exactly_one_parent(self) -> "MeetingCreate":
@@ -122,3 +175,5 @@ class MeetingRead(BaseModel):
     context: str
     created_at: datetime
     brief: MeetingBriefRead | None = None
+    attendees: list[MeetingAttendeeRead] = []
+    reminders: list[MeetingReminderRead] = []

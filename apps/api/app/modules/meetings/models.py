@@ -75,6 +75,12 @@ class Meeting(Base):
     # since the ORM's default delete-parent behavior (null the child FK)
     # would otherwise violate that constraint.
     brief: Mapped["MeetingBrief | None"] = relationship(back_populates="meeting", uselist=False)
+    attendees: Mapped[list["MeetingAttendee"]] = relationship(
+        back_populates="meeting", cascade="all, delete-orphan", order_by="MeetingAttendee.created_at"
+    )
+    reminders: Mapped[list["MeetingReminder"]] = relationship(
+        back_populates="meeting", cascade="all, delete-orphan", order_by="MeetingReminder.remind_at"
+    )
 
 
 class MeetingBrief(Base):
@@ -132,3 +138,61 @@ class MeetingBrief(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     meeting: Mapped["Meeting"] = relationship(back_populates="brief")
+
+
+class MeetingAttendee(Base):
+    """
+    Attendee information for a meeting — purely informational within
+    this app (shown in the meeting detail view, carried into the
+    calendar-sync description). Never wired into a provider's actual
+    attendee/invite-email API: integrations/google_calendar.py's
+    `_event_body()` deliberately never sets attendees, and
+    integrations/calendar/google_provider.py drops
+    CalendarEventInput.attendee_emails before calling it — see both
+    docstrings. Recording who's expected is a separate concern from
+    triggering Google to email them, and this app never does the
+    latter (see docs/03_AGENT_RULES.md's "no unnecessary emails").
+    """
+
+    __tablename__ = "meeting_attendees"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"))
+    name: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255))
+    is_organizer: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    meeting: Mapped["Meeting"] = relationship(back_populates="attendees")
+
+
+class ReminderChannel(str, enum.Enum):
+    IN_APP = "in_app"
+
+
+class MeetingReminder(Base):
+    """
+    A scheduled reminder for a meeting. Deliberately IN_APP-only: this
+    app has no email/SMS/push dispatch integration anywhere (see
+    docs/02_ARCHITECTURE.md's integrations/ list), so a reminder here is
+    a stored time + a row that becomes visible in the UI once
+    `remind_at` has passed and it isn't yet acknowledged — never a
+    claim that a notification was actually pushed to anyone. See
+    modules/meetings/service.py's `list_due_reminders`. Adding a real
+    delivery channel later is a new enum value plus an actual sender,
+    not a change to this shape.
+    """
+
+    __tablename__ = "meeting_reminders"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"))
+    remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    channel: Mapped[ReminderChannel] = mapped_column(
+        Enum(ReminderChannel, name="meeting_reminder_channel"), default=ReminderChannel.IN_APP
+    )
+    note: Mapped[str | None] = mapped_column(String(255))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    meeting: Mapped["Meeting"] = relationship(back_populates="reminders")
