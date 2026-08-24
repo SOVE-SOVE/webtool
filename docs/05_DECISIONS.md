@@ -21,6 +21,100 @@ why it lost.
 
 ---
 
+## 2026-08-22 — Lead Intelligence (Phase 2): discover → research → audit → score → human review → CRM import, plus the job queue
+
+**Decision:** Built the layer upstream of the existing sales pipeline —
+finding and vetting prospective businesses before a human decides one is
+worth pursuing — as its own `discovered_businesses` subtree, kept
+strictly separate from `businesses`/`leads` until an operator explicitly
+imports one. Landed across seven commits (`c807d41` through `0aa1b7e`):
+
+1. **Architecture** (`c807d41`) — `discovery_searches` /
+   `discovered_businesses` (a search and its normalized, deduplicated,
+   source-tracked results), `business_research_results` (confirmed vs.
+   inferred vs. unavailable fields, cached rather than re-fetched),
+   `website_quality_audits` / `opportunity_score_results` (structured
+   findings and scoring history), and — separately from the discovery
+   feature itself — the `jobs` table + in-process poller
+   (`apps/api/app/jobs/runner.py`, `SKIP LOCKED` claim, retry with an
+   attempt cap) that docs/02_ARCHITECTURE.md §4 had described since
+   2026-08-16 but that no prior pass had actually built. It exists now
+   so scheduled discovery has somewhere to run later; nothing schedules
+   discovery through it yet.
+2. **Business discovery** (`71372b9`) — a `DiscoveryProvider` protocol +
+   adapter registry (never a concrete provider referenced by the
+   service layer), with `BraveSearchDiscoveryProvider` as the one real
+   adapter, reusing the same Brave Search integration Sales Audit
+   already used. Dedup checks both existing CRM businesses and prior
+   discoveries in the same workspace before creating a second review
+   item for something already known.
+3. **Website research** (`cf908d7`) — real DOM inspection via a new
+   Playwright signal-fetcher (reusing the existing SSRF guard), mapped
+   onto official site / reachability / HTTPS / metadata / mobile
+   viewport / contact presence / social presence, plus two judgment
+   calls that stay honest about their limits: an inferred site age from
+   a regex-found copyright year (always caveated), and a
+   template/placeholder flag that's only ever `True` (literal
+   placeholder text found) or `None` — never a guessed `False`. A result
+   less than 7 days old is reused rather than re-fetched.
+4. **Website quality analysis** (`f0e46f3`) — deterministic (no LLM
+   call) findings across availability, security, mobile usability,
+   performance, conversion path, business info, and visual structure,
+   each with category/severity/message/evidence/confidence. A category
+   this app can't honestly measure produces no finding rather than a
+   guessed one; an unreachable site short-circuits to a single
+   availability finding.
+5. **Opportunity scoring** (`9821090`) — also deterministic, same
+   philosophy as the existing per-lead `agents/lead_score.py`: more
+   fixable problems on an otherwise-reachable site score better than a
+   site with no problems found, and a missing/unreachable site scores
+   highest of all (a blank canvas is the easiest pitch). A separate
+   `REVIEW` flag is driven by *evidence completeness*, not by the score
+   itself — a number built from too little measured signal is flagged
+   for a human rather than trusted outright. Industry is deliberately
+   not a scored factor: this app has no real conversion data by
+   industry, and inventing a weighting would be exactly the
+   unsupported claim this whole feature exists to avoid.
+6. **Review + CRM import** (`da504a8`) — the human checkpoint: a review
+   list surfacing every discovered business with its research/quality/
+   score context folded in, approve/reject/archive (individually or
+   bulk-approve), and import — which creates a `Business` + `Lead` (or
+   reuses an existing matched `Business` instead of duplicating it),
+   carries the research forward onto a real `WebsiteAudit` row, and
+   folds the full research/quality/score narrative into the new lead's
+   notes rather than dropping it at the CRM boundary. An already-
+   imported business is locked against further review action.
+7. **Live-test fixes** (`0aa1b7e`) — running the real pipeline end to
+   end against live Brave Search (10 real Gold Coast plumbing/
+   electrician businesses) surfaced two edge cases neither the mock
+   provider nor synthetic fixtures had: a dedup false positive when two
+   different real businesses shared a generic search-result title with
+   no location context (fixed by requiring real location context before
+   the name-only fallback applies), and a name-extraction gap on a
+   business name containing a colon.
+
+Ends at 554 backend tests (475 architecture-baseline + 79 across the
+six feature passes), 42 frontend tests, both suites green.
+
+**Why:** Mirrors [[00_VISION]]'s pipeline spine — "find business" is a
+real pipeline stage, not something the operator should have to do by
+hand indefinitely — while holding the line the rest of this codebase
+holds: an agent proposes, a human decides. Every discovery/research/
+scoring step is deterministic and evidence-based (no LLM call anywhere
+in this pass) specifically so a false claim can always be traced back
+to a real, inspectable signal rather than a model's guess; nothing
+reaches `businesses`/`leads` — the tables the rest of the app trusts —
+without a human's explicit import action.
+
+**Note:** This entry was written 2026-08-24, two days after the work
+landed — the original seven commits never touched this log, breaking
+the pattern every other milestone in this file follows. Recorded
+retroactively from the commit history rather than left undocumented.
+docs/04_ROADMAP.md still has no milestone entry for this phase; that
+gap is unaddressed.
+
+---
+
 ## 2026-08-21 — Capstone pass: the 22-stage pipeline traced end to end, four broken handoffs fixed, one permanent test that walks the whole chain
 
 **Decision:** A final correctness pass over the complete pipeline —
