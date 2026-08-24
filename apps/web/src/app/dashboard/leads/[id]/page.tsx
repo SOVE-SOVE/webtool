@@ -18,6 +18,7 @@ import {
   type LeadStatus,
   type OutreachChannel,
   type OutreachMessage,
+  type PipelineEvent,
   type SalesAuditReport,
   type User,
 } from "@/lib/api";
@@ -72,6 +73,7 @@ export default function LeadDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+  const [pipelineEvents, setPipelineEvents] = useState<PipelineEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [salesAudits, setSalesAudits] = useState<SalesAuditReport[] | null>(null);
   const [generatingAudit, setGeneratingAudit] = useState(false);
@@ -123,6 +125,7 @@ export default function LeadDetailPage() {
       .listActivity({ entity_type: "lead", entity_id: leadId })
       .then(setActivity)
       .catch(() => {});
+    api.listLeadPipelineEvents(leadId).then(setPipelineEvents).catch(() => {});
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
@@ -130,6 +133,7 @@ export default function LeadDetailPage() {
 
   function refreshActivity() {
     api.listActivity({ entity_type: "lead", entity_id: leadId }).then(setActivity).catch(() => {});
+    api.listLeadPipelineEvents(leadId).then(setPipelineEvents).catch(() => {});
   }
 
   useEffect(load, [leadId]);
@@ -475,6 +479,28 @@ export default function LeadDetailPage() {
           </div>
         </section>
       </div>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900">Pipeline stage history</h2>
+          <Link href="/dashboard/pipeline" className="text-xs text-neutral-500 hover:underline">
+            View pipeline board →
+          </Link>
+        </div>
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {pipelineEvents && pipelineEvents.length === 0 && (
+            <li className="px-3 py-3 text-sm text-neutral-500">
+              No stage changes yet — this lead has been {lead.status.replace("_", " ")} since it was created.
+            </li>
+          )}
+          {pipelineEvents?.map((event) => (
+            <li key={event.id} className="px-3 py-2 text-sm">
+              <span className="text-neutral-900">{event.summary ?? event.kind}</span>
+              <span className="ml-2 text-xs text-neutral-500">{new Date(event.created_at).toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {(() => {
         const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;

@@ -341,5 +341,35 @@ describe("api", () => {
         }),
       );
     });
+
+    it("listPipelineStages gets /api/v1/pipeline/stages", async () => {
+      const fetchMock = stubOk([]);
+      await api.listPipelineStages();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/pipeline/stages"),
+        expect.anything(),
+      );
+    });
+
+    it("updatePipelineStage patches /api/v1/pipeline/stages/:id with the given fields", async () => {
+      const fetchMock = stubOk({ id: "stg1", key: "new", label: "Fresh", sort_order: 0, is_won: false, is_lost: false });
+      await api.updatePipelineStage("stg1", { label: "Fresh" });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/pipeline/stages/stg1"),
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ label: "Fresh" }) }),
+      );
+    });
+
+    it("listLeadPipelineEvents gets /api/v1/leads/:id/pipeline-events", async () => {
+      const fetchMock = stubOk([]);
+      await api.listLeadPipelineEvents("lead1");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/leads/lead1/pipeline-events"),
+        expect.anything(),
+      );
+    });
   });
 });

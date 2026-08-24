@@ -173,6 +173,32 @@ export type LeadUpdate = {
   assigned_user_id?: string | null;
 };
 
+// Sales pipeline (Phase 3) — board display config over the existing
+// `LeadStatus` values (not a separate set of stage keys, see
+// docs/05_DECISIONS.md 2026-08-16) plus read access to the
+// stage-transition history already recorded for every status change.
+export type PipelineStage = {
+  id: string;
+  key: LeadStatus;
+  label: string;
+  sort_order: number;
+  is_won: boolean;
+  is_lost: boolean;
+};
+
+export type PipelineStageUpdate = {
+  label?: string;
+  sort_order?: number;
+};
+
+export type PipelineEvent = {
+  id: string;
+  lead_id: string | null;
+  kind: string;
+  summary: string | null;
+  created_at: string;
+};
+
 export type Client = {
   id: string;
   business_id: string;
@@ -1216,6 +1242,11 @@ export const api = {
     request<Lead>(`/api/v1/leads/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   archiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/archive`, { method: "POST" }),
   unarchiveLead: (id: string) => request<Lead>(`/api/v1/leads/${id}/unarchive`, { method: "POST" }),
+  listLeadPipelineEvents: (id: string) => request<PipelineEvent[]>(`/api/v1/leads/${id}/pipeline-events`),
+
+  listPipelineStages: () => request<PipelineStage[]>("/api/v1/pipeline/stages"),
+  updatePipelineStage: (id: string, data: PipelineStageUpdate) =>
+    request<PipelineStage>(`/api/v1/pipeline/stages/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   listClients: () => request<Client[]>("/api/v1/clients"),
   getClient: (id: string) => request<Client>(`/api/v1/clients/${id}`),
