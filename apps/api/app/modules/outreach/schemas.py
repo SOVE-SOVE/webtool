@@ -1,9 +1,13 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.modules.outreach.models import FollowUpStatus, OutreachChannel, OutreachStatus
+
+SNOOZE_MIN_DAYS = 1
+SNOOZE_MAX_DAYS = 30
+SNOOZE_DEFAULT_DAYS = 3
 
 
 def _split(text: str | None) -> list[str]:
@@ -137,6 +141,27 @@ class FollowUpBuckets(BaseModel):
     overdue: list[FollowUpRead]
     due_today: list[FollowUpRead]
     upcoming: list[FollowUpRead]
+
+
+class FollowUpCandidateRead(BaseModel):
+    """
+    A lead the deterministic detector (modules/outreach/service.py::
+    list_needs_follow_up) thinks has gone quiet with nothing scheduled —
+    distinct from FollowUpRead, which is an already-scheduled follow-up.
+    No LLM involved, so this is cheap enough to compute on every page
+    load rather than requiring an explicit "Generate" click first.
+    """
+
+    lead_id: uuid.UUID
+    business_name: str
+    lead_status: str
+    reason: str
+    suggested_channel: OutreachChannel
+    days_quiet: int
+
+
+class SnoozeFollowUpRequest(BaseModel):
+    days: int = Field(default=SNOOZE_DEFAULT_DAYS, ge=SNOOZE_MIN_DAYS, le=SNOOZE_MAX_DAYS)
 
 
 def _excerpt_for(m) -> str:
