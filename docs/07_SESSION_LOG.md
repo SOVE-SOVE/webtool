@@ -11,6 +11,43 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-25 — Phase 3: sales pipeline kanban over existing LeadStatus
+**Mode:** same session (background job)
+**Merge to main after:** yes — committed to main as `feat: build sales pipeline` (5570d82)
+**Scope touched:** apps/api/app/modules/pipeline, apps/api/app/modules/leads/routes.py, apps/api/alembic/versions, apps/web/src/app/dashboard/pipeline, apps/web/src/app/dashboard/leads/[id], apps/web/src/lib/{api,pipeline}.ts
+**What happened:** Added a kanban board over the existing `LeadStatus`
+enum rather than introducing a new stage-key set (LeadStatus already
+is the pipeline per the 2026-08-16 decision). New `pipeline_stage_configs`
+table (per-workspace label/order/won-lost, lazily seeded with defaults),
+`GET/PATCH /api/v1/pipeline/stages`, `GET /api/v1/leads/{id}/pipeline-events`
+(read access to the already-recorded `PipelineEvent` history), a
+drag-and-drop `/dashboard/pipeline` board, and a stage-history section on
+the lead detail page. 14 new backend tests + frontend unit tests for the
+client wiring and pure board logic (`lib/pipeline.ts`).
+**Blockers/issues:** This machine had several *other* concurrent Claude
+Code sessions actively running pytest against the same shared local
+`webdesignos_test` Postgres database while this session worked — one
+of them repeatedly ran `DROP DATABASE webdesignos_test; CREATE DATABASE
+...` mid-run. That produced a wall of unrelated failures (`UndefinedTable`,
+`AdminShutdown`, `DependentObjectsStillExist`) that looked like a
+regression but weren't — confirmed by running the new/related test files
+in isolation repeatedly (14/14, then 39/39, then 64/64, all clean) while
+the full-suite run kept getting corrupted by the concurrent DB resets.
+Frontend: `tsc --noEmit`, `eslint`, `vitest run` (53/53), and `next build`
+all clean. Could not get one uncontaminated full backend `pytest -q` run
+in this session — a real gap, not a shrug: if you're reading this before
+trusting the suite as green, re-run it when no other session is using
+`webdesignos_test` (`SELECT count(*) FROM pg_stat_activity WHERE
+datname='webdesignos_test'` should be near-zero first). This entry was
+reconciled onto `origin/main` (which had meanwhile gained the follow-up
+automation + outreach assistant merge) via cherry-pick in a later session.
+**Next up:** Re-run the full backend suite once the shared test DB is
+quiet, as a final sanity check. Same milestone still has:
+scheduled/recurring discovery (M7), a second discovery provider, and
+Phase 4 (whatever's next) — none of which this session touched.
+
+---
+
 ## [2026-08-24] — Automated follow-up management (detection, scheduling, snooze)
 
 **Mode:** worktree (`follow-up-automation`)
