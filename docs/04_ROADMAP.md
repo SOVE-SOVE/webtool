@@ -136,7 +136,13 @@ Goal: stages 5–7 stop eating time, sending still stays human.
       2026-08-21 — until then they were only visible to someone who
       thought to open the follow-ups page, which defeats the point of a
       reminder. Marking outreach sent/replied now also advances the
-      lead's own status, which previously had to be done by hand.
+      lead's own status, which previously had to be done by hand. As of
+      2026-08-24, `modules/outreach/service.py::list_needs_follow_up`
+      also detects leads that have gone quiet with *no* follow-up
+      scheduled at all (deterministic, no LLM — reads last contact,
+      pipeline stage, meeting outcome, and prior-outreach channel), and
+      an existing follow-up can be snoozed rather than only resolved or
+      left overdue.
 
 ## M4 — Intake → project → brief/sitemap/copy
 

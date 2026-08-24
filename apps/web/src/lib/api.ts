@@ -973,6 +973,17 @@ export type FollowUpBuckets = {
   upcoming: FollowUp[];
 };
 
+// A lead the deterministic detector thinks has gone quiet with nothing
+// scheduled — distinct from FollowUp, which is already on the calendar.
+export type FollowUpCandidate = {
+  lead_id: string;
+  business_name: string;
+  lead_status: LeadStatus;
+  reason: string;
+  suggested_channel: OutreachChannel;
+  days_quiet: number;
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -1347,7 +1358,12 @@ export const api = {
 
   generateFollowUp: (leadId: string) => request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups`, { method: "POST" }),
   listFollowUps: () => request<FollowUpBuckets>("/api/v1/follow-ups"),
+  listNeedsFollowUp: () => request<FollowUpCandidate[]>("/api/v1/follow-ups/needs-scheduling"),
+  scheduleFollowUp: (leadId: string) =>
+    request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups/auto`, { method: "POST" }),
   resolveFollowUp: (id: string) => request<FollowUp>(`/api/v1/follow-ups/${id}/resolve`, { method: "POST" }),
+  snoozeFollowUp: (id: string, days: number) =>
+    request<FollowUp>(`/api/v1/follow-ups/${id}/snooze`, { method: "POST", body: JSON.stringify({ days }) }),
 
   listUsers: () => request<User[]>("/api/v1/users"),
   createUser: (data: UserCreate) =>
