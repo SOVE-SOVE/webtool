@@ -27,6 +27,11 @@ const BADGE_CLASS: Record<AttentionItem["kind"], string> = {
   meeting: "bg-sky-100 text-sky-800",
   task: "bg-neutral-100 text-neutral-700",
   stale_lead: "bg-neutral-100 text-neutral-700",
+  // Sales command centre kinds (see /dashboard/sales) — this page's own
+  // needs_attention list never emits these, but the type is shared.
+  hot_lead: "bg-rose-100 text-rose-800",
+  stale_proposal: "bg-violet-100 text-violet-800",
+  new_lead: "bg-neutral-100 text-neutral-700",
 };
 
 function timeAgo(iso: string): string {

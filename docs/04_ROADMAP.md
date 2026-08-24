@@ -143,6 +143,17 @@ Goal: stages 5–7 stop eating time, sending still stays human.
       pipeline stage, meeting outcome, and prior-outreach channel), and
       an existing follow-up can be snoozed rather than only resolved or
       left overdue.
+- [x] Sales command centre — `/dashboard/sales`
+      (`modules/sales_dashboard/`), added 2026-08-25 as the Phase 3
+      checkpoint: a lead-funnel-only view (new/hot/needs-follow-up/
+      upcoming-meeting/proposal/won/lost, conversion rate, estimated vs.
+      actual revenue, outreach activity) plus a ranked "do this next"
+      queue, so "find → qualify → contact → follow up → book → close"
+      works as one continuous loop from a single screen rather than
+      requiring the Overview plus several list pages. Also closed the
+      one real gap blocking an honest "estimated revenue" figure — a
+      way to log an actual proposal amount (`POST
+      /leads/{id}/opportunities`) — see [[05_DECISIONS]].
 
 ## M4 — Intake → project → brief/sitemap/copy
 

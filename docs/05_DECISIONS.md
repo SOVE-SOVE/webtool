@@ -8,6 +8,109 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a lead-funnel-only dashboard, plus the missing piece that makes "estimated revenue" a real number
+
+**Decision:** Built `modules/sales_dashboard/` (`GET /api/v1/dashboard/sales`)
+as a *separate* endpoint from the existing Overview (`modules/dashboard/`),
+not an extension of it. The Overview spans the whole business — sales
+*and* delivery — and already has its own "do this next" list and metric
+tiles; this one is scoped to the sales funnel only (every query is a
+`Lead`, never a `Project`), matching the requested "find -> qualify ->
+contact -> follow up -> book -> close" shape. Sharing one endpoint would
+have meant either bloating the Overview's payload with sales-only detail
+nobody asked it to carry, or forking its "do this next" ranking logic to
+handle two unrelated audiences (a generalist running the whole shop vs.
+someone specifically doing sales work today) inside one function.
+
+Reuses `AttentionItem` (kind/label/id/title/detail/action/href) from
+`modules/dashboard/schemas.py` for the new "do this next" queue rather
+than inventing a parallel shape — extended its `kind` union with three
+sales-only values (`hot_lead`, `stale_proposal`, `new_lead`) alongside
+the existing `follow_up`/`meeting`. The queue's ranking follows the same
+"urgency first" convention as the Overview's list (see the 2026-08-21
+entry below) — overdue follow-up > imminent meeting > hot uncontacted
+lead > follow-up due today > stale proposal > stale new lead — with a
+second-order tiebreak on *opportunity* (fit score / proposed price)
+within each urgency tier, which the Overview's queue doesn't need since
+it isn't ranking deals against each other.
+
+**The estimated-revenue gap:** `SalesOpportunity` (existing model) was,
+before this change, only ever created with `status=WON`, and only from
+one call site — `clients/service.py`'s conversion flow. Nothing in the
+app ever created an `OPEN` opportunity, so "estimated revenue" (sum of
+open, real quoted amounts) had no honest source — every open lead would
+have summed to a hardcoded `$0`, indistinguishable from a genuinely
+empty pipeline. Rather than fabricate an estimate (e.g. average deal
+size x open-lead count, weighted by stage) — which is exactly the kind
+of unsupported claim this codebase has consistently rejected elsewhere
+(see the 2026-08-22 opportunity-scoring entry's "industry is deliberately
+not a scored factor" reasoning) — this pass added the missing real
+capability: `POST /leads/{id}/opportunities` lets the operator log an
+actual proposal/quote (tier + price), creating an `OPEN`
+`SalesOpportunity` and advancing the lead to `PROPOSAL` (new
+`leads/service.py::mark_proposal_sent`, same forward-only contract as
+`mark_contacted`/`mark_replied`). `estimated_revenue_cents` sums exactly
+those rows. A lead sitting at `PROPOSAL` with no quote logged (e.g. via
+the pre-existing direct `PATCH .../leads/{id}` status edit) contributes
+`$0` — the honest answer, not a guessed placeholder.
+
+The mirror action, `POST /opportunities/{id}/mark-lost`
+(`leads/service.py::mark_lost`), closes an open quote and sets the
+lead to `LOST` in the same call — deliberately never reopening an
+already-`WON` lead (a stale/superseded quote marked lost after the deal
+closed some other way shouldn't reopen the question), the same
+asymmetric-terminal-state handling `mark_lost`'s docstring spells out.
+While touching this path, also fixed `SalesOpportunity.closed_at` never
+being set on the `WON` row `clients/service.py` creates on conversion —
+present in the schema since it was first added, but no call site had
+ever written to it, so every "recently won" list would have shown a
+blank close date.
+
+**won_deals / lost_deals counted off `Lead.status`, not
+`SalesOpportunity.status`:** `Lead.status` is the single field every
+other part of this app already treats as authoritative for "where is
+this lead in the pipeline," and it's reachable even when no opportunity
+was ever logged (a lead marked `LOST` by a direct status edit, with no
+quote ever recorded). Counting off `SalesOpportunity` instead would
+silently undercount those. The `recent_won`/`recent_lost` *lists* still
+enrich each lead with whatever `SalesOpportunity` row exists for
+price/tier context — always present for `WON` (the conversion flow
+guarantees it) but possibly absent for `LOST`, which the schema makes
+explicit by typing `proposed_price_cents`/`tier` as nullable rather than
+defaulting them to zero.
+
+**conversion_rate_pct is decided-only** (`won / (won + lost)`), not
+`won / total_leads_ever`. Dividing by every lead ever created would
+understate a healthy, simply-mid-flight pipeline; this answers "of the
+deals I've actually closed one way or the other, how many did I win,"
+and is `null` (not `0%`) when nothing has been decided yet — same
+"missing is not zero" discipline as the estimated-revenue figure above.
+
+**Why:** requested directly — "complete Phase 3 with a sales command
+centre" — with an explicit acceptance bar ("find -> qualify -> contact
+-> follow up -> book -> close" must work end to end) and an explicit
+usefulness bar ("the operator could open it every morning and
+immediately know what needs to happen"). The existing Overview already
+covered the whole-business version of "what do I do next" (see the
+2026-08-21 entry below); what was missing was a sales-specific view an
+operator running today's sales work could open without wading through
+delivery-side rows, plus the one real data gap (a loggable proposal
+amount) blocking "estimated revenue" from being anything but a lie.
+
+**Alternatives considered:** Extending `DashboardOverview` with sales-
+specific fields instead of a new endpoint — rejected for the reasons
+above (audience/payload mismatch, ranking-logic fork). Inferring
+estimated revenue from lead score / stage without a real logged amount
+— rejected as unfounded, the same call this codebase already made for
+industry-based opportunity scoring. A generic "deal value" field on
+`Lead` itself instead of extending `SalesOpportunity` — rejected;
+`SalesOpportunity` already exists as "the deal under discussion" per its
+own docstring, and a lead can accumulate more than one over time (a
+re-quote after scope changes), which a single scalar field on `Lead`
+can't represent.
+
+---
+
 ## Format
 
 ```

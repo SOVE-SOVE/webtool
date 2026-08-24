@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -109,6 +110,7 @@ def create_client(
                 tier=data.package,
                 status=OpportunityStatus.WON,
                 proposed_price_cents=data.won_price_cents,
+                closed_at=datetime.now(timezone.utc),
             )
         )
     else:
