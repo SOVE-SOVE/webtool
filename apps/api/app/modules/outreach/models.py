@@ -101,6 +101,7 @@ class OutreachMessage(Base):
     sent_by_user: Mapped["User | None"] = relationship(foreign_keys=[sent_by_user_id])
     closed_by_user: Mapped["User | None"] = relationship(foreign_keys=[closed_by_user_id])
     follow_ups: Mapped[list["FollowUp"]] = relationship(back_populates="outreach_message")
+    email_sends: Mapped[list["EmailSend"]] = relationship(back_populates="outreach_message")
 
 
 class FollowUpStatus(str, enum.Enum):
@@ -145,3 +146,51 @@ class FollowUp(Base):
     outreach_message: Mapped["OutreachMessage | None"] = relationship(back_populates="follow_ups")
     generated_by_user: Mapped["User | None"] = relationship(foreign_keys=[generated_by_user_id])
     resolved_by_user: Mapped["User | None"] = relationship(foreign_keys=[resolved_by_user_id])
+
+
+class EmailSendStatus(str, enum.Enum):
+    SENT = "sent"
+    FAILED = "failed"
+
+
+class EmailSend(Base):
+    """
+    One row per attempt to actually dispatch an approved EMAIL outreach
+    message through integrations/email.py's provider adapter — distinct
+    from `OutreachMessage.status`/`sent_at`, which record the operator's
+    own "this went out" bookkeeping (`mark_outreach_sent` in
+    modules/outreach/service.py, channel-agnostic and also covers a
+    message sent by hand outside this app). A message accumulates more
+    than one row only if a send fails and the operator retries — that
+    sequence of attempts *is* the "email history" and "failure handling"
+    record this integration is required to keep; nothing is overwritten
+    or dropped on retry.
+
+    `lead_id` duplicates what's reachable via `outreach_message.lead_id`
+    — same direct-FK-for-query-convenience pattern `FollowUp` already
+    uses for the same reason (a per-lead history query shouldn't need to
+    join through outreach_messages).
+    """
+
+    __tablename__ = "email_sends"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    outreach_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("outreach_messages.id", ondelete="CASCADE"))
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+
+    to_email: Mapped[str] = mapped_column(String(255))
+    from_email: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+
+    provider: Mapped[str] = mapped_column(String(50))
+    status: Mapped[EmailSendStatus] = mapped_column(Enum(EmailSendStatus, name="email_send_status"))
+    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    sent_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    outreach_message: Mapped["OutreachMessage"] = relationship(back_populates="email_sends")
+    lead: Mapped["Lead"] = relationship()
+    sent_by_user: Mapped["User | None"] = relationship()

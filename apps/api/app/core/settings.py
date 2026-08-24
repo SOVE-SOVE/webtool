@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     # "mock" is implemented today; no real hosting account exists yet.
     deploy_provider: str = "mock"
 
+    # email — which provider modules/outreach/service.py dispatches
+    # approved EMAIL outreach through (see app/integrations/email.py).
+    # "mock" (default, safe for dev/tests, never makes a network call)
+    # or "resend". RESEND_API_KEY is only required when EMAIL_PROVIDER
+    # is "resend" — get_email_provider() fails loudly rather than
+    # silently falling back to mock if it's missing.
+    email_provider: str = "mock"
+    resend_api_key: str = ""
+    email_from_address: str = "no-reply@example.com"
+
     @field_validator("session_secret")
     @classmethod
     def _reject_unsafe_session_secret(cls, value: str) -> str:

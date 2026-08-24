@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.modules.leads import service as leads_service
 from app.modules.outreach import service
 from app.modules.outreach.schemas import (
+    EmailSendRead,
     FollowUpBuckets,
     FollowUpCandidateRead,
     FollowUpRead,
@@ -105,6 +106,26 @@ def mark_outreach_replied(
     if message is None:
         raise HTTPException(status_code=404, detail="Outreach message not found")
     return message
+
+
+@router.post("/api/v1/outreach/{message_id}/send-email", response_model=EmailSendRead, status_code=201)
+def send_outreach_email(
+    message_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailSendRead:
+    return service.send_outreach_email(db, current_user.workspace_id, current_user.id, message_id)
+
+
+@router.get("/api/v1/leads/{lead_id}/emails", response_model=list[EmailSendRead])
+def list_email_history(
+    lead_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EmailSendRead]:
+    if leads_service.get_lead(db, current_user.workspace_id, lead_id) is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return service.list_email_history(db, current_user.workspace_id, lead_id)
 
 
 @router.post("/api/v1/outreach/{message_id}/close", response_model=OutreachMessageRead)

@@ -263,6 +263,53 @@ orthogonal, matching how the existing code already separated them.
 
 ---
 
+## 2026-08-25 — Email outreach integration: adapter architecture, send action, per-attempt history
+**Mode:** worktree
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/api/app/integrations/email.py (new),
+apps/api/app/modules/outreach/ (models/schemas/service/routes),
+apps/api/app/modules/leads/models.py, apps/api/app/core/settings.py,
+apps/api/.env.example, apps/api/alembic/versions (new migration),
+apps/api/tests/test_email_integration.py (new)
+**What happened:** Built the actual email-send path for EMAIL-channel
+outreach — previously "mark sent" only recorded that the operator sent
+something by hand; nothing in the app ever dispatched an email. Added
+`integrations/email.py` (adapter interface + `MockEmailProvider` +
+`ResendEmailProvider` + factory, mirroring `integrations/deployment.py`),
+a new `email_sends` table (one row per send attempt — success or
+failure, so retries don't overwrite history), and
+`send_outreach_email`/`list_email_history` in
+`modules/outreach/service.py`. New routes: `POST
+/api/v1/outreach/{id}/send-email` (requires the message be `APPROVED`
+— a hard gate, never DRAFTED) and `GET /api/v1/leads/{id}/emails`.
+Recipient resolves to the lead's primary contact email, else the
+business's own email, else a 400 before any provider is touched — never
+invented. See [[05_DECISIONS]] for the full design and why send is a
+separate action from approve. 24 new tests in
+`tests/test_email_integration.py`, all passing alongside the existing
+51-test `test_outreach.py` suite on a clean local test database.
+**Blockers/issues:** The local Postgres test database
+(`webdesignos_test`) is shared across concurrent sessions on this
+machine — a sibling session's own test run was active against the same
+database while this work was being verified, which produced several
+transient deadlocks unrelated to this change (confirmed by reproducing
+the same deadlock pattern against unmodified `main`). Could not get a
+clean full-`apps/api`-suite run in that window as a result; the
+email-integration-specific suite (`test_email_integration.py` +
+`test_outreach.py`, 75 tests) passed cleanly on an isolated clean
+database. No frontend UI wiring done — the operator-facing "Send email"
+button on the lead detail page (next to the existing "Mark sent") is
+not yet added; the API is ready for it.
+**Next up:** Wire a "Send email" button into
+`apps/web/src/app/dashboard/leads/[id]/page.tsx` next to the existing
+outreach actions, surfacing send failures/history from the new
+endpoints. Re-run the full `apps/api` suite once the shared test
+database isn't contended. Configure `RESEND_API_KEY` +
+`EMAIL_FROM_ADDRESS` in a real environment when ready to actually send
+(defaults to the mock provider everywhere until then).
+
+---
+
 ## Example entry
 
 ## 2026-08-24 — Wire up lead-score display on prospect card
