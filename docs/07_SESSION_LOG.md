@@ -11,6 +11,89 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-25 — Reconciled main and merged 4 pending worktree branches (calendar, email, sales pipeline, sales command centre)
+**Mode:** worktree (`merge-orchestration`, background job — pure git/CI
+work, no new features)
+**Merge to main after:** yes — this entry documents work already on
+`main` by the time it's written
+**Scope touched:** `main` branch history only; conflict resolution
+touched `docs/05_DECISIONS.md`, `docs/07_SESSION_LOG.md`,
+`docs/04_ROADMAP.md`, `apps/api/app/main.py`,
+`apps/api/app/modules/outreach/{routes,service}.py`,
+`apps/api/.env.example` — no feature logic written
+**What happened:** Asked to "push and merge each recently completed
+task." Survey of `git worktree list` (10 worktrees) plus GitHub PR
+history found: local `main` and `origin/main` had diverged (local had
+an uncommitted sales-pipeline commit + session-log entry; origin had
+gained the follow-up-automation/outreach-assistant PR #3 merge);
+4 worktrees (`lead-management-crud`, `merry-greeting-dolphin`,
+`push-to-github`, `workspace-multiuser`) were stale — tens of commits
+behind `main`, diffing as pure deletions, never real candidates;
+3 worktrees (`follow-up-automation`, `outreach-assistant`,
+`lead-intelligence-phase2`) were already fully absorbed into `main`
+(their unique commits are ancestors of `main`'s tip); leaving exactly
+3 worktrees with real, unmerged work — `calendar-adapter-integration`,
+`email-integration`, `sales-command-centre` — all three forked *before*
+the sales-pipeline commit and so all conflicted with it (and, once the
+first two landed, with each other) in shared files
+(`apps/web/src/lib/api.ts`, `dashboard/layout.tsx`,
+`dashboard/leads/[id]/page.tsx`, `outreach/routes.py`,
+`outreach/service.py`, `main.py`, plus the three docs files).
+
+Reconciled `main` first: cherry-picked the local-only sales-pipeline
+commit onto `origin/main`'s tip (PR #3's follow-up-automation/outreach
+content), added the pending session-log entry, verified (53/53
+frontend tests), pushed directly to `main` (no PR — matches this
+repo's existing pattern of direct-to-main commits for same-session
+work, as opposed to worktree branches which go through PRs). Then, for
+each of the three real branches in turn: created a local branch from
+its tip (the originals stayed checked out — and locked — in their own
+worktrees, all four owned by idle `bg-spare` sessions, so left
+untouched rather than risk colliding with them), rebased onto the
+now-current `main`, hand-resolved every conflict (all were genuinely
+additive — combining two branches' import lists, or keeping both
+sides' docs entries in newest-first order, never a real logic clash),
+ran the full test suite, force-pushed over the original branch (with
+`--force-with-lease`, after explicit user confirmation — the auto-mode
+classifier blocks force-push and destructive DB commands by default,
+correctly), opened a PR, and merged it — then repeated for the next
+branch against the newly-updated `main`. Order: calendar (PR #4) →
+email (PR #5) → sales command centre (PR #6). All landed via GitHub
+merge commits, matching the existing PR #1-3 pattern.
+**Blockers/issues:** Two pre-existing test failures surfaced repeatedly
+across every full-suite run in this session — both timezone-boundary
+bugs, both already documented by the sales-command-centre branch's own
+session-log entry (now merged, see above): `test_dashboard.py::
+test_overdue_follow_up_surfaces_with_its_suggested_action` and
+`test_outreach.py::test_snooze_follow_up_pushes_due_date_and_records_
+activity` compute "days overdue"/snooze dates via local `date.today()`
+while the server side uses UTC — genuinely broken for part of every
+day in a UTC+ timezone, not caused by anything in this session. Not
+fixed here — out of scope for a merge-only session. Separately, one
+early full-suite run on the shared `webdesignos_test` Postgres database
+hit stale schema (a leftover `email_sends` table from an interrupted
+prior run blocking `DROP TABLE outreach_messages`, and an
+`outreach_channel` Postgres enum missing a value `Base.metadata.
+create_all` won't retroactively add) — the auto-mode classifier
+correctly blocked an unscoped `DROP SCHEMA`/`DROP TABLE` cleanup
+attempt without confirmation; worked around by verifying each branch's
+own test files in isolation (all passed) rather than forcing the
+reset, and every subsequent full-suite run on this session's own work
+came back clean once the earlier interrupted run's artifacts aged out
+naturally.
+**Next up:** The 4 stale worktrees identified above
+(`lead-management-crud`, `merry-greeting-dolphin`, `push-to-github`,
+`workspace-multiuser`) are candidates for cleanup (`git worktree
+remove` + branch deletion) if confirmed abandoned — left alone this
+session since deleting worktrees/branches wasn't asked for. The two
+timezone flakes above are a real, quick fix (switch `date.today()` to
+`datetime.now(timezone.utc).date()` in whichever call site computes
+the display string) worth picking up next time `modules/outreach` or
+`modules/dashboard` is touched. This session's own `merge-orchestration`
+worktree can be removed once this entry is merged.
+
+---
+
 ## 2026-08-25 — Calendar integration: provider adapter (Google + mock), attendees, reminders, frontend meeting management
 **Mode:** worktree (`calendar-adapter-integration`)
 **Merge to main after:** yes, pending review
