@@ -439,6 +439,52 @@ export type MeetingBrief = {
   generated_at: string;
 };
 
+export type MeetingAttendee = {
+  id: string;
+  name: string | null;
+  email: string;
+  is_organizer: boolean;
+  created_at: string;
+};
+
+export type MeetingAttendeeCreate = {
+  email: string;
+  name?: string;
+  is_organizer?: boolean;
+};
+
+export const REMINDER_CHANNELS = ["in_app"] as const;
+export type ReminderChannel = (typeof REMINDER_CHANNELS)[number];
+
+export type MeetingReminder = {
+  id: string;
+  remind_at: string;
+  channel: ReminderChannel;
+  note: string | null;
+  acknowledged_at: string | null;
+  created_at: string;
+};
+
+export type MeetingReminderCreate = {
+  remind_at: string;
+  channel?: ReminderChannel;
+  note?: string;
+};
+
+// A reminder that's come due, with its meeting's context folded in — see
+// GET /api/v1/meetings/reminders/due. There's no email/push delivery
+// integration anywhere in this app: this list *is* the reminder.
+export type DueReminder = {
+  id: string;
+  remind_at: string;
+  channel: ReminderChannel;
+  note: string | null;
+  meeting_id: string;
+  meeting_title: string;
+  meeting_scheduled_at: string;
+  meeting_context: string;
+};
+
 export type Meeting = {
   id: string;
   title: string;
@@ -457,6 +503,8 @@ export type Meeting = {
   context: string;
   created_at: string;
   brief: MeetingBrief | null;
+  attendees: MeetingAttendee[];
+  reminders: MeetingReminder[];
 };
 
 export type MeetingCreate = {
@@ -469,6 +517,8 @@ export type MeetingCreate = {
   // Omitted defaults to the parent lead/project's assigned user.
   assigned_user_id?: string | null;
   notes?: string;
+  attendees?: MeetingAttendeeCreate[];
+  reminders?: MeetingReminderCreate[];
 };
 
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
@@ -1278,7 +1328,13 @@ export const api = {
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
 
-  listMeetings: () => request<Meeting[]>("/api/v1/meetings"),
+  listMeetings: (opts?: { leadId?: string; projectId?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.leadId) params.set("lead_id", opts.leadId);
+    if (opts?.projectId) params.set("project_id", opts.projectId);
+    const qs = params.toString();
+    return request<Meeting[]>(`/api/v1/meetings${qs ? `?${qs}` : ""}`);
+  },
   getMeeting: (id: string) => request<Meeting>(`/api/v1/meetings/${id}`),
   createMeeting: (data: MeetingCreate) =>
     request<Meeting>("/api/v1/meetings", { method: "POST", body: JSON.stringify(data) }),
@@ -1286,6 +1342,18 @@ export const api = {
     request<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteMeeting: (id: string) => request<void>(`/api/v1/meetings/${id}`, { method: "DELETE" }),
   generateMeetingBrief: (id: string) => request<Meeting>(`/api/v1/meetings/${id}/brief`, { method: "POST" }),
+
+  addMeetingAttendee: (meetingId: string, data: MeetingAttendeeCreate) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/attendees`, { method: "POST", body: JSON.stringify(data) }),
+  removeMeetingAttendee: (meetingId: string, attendeeId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/attendees/${attendeeId}`, { method: "DELETE" }),
+  addMeetingReminder: (meetingId: string, data: MeetingReminderCreate) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders`, { method: "POST", body: JSON.stringify(data) }),
+  removeMeetingReminder: (meetingId: string, reminderId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders/${reminderId}`, { method: "DELETE" }),
+  acknowledgeMeetingReminder: (meetingId: string, reminderId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders/${reminderId}/acknowledge`, { method: "POST" }),
+  listDueReminders: () => request<DueReminder[]>("/api/v1/meetings/reminders/due"),
 
   listCalendarEvents: (start: string, end: string) =>
     request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),

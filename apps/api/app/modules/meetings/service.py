@@ -2,20 +2,38 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, aliased, joinedload
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from app.agents import meeting_brief as meeting_brief_agent
 from app.core.logging import logger
 from app.core.settings import settings
-from app.integrations import google_calendar
+from app.integrations.calendar import registry as calendar_registry
+from app.integrations.calendar.base import CalendarEventInput
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.interactions.models import Interaction
 from app.modules.leads.models import Lead, LeadStatus
-from app.modules.meetings.models import Meeting, MeetingBrief, MeetingStatus, MeetingType
-from app.modules.meetings.schemas import MeetingBriefRead, MeetingCreate, MeetingRead, MeetingUpdate
+from app.modules.meetings.models import (
+    Meeting,
+    MeetingAttendee,
+    MeetingBrief,
+    MeetingReminder,
+    MeetingStatus,
+    MeetingType,
+)
+from app.modules.meetings.schemas import (
+    DueReminderRead,
+    MeetingAttendeeCreate,
+    MeetingAttendeeRead,
+    MeetingBriefRead,
+    MeetingCreate,
+    MeetingRead,
+    MeetingReminderCreate,
+    MeetingReminderRead,
+    MeetingUpdate,
+)
 from app.modules.outreach.models import OutreachMessage
 from app.modules.pipeline import service as pipeline_service
 from app.modules.projects.models import Project
@@ -77,6 +95,8 @@ def _to_read(meeting: Meeting) -> MeetingRead:
         context=_context(meeting),
         created_at=meeting.created_at,
         brief=MeetingBriefRead.from_model(meeting.brief) if meeting.brief else None,
+        attendees=[MeetingAttendeeRead.model_validate(a) for a in meeting.attendees],
+        reminders=[MeetingReminderRead.model_validate(r) for r in meeting.reminders],
     )
 
 
@@ -99,12 +119,34 @@ def _base_query(workspace_id: uuid.UUID):
             joinedload(Meeting.lead).joinedload(Lead.business),
             joinedload(Meeting.assigned_user),
             joinedload(Meeting.brief),
+            # selectinload, not joinedload, for the two collections — two
+            # joined one-to-many relations on the same query would
+            # cartesian-product the row count.
+            selectinload(Meeting.attendees),
+            selectinload(Meeting.reminders),
         )
     )
 
 
-def list_meetings(db: Session, workspace_id: uuid.UUID) -> list[MeetingRead]:
-    meetings = db.scalars(_base_query(workspace_id).order_by(Meeting.scheduled_at.asc()))
+def list_meetings(
+    db: Session,
+    workspace_id: uuid.UUID,
+    *,
+    lead_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+) -> list[MeetingRead]:
+    """
+    Unfiltered: every meeting in the workspace, chronological — the
+    calendar page's source. Filtered by lead_id/project_id: that one
+    lead's or project's full meeting history (past and upcoming) — used
+    on the lead/project detail pages.
+    """
+    query = _base_query(workspace_id)
+    if lead_id is not None:
+        query = query.where(Meeting.lead_id == lead_id)
+    if project_id is not None:
+        query = query.where(Meeting.project_id == project_id)
+    meetings = db.scalars(query.order_by(Meeting.scheduled_at.asc()))
     return [_to_read(m) for m in meetings]
 
 
@@ -139,63 +181,50 @@ def _calendar_description(meeting: Meeting) -> str:
     return "\n".join(lines)
 
 
-def _sync_to_google_calendar(
+def _sync_calendar_event(
     db: Session, meeting: Meeting, previous_assigned_user_id: uuid.UUID | None = None
 ) -> None:
     """
     Best-effort, non-fatal by design (see docs/05_DECISIONS.md): silently
     does nothing if the assigned user has no connected calendar, an
-    expired/revoked token, or Google is unreachable — a meeting is still
-    booked in this app regardless of whether the calendar push succeeds.
-    Never sets attendees or sends an invite email — see
-    integrations/google_calendar.py's module docstring.
+    expired/revoked token, or the provider is unreachable — a meeting is
+    still booked in this app regardless of whether the calendar push
+    succeeds. Goes through the configured CalendarProvider
+    (app.integrations.calendar.registry) — never a concrete provider
+    directly, so this function is unaffected by which one is active.
     """
-    # Imported here, not at module scope, to avoid a circular import —
-    # modules/calendar/service.py imports this module for its calendar
-    # aggregation view. See modules/calendar/connections.py's docstring.
-    from app.modules.calendar import connections as calendar_connections
+    provider = calendar_registry.get_provider()
 
     if previous_assigned_user_id and previous_assigned_user_id != meeting.assigned_user_id and meeting.external_event_id:
-        _delete_google_event(db, previous_assigned_user_id, meeting.external_event_id)
+        provider.delete_event(db, previous_assigned_user_id, meeting.external_event_id)
         meeting.external_event_id = None
 
     if meeting.assigned_user_id is None:
         return
 
-    access_token = calendar_connections.get_valid_access_token(db, meeting.assigned_user_id)
-    if access_token is None:
+    if not provider.is_connected(db, meeting.assigned_user_id):
         return
 
-    calendar_id = calendar_connections.get_connection_calendar_id(db, meeting.assigned_user_id)
-    event = google_calendar.MeetingEvent(
+    event = CalendarEventInput(
         title=meeting.title,
         description=_calendar_description(meeting),
         start=meeting.scheduled_at,
         duration_minutes=meeting.duration_minutes,
+        attendee_emails=[a.email for a in meeting.attendees],
     )
     if meeting.external_event_id:
-        google_calendar.update_event(access_token, calendar_id, meeting.external_event_id, event)
+        provider.update_event(db, meeting.assigned_user_id, meeting.external_event_id, event)
     else:
-        external_id = google_calendar.create_event(access_token, calendar_id, event)
+        external_id = provider.create_event(db, meeting.assigned_user_id, event)
         if external_id:
             meeting.external_event_id = external_id
 
 
-def _remove_from_google_calendar(db: Session, meeting: Meeting) -> None:
+def _remove_from_calendar(db: Session, meeting: Meeting) -> None:
     if meeting.assigned_user_id is None or meeting.external_event_id is None:
         return
-    _delete_google_event(db, meeting.assigned_user_id, meeting.external_event_id)
+    calendar_registry.get_provider().delete_event(db, meeting.assigned_user_id, meeting.external_event_id)
     meeting.external_event_id = None
-
-
-def _delete_google_event(db: Session, user_id: uuid.UUID, event_id: str) -> None:
-    from app.modules.calendar import connections as calendar_connections
-
-    access_token = calendar_connections.get_valid_access_token(db, user_id)
-    if access_token is None:
-        return
-    calendar_id = calendar_connections.get_connection_calendar_id(db, user_id)
-    google_calendar.delete_event(access_token, calendar_id, event_id)
 
 
 def _business_location(business: Business) -> str | None:
@@ -444,6 +473,19 @@ def create_meeting(
         assigned_user_id=assigned_user_id,
         notes=data.notes,
     )
+    # Appended via the relationship (not constructed with an explicit
+    # meeting_id) so the in-memory meeting.attendees collection is
+    # already correct below, for _sync_calendar_event to read — no
+    # extra flush/refresh round trip needed.
+    for attendee_data in data.attendees:
+        meeting.attendees.append(
+            MeetingAttendee(name=attendee_data.name, email=attendee_data.email, is_organizer=attendee_data.is_organizer)
+        )
+    for reminder_data in data.reminders:
+        meeting.reminders.append(
+            MeetingReminder(remind_at=reminder_data.remind_at, channel=reminder_data.channel, note=reminder_data.note)
+        )
+
     db.add(meeting)
     db.flush()
 
@@ -481,7 +523,7 @@ def create_meeting(
     db.flush()
 
     # CALENDAR EVENT
-    _sync_to_google_calendar(db, meeting)
+    _sync_calendar_event(db, meeting)
 
     # MEETING BRIEF — lead-side (sales) meetings only, per the requested
     # workflow: INTERESTED LEAD -> MEETING BOOKED -> CALENDAR EVENT ->
@@ -549,9 +591,9 @@ def update_meeting(
     db.flush()
 
     if meeting.status in (MeetingStatus.CANCELLED, MeetingStatus.NO_SHOW):
-        _remove_from_google_calendar(db, meeting)
+        _remove_from_calendar(db, meeting)
     elif needs_calendar_sync:
-        _sync_to_google_calendar(db, meeting, previous_assigned_user_id=previous_assigned_user_id)
+        _sync_calendar_event(db, meeting, previous_assigned_user_id=previous_assigned_user_id)
 
     db.commit()
     return get_meeting(db, workspace_id, meeting_id)
@@ -562,7 +604,7 @@ def delete_meeting(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, me
     if meeting is None:
         return False
 
-    _remove_from_google_calendar(db, meeting)
+    _remove_from_calendar(db, meeting)
 
     # meeting_briefs.meeting_id is NOT NULL, so the ORM's default
     # delete-parent behavior (null out the child FK) would violate that
@@ -583,3 +625,156 @@ def delete_meeting(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, me
     db.delete(meeting)
     db.commit()
     return True
+
+
+def _get_meeting_in_workspace(db: Session, workspace_id: uuid.UUID, meeting_id: uuid.UUID) -> Meeting | None:
+    return db.scalar(_base_query(workspace_id).where(Meeting.id == meeting_id))
+
+
+def add_attendee(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting_id: uuid.UUID, data: MeetingAttendeeCreate
+) -> MeetingRead | None:
+    meeting = _get_meeting_in_workspace(db, workspace_id, meeting_id)
+    if meeting is None:
+        return None
+
+    meeting.attendees.append(MeetingAttendee(name=data.name, email=data.email, is_organizer=data.is_organizer))
+    db.flush()
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="meeting",
+        entity_id=meeting.id,
+        action="attendee_added",
+        summary=f"Added {data.email} to {meeting.title}",
+    )
+    # Re-push the calendar description (attendee list is informational
+    # context there, see _calendar_description) — never sends an invite,
+    # see integrations/calendar/google_provider.py's docstring.
+    _sync_calendar_event(db, meeting)
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
+
+
+def remove_attendee(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting_id: uuid.UUID, attendee_id: uuid.UUID
+) -> MeetingRead | None:
+    meeting = _get_meeting_in_workspace(db, workspace_id, meeting_id)
+    if meeting is None:
+        return None
+
+    attendee = next((a for a in meeting.attendees if a.id == attendee_id), None)
+    if attendee is None:
+        raise HTTPException(status_code=404, detail="Attendee not found")
+
+    meeting.attendees.remove(attendee)
+    db.flush()
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="meeting",
+        entity_id=meeting.id,
+        action="attendee_removed",
+        summary=f"Removed {attendee.email} from {meeting.title}",
+    )
+    _sync_calendar_event(db, meeting)
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
+
+
+def add_reminder(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting_id: uuid.UUID, data: MeetingReminderCreate
+) -> MeetingRead | None:
+    meeting = _get_meeting_in_workspace(db, workspace_id, meeting_id)
+    if meeting is None:
+        return None
+
+    meeting.reminders.append(MeetingReminder(remind_at=data.remind_at, channel=data.channel, note=data.note))
+    db.flush()
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="meeting",
+        entity_id=meeting.id,
+        action="reminder_added",
+        summary=f"Reminder set for {meeting.title} at {data.remind_at.isoformat()}",
+    )
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
+
+
+def remove_reminder(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, meeting_id: uuid.UUID, reminder_id: uuid.UUID
+) -> MeetingRead | None:
+    meeting = _get_meeting_in_workspace(db, workspace_id, meeting_id)
+    if meeting is None:
+        return None
+
+    reminder = next((r for r in meeting.reminders if r.id == reminder_id), None)
+    if reminder is None:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+
+    meeting.reminders.remove(reminder)
+    db.flush()
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="meeting",
+        entity_id=meeting.id,
+        action="reminder_removed",
+        summary=f"Removed reminder from {meeting.title}",
+    )
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
+
+
+def acknowledge_reminder(
+    db: Session, workspace_id: uuid.UUID, meeting_id: uuid.UUID, reminder_id: uuid.UUID
+) -> MeetingRead | None:
+    meeting = _get_meeting_in_workspace(db, workspace_id, meeting_id)
+    if meeting is None:
+        return None
+
+    reminder = next((r for r in meeting.reminders if r.id == reminder_id), None)
+    if reminder is None:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+
+    reminder.acknowledged_at = datetime.now(timezone.utc)
+    db.commit()
+    return get_meeting(db, workspace_id, meeting_id)
+
+
+def list_due_reminders(db: Session, workspace_id: uuid.UUID) -> list[DueReminderRead]:
+    """
+    Reminders whose time has arrived and haven't been dismissed —
+    surfaced by the frontend (e.g. the calendar page) as an in-app list.
+    There's no push/email delivery mechanism in this app (see
+    MeetingReminder's docstring), so this query *is* the reminder.
+    """
+    now = datetime.now(timezone.utc)
+    meetings = db.scalars(
+        _base_query(workspace_id).where(
+            Meeting.reminders.any(and_(MeetingReminder.remind_at <= now, MeetingReminder.acknowledged_at.is_(None)))
+        )
+    )
+    due: list[DueReminderRead] = []
+    for meeting in meetings:
+        for reminder in meeting.reminders:
+            if reminder.remind_at <= now and reminder.acknowledged_at is None:
+                due.append(
+                    DueReminderRead(
+                        id=reminder.id,
+                        remind_at=reminder.remind_at,
+                        channel=reminder.channel,
+                        note=reminder.note,
+                        meeting_id=meeting.id,
+                        meeting_title=meeting.title,
+                        meeting_scheduled_at=meeting.scheduled_at,
+                        meeting_context=_context(meeting),
+                    )
+                )
+    return sorted(due, key=lambda r: r.remind_at)

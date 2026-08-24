@@ -7,6 +7,7 @@ import {
   ApiError,
   MEETING_TYPES,
   type CalendarEvent,
+  type DueReminder,
   type Lead,
   type Meeting,
   type MeetingStatus,
@@ -75,6 +76,8 @@ export default function CalendarPage() {
   const [meetingError, setMeetingError] = useState<string | null>(null);
   const [meetingBusy, setMeetingBusy] = useState(false);
 
+  const [dueReminders, setDueReminders] = useState<DueReminder[]>([]);
+
   const days = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
 
   function load() {
@@ -86,11 +89,16 @@ export default function CalendarPage() {
       .catch(() => setError("Couldn't load the calendar."));
   }
 
+  function loadDueReminders() {
+    api.listDueReminders().then(setDueReminders).catch(() => {});
+  }
+
   useEffect(load, [cursor]);
   useEffect(() => {
     api.listLeads().then(setLeads).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
+    loadDueReminders();
   }, []);
 
   const eventsByDay = useMemo(() => {
@@ -186,6 +194,64 @@ export default function CalendarPage() {
     }
   }
 
+  async function handleAddAttendee(email: string, name: string) {
+    if (!selectedMeeting) return;
+    try {
+      const updated = await api.addMeetingAttendee(selectedMeeting.id, {
+        email,
+        name: name || undefined,
+      });
+      setSelectedMeeting(updated);
+    } catch (err) {
+      setMeetingError(err instanceof ApiError ? err.message : "Couldn't add that attendee.");
+    }
+  }
+
+  async function handleRemoveAttendee(attendeeId: string) {
+    if (!selectedMeeting) return;
+    try {
+      const updated = await api.removeMeetingAttendee(selectedMeeting.id, attendeeId);
+      setSelectedMeeting(updated);
+    } catch {
+      setMeetingError("Couldn't remove that attendee.");
+    }
+  }
+
+  async function handleAddReminder(remindAt: string, note: string) {
+    if (!selectedMeeting || !remindAt) return;
+    try {
+      const updated = await api.addMeetingReminder(selectedMeeting.id, {
+        remind_at: new Date(remindAt).toISOString(),
+        note: note || undefined,
+      });
+      setSelectedMeeting(updated);
+      loadDueReminders();
+    } catch (err) {
+      setMeetingError(err instanceof ApiError ? err.message : "Couldn't add that reminder.");
+    }
+  }
+
+  async function handleRemoveReminder(reminderId: string) {
+    if (!selectedMeeting) return;
+    try {
+      const updated = await api.removeMeetingReminder(selectedMeeting.id, reminderId);
+      setSelectedMeeting(updated);
+      loadDueReminders();
+    } catch {
+      setMeetingError("Couldn't remove that reminder.");
+    }
+  }
+
+  async function handleAcknowledgeReminder(meetingId: string, reminderId: string) {
+    try {
+      const updated = await api.acknowledgeMeetingReminder(meetingId, reminderId);
+      if (selectedMeeting?.id === meetingId) setSelectedMeeting(updated);
+      loadDueReminders();
+    } catch {
+      setMeetingError("Couldn't dismiss that reminder.");
+    }
+  }
+
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const todayKey = toDateKey(today);
 
@@ -200,6 +266,32 @@ export default function CalendarPage() {
           {showForm ? "Cancel" : "Schedule meeting"}
         </button>
       </div>
+
+      {dueReminders.length > 0 && (
+        <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+            Reminders due ({dueReminders.length})
+          </p>
+          {dueReminders.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-3 text-sm">
+              <button
+                onClick={() => openMeeting(r.meeting_id)}
+                className="truncate text-left text-amber-900 hover:underline"
+                title={r.note ?? undefined}
+              >
+                {r.meeting_title} — {r.meeting_context} ({new Date(r.meeting_scheduled_at).toLocaleString()})
+                {r.note ? `: ${r.note}` : ""}
+              </button>
+              <button
+                onClick={() => handleAcknowledgeReminder(r.meeting_id, r.id)}
+                className="shrink-0 rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
+              >
+                Dismiss
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-neutral-200 p-4">
@@ -407,7 +499,7 @@ export default function CalendarPage() {
               {MEETING_STATUS_LABELS[selectedMeeting.status]}
             </span>
             {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
-            {selectedMeeting.synced_to_calendar && <span className="text-emerald-700">Synced to Google Calendar</span>}
+            {selectedMeeting.synced_to_calendar && <span className="text-emerald-700">Synced to calendar</span>}
           </p>
           {meetingError && <p className="mt-2 text-sm text-red-600">{meetingError}</p>}
 
@@ -469,9 +561,163 @@ export default function CalendarPage() {
             )}
           </div>
 
+          <AttendeesPanel
+            attendees={selectedMeeting.attendees}
+            onAdd={handleAddAttendee}
+            onRemove={handleRemoveAttendee}
+          />
+          <RemindersPanel
+            reminders={selectedMeeting.reminders}
+            onAdd={handleAddReminder}
+            onRemove={handleRemoveReminder}
+          />
+
           {selectedMeeting.brief && <MeetingBriefPanel brief={selectedMeeting.brief} />}
         </section>
       )}
+    </div>
+  );
+}
+
+function AttendeesPanel({
+  attendees,
+  onAdd,
+  onRemove,
+}: {
+  attendees: Meeting["attendees"];
+  onAdd: (email: string, name: string) => void;
+  onRemove: (attendeeId: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+
+  return (
+    <div className="mt-5 border-t border-neutral-200 pt-4">
+      <h3 className="text-sm font-semibold text-neutral-900">Attendees</h3>
+      {attendees.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {attendees.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-2 text-sm text-neutral-700">
+              <span className="truncate">
+                {a.name ? `${a.name} <${a.email}>` : a.email}
+                {a.is_organizer && <span className="ml-1 text-xs text-neutral-400">(organizer)</span>}
+              </span>
+              <button
+                onClick={() => onRemove(a.id)}
+                className="shrink-0 text-xs text-neutral-400 hover:text-red-600"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-sm text-neutral-400">No attendees added yet.</p>
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!email) return;
+          onAdd(email, name);
+          setEmail("");
+          setName("");
+        }}
+        className="mt-2 flex gap-2"
+      >
+        <input
+          type="email"
+          required
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={`${inputClass} flex-1`}
+        />
+        <input
+          placeholder="Name (optional)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={`${inputClass} flex-1`}
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+        >
+          Add
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function RemindersPanel({
+  reminders,
+  onAdd,
+  onRemove,
+}: {
+  reminders: Meeting["reminders"];
+  onAdd: (remindAt: string, note: string) => void;
+  onRemove: (reminderId: string) => void;
+}) {
+  const [remindAt, setRemindAt] = useState("");
+  const [note, setNote] = useState("");
+
+  return (
+    <div className="mt-5 border-t border-neutral-200 pt-4">
+      <h3 className="text-sm font-semibold text-neutral-900">Reminders</h3>
+      <p className="mt-0.5 text-xs text-neutral-400">
+        Shown here (and in the banner above) once due — this app has no email/push delivery.
+      </p>
+      {reminders.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {reminders.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-2 text-sm text-neutral-700">
+              <span className="truncate">
+                {new Date(r.remind_at).toLocaleString()}
+                {r.note ? ` — ${r.note}` : ""}
+                {r.acknowledged_at && <span className="ml-1 text-xs text-neutral-400">(dismissed)</span>}
+              </span>
+              <button
+                onClick={() => onRemove(r.id)}
+                className="shrink-0 text-xs text-neutral-400 hover:text-red-600"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-sm text-neutral-400">No reminders set.</p>
+      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!remindAt) return;
+          onAdd(remindAt, note);
+          setRemindAt("");
+          setNote("");
+        }}
+        className="mt-2 flex gap-2"
+      >
+        <input
+          type="datetime-local"
+          required
+          value={remindAt}
+          onChange={(e) => setRemindAt(e.target.value)}
+          className={`${inputClass} flex-1`}
+        />
+        <input
+          placeholder="Note (optional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className={`${inputClass} flex-1`}
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+        >
+          Add
+        </button>
+      </form>
     </div>
   );
 }

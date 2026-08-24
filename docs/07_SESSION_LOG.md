@@ -11,6 +11,68 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-25 — Calendar integration: provider adapter (Google + mock), attendees, reminders, frontend meeting management
+**Mode:** worktree (`calendar-adapter-integration`)
+**Merge to main after:** yes, pending review
+**Scope touched:** apps/api/app/integrations/calendar (new), apps/api/app/modules/meetings, apps/api/app/core/settings.py, apps/api/alembic/versions, apps/api/tests, apps/web/src/lib/api.ts, apps/web/src/app/dashboard/{calendar,leads/[id],projects/[id]}
+**What happened:** Retrofit the existing Google Calendar integration
+(built 2026-08-18) onto a `CalendarProvider` Protocol + registry — the
+same pattern `integrations/discovery/` already uses — so
+`modules/meetings/service.py` no longer imports a concrete provider at
+all. Added `MockCalendarProvider` (dev/test, always "connected," never
+hits the network, synthetic event ids) alongside the untouched
+`GoogleCalendarProvider` wrapper; new `settings.calendar_provider`
+picks between them, defaulting to `"google"` to preserve existing
+behavior. This supersedes the 2026-08-18 decision that explicitly
+rejected a multi-provider abstraction for calendar — see
+`docs/05_DECISIONS.md`'s new entry for the reasoning (the operator
+asked directly for exactly this architecture).
+
+Added `MeetingAttendee` and `MeetingReminder` (new tables, migration
+`c392b641f8cb`), neither of which existed before. Attendees are
+informational only — deliberately never wired into Google's real
+`attendees` field, preserving the existing "no invite emails"
+guarantee. Reminders are `IN_APP`-only (no email/push integration
+exists anywhere in this app) — a reminder is a stored time that
+becomes visible once due via `GET /api/v1/meetings/reminders/due`,
+surfaced as a dismissible banner on the calendar page. `GET
+/api/v1/meetings` gained optional `lead_id`/`project_id` filters, used
+to add a "Meetings" history section to both the lead and project
+detail pages — meeting history itself needed no new storage, since
+`activity_log` already recorded every meeting lifecycle event.
+
+Full backend suite: 568 passed, 1 pre-existing date-relative test
+failure (`test_dashboard.py`, unrelated — caused by the wall-clock date
+rolling over 2026-08-24 → 08-25 mid-session), 1 pre-existing
+session-teardown DDL-ordering flake (reproduced identically on an
+untouched file, `test_deployments.py`, to confirm it wasn't caused by
+this change). Frontend: `tsc --noEmit` clean, `next build` clean, 42
+existing vitest tests pass (no new pure-function logic to unit test).
+Manually verified end to end in a real browser against an isolated
+scratch Postgres DB (`webdesignos_dev_calendar`, dropped after) with
+`CALENDAR_PROVIDER=mock`: scheduled a meeting for a lead, added an
+attendee, added a past-dated reminder, confirmed the due-reminder
+banner appeared with correct meeting context, dismissed it, and
+confirmed the lead detail page's new Meetings section showed the
+meeting.
+**Blockers/issues:** This worktree branched one commit behind main
+(missing the `1e8fb99` docs commit that added this very file) — created
+it fresh here rather than rebase; expect a routine merge reconciliation
+on this file when the branch lands. The shared local `webdesignos_test`
+Postgres database is used concurrently by other worktree sessions on
+this machine — a `DROP SCHEMA CASCADE` issued mid-session collided with
+another session's in-flight test run; only my own hung query was
+touched, nothing else was disturbed, but full-suite pytest runs on this
+shared DB should be expected to occasionally flake for reasons
+unrelated to the code under test.
+**Next up:** Nothing blocking. Possible follow-ups if requested: wire
+reminders into the dashboard Overview's "needs your attention" list
+(kept out of scope here — that module wasn't touched), and a real
+second calendar provider (Outlook/CalDAV) now has a clean place to land
+via `integrations/calendar/registry.py`.
+
+---
+
 ## 2026-08-25 — Phase 3: sales pipeline kanban over existing LeadStatus
 **Mode:** same session (background job)
 **Merge to main after:** yes — committed to main as `feat: build sales pipeline` (5570d82)
