@@ -7,6 +7,8 @@ from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.modules.leads import service
 from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate
+from app.modules.pipeline import service as pipeline_service
+from app.modules.pipeline.schemas import PipelineEventRead
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/leads", tags=["leads"])
@@ -69,3 +71,15 @@ def unarchive_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
+
+
+@router.get("/{lead_id}/pipeline-events", response_model=list[PipelineEventRead])
+def list_lead_pipeline_events(
+    lead_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[PipelineEventRead]:
+    """Newest first — the stage-transition history behind a lead's
+    current status, per docs/04_ROADMAP.md Phase 3."""
+    events = pipeline_service.list_lead_events(db, current_user.workspace_id, lead_id)
+    if events is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return events
