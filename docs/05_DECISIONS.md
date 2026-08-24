@@ -1,5 +1,7 @@
 # Decisions
 
+added agent-to-agent trust boundary because upstream errors like a bad lead score could otherwise propagate silently into outreach drafts"
+
 A running log of decisions and the reasoning behind them, so later work
 doesn't silently re-litigate settled questions. Newest entries at the
 top. Each entry: date, decision, why, alternatives considered (if any).
