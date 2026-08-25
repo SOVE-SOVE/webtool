@@ -136,7 +136,24 @@ Goal: stages 5–7 stop eating time, sending still stays human.
       2026-08-21 — until then they were only visible to someone who
       thought to open the follow-ups page, which defeats the point of a
       reminder. Marking outreach sent/replied now also advances the
-      lead's own status, which previously had to be done by hand.
+      lead's own status, which previously had to be done by hand. As of
+      2026-08-24, `modules/outreach/service.py::list_needs_follow_up`
+      also detects leads that have gone quiet with *no* follow-up
+      scheduled at all (deterministic, no LLM — reads last contact,
+      pipeline stage, meeting outcome, and prior-outreach channel), and
+      an existing follow-up can be snoozed rather than only resolved or
+      left overdue.
+- [x] Sales command centre — `/dashboard/sales`
+      (`modules/sales_dashboard/`), added 2026-08-25 as the Phase 3
+      checkpoint: a lead-funnel-only view (new/hot/needs-follow-up/
+      upcoming-meeting/proposal/won/lost, conversion rate, estimated vs.
+      actual revenue, outreach activity) plus a ranked "do this next"
+      queue, so "find → qualify → contact → follow up → book → close"
+      works as one continuous loop from a single screen rather than
+      requiring the Overview plus several list pages. Also closed the
+      one real gap blocking an honest "estimated revenue" figure — a
+      way to log an actual proposal amount (`POST
+      /leads/{id}/opportunities`) — see [[05_DECISIONS]].
 
 ## M4 — Intake → project → brief/sitemap/copy
 

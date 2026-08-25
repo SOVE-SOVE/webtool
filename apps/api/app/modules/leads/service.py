@@ -210,6 +210,7 @@ def mark_researched(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID
 # meetings/service.py's `_PRE_MEETING_STATUSES`.
 _PRE_CONTACTED_STATUSES = (LeadStatus.NEW, LeadStatus.RESEARCHED, LeadStatus.QUALIFIED)
 _PRE_REPLIED_STATUSES = (*_PRE_CONTACTED_STATUSES, LeadStatus.CONTACTED)
+_PRE_PROPOSAL_STATUSES = (*_PRE_REPLIED_STATUSES, LeadStatus.REPLIED, LeadStatus.MEETING)
 
 
 def _advance_status(
@@ -265,6 +266,46 @@ def mark_replied(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | 
         new_status=LeadStatus.REPLIED,
         allowed_from=_PRE_REPLIED_STATUSES,
         reason="reply received",
+    )
+
+
+def mark_proposal_sent(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
+    """Logging a proposal/quote (see modules/sales_opportunities/service.py)
+    is the "we've made an offer" event."""
+    _advance_status(
+        db,
+        workspace_id=workspace_id,
+        actor_id=actor_id,
+        lead=lead,
+        new_status=LeadStatus.PROPOSAL,
+        allowed_from=_PRE_PROPOSAL_STATUSES,
+        reason="proposal sent",
+    )
+
+
+def mark_lost(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
+    """A lost opportunity (see modules/sales_opportunities/service.py's
+    mark_opportunity_lost) closes the lead out too — unlike the forward-
+    only bumps above, this is a direct set: LOST is a terminal state
+    reachable from anywhere in the active funnel, not just the status
+    immediately behind it. Never overwrites an already-WON lead — a
+    stale/superseded quote being marked lost after the deal closed some
+    other way shouldn't reopen the question."""
+    if lead.status in (LeadStatus.WON, LeadStatus.LOST):
+        return
+    previous = lead.status
+    lead.status = LeadStatus.LOST
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=lead.id,
+        action="status_changed",
+        summary=f"{previous.value} -> {lead.status.value} (opportunity marked lost)",
+    )
+    pipeline_service.record_lead_event(
+        db, lead_id=lead.id, kind="status_changed", summary=f"{previous.value} -> {lead.status.value}"
     )
 
 

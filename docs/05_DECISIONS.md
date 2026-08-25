@@ -8,6 +8,109 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a lead-funnel-only dashboard, plus the missing piece that makes "estimated revenue" a real number
+
+**Decision:** Built `modules/sales_dashboard/` (`GET /api/v1/dashboard/sales`)
+as a *separate* endpoint from the existing Overview (`modules/dashboard/`),
+not an extension of it. The Overview spans the whole business — sales
+*and* delivery — and already has its own "do this next" list and metric
+tiles; this one is scoped to the sales funnel only (every query is a
+`Lead`, never a `Project`), matching the requested "find -> qualify ->
+contact -> follow up -> book -> close" shape. Sharing one endpoint would
+have meant either bloating the Overview's payload with sales-only detail
+nobody asked it to carry, or forking its "do this next" ranking logic to
+handle two unrelated audiences (a generalist running the whole shop vs.
+someone specifically doing sales work today) inside one function.
+
+Reuses `AttentionItem` (kind/label/id/title/detail/action/href) from
+`modules/dashboard/schemas.py` for the new "do this next" queue rather
+than inventing a parallel shape — extended its `kind` union with three
+sales-only values (`hot_lead`, `stale_proposal`, `new_lead`) alongside
+the existing `follow_up`/`meeting`. The queue's ranking follows the same
+"urgency first" convention as the Overview's list (see the 2026-08-21
+entry below) — overdue follow-up > imminent meeting > hot uncontacted
+lead > follow-up due today > stale proposal > stale new lead — with a
+second-order tiebreak on *opportunity* (fit score / proposed price)
+within each urgency tier, which the Overview's queue doesn't need since
+it isn't ranking deals against each other.
+
+**The estimated-revenue gap:** `SalesOpportunity` (existing model) was,
+before this change, only ever created with `status=WON`, and only from
+one call site — `clients/service.py`'s conversion flow. Nothing in the
+app ever created an `OPEN` opportunity, so "estimated revenue" (sum of
+open, real quoted amounts) had no honest source — every open lead would
+have summed to a hardcoded `$0`, indistinguishable from a genuinely
+empty pipeline. Rather than fabricate an estimate (e.g. average deal
+size x open-lead count, weighted by stage) — which is exactly the kind
+of unsupported claim this codebase has consistently rejected elsewhere
+(see the 2026-08-22 opportunity-scoring entry's "industry is deliberately
+not a scored factor" reasoning) — this pass added the missing real
+capability: `POST /leads/{id}/opportunities` lets the operator log an
+actual proposal/quote (tier + price), creating an `OPEN`
+`SalesOpportunity` and advancing the lead to `PROPOSAL` (new
+`leads/service.py::mark_proposal_sent`, same forward-only contract as
+`mark_contacted`/`mark_replied`). `estimated_revenue_cents` sums exactly
+those rows. A lead sitting at `PROPOSAL` with no quote logged (e.g. via
+the pre-existing direct `PATCH .../leads/{id}` status edit) contributes
+`$0` — the honest answer, not a guessed placeholder.
+
+The mirror action, `POST /opportunities/{id}/mark-lost`
+(`leads/service.py::mark_lost`), closes an open quote and sets the
+lead to `LOST` in the same call — deliberately never reopening an
+already-`WON` lead (a stale/superseded quote marked lost after the deal
+closed some other way shouldn't reopen the question), the same
+asymmetric-terminal-state handling `mark_lost`'s docstring spells out.
+While touching this path, also fixed `SalesOpportunity.closed_at` never
+being set on the `WON` row `clients/service.py` creates on conversion —
+present in the schema since it was first added, but no call site had
+ever written to it, so every "recently won" list would have shown a
+blank close date.
+
+**won_deals / lost_deals counted off `Lead.status`, not
+`SalesOpportunity.status`:** `Lead.status` is the single field every
+other part of this app already treats as authoritative for "where is
+this lead in the pipeline," and it's reachable even when no opportunity
+was ever logged (a lead marked `LOST` by a direct status edit, with no
+quote ever recorded). Counting off `SalesOpportunity` instead would
+silently undercount those. The `recent_won`/`recent_lost` *lists* still
+enrich each lead with whatever `SalesOpportunity` row exists for
+price/tier context — always present for `WON` (the conversion flow
+guarantees it) but possibly absent for `LOST`, which the schema makes
+explicit by typing `proposed_price_cents`/`tier` as nullable rather than
+defaulting them to zero.
+
+**conversion_rate_pct is decided-only** (`won / (won + lost)`), not
+`won / total_leads_ever`. Dividing by every lead ever created would
+understate a healthy, simply-mid-flight pipeline; this answers "of the
+deals I've actually closed one way or the other, how many did I win,"
+and is `null` (not `0%`) when nothing has been decided yet — same
+"missing is not zero" discipline as the estimated-revenue figure above.
+
+**Why:** requested directly — "complete Phase 3 with a sales command
+centre" — with an explicit acceptance bar ("find -> qualify -> contact
+-> follow up -> book -> close" must work end to end) and an explicit
+usefulness bar ("the operator could open it every morning and
+immediately know what needs to happen"). The existing Overview already
+covered the whole-business version of "what do I do next" (see the
+2026-08-21 entry below); what was missing was a sales-specific view an
+operator running today's sales work could open without wading through
+delivery-side rows, plus the one real data gap (a loggable proposal
+amount) blocking "estimated revenue" from being anything but a lie.
+
+**Alternatives considered:** Extending `DashboardOverview` with sales-
+specific fields instead of a new endpoint — rejected for the reasons
+above (audience/payload mismatch, ranking-logic fork). Inferring
+estimated revenue from lead score / stage without a real logged amount
+— rejected as unfounded, the same call this codebase already made for
+industry-based opportunity scoring. A generic "deal value" field on
+`Lead` itself instead of extending `SalesOpportunity` — rejected;
+`SalesOpportunity` already exists as "the deal under discussion" per its
+own docstring, and a lead can accumulate more than one over time (a
+re-quote after scope changes), which a single scalar field on `Lead`
+can't represent.
+
+---
+
 ## Format
 
 ```
@@ -20,6 +123,210 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 **Alternatives considered:** (optional) what else was on the table and
 why it lost.
 ```
+
+---
+
+## 2026-08-25 — Calendar integration retrofit onto a provider-adapter architecture; meeting attendees and reminders
+
+**Decision:** Superseded the 2026-08-18 calendar entry's "one provider,
+one adapter, until a second is actually needed" call. A second is now
+needed — a `MockCalendarProvider` for development/testing without a
+real Google account — and the operator asked directly for a
+swappable-provider architecture with no provider hard-coded into the
+domain logic. Retrofit the existing, already-working Google Calendar
+integration (`modules/calendar/`, `integrations/google_calendar.py` —
+both untouched) behind a new `CalendarProvider` `Protocol` +
+dict-registry pair (`integrations/calendar/base.py` +
+`integrations/calendar/registry.py`), the exact same shape
+`integrations/discovery/` already uses for business-discovery
+providers. `modules/meetings/service.py` now calls
+`calendar_registry.get_provider()` and codes only against
+`CalendarEventInput`/`CalendarProvider` — it no longer imports
+`integrations.google_calendar` or `modules.calendar.connections` at
+all. `GoogleCalendarProvider` wraps the existing OAuth/HTTP client
+unchanged; `MockCalendarProvider` is always "connected," never makes a
+network call, and returns an obviously-synthetic
+`mock-event-<uuid4>` id — the same "can't be mistaken for the real
+thing" contract `integrations/deployment.py`'s `MockDeploymentProvider`
+already established. New `settings.calendar_provider` (default
+`"google"`, not `"mock"` — unlike `deploy_provider`, Google Calendar
+here is a real, already-working integration, so defaulting away from
+it would silently regress existing behavior; `CALENDAR_PROVIDER=mock`
+is the explicit local-dev/test opt-in).
+
+Also added, since the operator's spec named them explicitly and
+neither existed: `MeetingAttendee` (`meeting_attendees` table — name,
+email, organizer flag; purely informational) and `MeetingReminder`
+(`meeting_reminders` table — `remind_at`, optional note,
+`acknowledged_at`). Attendee emails are carried on
+`CalendarEventInput.attendee_emails` for provider awareness but
+`GoogleCalendarProvider._to_meeting_event` deliberately drops them
+before calling `google_calendar.create_event` — the existing "never
+send a calendar invite email" guarantee
+(`integrations/google_calendar.py`'s module docstring) had to survive
+the refactor unchanged, not get an opt-out via a new field. Reminders
+are `IN_APP`-channel only: this app has no email/SMS/push delivery
+integration anywhere, so a reminder is a stored time that becomes
+visible once due (`GET /api/v1/meetings/reminders/due`, surfaced as a
+banner on the calendar page) — never a claim that a notification was
+actually sent. "Meeting history" itself needed no new mechanism:
+`activity_log` (`entity_type="meeting"`) already recorded every
+scheduled/updated/status_changed/cancelled/brief_generated event;
+`GET /api/v1/meetings` gained optional `lead_id`/`project_id` filters
+so the lead and project detail pages could each get a "Meetings"
+section (new) showing that entity's full meeting history, past and
+upcoming.
+
+**Why:** the operator asked directly for "Design the system so Google
+Calendar and other calendar providers can be added cleanly. Do not
+hard-code a provider into the domain logic. Provide a mock calendar
+provider for development/testing" — an explicit, direct instruction
+that supersedes the earlier internal call, the same way
+`integrations/discovery/`'s Protocol+registry pattern was chosen for
+exactly this reason when Lead Intelligence needed it. Keeping the
+"no invite emails" and "no fake reminder delivery" guarantees intact
+through the refactor matters more here than usual: an adapter
+architecture that silently made either easier to violate would be a
+regression dressed up as a feature.
+
+**Alternatives considered:** A generic `notification_channel` field on
+`MeetingReminder` covering email/SMS/push — rejected; every one of
+those would need a real sending integration this app doesn't have, and
+adding the field without the integration would be the exact "claims a
+capability nothing backs" pattern this codebase consistently avoids
+(see Anti-Slop, the mock deployment/discovery providers, Sales Audit's
+sourcing discipline). Passing `attendee_emails` all the way into
+Google's real `attendees` field — rejected outright per the operator's
+own prior "no unnecessary emails" instruction; attendee tracking is a
+CRM/informational feature here, not an invite-sending one.
+
+---
+
+## 2026-08-24 — Outreach system request: extended the existing M3 feature (fourth channel = follow-up message drafting, plus editing) instead of rebuilding
+
+**Decision:** A request came in to "build an AI-assisted outreach
+system" — email/phone/in-person/follow-up drafts grounded only in real
+findings, editable before sending, history stored, never auto-sent. That
+system already existed (M3, 2026-08-18: `agents/outreach.py` /
+`modules/outreach/`). Rather than building a parallel or replacement
+system, extended the existing one to close its two actual gaps against
+the request:
+
+1. **Follow-up MESSAGE drafting**, added as a fourth
+   `OutreachChannel.FOLLOW_UP` value alongside email/phone/in_person —
+   same `EmailDraft` output shape as email, own prompt
+   (`agents/prompts/outreach_follow_up.md`) with guardrails specific to
+   follow-ups (never claim a reply/read/urgency the prior-outreach record
+   doesn't actually show). `generate_outreach` refuses with a 400 when no
+   prior outreach exists for the lead — a follow-up message referencing
+   contact that never happened is exactly the fabricated-relationship
+   invention this feature exists to prevent, so it's enforced structurally
+   rather than left to the prompt. Deliberately kept separate from
+   `agents/follow_up.py`/`follow_ups` (the existing next-touch scheduling
+   recommendation) — that's a different, already-correct concept and nothing
+   about it changed.
+2. **Editing before send**, which had no route at all —
+   `PATCH /api/v1/outreach/{id}`. Refuses once a message has actually gone
+   out (SENT/REPLIED/FOLLOW_UP_DUE/CLOSED — editing then would misrepresent
+   what was really sent) and reverts an APPROVED message back to DRAFTED on
+   edit, matching the "content changed → approval no longer covers it"
+   contract this codebase already applies everywhere else (brief, creative
+   direction, sitemap, website sections — see several entries below).
+
+Storage, lifecycle (DRAFTED → APPROVED → SENT → REPLIED/FOLLOW_UP_DUE →
+CLOSED), guardrail prompts for the other three channels, and "store
+generated outreach history" (one `OutreachMessage` row per generation,
+never overwritten) were all already correct and untouched.
+
+**Why:** [[03_AGENT_RULES]]'s "check 05_DECISIONS/07_SESSION_LOG before
+starting work" exists precisely to prevent this class of accidental
+rebuild. Both gaps closed are read directly off the request's own
+wording ("follow-up message" as one of four generated types; "allow the
+operator to edit everything before sending") against what the existing
+code actually did, not assumed.
+
+**Alternatives considered:** Making `agents/follow_up.py` draft message
+content itself instead of adding a fourth outreach channel — rejected;
+it would conflate two contracts (a scheduling recommendation vs. a
+send-ready draft) that the existing schema already keeps cleanly
+separate (`FollowUp` vs. `OutreachMessage`), and `FollowUp.channel`
+would then need to exclude its own table's new "value" nonsensically.
+Allowing edits on a SENT message (with a "this changes the historical
+record" warning) instead of refusing outright — rejected; every other
+send-adjacent checkpoint in this app (approve, deploy) treats "already
+happened" as immutable, not warn-and-allow.
+
+---
+
+## 2026-08-25 — Email outreach integration: provider adapter, explicit operator send action separate from approval, per-attempt send history
+
+**Decision:** Built the actual dispatch path for EMAIL-channel outreach
+(`app/integrations/email.py`, plus `modules/outreach/service.py`'s
+`send_outreach_email`). Before this, `agents/outreach.py` could draft an
+email and `approve_outreach`/`mark_outreach_sent` could record its
+lifecycle, but nothing in the app ever actually sent one — "mark sent"
+was pure bookkeeping for a message the operator sent by hand outside the
+app. This closes that gap with a real provider integration:
+
+1. **Adapter architecture**, mirroring `integrations/deployment.py`'s
+   shape exactly: an `EmailProvider` interface, a `MockEmailProvider`
+   (default, never makes a network call, records every message on
+   itself for tests) and a `ResendEmailProvider` (the one real provider,
+   per [[02_ARCHITECTURE]]'s integration list), selected by
+   `get_email_provider()` off `settings.email_provider`. Never a
+   concrete provider referenced from the service layer. An unconfigured
+   or unknown provider raises (`EmailProviderError`) rather than
+   silently falling back to mock — same "fail loud on misconfiguration"
+   contract `get_deployment_provider()` already established.
+2. **Compose is a distinct step from send.** `compose_email()` validates
+   and packages an already-drafted/approved subject/body/recipient into
+   an `EmailMessage` — it never invents content; that's still
+   `agents/outreach.py`'s job. A `ResendEmailProvider` network error or
+   non-2xx response is caught inside the provider and returned as a
+   failed `EmailSendOutcome`, never raised past it — a provider hiccup
+   is recorded like any other send failure, not an unhandled exception.
+3. **Sending is a separate explicit action from approving, never
+   combined.** `send_outreach_email` requires `status == APPROVED` —
+   never `DRAFTED` — enforcing [[03_AGENT_RULES]]'s "the operator must
+   explicitly approve a message before sending" as a hard 400, not a
+   convention. Approving and sending are two distinct operator clicks on
+   two distinct existing/new endpoints (`/approve`, then
+   `/send-email`), so there is no path where approval itself triggers a
+   send.
+4. **Every send attempt is its own `EmailSend` row** (new table), not a
+   field on `OutreachMessage`. A failed attempt leaves the message at
+   `APPROVED` — retryable — and records `error_message` on its own row;
+   a success flips the message to `SENT` via the same
+   `_apply_sent_side_effects` helper `mark_outreach_sent` already used
+   (Interaction + lead `CONTACTED` bump + activity log), refactored out
+   so a system-dispatched send and an operator's manual "I sent it
+   myself" bookkeeping produce identical downstream effects. This is
+   the "record sent email" / "email history" / "failure handling"
+   requirement made structural: a lead's email history is the full
+   sequence of attempts, successes and failures both, never overwritten
+   on retry. `GET /api/v1/leads/{id}/emails` surfaces it, newest first.
+5. **Recipient resolution never invents an address.** The primary
+   contact's email if one's on file, else the business's own email,
+   else a 400 before any provider is even touched — same "flag the gap,
+   don't fabricate" posture the rest of this codebase holds.
+
+**Why:** the operator-stated requirement was explicit — "never send
+AI-generated outreach automatically without explicit operator action" —
+and the previous state (a "mark sent" that sent nothing) meant the app
+couldn't actually dispatch email at all, only track that a human did it
+elsewhere. Splitting approve/send into two actions, and failed sends
+into their own retryable rows, makes both the approval gate and the
+failure-handling requirement checkable rather than aspirational.
+
+**Alternatives considered:** Folding send outcome fields directly onto
+`OutreachMessage` (a `send_status`/`send_error` pair) instead of a new
+`email_sends` table — rejected: a retry would either overwrite the
+previous failure's record or need ad hoc versioning, and "email
+history" was an explicit, separate requirement from the message's own
+lifecycle status. Auto-sending immediately on approval (one action
+instead of two) — rejected outright; it's exactly the "never send
+automatically" case the requirement calls out, even if approval already
+implies operator intent.
 
 ---
 

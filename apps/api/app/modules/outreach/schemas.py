@@ -1,9 +1,13 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.modules.outreach.models import FollowUpStatus, OutreachChannel, OutreachStatus
+from app.modules.outreach.models import EmailSendStatus, FollowUpStatus, OutreachChannel, OutreachStatus
+
+SNOOZE_MIN_DAYS = 1
+SNOOZE_MAX_DAYS = 30
+SNOOZE_DEFAULT_DAYS = 3
 
 
 def _split(text: str | None) -> list[str]:
@@ -14,6 +18,22 @@ def _split(text: str | None) -> list[str]:
 
 class OutreachGenerateRequest(BaseModel):
     channel: OutreachChannel
+
+
+class OutreachMessageUpdate(BaseModel):
+    """
+    Operator edit before sending — the "edit everything before it goes
+    out" requirement. Only fields relevant to the message's own channel
+    are meaningful, but any subset may be sent; unset fields are left
+    untouched (see modules/outreach/service.py::update_outreach).
+    """
+
+    subject: str | None = None
+    body: str | None = None
+    opening_line: str | None = None
+    key_points: list[str] | None = None
+    objection_handling: list[str] | None = None
+    suggested_close: str | None = None
 
 
 class OutreachMessageRead(BaseModel):
@@ -117,14 +137,67 @@ class FollowUpRead(BaseModel):
         )
 
 
+class EmailSendRead(BaseModel):
+    id: uuid.UUID
+    outreach_message_id: uuid.UUID
+    lead_id: uuid.UUID
+    to_email: str
+    from_email: str
+    subject: str
+    provider: str
+    status: EmailSendStatus
+    provider_message_id: str | None
+    error_message: str | None
+    sent_by_user_name: str | None
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, s) -> "EmailSendRead":
+        return cls(
+            id=s.id,
+            outreach_message_id=s.outreach_message_id,
+            lead_id=s.lead_id,
+            to_email=s.to_email,
+            from_email=s.from_email,
+            subject=s.subject,
+            provider=s.provider,
+            status=s.status,
+            provider_message_id=s.provider_message_id,
+            error_message=s.error_message,
+            sent_by_user_name=s.sent_by_user.name if s.sent_by_user else None,
+            created_at=s.created_at,
+        )
+
+
 class FollowUpBuckets(BaseModel):
     overdue: list[FollowUpRead]
     due_today: list[FollowUpRead]
     upcoming: list[FollowUpRead]
 
 
+class FollowUpCandidateRead(BaseModel):
+    """
+    A lead the deterministic detector (modules/outreach/service.py::
+    list_needs_follow_up) thinks has gone quiet with nothing scheduled —
+    distinct from FollowUpRead, which is an already-scheduled follow-up.
+    No LLM involved, so this is cheap enough to compute on every page
+    load rather than requiring an explicit "Generate" click first.
+    """
+
+    lead_id: uuid.UUID
+    business_name: str
+    lead_status: str
+    reason: str
+    suggested_channel: OutreachChannel
+    days_quiet: int
+
+
+class SnoozeFollowUpRequest(BaseModel):
+    days: int = Field(default=SNOOZE_DEFAULT_DAYS, ge=SNOOZE_MIN_DAYS, le=SNOOZE_MAX_DAYS)
+
+
 def _excerpt_for(m) -> str:
-    if m.channel == OutreachChannel.EMAIL:
+    if m.channel in (OutreachChannel.EMAIL, OutreachChannel.FOLLOW_UP):
         return m.subject or "(email, no subject)"
     return m.opening_line or "(talking points)"
 

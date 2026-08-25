@@ -1,9 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 
 from app.modules.interactions.models import Interaction, InteractionKind
-from app.modules.outreach.models import FollowUp
+from app.modules.leads.models import Lead
+from app.modules.meetings.models import Meeting, MeetingStatus, MeetingType
+from app.modules.outreach.models import FollowUp, OutreachMessage
 
 FAKE_EMAIL = {
     "subject": "A note about riversideplumbing.example",
@@ -222,6 +224,180 @@ def test_cannot_close_already_closed_outreach(authed_client, monkeypatch):
     assert authed_client.post(f"/api/v1/outreach/{message_id}/close").status_code == 400
 
 
+# --- follow-up MESSAGE (drafted content, channel="follow_up") ------------
+#
+# Distinct from the "follow-ups" section below, which tests
+# agents/follow_up.py — the scheduling recommendation (channel/due date/
+# what to cover). This is the fourth outreach channel: an actual drafted
+# follow-up message, same EmailDraft shape as email.
+
+
+FAKE_FOLLOW_UP_EMAIL = {
+    "subject": "Following up — riversideplumbing.example",
+    "body": "Hi again, just following up on my note last week about your site's missing mobile viewport tag. "
+    "Still happy to walk through options whenever suits — a quick call this week or next?",
+}
+
+
+def _patch_follow_up_email(monkeypatch, output=None):
+    monkeypatch.setattr("app.agents.outreach.generate_structured", lambda **kwargs: dict(output or FAKE_FOLLOW_UP_EMAIL))
+
+
+def test_generate_follow_up_message_requires_prior_outreach(authed_client, monkeypatch):
+    _patch_follow_up_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)  # never contacted
+
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"})
+    assert res.status_code == 400
+    assert "no prior outreach" in res.json()["detail"].lower()
+
+
+def test_generate_follow_up_message_happy_path(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    first = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{first['id']}/mark-sent")
+
+    _patch_follow_up_email(monkeypatch)
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"})
+    assert res.status_code == 201
+    body = res.json()
+    assert body["channel"] == "follow_up"
+    assert body["status"] == "drafted"
+    assert body["subject"] == FAKE_FOLLOW_UP_EMAIL["subject"]
+    assert body["body"] == FAKE_FOLLOW_UP_EMAIL["body"]
+    # Same lifecycle as every other channel — drafting only.
+    assert authed_client.post(f"/api/v1/outreach/{body['id']}/approve").status_code == 200
+
+
+def test_generate_follow_up_message_workspace_isolated(authed_client, other_authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    first = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{first['id']}/mark-sent")
+
+    _patch_follow_up_email(monkeypatch)
+    assert (
+        other_authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "follow_up"}).status_code
+        == 404
+    )
+
+
+# --- editing (operator edits everything before it goes out) --------------
+
+
+def test_edit_outreach_requires_auth(client):
+    res = client.patch(
+        "/api/v1/outreach/00000000-0000-0000-0000-000000000000", json={"subject": "new"}
+    )
+    assert res.status_code == 401
+
+
+def test_edit_outreach_unknown_message_404s(authed_client):
+    res = authed_client.patch(
+        "/api/v1/outreach/00000000-0000-0000-0000-000000000000", json={"subject": "new"}
+    )
+    assert res.status_code == 404
+
+
+def test_edit_email_outreach_updates_subject_and_body(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = authed_client.patch(
+        f"/api/v1/outreach/{message['id']}",
+        json={"subject": "Edited subject", "body": "Edited body text."},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["subject"] == "Edited subject"
+    assert body["body"] == "Edited body text."
+    assert body["status"] == "drafted"
+
+    fetched = authed_client.get(f"/api/v1/outreach/{message['id']}").json()
+    assert fetched["subject"] == "Edited subject"
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(a["action"] == "outreach_edited" for a in activity)
+
+
+def test_edit_talking_points_outreach_updates_list_fields(authed_client, monkeypatch):
+    _patch_talking_points(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "phone"}).json()
+
+    res = authed_client.patch(
+        f"/api/v1/outreach/{message['id']}",
+        json={
+            "opening_line": "New opening",
+            "key_points": ["Point one", "Point two"],
+            "objection_handling": ["Objection A — response A"],
+            "suggested_close": "New close.",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["opening_line"] == "New opening"
+    assert body["key_points"] == ["Point one", "Point two"]
+    assert body["objection_handling"] == ["Objection A — response A"]
+    assert body["suggested_close"] == "New close."
+
+
+def test_edit_outreach_partial_update_leaves_other_fields_untouched(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"subject": "Only subject changed"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["subject"] == "Only subject changed"
+    assert body["body"] == FAKE_EMAIL["body"]
+
+
+def test_edit_approved_outreach_reverts_it_to_drafted(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    approved = authed_client.post(f"/api/v1/outreach/{message['id']}/approve").json()
+    assert approved["status"] == "approved"
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Changed after approval."})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "drafted"
+    assert body["approved_by_user_name"] is None
+    assert body["approved_at"] is None
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(
+        a["action"] == "outreach_edited" and "reverted" in (a["summary"] or "") for a in activity
+    )
+
+
+def test_cannot_edit_outreach_once_sent(authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-sent")
+
+    res = authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Too late."})
+    assert res.status_code == 400
+
+    unchanged = authed_client.get(f"/api/v1/outreach/{message['id']}").json()
+    assert unchanged["body"] == FAKE_EMAIL["body"]
+
+
+def test_edit_outreach_workspace_isolated(authed_client, other_authed_client, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+
+    res = other_authed_client.patch(f"/api/v1/outreach/{message['id']}", json={"body": "Hijacked."})
+    assert res.status_code == 404
+
+
 # --- follow-ups -----------------------------------------------------------
 
 
@@ -399,3 +575,192 @@ def test_lead_status_bump_is_recorded_in_the_activity_log(authed_client, monkeyp
     assert any(
         a["action"] == "status_changed" and "outreach sent" in (a["summary"] or "") for a in activity
     )
+
+
+# --- automatic detection & snooze --------------------------------------
+#
+# list_needs_follow_up is deterministic (no LLM) — it scans leads whose
+# pipeline stage + last contact + meeting outcome say they've gone quiet
+# with nothing scheduled. schedule_follow_up turns one candidate into a
+# real, pending FollowUp; snooze pushes an existing one's due_date out
+# without resolving it.
+
+
+def test_needs_follow_up_detects_a_stale_qualified_lead(authed_client, db_session):
+    lead = _create_qualified_lead(authed_client)
+    db_session.execute(
+        update(Lead).where(Lead.id == lead["id"]).values(updated_at=datetime.now(timezone.utc) - timedelta(days=5))
+    )
+    db_session.commit()
+
+    candidates = authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    assert any(c["lead_id"] == lead["id"] for c in candidates)
+    match = next(c for c in candidates if c["lead_id"] == lead["id"])
+    assert match["suggested_channel"] == "email"
+    assert match["days_quiet"] == 5
+
+
+def test_needs_follow_up_ignores_a_freshly_qualified_lead(authed_client):
+    lead = _create_qualified_lead(authed_client)  # updated_at defaults to now
+
+    candidates = authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    assert not any(c["lead_id"] == lead["id"] for c in candidates)
+
+
+def test_needs_follow_up_excludes_a_lead_with_a_pending_follow_up(authed_client, db_session, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    db_session.execute(
+        update(Lead).where(Lead.id == lead["id"]).values(updated_at=datetime.now(timezone.utc) - timedelta(days=5))
+    )
+    db_session.commit()
+    authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups")
+
+    candidates = authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    assert not any(c["lead_id"] == lead["id"] for c in candidates)
+
+
+def test_needs_follow_up_suggests_alternate_channel_after_stale_contact(authed_client, db_session, monkeypatch):
+    _patch_email(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    message = authed_client.post(f"/api/v1/leads/{lead['id']}/outreach", json={"channel": "email"}).json()
+    authed_client.post(f"/api/v1/outreach/{message['id']}/mark-sent")
+    db_session.execute(
+        update(OutreachMessage)
+        .where(OutreachMessage.id == message["id"])
+        .values(sent_at=datetime.now(timezone.utc) - timedelta(days=10))
+    )
+    db_session.commit()
+
+    candidates = authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    match = next(c for c in candidates if c["lead_id"] == lead["id"])
+    assert match["suggested_channel"] == "phone"
+    assert "email" in match["reason"]
+
+
+def test_needs_follow_up_reads_meeting_outcome(authed_client, db_session):
+    lead = _create_qualified_lead(authed_client)
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"status": "meeting"})
+    held_at = datetime.now(timezone.utc) - timedelta(days=2)
+    db_session.add(
+        Meeting(
+            lead_id=lead["id"],
+            title="Discovery call",
+            meeting_type=MeetingType.SALES_CALL,
+            status=MeetingStatus.HELD,
+            scheduled_at=held_at,
+            held_at=held_at,
+            outcome="Wants a proposal",
+        )
+    )
+    db_session.commit()
+
+    candidates = authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    match = next(c for c in candidates if c["lead_id"] == lead["id"])
+    assert "Wants a proposal" in match["reason"]
+    assert match["suggested_channel"] == "email"
+
+
+def test_schedule_follow_up_creates_a_pending_follow_up_from_the_candidate(authed_client, db_session):
+    lead = _create_qualified_lead(authed_client)
+    db_session.execute(
+        update(Lead).where(Lead.id == lead["id"]).values(updated_at=datetime.now(timezone.utc) - timedelta(days=5))
+    )
+    db_session.commit()
+
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups/auto")
+    assert res.status_code == 201
+    body = res.json()
+    assert body["status"] == "pending"
+    assert body["due_date"] == date.today().isoformat()
+    assert "5 day" in body["suggested_next_action"]
+
+    buckets = authed_client.get("/api/v1/follow-ups").json()
+    assert any(f["id"] == body["id"] for f in buckets["due_today"])
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(a["action"] == "follow_up_generated" for a in activity)
+
+
+def test_schedule_follow_up_conflicts_when_already_scheduled(authed_client, db_session):
+    lead = _create_qualified_lead(authed_client)
+    db_session.execute(
+        update(Lead).where(Lead.id == lead["id"]).values(updated_at=datetime.now(timezone.utc) - timedelta(days=5))
+    )
+    db_session.commit()
+
+    assert authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups/auto").status_code == 201
+    assert authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups/auto").status_code == 409
+
+
+def test_schedule_follow_up_conflicts_when_no_longer_a_candidate(authed_client):
+    lead = _create_qualified_lead(authed_client)  # never went stale
+    assert authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups/auto").status_code == 409
+
+
+def test_needs_follow_up_workspace_isolated(authed_client, other_authed_client, db_session):
+    lead = _create_qualified_lead(authed_client)
+    db_session.execute(
+        update(Lead).where(Lead.id == lead["id"]).values(updated_at=datetime.now(timezone.utc) - timedelta(days=5))
+    )
+    db_session.commit()
+
+    other_candidates = other_authed_client.get("/api/v1/follow-ups/needs-scheduling").json()
+    assert not any(c["lead_id"] == lead["id"] for c in other_candidates)
+    assert other_authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups/auto").status_code == 404
+
+
+def test_snooze_follow_up_pushes_due_date_and_records_activity(authed_client, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    follow_up = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups").json()
+
+    res = authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 3})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "pending"
+    # Not overdue (due in 5 days per FAKE_FOLLOW_UP) — snoozing extends the
+    # existing due date by 3 days, it doesn't reset to today + 3. Only an
+    # already-overdue follow-up counts from today (see the next test).
+    assert body["due_date"] == (date.fromisoformat(follow_up["due_date"]) + timedelta(days=3)).isoformat()
+
+    activity = authed_client.get(f"/api/v1/activity?entity_type=lead&entity_id={lead['id']}").json()
+    assert any(a["action"] == "follow_up_snoozed" for a in activity)
+
+
+def test_snooze_overdue_follow_up_counts_from_today(authed_client, db_session, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    follow_up = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups").json()
+    db_session.execute(update(FollowUp).where(FollowUp.id == follow_up["id"]).values(due_date=date.today() - timedelta(days=20)))
+    db_session.commit()
+
+    res = authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 3})
+    assert res.json()["due_date"] == (date.today() + timedelta(days=3)).isoformat()
+
+
+def test_cannot_snooze_a_done_follow_up(authed_client, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    follow_up = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups").json()
+    authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/resolve")
+
+    res = authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 3})
+    assert res.status_code == 400
+
+
+def test_snooze_rejects_out_of_range_days(authed_client, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    follow_up = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups").json()
+
+    assert authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 0}).status_code == 422
+    assert authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 31}).status_code == 422
+
+
+def test_snooze_workspace_isolated(authed_client, other_authed_client, monkeypatch):
+    _patch_follow_up(monkeypatch)
+    lead = _create_qualified_lead(authed_client)
+    follow_up = authed_client.post(f"/api/v1/leads/{lead['id']}/follow-ups").json()
+
+    assert other_authed_client.post(f"/api/v1/follow-ups/{follow_up['id']}/snooze", json={"days": 3}).status_code == 404

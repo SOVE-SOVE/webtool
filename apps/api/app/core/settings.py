@@ -63,11 +63,28 @@ class Settings(BaseSettings):
     # refresh token at rest. See app/core/crypto.py and
     # docs/06_SECURITY.md: never store an OAuth token in plaintext.
     calendar_token_encryption_key: str = ""
+    # Which adapter modules/meetings/service.py syncs calendar events
+    # through — see app/integrations/calendar/registry.py. Defaults to
+    # "google" (the real integration above, itself gated on whether a
+    # user has actually connected their calendar) to preserve existing
+    # behavior; set to "mock" for local dev/tests without a real Google
+    # account — see integrations/calendar/mock_provider.py.
+    calendar_provider: str = "google"
 
     # deployment — which provider modules/deployments/service.py
     # publishes through (see app/integrations/deployment.py). Only
     # "mock" is implemented today; no real hosting account exists yet.
     deploy_provider: str = "mock"
+
+    # email — which provider modules/outreach/service.py dispatches
+    # approved EMAIL outreach through (see app/integrations/email.py).
+    # "mock" (default, safe for dev/tests, never makes a network call)
+    # or "resend". RESEND_API_KEY is only required when EMAIL_PROVIDER
+    # is "resend" — get_email_provider() fails loudly rather than
+    # silently falling back to mock if it's missing.
+    email_provider: str = "mock"
+    resend_api_key: str = ""
+    email_from_address: str = "no-reply@example.com"
 
     @field_validator("session_secret")
     @classmethod

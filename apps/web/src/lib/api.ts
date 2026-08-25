@@ -439,6 +439,52 @@ export type MeetingBrief = {
   generated_at: string;
 };
 
+export type MeetingAttendee = {
+  id: string;
+  name: string | null;
+  email: string;
+  is_organizer: boolean;
+  created_at: string;
+};
+
+export type MeetingAttendeeCreate = {
+  email: string;
+  name?: string;
+  is_organizer?: boolean;
+};
+
+export const REMINDER_CHANNELS = ["in_app"] as const;
+export type ReminderChannel = (typeof REMINDER_CHANNELS)[number];
+
+export type MeetingReminder = {
+  id: string;
+  remind_at: string;
+  channel: ReminderChannel;
+  note: string | null;
+  acknowledged_at: string | null;
+  created_at: string;
+};
+
+export type MeetingReminderCreate = {
+  remind_at: string;
+  channel?: ReminderChannel;
+  note?: string;
+};
+
+// A reminder that's come due, with its meeting's context folded in — see
+// GET /api/v1/meetings/reminders/due. There's no email/push delivery
+// integration anywhere in this app: this list *is* the reminder.
+export type DueReminder = {
+  id: string;
+  remind_at: string;
+  channel: ReminderChannel;
+  note: string | null;
+  meeting_id: string;
+  meeting_title: string;
+  meeting_scheduled_at: string;
+  meeting_context: string;
+};
+
 export type Meeting = {
   id: string;
   title: string;
@@ -457,6 +503,8 @@ export type Meeting = {
   context: string;
   created_at: string;
   brief: MeetingBrief | null;
+  attendees: MeetingAttendee[];
+  reminders: MeetingReminder[];
 };
 
 export type MeetingCreate = {
@@ -469,6 +517,8 @@ export type MeetingCreate = {
   // Omitted defaults to the parent lead/project's assigned user.
   assigned_user_id?: string | null;
   notes?: string;
+  attendees?: MeetingAttendeeCreate[];
+  reminders?: MeetingReminderCreate[];
 };
 
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
@@ -503,7 +553,7 @@ export type CalendarEvent = {
 // first, so the Overview renders them in the order received rather than
 // re-sorting client side.
 export type AttentionItem = {
-  kind: "task" | "stale_lead" | "follow_up" | "meeting" | "project";
+  kind: "task" | "stale_lead" | "follow_up" | "meeting" | "project" | "hot_lead" | "stale_proposal" | "new_lead";
   label: string;
   id: string;
   title: string;
@@ -927,8 +977,12 @@ export type RollbackDeploymentRequest = {
   notes?: string;
 };
 
+// The three first-contact channels a qualified lead can be drafted for.
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
-export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number];
+// "follow_up" is a fourth, drafted-message-only channel (see api docs on
+// generateOutreach below) — not offered as a first-contact option, so it
+// stays out of OUTREACH_CHANNELS, but a message can carry it.
+export type OutreachChannel = (typeof OUTREACH_CHANNELS)[number] | "follow_up";
 
 export const OUTREACH_STATUSES = [
   "drafted",
@@ -967,6 +1021,15 @@ export type OutreachMessage = {
   closed_at: string | null;
 };
 
+export type OutreachMessageUpdate = {
+  subject?: string;
+  body?: string;
+  opening_line?: string;
+  key_points?: string[];
+  objection_handling?: string[];
+  suggested_close?: string;
+};
+
 export type PreviousOutreachSummary = {
   id: string;
   channel: OutreachChannel;
@@ -999,6 +1062,17 @@ export type FollowUpBuckets = {
   upcoming: FollowUp[];
 };
 
+// A lead the deterministic detector thinks has gone quiet with nothing
+// scheduled — distinct from FollowUp, which is already on the calendar.
+export type FollowUpCandidate = {
+  lead_id: string;
+  business_name: string;
+  lead_status: LeadStatus;
+  reason: string;
+  suggested_channel: OutreachChannel;
+  days_quiet: number;
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -1010,6 +1084,112 @@ export type DashboardOverview = {
   tasks_needing_attention: number;
   follow_ups_due: number;
   needs_attention: AttentionItem[];
+};
+
+export const OPPORTUNITY_STATUSES = ["open", "won", "lost"] as const;
+export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
+
+export type SalesOpportunity = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  tier: string | null;
+  proposed_price_cents: number | null;
+  status: OpportunityStatus;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+export type SalesOpportunityCreate = {
+  tier?: string;
+  proposed_price_cents?: number;
+};
+
+// Sales Command Centre (Phase 3) — the sales-funnel-only counterpart to
+// DashboardOverview above, which spans the whole business. See
+// apps/api/app/modules/sales_dashboard/service.py for every field's
+// exact definition.
+export type SalesLeadSummary = {
+  id: string;
+  business_name: string;
+  status: LeadStatus;
+  priority: LeadPriority;
+  score: number | null;
+  updated_at: string;
+  assigned_user_name: string | null;
+};
+
+export type SalesFollowUpDue = {
+  lead_id: string;
+  business_name: string;
+  due_date: string;
+  overdue: boolean;
+  suggested_next_action: string;
+};
+
+export type SalesMeetingSummary = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  title: string;
+  scheduled_at: string;
+};
+
+export type SalesProposalSummary = {
+  lead_id: string;
+  business_name: string;
+  opportunity_id: string | null;
+  tier: string | null;
+  proposed_price_cents: number | null;
+  since: string;
+};
+
+export type SalesDealSummary = {
+  lead_id: string;
+  business_name: string;
+  proposed_price_cents: number | null;
+  tier: string | null;
+  closed_at: string | null;
+};
+
+export type SalesOutreachActivityItem = {
+  id: string;
+  lead_id: string;
+  business_name: string;
+  kind: "sent" | "replied";
+  channel: OutreachChannel | null;
+  occurred_at: string;
+  summary: string | null;
+};
+
+export type SalesOutreachActivity = {
+  sent_last_7_days: number;
+  replied_last_7_days: number;
+  reply_rate_pct: number | null;
+  recent: SalesOutreachActivityItem[];
+};
+
+export type SalesDashboard = {
+  new_leads_count: number;
+  hot_leads_count: number;
+  needs_follow_up_count: number;
+  upcoming_meetings_count: number;
+  proposals_count: number;
+  won_deals_count: number;
+  lost_deals_count: number;
+  conversion_rate_pct: number | null;
+  estimated_revenue_cents: number;
+  actual_revenue_cents: number;
+  new_leads: SalesLeadSummary[];
+  hot_leads: SalesLeadSummary[];
+  needs_follow_up: SalesFollowUpDue[];
+  upcoming_meetings: SalesMeetingSummary[];
+  proposals: SalesProposalSummary[];
+  recent_won: SalesDealSummary[];
+  recent_lost: SalesDealSummary[];
+  outreach_activity: SalesOutreachActivity;
+  do_this_next: AttentionItem[];
 };
 
 // Lead Intelligence (Phase 2) — top-of-funnel pipeline: a DiscoverySearch
@@ -1253,8 +1433,15 @@ export const api = {
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
+  salesDashboard: () => request<SalesDashboard>("/api/v1/dashboard/sales"),
 
-  listMeetings: () => request<Meeting[]>("/api/v1/meetings"),
+  listMeetings: (opts?: { leadId?: string; projectId?: string }) => {
+    const params = new URLSearchParams();
+    if (opts?.leadId) params.set("lead_id", opts.leadId);
+    if (opts?.projectId) params.set("project_id", opts.projectId);
+    const qs = params.toString();
+    return request<Meeting[]>(`/api/v1/meetings${qs ? `?${qs}` : ""}`);
+  },
   getMeeting: (id: string) => request<Meeting>(`/api/v1/meetings/${id}`),
   createMeeting: (data: MeetingCreate) =>
     request<Meeting>("/api/v1/meetings", { method: "POST", body: JSON.stringify(data) }),
@@ -1262,6 +1449,18 @@ export const api = {
     request<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteMeeting: (id: string) => request<void>(`/api/v1/meetings/${id}`, { method: "DELETE" }),
   generateMeetingBrief: (id: string) => request<Meeting>(`/api/v1/meetings/${id}/brief`, { method: "POST" }),
+
+  addMeetingAttendee: (meetingId: string, data: MeetingAttendeeCreate) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/attendees`, { method: "POST", body: JSON.stringify(data) }),
+  removeMeetingAttendee: (meetingId: string, attendeeId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/attendees/${attendeeId}`, { method: "DELETE" }),
+  addMeetingReminder: (meetingId: string, data: MeetingReminderCreate) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders`, { method: "POST", body: JSON.stringify(data) }),
+  removeMeetingReminder: (meetingId: string, reminderId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders/${reminderId}`, { method: "DELETE" }),
+  acknowledgeMeetingReminder: (meetingId: string, reminderId: string) =>
+    request<Meeting>(`/api/v1/meetings/${meetingId}/reminders/${reminderId}/acknowledge`, { method: "POST" }),
+  listDueReminders: () => request<DueReminder[]>("/api/v1/meetings/reminders/due"),
 
   listCalendarEvents: (start: string, end: string) =>
     request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),
@@ -1370,6 +1569,8 @@ export const api = {
       body: JSON.stringify({ channel }),
     }),
   listOutreach: (leadId: string) => request<OutreachMessage[]>(`/api/v1/leads/${leadId}/outreach`),
+  updateOutreach: (id: string, data: OutreachMessageUpdate) =>
+    request<OutreachMessage>(`/api/v1/outreach/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   approveOutreach: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/approve`, { method: "POST" }),
   markOutreachSent: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/mark-sent`, { method: "POST" }),
   markOutreachReplied: (id: string) =>
@@ -1378,7 +1579,21 @@ export const api = {
 
   generateFollowUp: (leadId: string) => request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups`, { method: "POST" }),
   listFollowUps: () => request<FollowUpBuckets>("/api/v1/follow-ups"),
+  listNeedsFollowUp: () => request<FollowUpCandidate[]>("/api/v1/follow-ups/needs-scheduling"),
+  scheduleFollowUp: (leadId: string) =>
+    request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups/auto`, { method: "POST" }),
   resolveFollowUp: (id: string) => request<FollowUp>(`/api/v1/follow-ups/${id}/resolve`, { method: "POST" }),
+  snoozeFollowUp: (id: string, days: number) =>
+    request<FollowUp>(`/api/v1/follow-ups/${id}/snooze`, { method: "POST", body: JSON.stringify({ days }) }),
+
+  createOpportunity: (leadId: string, data: SalesOpportunityCreate) =>
+    request<SalesOpportunity>(`/api/v1/leads/${leadId}/opportunities`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listOpportunities: (leadId: string) => request<SalesOpportunity[]>(`/api/v1/leads/${leadId}/opportunities`),
+  markOpportunityLost: (id: string) =>
+    request<SalesOpportunity>(`/api/v1/opportunities/${id}/mark-lost`, { method: "POST" }),
 
   listUsers: () => request<User[]>("/api/v1/users"),
   createUser: (data: UserCreate) =>

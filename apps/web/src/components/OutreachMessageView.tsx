@@ -29,7 +29,7 @@ export function OutreachMessageView({ message }: { message: OutreachMessage }) {
           {message.review_notes && <p className="mt-1">{message.review_notes}</p>}
         </div>
       )}
-      {message.channel === "email" ? (
+      {message.channel === "email" || message.channel === "follow_up" ? (
         <>
           {section("Subject", <p>{message.subject}</p>)}
           {section("Body", <p className="whitespace-pre-wrap">{message.body}</p>)}

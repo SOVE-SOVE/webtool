@@ -20,6 +20,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -28,7 +29,11 @@ down_revision: Union[str, None] = 'b3a7c5e1f048'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-lead_status_existing = sa.Enum(
+# Plain sa.Enum(create_type=False) doesn't reliably suppress the implicit
+# CREATE TYPE that op.create_table triggers on this SQLAlchemy version —
+# postgresql.ENUM(create_type=False) does (see the meeting_reminder_channel
+# fix in c392b641f8cb for the same issue).
+lead_status_existing = postgresql.ENUM(
     'NEW', 'RESEARCHED', 'QUALIFIED', 'CONTACTED', 'REPLIED', 'MEETING',
     'PROPOSAL', 'WON', 'LOST', 'NURTURE', name='lead_status', create_type=False,
 )

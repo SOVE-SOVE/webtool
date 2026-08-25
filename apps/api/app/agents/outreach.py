@@ -8,6 +8,16 @@ integrations/llm.py. See agents/prompts/outreach_*.md for the actual
 instructions given to the model, including the guardrails against fake
 familiarity/urgency, exaggerated claims, spam language, and unnecessary
 compliments required by the Sales Outreach feature.
+
+"follow_up" is a fourth channel alongside email/phone/in_person: an
+actual drafted follow-up MESSAGE (same EmailDraft shape as email), not
+to be confused with agents/follow_up.py, which only recommends *when
+and via which channel* to next touch a lead — it never drafts message
+content. modules/outreach/service.py refuses to generate a follow_up
+draft when there's no prior outreach on record, since a follow-up
+message that references contact which never happened would be exactly
+the "personal information"/fabricated-relationship invention this
+feature must never produce.
 """
 
 from pathlib import Path
@@ -26,9 +36,10 @@ _PROMPT_FILES = {
     "email": _PROMPT_DIR / "outreach_email.md",
     "phone": _PROMPT_DIR / "outreach_phone.md",
     "in_person": _PROMPT_DIR / "outreach_in_person.md",
+    "follow_up": _PROMPT_DIR / "outreach_follow_up.md",
 }
 
-OutreachChannel = Literal["email", "phone", "in_person"]
+OutreachChannel = Literal["email", "phone", "in_person", "follow_up"]
 
 
 class PriorOutreachSummary(BaseModel):
@@ -133,7 +144,8 @@ def _build_user_message(input: OutreachInput) -> str:
 
 
 def run(input: OutreachInput) -> AgentResult[EmailDraft] | AgentResult[TalkingPoints]:
-    output_model = EmailDraft if input.channel == "email" else TalkingPoints
+    # A follow-up message is written text, same shape as an email.
+    output_model = EmailDraft if input.channel in ("email", "follow_up") else TalkingPoints
     raw = generate_structured(
         system=_load_prompt(input.channel),
         user=_build_user_message(input),

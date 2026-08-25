@@ -8,7 +8,16 @@ from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.modules.leads import service as leads_service
 from app.modules.outreach import service
-from app.modules.outreach.schemas import FollowUpBuckets, FollowUpRead, OutreachGenerateRequest, OutreachMessageRead
+from app.modules.outreach.schemas import (
+    EmailSendRead,
+    FollowUpBuckets,
+    FollowUpCandidateRead,
+    FollowUpRead,
+    OutreachGenerateRequest,
+    OutreachMessageRead,
+    OutreachMessageUpdate,
+    SnoozeFollowUpRequest,
+)
 from app.modules.users.models import User
 
 router = APIRouter(tags=["outreach"])
@@ -50,6 +59,19 @@ def get_outreach(
     return message
 
 
+@router.patch("/api/v1/outreach/{message_id}", response_model=OutreachMessageRead)
+def update_outreach(
+    message_id: uuid.UUID,
+    body: OutreachMessageUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> OutreachMessageRead:
+    message = service.update_outreach(db, current_user.workspace_id, current_user.id, message_id, body)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Outreach message not found")
+    return message
+
+
 @router.post("/api/v1/outreach/{message_id}/approve", response_model=OutreachMessageRead)
 def approve_outreach(
     message_id: uuid.UUID,
@@ -86,6 +108,26 @@ def mark_outreach_replied(
     return message
 
 
+@router.post("/api/v1/outreach/{message_id}/send-email", response_model=EmailSendRead, status_code=201)
+def send_outreach_email(
+    message_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmailSendRead:
+    return service.send_outreach_email(db, current_user.workspace_id, current_user.id, message_id)
+
+
+@router.get("/api/v1/leads/{lead_id}/emails", response_model=list[EmailSendRead])
+def list_email_history(
+    lead_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EmailSendRead]:
+    if leads_service.get_lead(db, current_user.workspace_id, lead_id) is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return service.list_email_history(db, current_user.workspace_id, lead_id)
+
+
 @router.post("/api/v1/outreach/{message_id}/close", response_model=OutreachMessageRead)
 def close_outreach(
     message_id: uuid.UUID,
@@ -118,6 +160,27 @@ def list_follow_ups(
     return service.list_follow_ups(db, current_user.workspace_id)
 
 
+@router.get("/api/v1/follow-ups/needs-scheduling", response_model=list[FollowUpCandidateRead])
+def list_needs_follow_up(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[FollowUpCandidateRead]:
+    """Leads the deterministic detector thinks have gone quiet with nothing scheduled — no LLM call, safe to poll."""
+    return service.list_needs_follow_up(db, current_user.workspace_id)
+
+
+@router.post("/api/v1/leads/{lead_id}/follow-ups/auto", response_model=FollowUpRead, status_code=201)
+def schedule_follow_up(
+    lead_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FollowUpRead:
+    follow_up = service.schedule_follow_up(db, current_user.workspace_id, current_user.id, lead_id)
+    if follow_up is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return follow_up
+
+
 @router.post("/api/v1/follow-ups/{follow_up_id}/resolve", response_model=FollowUpRead)
 def resolve_follow_up(
     follow_up_id: uuid.UUID,
@@ -125,6 +188,19 @@ def resolve_follow_up(
     db: Session = Depends(get_db),
 ) -> FollowUpRead:
     follow_up = service.resolve_follow_up(db, current_user.workspace_id, current_user.id, follow_up_id)
+    if follow_up is None:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    return follow_up
+
+
+@router.post("/api/v1/follow-ups/{follow_up_id}/snooze", response_model=FollowUpRead)
+def snooze_follow_up(
+    follow_up_id: uuid.UUID,
+    body: SnoozeFollowUpRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FollowUpRead:
+    follow_up = service.snooze_follow_up(db, current_user.workspace_id, current_user.id, follow_up_id, body.days)
     if follow_up is None:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     return follow_up
