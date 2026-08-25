@@ -97,7 +97,12 @@ _LeadBusiness = aliased(Business)
 
 def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     now = datetime.now(timezone.utc)
-    today = now.date()
+    # `FollowUp.due_date` is a plain date the operator picks in their own
+    # (local) timezone, not UTC — using now.date() here would shift the
+    # overdue count by a day for roughly half the day in any timezone
+    # ahead of or behind UTC. Everything else on this page compares
+    # against `now` (tz-aware timestamptz columns), where UTC is fine.
+    today = datetime.now().astimezone().date()
 
     lead_in_workspace = (
         select(Lead.id)
