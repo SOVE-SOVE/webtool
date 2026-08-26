@@ -240,6 +240,8 @@ class QaPageSignals:
     broken_internal_links: list[str] | None = None
     min_contrast_ratio: float | None = None
     total_transfer_bytes: int | None = None
+    duplicate_ids: list[str] | None = None
+    html_lang_present: bool | None = None
     error: str | None = None
 
 
@@ -283,6 +285,15 @@ async def fetch_qa_signals(base_url: str, page_paths: list[str]) -> QaPageSignal
                     "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
                 )
                 min_contrast_ratio = await page.evaluate(_CONTRAST_SAMPLE_JS)
+                html_lang_present = await page.evaluate(
+                    "() => !!(document.documentElement.getAttribute('lang') || '').trim()"
+                )
+                duplicate_ids = await page.evaluate(
+                    "() => { const seen = new Map(); "
+                    "for (const el of document.querySelectorAll('[id]')) { "
+                    "seen.set(el.id, (seen.get(el.id) || 0) + 1); } "
+                    "return Array.from(seen.entries()).filter(([, n]) => n > 1).map(([id]) => id); }"
+                )
 
                 await page.set_viewport_size(TABLET_VIEWPORT)
                 tablet_overflow = await page.evaluate(
@@ -314,6 +325,8 @@ async def fetch_qa_signals(base_url: str, page_paths: list[str]) -> QaPageSignal
                     broken_internal_links=broken_links,
                     min_contrast_ratio=min_contrast_ratio,
                     total_transfer_bytes=transfer_bytes or None,
+                    duplicate_ids=duplicate_ids,
+                    html_lang_present=html_lang_present,
                 )
             finally:
                 await browser.close()

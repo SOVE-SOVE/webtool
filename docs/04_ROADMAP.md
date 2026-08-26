@@ -324,19 +324,23 @@ Goal: stages 15–18. First real reusable output.
       existing frontend tests) — that pass caught and fixed a real bug
       where regenerating a section didn't refresh the version dropdown.
 - [x] Automated QA checks (build, links, mobile) from [[tests]] —
-      `agents/technical_qa.py` / `modules/qa_reports/`: six categories
+      `agents/technical_qa.py` / `modules/qa_reports/`: seven categories
       (performance, responsiveness, accessibility, SEO, functionality,
-      security), each check reported as pass/fail/warning/skipped with
-      a severity and recommended fix — nothing is ever silently
+      security, markup), each check reported as pass/fail/warning/skipped
+      with a severity and recommended fix — nothing is ever silently
       omitted, including what can't be checked yet (see below).
       Deterministic, no LLM call. Most checks run statically against
       the generated config: real, fully-static wins here include
       broken-internal-link detection (every href checked against the
       site's actual page slugs), missing alt text, unlabeled form
-      fields, duplicate `<h1>`s, exposed-secret and injected-script
-      scanning, and (closing a real gap found while building this)
-      page titles/meta descriptions, now generated from real brief
-      fields only — see [[05_DECISIONS]]. Checks that need a rendered
+      fields, duplicate `<h1>`s, missing calls to action, raw
+      HTML-tag-looking text in content, exposed-secret and
+      injected-script scanning, and (closing a real gap found while
+      building this) page titles/meta descriptions, now generated from
+      real brief fields only — see [[05_DECISIONS]]. The markup
+      category's other two checks (duplicate element ids, a missing
+      `<html lang>` attribute) need a rendered page, same as the
+      colour-contrast/console-error checks below. Checks that need a rendered
       page (real asset weight, computed colour contrast, console
       errors, cross-viewport overflow, robots.txt/sitemap.xml) only run
       given a live `preview_url`, via a new `fetch_qa_signals` in
