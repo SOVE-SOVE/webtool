@@ -496,6 +496,13 @@ def test_all_22_stages_with_invariants(authed_client, db_session, monkeypatch):
     authed_client.post(f"/api/v1/websites/{website['id']}/client-approve")
     assert authed_client.get(f"/api/v1/projects/{project_id}").json()["stage"] == "ready_to_deploy"
 
+    # Phase 6 Task 3's formal approval workflow — a separate, explicit
+    # gate `create_deployment` requires independently of the seven
+    # boolean checkpoints above.
+    for to_status in ("internal_review", "client_review", "approved", "ready_to_deploy"):
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/workflow-transition", json={"to_status": to_status})
+        assert res.status_code == 200
+
     approvals = authed_client.get(f"/api/v1/projects/{project_id}/approvals").json()
     assert approvals["can_deploy"] is True
     assert approvals["missing_for_deployment"] == []

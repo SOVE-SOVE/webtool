@@ -22,6 +22,7 @@ from app.modules.meetings import models as _meetings  # noqa: F401
 from app.modules.opportunity_scoring import models as _opportunity_scoring  # noqa: F401
 from app.modules.outreach import models as _outreach  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401
+from app.modules.previews import models as _previews  # noqa: F401
 from app.modules.projects import models as _projects  # noqa: F401
 from app.modules.qa_reports import models as _qa_reports  # noqa: F401
 from app.modules.sales_audits import models as _sales_audits  # noqa: F401
@@ -30,6 +31,7 @@ from app.modules.sitemaps import models as _sitemaps  # noqa: F401
 from app.modules.tasks import models as _tasks  # noqa: F401
 from app.modules.users import models as _users  # noqa: F401
 from app.modules.website_audits import models as _website_audits  # noqa: F401
+from app.modules.website_feedback import models as _website_feedback  # noqa: F401
 from app.modules.website_quality import models as _website_quality  # noqa: F401
 from app.modules.websites import models as _websites  # noqa: F401
 from app.modules.workspaces import models as _workspaces  # noqa: F401

@@ -73,6 +73,13 @@ def _build_deployable_project(authed_client, monkeypatch):
     authed_client.post(f"/api/v1/qa-reports/{qa['id']}/approve")
 
     authed_client.post(f"/api/v1/websites/{website['id']}/client-approve")
+
+    # Phase 6 Task 3's formal workflow gate — deployment now requires
+    # the version to have been explicitly walked to READY_TO_DEPLOY, on
+    # top of (not instead of) the boolean checkpoints above.
+    for to_status in ("internal_review", "client_review", "approved", "ready_to_deploy"):
+        res = authed_client.post(f"/api/v1/websites/{website['id']}/workflow-transition", json={"to_status": to_status})
+        assert res.status_code == 200, res.text
     return project, website
 
 
