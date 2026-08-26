@@ -205,6 +205,113 @@ class TestExecuteDeployment:
         assert res.json()["id"] == prepared["id"]
 
 
+class TestCheckDeploymentStatus:
+    def test_requires_auth(self, client):
+        res = client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/check-status")
+        assert res.status_code == 401
+
+    def test_unknown_deployment_404s(self, authed_client):
+        res = authed_client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/check-status")
+        assert res.status_code == 404
+
+    def test_a_provider_that_does_not_support_polling_returns_the_deployment_unchanged(self, authed_client, monkeypatch):
+        """The mock provider has no provider_ref-backed async build to
+        poll for, so this is a genuine no-op refresh — same "already
+        final" contract as every provider here today."""
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        executed = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute").json()
+        assert executed["status"] == "success"
+
+        res = authed_client.post(f"/api/v1/deployments/{executed['id']}/check-status")
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        assert res.json()["url"] == executed["url"]
+
+
+class TestVerifyDeployment:
+    def test_requires_auth(self, client):
+        res = client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/verify")
+        assert res.status_code == 401
+
+    def test_unknown_deployment_404s(self, authed_client):
+        res = authed_client.post("/api/v1/deployments/00000000-0000-0000-0000-000000000000/verify")
+        assert res.status_code == 404
+
+    def test_cannot_verify_a_deployment_that_never_succeeded(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+
+        res = authed_client.post(f"/api/v1/deployments/{prepared['id']}/verify")
+        assert res.status_code == 400
+
+    def test_a_mock_deployment_is_recorded_as_a_simulated_verification(self, authed_client, monkeypatch):
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        executed = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute").json()
+
+        res = authed_client.post(f"/api/v1/deployments/{executed['id']}/verify")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["verified_at"] is not None
+        assert body["verified_by_user_name"] == "Ada Admin"
+
+        activity = authed_client.get(f"/api/v1/activity?entity_type=project&entity_id={project['id']}").json()
+        assert any(a["action"] == "deployment_verified" for a in activity)
+
+    def test_a_real_provider_deployment_is_verified_with_a_live_fetch(self, authed_client, monkeypatch, db_session):
+        """Exercises the non-mock branch directly at the service layer
+        (bypassing the route) — real projects only ever deploy through
+        mock in this test suite, so this fabricates a successful
+        non-mock deployment row and monkeypatches the SSRF-guarded
+        fetch `verify_deployment` reuses from QA's live checks."""
+        from app.integrations.browser import PageSignals
+        from app.modules.deployments import service as deployments_service
+
+        project, website = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        executed = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute").json()
+
+        from app.modules.deployments.models import Deployment
+
+        deployment = db_session.get(Deployment, executed["id"])
+        deployment.target = "vercel"
+        deployment.url = "https://riverside-plumbing.vercel.app"
+        db_session.commit()
+
+        async def _fake_fetch(url):
+            assert url == "https://riverside-plumbing.vercel.app"
+            return PageSignals(final_url=url, http_status=200)
+
+        monkeypatch.setattr("app.modules.deployments.service.fetch_page_signals", _fake_fetch)
+
+        res = authed_client.post(f"/api/v1/deployments/{executed['id']}/verify")
+        assert res.status_code == 200
+        assert res.json()["verified_at"] is not None
+
+    def test_a_failed_live_fetch_is_reported_not_recorded_as_verified(self, authed_client, monkeypatch, db_session):
+        from app.integrations.browser import PageSignals
+        from app.modules.deployments.models import Deployment
+
+        project, _ = _build_deployable_project(authed_client, monkeypatch)
+        prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
+        executed = authed_client.post(f"/api/v1/deployments/{prepared['id']}/execute").json()
+
+        deployment = db_session.get(Deployment, executed["id"])
+        deployment.target = "vercel"
+        deployment.url = "https://riverside-plumbing.vercel.app"
+        db_session.commit()
+
+        async def _fake_fetch(url):
+            return PageSignals(error="DNS resolution failed")
+
+        monkeypatch.setattr("app.modules.deployments.service.fetch_page_signals", _fake_fetch)
+
+        res = authed_client.post(f"/api/v1/deployments/{executed['id']}/verify")
+        assert res.status_code == 400
+        assert authed_client.get(f"/api/v1/deployments/{executed['id']}").json()["verified_at"] is None
+
+
 class TestRollbackDeployment:
     def test_requires_a_previously_successful_deployment(self, authed_client, monkeypatch):
         project, _ = _build_deployable_project(authed_client, monkeypatch)

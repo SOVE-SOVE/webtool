@@ -65,6 +65,13 @@ class Project(Base):
     price_cents: Mapped[int | None] = mapped_column(Integer)
     deadline: Mapped[date | None] = mapped_column(Date)
     assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    # Set only by modules/projects/service.py::mark_delivered, the final
+    # step of the delivery workflow (docs/04_ROADMAP.md M6) — gated on a
+    # verified live deployment plus a completed final delivery checklist
+    # (see DEFAULT_LAUNCH_TASK_TITLES in service.py). Never set any other
+    # way, including the free-form ProjectUpdate/stage change below.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -72,7 +79,8 @@ class Project(Base):
 
     client: Mapped["Client"] = relationship(back_populates="projects")
     source_lead: Mapped["Lead | None"] = relationship()
-    assigned_user: Mapped["User | None"] = relationship()
+    assigned_user: Mapped["User | None"] = relationship(foreign_keys=[assigned_user_id])
+    delivered_by_user: Mapped["User | None"] = relationship(foreign_keys=[delivered_by_user_id])
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
     meetings: Mapped[list["Meeting"]] = relationship(back_populates="project")
     design_briefs: Mapped["DesignBrief | None"] = relationship(back_populates="project", uselist=False)

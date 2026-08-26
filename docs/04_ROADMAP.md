@@ -397,6 +397,47 @@ Goal: stages 19–20. Close the loop to revenue.
       Rollback/version selection re-runs a prior *successful* deployment
       of an older website version, re-verifying that version's own
       approval/QA/client-review flags first. See [[05_DECISIONS]].
+- [x] Provider-agnostic deployment adapter architecture (phase 6 part 2)
+      — `integrations/deployment.py`'s single-file mock became a real
+      package (`integrations/deployment/`): a `DeploymentProvider`
+      interface (`validate_config`/`build`/`deploy`/`get_status`/
+      `rollback`), a shared static-site build step
+      (`build.py::build_static_site`, config -> real HTML/CSS files —
+      minimal but genuinely deployable, not a port of `packages/
+      site-templates`), and real adapters for Vercel, Netlify,
+      Cloudflare Pages, and traditional (FTP/FTPS) hosting alongside
+      the existing mock, selected via `DEPLOY_PROVIDER` — still
+      defaults to `mock`, and every real provider fails loudly rather
+      than silently deploying through mock when its own credentials
+      (env-var-only, never hardcoded — see `.env.example`) aren't set.
+      `Deployment` gained `provider_ref` (a real provider's own
+      deployment id) for status polling and provider-native rollback
+      (Netlify's own restore API; every other provider falls back to
+      re-running build+deploy, same as before). Deployment is still
+      never automatic — `execute_deployment` remains a separate,
+      explicit call from `create_deployment`. See [[05_DECISIONS]].
+- [x] Delivery workflow completed (phase 6 part 2) — the deploy step
+      above now has a "monitor -> receive URL -> verify -> deliver"
+      tail: `POST .../deployments/{id}/check-status` re-polls a real
+      provider's own status (a no-op refresh for every provider today,
+      since none of them have an async build to watch yet — the real
+      extension point for one that does); `POST .../deployments/{id}/
+      verify` reuses `integrations/browser.py`'s SSRF-guarded
+      `fetch_page_signals` to confirm a real deployment's URL actually
+      loads (a `mock` deployment is recorded as a simulated pass — its
+      URL was never reachable in the first place, see
+      `integrations/deployment/mock_provider.py`), setting
+      `Deployment.verified_at`. `Project` gained `delivered_at`/
+      `delivered_by_user_id`, set only by the new `POST /projects/{id}/
+      deliver`, which refuses (`GET .../delivery-status` reports every
+      reason why, all at once) unless the latest deployment succeeded
+      *and* was verified *and* every item on the final delivery
+      checklist — the existing post-launch handover tasks seeded on
+      first deploy (`DEFAULT_LAUNCH_TASK_TITLES`) — is checked off.
+      Advances the project to `COMPLETE`. Surfaced on the project page
+      as a "Verify"/"Check status" pair on each deployment row and a
+      `DeliveryPanel` (checklist + "Mark project delivered") alongside
+      the existing deployment history/rollback UI. See [[05_DECISIONS]].
 - [ ] Payment/invoicing (Stripe) tied to the deploy step.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.
