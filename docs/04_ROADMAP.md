@@ -368,13 +368,36 @@ Goal: stages 15–18. First real reusable output.
       what's missing, and the deployment gate independently re-verifies
       all six prior checkpoints' *current* state rather than trusting
       an earlier gate already covered it. See [[05_DECISIONS]].
-- [ ] A secure shareable client-preview link with feedback capture —
-      still not built. "Client review" today is an operator recording
-      that the client approved (by email/call/etc, see
-      [[03_AGENT_RULES]]'s existing "Client approval communication"
-      note), not the client viewing/interacting with anything
-      themselves — there's no client-facing surface in this app at all
-      yet.
+- [x] A secure shareable client-preview link with feedback capture —
+      built as Phase 6, three parts. **Previews** (`modules/previews/`):
+      a token-based link per project (SHA-256 hash stored, raw token
+      shown once at creation), CLIENT or INTERNAL audience, desktop/
+      tablet/mobile device toggle and version/page pickers on the public
+      `/preview/[token]` page, expiration (default 14 days) and explicit
+      revocation. A CLIENT link only ever resolves a version that's
+      cleared either the original `Website.approved` checkpoint or the
+      new workflow reaching CLIENT_REVIEW+ — "do not expose unpublished
+      websites publicly" enforced server-side, not just hidden in the
+      UI. **Feedback** (`modules/website_feedback/`): comment/change
+      request/approval/rejection/general feedback, tied to project,
+      exact website version, page/section where picked, who left it (no
+      client login — free-text name/email), timestamp, and status
+      (open/acknowledged/resolved/dismissed). **Formal approval workflow**
+      (`WebsiteWorkflowStatus` on `Website` + `WebsiteWorkflowTransition`
+      history): DRAFT → INTERNAL_REVIEW → CLIENT_REVIEW →
+      CHANGES_REQUESTED → APPROVED → READY_TO_DEPLOY → DEPLOYED, legal
+      transitions enforced server-side, layered *on top of* (not
+      replacing) the existing boolean checkpoints. A client's own
+      APPROVAL/REJECTION/CHANGE_REQUEST feedback drives CLIENT_REVIEW →
+      APPROVED/CHANGES_REQUESTED automatically; editing a section on a
+      version past DRAFT resets it back to DRAFT (same "edit reverts
+      approval" contract the booleans already had). `modules/
+      deployments/` now refuses to create *or* execute a deployment
+      unless the version is READY_TO_DEPLOY (or already DEPLOYED, for a
+      legitimate redeploy of the same version), re-checked fresh at both
+      points — "require explicit approval before deployment" and
+      "prevent accidental deployment of unapproved versions" enforced at
+      the data layer. See [[05_DECISIONS]].
 
 ## M6 — Deployment + maintenance
 

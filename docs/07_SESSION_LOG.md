@@ -11,6 +11,58 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — Phase 6: secure website previews, client feedback, approval workflow
+**Mode:** worktree (`phase6-preview-feedback-approval`)
+**Merge to main after:** yes
+**Scope touched:** apps/api (new `modules/previews/`, `modules/website_feedback/`;
+`modules/websites/` gained `WebsiteWorkflowStatus`/`WebsiteWorkflowTransition`;
+`modules/deployments/service.py` gained the workflow gate; 3 migrations),
+apps/web (new `/preview/[token]` public page, `PreviewSiteRenderer`,
+`PreviewFeedbackForm`, `PreviewLinksPanel`, `WebsiteFeedbackPanel`,
+`WebsiteWorkflowPanel`; `lib/api.ts` and new `lib/previewApi.ts`)
+**What happened:** Closed roadmap M5's last open item across three
+commits — see [[05_DECISIONS]]'s 2026-08-26 entry for the full design.
+Task 1: token-based `PreviewLink` (client/internal audience, desktop/
+tablet/mobile toggle, version selection, expiration/revocation) and a
+public preview page rendering the real site via a new self-contained
+`PreviewSiteRenderer` (not a reuse of `packages/site-templates` — no
+cross-package workspace tooling exists in this repo to share its
+build-less `@/...` imports). Task 2: `WebsiteFeedback` submitted
+through the same token, tied to project/version/page/status. Task 3:
+a formal `WebsiteWorkflowStatus` state machine on `Website` plus
+transition history, layered on top of (not replacing) the existing
+boolean approval checkpoints, wired into `modules/deployments/` so
+neither creating nor executing a deployment can bypass it. Every new
+route/service has real backend test coverage (previews: 17, feedback:
+12, workflow: 19 — all passing alongside the pre-existing suite), and
+each of the three surfaces was verified in a real browser via
+Playwright against locally-run dev servers (API on :8010, web on
+:3010, to avoid colliding with another session already on the default
+ports) — public preview loads/renders/device-toggles, feedback
+submission shows up live in the operator panel and is resolvable,
+workflow transitions and history render and update correctly. A real
+integration gap only surfaced during that browser/test pass, not code
+review: `previews.service._is_visible` initially only checked the old
+`Website.approved` boolean, so a version driven through the *new*
+workflow to CLIENT_REVIEW was invisible on a CLIENT-audience link —
+fixed by making visibility an OR of both checkpoints (see decisions
+entry). A second gap: gating deployment strictly on
+`workflow_status == READY_TO_DEPLOY` broke the existing "redeploy the
+same version" test, since a successful deploy advances it to the
+terminal DEPLOYED state — fixed by accepting both READY_TO_DEPLOY and
+already-DEPLOYED as deployable.
+**Blockers/notes:** Port 8000/3000 and their `.venv`/`node_modules`
+were already in use by another session's dev servers when this session
+tried to browser-verify — worked around by running on :8010/:3010
+against a `node_modules` real-installed in the worktree (a symlinked
+one broke Turbopack: "Symlink [project]/node_modules is invalid, it
+points out of the filesystem root") and the main checkout's Python
+`.venv` invoked by absolute path (worktrees don't get their own
+`.venv`). All smoke-test data (a throwaway business/client/project/
+website/user) was deleted from the shared local dev Postgres afterward.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes
