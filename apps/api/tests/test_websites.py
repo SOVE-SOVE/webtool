@@ -408,3 +408,102 @@ class TestClientApproveWebsite:
         assert body["client_approved"] is True
         assert body["client_approved_by_user_name"] == "Ada Admin"
         assert body["client_approval_notes"] == "Client signed off via email"
+
+
+def _patch_content_generator(monkeypatch, pages, missing_information=None):
+    monkeypatch.setattr(
+        "app.agents.content_generator.generate_structured",
+        lambda **kwargs: {"pages": pages, "missing_information": missing_information or []},
+    )
+
+
+class TestContentDraftEnrichesGeneratedWebsite:
+    """Roadmap Task 2 ("website component generation"): an approved,
+    AI-drafted ContentDraft's grounded copy should flow into the
+    deterministic website generator's config fields — without ever
+    introducing a section type the design system's registry doesn't
+    already define."""
+
+    def test_generated_website_prefers_approved_drafted_copy(self, authed_client, monkeypatch):
+        project, sitemap = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+        home_id = next(p["id"] for p in sitemap["pages"] if p["page_type"] == "home")
+        services_id = next(p["id"] for p in sitemap["pages"] if p["page_type"] == "services")
+
+        _patch_content_generator(
+            monkeypatch,
+            [
+                {
+                    "page_id": home_id,
+                    "seo_title": "Riverside Plumbing — Ipswich's Local Plumber",
+                    "meta_description": "Drafted description of Riverside Plumbing's Ipswich service.",
+                    "hero_heading": "Ipswich plumbing, done right the first time",
+                    "hero_subheading": "Riverside Plumbing has served Ipswich homes since 2011.",
+                    "cta_heading": "Book a Riverside Plumbing callout",
+                    "cta_body": "Same-week appointments for Ipswich homes.",
+                    "services": [],
+                    "faqs": [],
+                },
+                {
+                    "page_id": services_id,
+                    "services": [
+                        {"title": "Blocked drains", "description": "Camera-inspected clearing of blocked drains across Ipswich."},
+                        {"title": "Hot water systems", "description": "Same-day repairs and replacements for local hot water systems."},
+                        {"title": "Leak detection", "description": "Non-invasive leak detection before damage spreads."},
+                    ],
+                    "faqs": [],
+                },
+            ],
+        )
+        draft = authed_client.post(f"/api/v1/projects/{project['id']}/content-drafts").json()
+        authed_client.post(f"/api/v1/content-drafts/{draft['id']}/approve")
+
+        body = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+
+        home = body["pages"][0]
+        assert home["seo"]["title"] == "Riverside Plumbing — Ipswich's Local Plumber"
+        assert home["seo"]["meta_description"] == "Drafted description of Riverside Plumbing's Ipswich service."
+        hero = home["sections"][0]
+        assert hero["type"] == "hero"
+        assert hero["config"]["heading"] == "Ipswich plumbing, done right the first time"
+        assert hero["config"]["subheading"] == "Riverside Plumbing has served Ipswich homes since 2011."
+        cta = next(s for s in home["sections"] if s["type"] == "cta")
+        assert cta["config"]["heading"] == "Book a Riverside Plumbing callout"
+        assert cta["config"]["body"] == "Same-week appointments for Ipswich homes."
+
+        services = next(p for p in body["pages"] if p["slug"] == "services")
+        cards = next(s for s in services["sections"] if s["type"] == "serviceCards")
+        descriptions = {i["title"]: i["description"] for i in cards["config"]["services"]}
+        assert descriptions["Blocked drains"] == "Camera-inspected clearing of blocked drains across Ipswich."
+        assert descriptions["Hot water systems"] == "Same-day repairs and replacements for local hot water systems."
+
+        # Every section produced is still one of packages/site-templates'
+        # registered types — content enrichment never introduces new
+        # architecture, it only fills fields the design system already
+        # defines for hero/cta/serviceCards.
+        assert {s["type"] for s in _all_sections(body)} <= {
+            "navigation",
+            "footer",
+            "hero",
+            "serviceCards",
+            "cta",
+            "contact",
+            "testimonials",
+        }
+
+    def test_unapproved_content_draft_is_not_used(self, authed_client, monkeypatch):
+        """An approved-first, fall-back-to-latest resolution still uses
+        the latest draft when nothing is approved yet (same convention
+        as sitemap/creative-direction), but a rejected/edited-away draft
+        should never silently win over one the operator did approve."""
+        project, sitemap = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+        home_id = next(p["id"] for p in sitemap["pages"] if p["page_type"] == "home")
+
+        _patch_content_generator(monkeypatch, [{"page_id": home_id, "hero_heading": "Approved heading"}])
+        approved_draft = authed_client.post(f"/api/v1/projects/{project['id']}/content-drafts").json()
+        authed_client.post(f"/api/v1/content-drafts/{approved_draft['id']}/approve")
+
+        _patch_content_generator(monkeypatch, [{"page_id": home_id, "hero_heading": "Newer unapproved heading"}])
+        authed_client.post(f"/api/v1/projects/{project['id']}/content-drafts")
+
+        body = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+        assert body["pages"][0]["sections"][0]["config"]["heading"] == "Approved heading"

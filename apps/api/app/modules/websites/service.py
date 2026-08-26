@@ -15,6 +15,7 @@ from app.agents.anti_slop import run as run_anti_slop
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
+from app.modules.content_drafts.models import ContentDraft, ContentDraftStatus
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.projects import service as projects_service
@@ -92,6 +93,47 @@ def _resolve_sitemap(
         base.where(Sitemap.status == SitemapStatus.APPROVED).order_by(Sitemap.generated_at.desc())
     )
     return approved or db.scalar(base.order_by(Sitemap.generated_at.desc()))
+
+
+def _resolve_content_draft(
+    db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID, content_draft_id: uuid.UUID | None
+) -> ContentDraft | None:
+    """Same "approved first, fall back to latest" resolution as
+    _resolve_creative_direction/_resolve_sitemap. A content draft is
+    optional — a project with none yet still generates a website, just
+    without the AI-drafted copy layer."""
+    base = (
+        select(ContentDraft)
+        .join(Project, ContentDraft.project_id == Project.id)
+        .join(Client, Project.client_id == Client.id)
+        .join(Business, Client.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id, ContentDraft.project_id == project_id)
+    )
+    if content_draft_id is not None:
+        return db.scalar(base.where(ContentDraft.id == content_draft_id))
+    approved = db.scalar(
+        base.where(ContentDraft.status == ContentDraftStatus.APPROVED).order_by(ContentDraft.generated_at.desc())
+    )
+    return approved or db.scalar(base.order_by(ContentDraft.generated_at.desc()))
+
+
+def _content_by_page_id(content_draft: ContentDraft | None) -> dict[str, website_generator.ContentDraftPageContent]:
+    if content_draft is None or not content_draft.config:
+        return {}
+    result = {}
+    for page in content_draft.config.get("pages", []):
+        result[page["page_id"]] = website_generator.ContentDraftPageContent(
+            seo_title=page.get("seo_title"),
+            meta_description=page.get("meta_description"),
+            hero_heading=page.get("hero_heading"),
+            hero_subheading=page.get("hero_subheading"),
+            body=page.get("body"),
+            services=[website_generator.DraftedServiceItem(**s) for s in page.get("services", [])],
+            faqs=[website_generator.DraftedFaqItem(**f) for f in page.get("faqs", [])],
+            cta_heading=page.get("cta_heading"),
+            cta_body=page.get("cta_body"),
+        )
+    return result
 
 
 def _brief_content(brief: DesignBrief | None) -> website_generator.BriefContent:
@@ -221,11 +263,19 @@ def _recompute_anti_slop(config: dict) -> AntiSlopOutput:
     return run_anti_slop(AntiSlopInput(pages=pages, authentic_content=authentic_content)).output
 
 
-def _sources_note(brief: DesignBrief | None, cd: CreativeDirectionBrief | None, sitemap: Sitemap | None) -> str:
+def _sources_note(
+    brief: DesignBrief | None,
+    cd: CreativeDirectionBrief | None,
+    sitemap: Sitemap | None,
+    content_draft: ContentDraft | None,
+) -> str:
     parts = [
         f"Client brief: {brief.status.value}" if brief else "Client brief: not started",
         f"Creative direction: {cd.status.value}" if cd else "Creative direction: none generated",
         f"Sitemap: {sitemap.status.value} ({len(sitemap.pages)} pages)" if sitemap else "Sitemap: none generated",
+        f"Content draft: {content_draft.status.value} ({content_draft.tone} tone)"
+        if content_draft
+        else "Content draft: none generated (mechanical copy only)",
     ]
     return "; ".join(parts)
 
@@ -244,6 +294,7 @@ def generate_website(
 
     brief = _get_design_brief(db, project.id)
     creative_direction = _resolve_creative_direction(db, workspace_id, project.id, request.creative_direction_id)
+    content_draft = _resolve_content_draft(db, workspace_id, project.id, request.content_draft_id)
 
     result = website_generator.run(
         website_generator.WebsiteGeneratorInput(
@@ -251,6 +302,7 @@ def generate_website(
             brief=_brief_content(brief),
             creative_direction=_creative_direction_content(creative_direction),
             pages=_sitemap_page_contents(sitemap),
+            content_by_page_id=_content_by_page_id(content_draft),
         )
     )
     fresh_config = _output_to_config(result.output, _brief_content(brief).testimonials)
@@ -266,7 +318,7 @@ def generate_website(
         config=config,
         anti_slop_score=anti_slop.score,
         flagged_for_review=result.flagged_for_review or not anti_slop.passed,
-        sources_note=_sources_note(brief, creative_direction, sitemap),
+        sources_note=_sources_note(brief, creative_direction, sitemap, content_draft),
         generated_by_user_id=actor_id,
     )
     db.add(website)
@@ -303,6 +355,7 @@ def regenerate_section(
     sitemap = _resolve_sitemap(db, workspace_id, current.project_id, None)
     brief = _get_design_brief(db, current.project_id)
     creative_direction = _resolve_creative_direction(db, workspace_id, current.project_id, None)
+    content_draft = _resolve_content_draft(db, workspace_id, current.project_id, None)
     if sitemap is None or not sitemap.pages:
         raise HTTPException(status_code=400, detail="No sitemap available to regenerate from")
 
@@ -313,6 +366,7 @@ def regenerate_section(
             brief=brief_content,
             creative_direction=_creative_direction_content(creative_direction),
             pages=_sitemap_page_contents(sitemap),
+            content_by_page_id=_content_by_page_id(content_draft),
         )
     )
     fresh_config = _output_to_config(result.output, brief_content.testimonials)

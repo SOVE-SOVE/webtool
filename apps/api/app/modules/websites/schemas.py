@@ -18,6 +18,12 @@ class GenerateWebsiteRequest(BaseModel):
 
     sitemap_id: uuid.UUID | None = None
     creative_direction_id: uuid.UUID | None = None
+    # Same resolution convention as sitemap_id/creative_direction_id: an
+    # approved ContentDraft is used automatically if one exists, falling
+    # back to the latest; an explicit id only matters when picking an
+    # older (or not-yet-approved) draft on purpose. See
+    # agents/content_generator.py / modules/content_drafts/.
+    content_draft_id: uuid.UUID | None = None
     # When True, every section is rebuilt fresh even if the prior
     # version had approved sections. Default False: a full regeneration
     # still carries forward anything the operator already approved,

@@ -14,7 +14,19 @@ agents/creative_director.py: this step only ever copies or lightly
 reshapes fields that already exist rather than drafting new prose, so
 there is nothing here that benefits from an LLM call and everything to
 lose from one (a paraphrase is a new fabrication surface) — see
-docs/05_DECISIONS.md.
+docs/05_DECISIONS.md. The one addition here (roadmap M4/M5's AI website
+content generation system) is `content_by_page_id`: already-drafted,
+already-reviewed copy from agents/content_generator.py /
+modules/content_drafts/, keyed by sitemap page id. When present, this
+module prefers that grounded copy over its own mechanical text
+reshaping for the specific config fields it drafts (headings, body,
+service descriptions, FAQ answers, CTA copy, SEO metadata) — but it is
+still just *copying an already-approved value into a config field this
+module already knew how to build*, not a fresh LLM call at generation
+time, and every section this produces still comes from
+`packages/site-templates`' registry with the same required-field/
+anti-slop checks as ever. No new section types, no bypassing the design
+system — see roadmap Task 2 ("website component generation").
 
 Output section configs match packages/site-templates' SiteSection shape
 exactly (see src/types.ts) — this is what `websites.config` stores and
@@ -96,11 +108,42 @@ class SitemapPageContent(BaseModel):
     key_sections: list[str] = Field(default_factory=list)
 
 
+class DraftedServiceItem(BaseModel):
+    title: str
+    description: str
+
+
+class DraftedFaqItem(BaseModel):
+    question: str
+    answer: str
+
+
+class ContentDraftPageContent(BaseModel):
+    """One page's approved, already-reviewed drafted copy — see
+    modules/content_drafts/schemas.py's PageContentDraft, which this
+    mirrors. Every field is optional: only what the content-generation
+    step actually drafted (and the operator didn't remove) is used."""
+
+    seo_title: str | None = None
+    meta_description: str | None = None
+    hero_heading: str | None = None
+    hero_subheading: str | None = None
+    body: str | None = None
+    services: list[DraftedServiceItem] = Field(default_factory=list)
+    faqs: list[DraftedFaqItem] = Field(default_factory=list)
+    cta_heading: str | None = None
+    cta_body: str | None = None
+
+
 class WebsiteGeneratorInput(BaseModel):
     business_name: str
     brief: BriefContent = Field(default_factory=BriefContent)
     creative_direction: CreativeDirectionContent = Field(default_factory=CreativeDirectionContent)
     pages: list[SitemapPageContent]
+    # Keyed by SitemapPageContent.id — see ContentDraftPageContent's
+    # docstring. Empty by default: content generation is an optional
+    # enrichment step, never a requirement to generate a website at all.
+    content_by_page_id: dict[str, ContentDraftPageContent] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------
@@ -186,17 +229,32 @@ def _home_href(pages: list[SitemapPageContent]) -> str:
 _META_DESCRIPTION_MAX = 155
 
 
-def _build_seo(page: SitemapPageContent, business_name: str, brief: BriefContent) -> PageSeo:
-    title = business_name if page.page_type == "home" else f"{page.title} | {business_name}"
+def _build_seo(
+    page: SitemapPageContent, business_name: str, brief: BriefContent, content: ContentDraftPageContent | None
+) -> PageSeo:
+    # An approved content draft's SEO fields were drafted specifically
+    # for this page and already reviewed — prefer them outright. The
+    # mechanical fallback below exists for when no content draft (or no
+    # drafted title/description for this page) exists yet.
+    if content and content.seo_title:
+        title = content.seo_title
+    else:
+        title = business_name if page.page_type == "home" else f"{page.title} | {business_name}"
 
-    description = None
-    if page.page_type == "home":
-        description = brief.business_description
-    elif page.page_type == "about":
-        description = brief.about_content
+    if content and content.meta_description:
+        description = content.meta_description
+    else:
+        description = None
+        if page.page_type == "home":
+            description = brief.business_description
+        elif page.page_type == "about":
+            description = brief.about_content
+
     if description and len(description) > _META_DESCRIPTION_MAX:
         # A mechanical truncation on a word boundary, not a rewrite —
         # never adds or changes a claim, just shortens where it's cut.
+        # Applies to a drafted description too, as a safety net: nothing
+        # downstream should have to re-validate length.
         truncated = description[:_META_DESCRIPTION_MAX].rsplit(" ", 1)[0]
         description = f"{truncated}…"
 
@@ -239,7 +297,11 @@ _NO_SOURCE_SECTION_HINTS = {
 
 
 def _build_hero(
-    page: SitemapPageContent, brief: BriefContent, business_name: str, contact_href: str | None
+    page: SitemapPageContent,
+    brief: BriefContent,
+    business_name: str,
+    contact_href: str | None,
+    content: ContentDraftPageContent | None,
 ) -> GeneratedSection:
     subheading: str | None = None
     if page.page_type == "home":
@@ -254,6 +316,13 @@ def _build_hero(
         elif page.page_type == "products" and _looks_like_list(brief.products_content) is None:
             subheading = brief.products_content
 
+    # An approved content draft's copy is already reviewed and grounded —
+    # prefer it over the mechanical reshaping above, which exists for
+    # pages/fields no content draft has covered.
+    if content:
+        heading = content.hero_heading or heading
+        subheading = content.hero_subheading or content.body or subheading
+
     config: dict = {"heading": heading}
     if subheading:
         config["subheading"] = subheading
@@ -265,19 +334,31 @@ def _build_hero(
     return _section("hero", config)
 
 
+def _merge_drafted_services(items: list[str], drafted: list[DraftedServiceItem]) -> list[dict]:
+    """Matches drafted descriptions back to the brief's bare service
+    names (case-insensitive) so a description only appears next to the
+    exact service it was written for — an unmatched drafted item is
+    simply not used, and an unmatched brief item keeps its empty
+    description rather than borrowing someone else's."""
+    by_title = {d.title.strip().lower(): d.description for d in drafted}
+    return [{"title": item, "description": by_title.get(item.strip().lower(), "")} for item in items]
+
+
 def _build_page_sections(
     page: SitemapPageContent,
     brief: BriefContent,
     business_name: str,
     contact_href: str | None,
+    content: ContentDraftPageContent | None,
 ) -> tuple[list[GeneratedSection], list[str]]:
-    sections: list[GeneratedSection] = [_build_hero(page, brief, business_name, contact_href)]
+    sections: list[GeneratedSection] = [_build_hero(page, brief, business_name, contact_href, content)]
     missing: list[str] = []
+    drafted_services = content.services if content else []
 
     if page.page_type in ("home", "services"):
         items = _looks_like_list(brief.services_content) or _looks_like_list(brief.services_products)
         if items:
-            config: dict = {"services": [{"title": item, "description": ""} for item in items]}
+            config: dict = {"services": _merge_drafted_services(items, drafted_services)}
             if page.page_type == "home":
                 config["heading"] = "What we offer"
             sections.append(_section("serviceCards", config))
@@ -290,7 +371,7 @@ def _build_page_sections(
     if page.page_type in ("home", "products"):
         items = _looks_like_list(brief.products_content)
         if items:
-            config = {"services": [{"title": item, "description": ""} for item in items]}
+            config = {"services": _merge_drafted_services(items, drafted_services)}
             if page.page_type == "home":
                 config["heading"] = "Our products"
             sections.append(_section("serviceCards", config))
@@ -305,9 +386,15 @@ def _build_page_sections(
         )
 
     if page.page_type in ("home", "faq") and brief.faqs:
+        drafted_answers = {f.question.strip().lower(): f.answer for f in (content.faqs if content else [])}
         items = []
         for line in brief.faqs:
             question, answer = _split_faq_line(line)
+            # A drafted answer is only used to fill a genuine gap (the
+            # brief itself has none) — the client's own answer, once
+            # given, is never second-guessed by drafted copy.
+            if not answer:
+                answer = drafted_answers.get(question.strip().lower(), "")
             items.append({"question": question, "answer": answer})
             if not answer:
                 missing.append(f'{page.title}: FAQ "{question}" has no answer on file yet.')
@@ -333,9 +420,13 @@ def _build_page_sections(
         }
         sections.append(_section("contact", {"details": details, "form": form}))
 
-    if page.page_type == "home" and brief.calls_to_action and contact_href:
-        cta_text = brief.calls_to_action[0]
-        sections.append(_section("cta", {"heading": cta_text, "primaryCta": {"label": cta_text, "href": contact_href}}))
+    drafted_cta_heading = content.cta_heading if content else None
+    cta_text = drafted_cta_heading or (brief.calls_to_action[0] if brief.calls_to_action else None)
+    if page.page_type == "home" and cta_text and contact_href:
+        cta_config: dict = {"heading": cta_text, "primaryCta": {"label": cta_text, "href": contact_href}}
+        if content and content.cta_body:
+            cta_config["body"] = content.cta_body
+        sections.append(_section("cta", cta_config))
 
     for hint in page.key_sections:
         normalized = hint.lower()
@@ -400,9 +491,12 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
         )
 
     for sitemap_page in input.pages:
-        sections, missing = _build_page_sections(sitemap_page, input.brief, input.business_name, contact_href)
+        page_content = input.content_by_page_id.get(sitemap_page.id)
+        sections, missing = _build_page_sections(
+            sitemap_page, input.brief, input.business_name, contact_href, page_content
+        )
         missing_information.extend(missing)
-        seo = _build_seo(sitemap_page, input.business_name, input.brief)
+        seo = _build_seo(sitemap_page, input.business_name, input.brief, page_content)
         if not seo.meta_description:
             missing_information.append(f"{sitemap_page.title}: no meta description on file yet.")
         pages.append(
