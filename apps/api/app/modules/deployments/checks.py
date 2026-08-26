@@ -46,7 +46,7 @@ def check_required_configuration(
     if not website.config:
         issues.append("Generated website has no configuration to deploy")
     # The mock provider never publishes anywhere a real domain would
-    # matter (see integrations/deployment.py) — a real provider is
+    # matter (see integrations/deployment/) — a real provider is
     # where "production needs a domain on file" actually has teeth, so
     # this only blocks once one is configured. The check itself, and
     # its own test coverage, exist now regardless.

@@ -292,35 +292,60 @@ class TestPreDeployChecks:
 
 class TestMockDeploymentProvider:
     def test_deploy_returns_a_clearly_fake_mock_url_and_never_hits_the_network(self):
-        from app.integrations.deployment import DeploymentBundle, MockDeploymentProvider
+        from app.integrations.deployment.base import DeploymentBundle
+        from app.integrations.deployment.mock_provider import MockDeploymentProvider
 
         provider = MockDeploymentProvider()
-        outcome = provider.deploy(
-            DeploymentBundle(business_slug="Riverside Plumbing", environment="production", config={"pages": [{"slug": "home"}]})
-        )
+        bundle = DeploymentBundle(business_slug="Riverside Plumbing", environment="production", config={"pages": [{"slug": "", "seo": {"title": "Home"}, "sections": [{"type": "hero", "config": {"heading": "Welcome"}}]}]})
+        artifact = provider.build(bundle)
+        outcome = provider.deploy(bundle, artifact)
         assert outcome.ok is True
         assert outcome.target == "mock"
         assert outcome.url == "https://riverside-plumbing-production.mock-deploy.internal"
         assert outcome.detail["pages_deployed"] == 1
+        assert outcome.provider_ref is not None
 
     def test_deploy_fails_cleanly_with_no_pages(self):
-        from app.integrations.deployment import DeploymentBundle, MockDeploymentProvider
+        from app.integrations.deployment.base import DeploymentBundle
+        from app.integrations.deployment.mock_provider import MockDeploymentProvider
 
-        outcome = MockDeploymentProvider().deploy(
-            DeploymentBundle(business_slug="Empty Co", environment="production", config={"pages": []})
-        )
+        provider = MockDeploymentProvider()
+        bundle = DeploymentBundle(business_slug="Empty Co", environment="production", config={"pages": []})
+        artifact = provider.build(bundle)
+        assert artifact.ok is False
+        outcome = provider.deploy(bundle, artifact)
         assert outcome.ok is False
         assert outcome.error is not None
 
+    def test_get_status_reports_ready_and_rollback_is_simulated(self):
+        from app.integrations.deployment.mock_provider import MockDeploymentProvider
+
+        provider = MockDeploymentProvider()
+        assert provider.get_status("mock-anything").state == "ready"
+        rollback_outcome = provider.rollback("mock-anything")
+        assert rollback_outcome.ok is True
+        assert rollback_outcome.target == "mock"
+
     def test_unconfigured_provider_name_raises_instead_of_silently_falling_back(self, monkeypatch):
         from app.core.settings import settings
-        from app.integrations.deployment import get_deployment_provider
+        from app.integrations.deployment.base import DeploymentProviderError
+        from app.integrations.deployment.registry import get_deployment_provider
 
         monkeypatch.setattr(settings, "deploy_provider", "vercel")
         try:
             get_deployment_provider()
-            assert False, "expected NotImplementedError"
-        except NotImplementedError:
+            assert False, "expected DeploymentProviderError"
+        except DeploymentProviderError:
+            pass
+
+    def test_unknown_provider_name_raises(self):
+        from app.integrations.deployment.base import DeploymentProviderError
+        from app.integrations.deployment.registry import get_deployment_provider
+
+        try:
+            get_deployment_provider("not-a-real-provider")
+            assert False, "expected DeploymentProviderError"
+        except DeploymentProviderError:
             pass
 
 
@@ -337,14 +362,14 @@ class TestConcurrentExecution:
 
         from fastapi.testclient import TestClient
 
-        from app.integrations.deployment import MockDeploymentProvider
+        from app.integrations.deployment.mock_provider import MockDeploymentProvider
         from app.main import app
         from tests.conftest import ADMIN_PASSWORD
 
         class _SlowProvider(MockDeploymentProvider):
-            def deploy(self, bundle):
+            def deploy(self, bundle, artifact):
                 time.sleep(0.3)
-                return super().deploy(bundle)
+                return super().deploy(bundle, artifact)
 
         project, _ = _build_deployable_project(authed_client, monkeypatch)
         prepared = authed_client.post(f"/api/v1/projects/{project['id']}/deployments").json()
