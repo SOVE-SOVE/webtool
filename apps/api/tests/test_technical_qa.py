@@ -19,6 +19,7 @@ from app.agents.technical_qa import (
     TechnicalQaInput,
     _accessibility_contrast_check_from_signals,
     _https_check_from_signals,
+    _markup_checks_from_signals,
     _responsiveness_checks_from_signals,
     run,
 )
@@ -33,7 +34,11 @@ def _page(name="Home", slug="", seo=None, sections=None) -> PageInput:
         # sections=[] must stay empty (an explicit "no content" test
         # fixture) — `sections or [default]` would silently substitute
         # the default since an empty list is falsy.
-        sections=[SectionInput(type="hero", config={"heading": "Real heading"})] if sections is None else sections,
+        # The default hero carries a primaryCta (an anchor href, so it's
+        # never flagged by the broken-internal-link check either) so
+        # this fixture is a genuinely clean/passing baseline — including
+        # for the "Calls to action present" check.
+        sections=[SectionInput(type="hero", config={"heading": "Real heading", "primaryCta": {"label": "Get a quote", "href": "#contact"}})] if sections is None else sections,
     )
 
 
@@ -54,7 +59,7 @@ class TestReportCompleteness:
     def test_every_category_has_at_least_one_check_and_nothing_is_silently_omitted(self):
         result = run(_base_input())
         categories = {c.category for c in result.output.checks}
-        assert categories == {"performance", "responsiveness", "accessibility", "seo", "functionality", "security"}
+        assert categories == {"performance", "responsiveness", "accessibility", "seo", "functionality", "security", "markup"}
         assert result.output.passed_count + result.output.failed_count + result.output.warning_count + result.output.skipped_count == len(
             result.output.checks
         )
@@ -227,6 +232,83 @@ class TestFunctionality:
         assert check.severity == "critical"
 
 
+class TestCallsToAction:
+    def test_page_with_hero_cta_passes(self):
+        result = run(_base_input())
+        assert _find(result.output.checks, "Calls to action present").status == "pass"
+
+    def test_hero_with_no_cta_and_no_other_cta_bearing_section_fails(self):
+        pages = [_page(sections=[SectionInput(type="hero", config={"heading": "Real heading"})])]
+        result = run(_base_input(pages=pages))
+        check = _find(result.output.checks, "Calls to action present")
+        assert check.status == "fail"
+        assert check.severity == "high"
+
+    def test_dedicated_cta_section_satisfies_the_check_even_without_a_hero_button(self):
+        pages = [
+            _page(
+                sections=[
+                    SectionInput(type="hero", config={"heading": "Real heading"}),
+                    SectionInput(type="cta", config={"heading": "Ready?", "primaryCta": {"label": "Call now", "href": "tel:0412345678"}}),
+                ]
+            )
+        ]
+        result = run(_base_input(pages=pages))
+        assert _find(result.output.checks, "Calls to action present").status == "pass"
+
+    def test_contact_section_satisfies_the_check(self):
+        pages = [
+            _page(sections=[SectionInput(type="hero", config={"heading": "Real heading"}), SectionInput(type="contact", config={"details": "Call us"})])
+        ]
+        result = run(_base_input(pages=pages))
+        assert _find(result.output.checks, "Calls to action present").status == "pass"
+
+    def test_empty_page_is_not_double_flagged_for_missing_cta(self):
+        # Already reported by "Missing pages" — flagging it again here
+        # too would be redundant noise about the same underlying gap.
+        pages = [_page(sections=[])]
+        result = run(_base_input(pages=pages))
+        assert _find(result.output.checks, "Calls to action present").status == "pass"
+
+
+class TestMarkup:
+    def test_raw_html_tag_in_content_is_flagged(self):
+        pages = [_page(sections=[SectionInput(type="hero", config={"heading": "Save <b>big</b> today"})])]
+        result = run(_base_input(pages=pages))
+        check = _find(result.output.checks, "No raw HTML tags in content")
+        assert check.status == "fail"
+
+    def test_clean_content_has_no_raw_html_tags(self):
+        result = run(_base_input())
+        assert _find(result.output.checks, "No raw HTML tags in content").status == "pass"
+
+    def test_duplicate_and_lang_checks_are_skipped_without_a_preview_url(self):
+        result = run(_base_input())
+        assert _find(result.output.checks, "Duplicate element IDs").status == "skipped"
+        assert _find(result.output.checks, "<html lang> attribute").status == "skipped"
+
+    def test_duplicate_ids_from_signals_fail(self):
+        checks = _markup_checks_from_signals(QaPageSignals(duplicate_ids=["nav-link"], html_lang_present=True))
+        assert _find(checks, "Duplicate element IDs").status == "fail"
+
+    def test_no_duplicate_ids_from_signals_passes(self):
+        checks = _markup_checks_from_signals(QaPageSignals(duplicate_ids=[], html_lang_present=True))
+        assert _find(checks, "Duplicate element IDs").status == "pass"
+
+    def test_missing_html_lang_from_signals_fails(self):
+        checks = _markup_checks_from_signals(QaPageSignals(duplicate_ids=[], html_lang_present=False))
+        assert _find(checks, "<html lang> attribute").status == "fail"
+
+    def test_present_html_lang_from_signals_passes(self):
+        checks = _markup_checks_from_signals(QaPageSignals(duplicate_ids=[], html_lang_present=True))
+        assert _find(checks, "<html lang> attribute").status == "pass"
+
+    def test_unmeasured_signals_are_skipped_not_omitted(self):
+        checks = _markup_checks_from_signals(QaPageSignals())
+        assert _find(checks, "Duplicate element IDs").status == "skipped"
+        assert _find(checks, "<html lang> attribute").status == "skipped"
+
+
 class TestSecurity:
     def test_script_tag_in_content_is_a_critical_failure(self):
         pages = [_page(sections=[SectionInput(type="hero", config={"heading": "Hi <script>alert(1)</script>"})])]
@@ -332,12 +414,15 @@ class TestLiveSignalMapping:
         assert preview_check.severity == "critical"
         responsiveness = [c for c in result.output.checks if c.category == "responsiveness"]
         assert all(c.status == "skipped" for c in responsiveness)
+        markup = [c for c in result.output.checks if c.category == "markup" and c.name != "No raw HTML tags in content"]
+        assert all(c.status == "skipped" for c in markup)
 
     def test_a_successful_preview_wires_live_checks_into_the_report(self, monkeypatch):
         async def fake_fetch(url, paths):
             return QaPageSignals(
                 https=True, desktop_overflow=False, tablet_overflow=False, mobile_overflow=False,
                 console_errors=[], broken_internal_links=[], min_contrast_ratio=7.0, total_transfer_bytes=500_000,
+                duplicate_ids=[], html_lang_present=True,
             )
 
         monkeypatch.setattr("app.agents.technical_qa.fetch_qa_signals", fake_fetch)
@@ -346,6 +431,8 @@ class TestLiveSignalMapping:
         assert _find(result.output.checks, "Console errors").status == "pass"
         assert _find(result.output.checks, "Internal links reachable").status == "pass"
         assert _find(result.output.checks, "Total page weight").status == "pass"
+        assert _find(result.output.checks, "Duplicate element IDs").status == "pass"
+        assert _find(result.output.checks, "<html lang> attribute").status == "pass"
         assert not any(c.category == "responsiveness" and c.status == "skipped" for c in result.output.checks)
 
     def test_console_errors_from_a_live_preview_are_reported(self, monkeypatch):

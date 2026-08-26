@@ -188,6 +188,79 @@ UI infrastructure for on its own.
 
 ---
 
+## 2026-08-26 — Phase 5 Part 3: QA checks, revision workflow, checkpoint
+**Mode:** new session (worktree `phase5-part3-qa-revisions`)
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/api/app/agents/technical_qa.py,
+apps/api/app/integrations/browser.py,
+apps/api/app/modules/qa_reports/schemas.py (Task 1); new
+apps/api/app/agents/website_revision.py +
+apps/api/app/modules/website_revisions/ + migration
+c7f3a9d21b04, apps/api/app/main.py, apps/api/app/db/all_models.py,
+packages/site-templates (Section.tsx/Hero.tsx/Cta.tsx/types.ts —
+new "compact" spacing knob) (Task 2); apps/api/app/agents/
+website_generator.py (Task 3 fixes); tests for all three; docs.
+**What happened:** Task 1 — added the two QA checks the operator's
+checklist named that weren't covered yet: "Calls to action present"
+(functionality) and a new `markup` category (raw-HTML-tag-in-content,
+duplicate element ids, `<html lang>` — the latter two live-preview-only,
+honestly `skipped` without one). Task 2 — built a full revision-request
+workflow: operator feedback on a generated website ("make the hero less
+generic", "change the CTA", "make mobile spacing tighter") becomes a
+targeted edit to just the section it names, tracked as a
+`website_revisions` row (sequential number, requested/generated change,
+pending/approved/reverted status), with rollback that restores the
+prior version as a new one rather than rewriting history, and never
+touches unrelated approved sections. Spacing feedback is deterministic
+(new `spacing: "compact"` field on hero/cta sections); anything else
+goes through a new LLM agent (`agents/website_revision.py`) that edits
+only fields the section already has. Task 3 — the Phase 5 checkpoint:
+ran the real deterministic generator/anti-slop/QA pipeline against a
+from-scratch fake client (Gold Coast plumber, modern/premium). No
+Anthropic API credit was available (operator supplied a real key, but
+the account had none — confirmed via the actual 400 response), so
+creative-direction/sitemap were hand-authored to the same bar a strong
+LLM call should hit; everything downstream ran for real, unmodified.
+Found and fixed two real generator bugs — see the Task 3 entry under
+[[04_ROADMAP]]'s "Site generation" bullet for the full detail: a
+service-line separator ("Title — description") was being discarded
+instead of used, and the homepage unconditionally duplicated a
+dedicated FAQ/Testimonials/Services page's content verbatim (anti_slop
+flagged it as duplicate copy, real score 79/100). Fixing both took the
+same fixture to anti_slop 100/100 and QA `ready_for_client_review: true`
+(0 critical/failed checks). Verdict: not slop by this system's own
+definition — everything on the generated site is real, specific,
+non-fabricated content — but not yet "premium, ready to sell" either:
+every non-home hero heading is still just the bare page title (no
+tagline field exists in `DesignBrief` for the generator to draw one
+from), and there's no real-photo pipeline at all (`image_assets` is
+free-text notes, not structured `Media`). Did not stop the phase over
+this, since neither gap is a generation-quality defect — both are
+already-scoped, not-yet-built intake/asset capability, called out as
+the concrete next priority instead. Full backend suite: 702/702 passing
+on a clean, uncontended run of the shared `webdesignos_test` database
+(this environment reproduces the same "concurrent runs corrupt the
+shared DB" issue prior sessions logged — every full-suite run in this
+session was run solo, one at a time, to get a clean result).
+**Blockers/issues:** No frontend UI for the new QA checks or the
+revision workflow — backend + tests only, matching the operator's
+stated Phase 5 Part 3 scope for Tasks 1–2. No Anthropic API credit in
+this environment (see Task 3 above) — the real creative-direction/
+sitemap LLM calls have never actually been exercised against this exact
+fake-client brief; only the deterministic downstream steps have.
+**Next up:** Top up the Anthropic account and re-run Task 3's fake
+client through the *real* creative-direction/sitemap calls (script
+already written, just needs `LLM_API_KEY` with credit) to check the
+LLM's own writing quality on top of what's now verified for the
+generator itself. Add a per-page/site tagline field to `DesignBrief` +
+thread it into `website_generator.py`'s hero-heading logic — the
+single highest-impact fix left for "premium-feeling" hero copy. Wire
+the revision workflow into the `/dashboard/projects/[id]/website`
+frontend (a "Revise" action per section, approve/rollback UI, revision
+history). Consider real asset/image upload (needs blob storage) before
+calling a generated site "sellable" on visuals as well as copy.
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes

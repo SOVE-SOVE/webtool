@@ -36,6 +36,7 @@ from app.modules.website_audits.routes import router as website_audits_router
 from app.modules.website_briefs.routes import router as website_briefs_router
 from app.modules.website_feedback.routes import router as website_feedback_router
 from app.modules.website_quality.routes import router as website_quality_router
+from app.modules.website_revisions.routes import router as website_revisions_router
 from app.modules.websites.routes import router as websites_router
 from app.modules.workspaces.routes import router as workspaces_router
 
@@ -116,6 +117,7 @@ app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
 app.include_router(website_briefs_router)
 app.include_router(websites_router)
+app.include_router(website_revisions_router)
 app.include_router(qa_reports_router)
 app.include_router(deployments_router)
 app.include_router(approvals_router)
