@@ -262,7 +262,11 @@ spec with no re-keying.
 
 ## M5 — Website build + QA + approval
 
-Goal: stages 15–18. First real reusable output.
+Goal: stages 15–18. First real reusable output. The operator's own
+"Phase 5: AI Website Production" framing of this milestone — the
+full brief→design direction→sitemap→content→component structure→
+code→preview→revisions→deployment pipeline, its priorities, and what's
+built vs. still open — is formalized in [[08_WEBSITE_GENERATION]].
 
 - [x] First template/component package in [[packages]] — the build
       baseline instead of a blank canvas. `packages/site-templates`: 17
