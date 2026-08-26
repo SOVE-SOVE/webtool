@@ -21,13 +21,16 @@ from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
 from app.modules.sitemaps.models import Sitemap, SitemapStatus
-from app.modules.websites.models import Website
+from app.modules.users.models import User
+from app.modules.websites.models import Website, WebsiteWorkflowStatus, WebsiteWorkflowTransition
 from app.modules.websites.schemas import (
     ApproveWebsiteRequest,
     GenerateWebsiteRequest,
     SectionUpdate,
     WebsiteRead,
     WebsiteSummary,
+    WorkflowTransitionRead,
+    WorkflowTransitionRequest,
 )
 
 _READ_OPTIONS = (
@@ -35,6 +38,60 @@ _READ_OPTIONS = (
     joinedload(Website.approved_by_user),
     joinedload(Website.client_approved_by_user),
 )
+
+# Phase 6 Task 3's approval workflow — see WebsiteWorkflowStatus's
+# docstring for the full state diagram and why it lives alongside (not
+# instead of) the boolean checkpoints. DEPLOYED has no outgoing edges:
+# it's terminal for this version, a new build starts its own DRAFT.
+ALLOWED_TRANSITIONS: dict[WebsiteWorkflowStatus, set[WebsiteWorkflowStatus]] = {
+    WebsiteWorkflowStatus.DRAFT: {WebsiteWorkflowStatus.INTERNAL_REVIEW},
+    WebsiteWorkflowStatus.INTERNAL_REVIEW: {
+        WebsiteWorkflowStatus.CLIENT_REVIEW,
+        WebsiteWorkflowStatus.CHANGES_REQUESTED,
+        WebsiteWorkflowStatus.DRAFT,
+    },
+    WebsiteWorkflowStatus.CLIENT_REVIEW: {WebsiteWorkflowStatus.APPROVED, WebsiteWorkflowStatus.CHANGES_REQUESTED},
+    WebsiteWorkflowStatus.CHANGES_REQUESTED: {WebsiteWorkflowStatus.DRAFT, WebsiteWorkflowStatus.INTERNAL_REVIEW},
+    WebsiteWorkflowStatus.APPROVED: {WebsiteWorkflowStatus.READY_TO_DEPLOY, WebsiteWorkflowStatus.CHANGES_REQUESTED},
+    WebsiteWorkflowStatus.READY_TO_DEPLOY: {WebsiteWorkflowStatus.DEPLOYED, WebsiteWorkflowStatus.CHANGES_REQUESTED},
+    WebsiteWorkflowStatus.DEPLOYED: set(),
+}
+
+
+def _apply_transition(
+    db: Session,
+    website: Website,
+    to_status: WebsiteWorkflowStatus,
+    *,
+    actor_id: uuid.UUID | None,
+    actor_label: str | None,
+    notes: str | None,
+    validate: bool = True,
+) -> None:
+    """Mutates `website.workflow_status` and stages a history row.
+    `validate=False` is only for the content-edit safety reset below —
+    every operator- or client-driven transition goes through the
+    legality check."""
+    from_status = website.workflow_status
+    if validate:
+        allowed = ALLOWED_TRANSITIONS.get(from_status, set())
+        if to_status not in allowed:
+            valid = ", ".join(s.value for s in allowed) or "none — this is a terminal state"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot move this version from '{from_status.value}' to '{to_status.value}'. Valid next states: {valid}.",
+            )
+    website.workflow_status = to_status
+    db.add(
+        WebsiteWorkflowTransition(
+            website_id=website.id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_user_id=actor_id,
+            actor_label=actor_label,
+            notes=notes,
+        )
+    )
 
 
 def _split(text: str | None) -> list[str]:
@@ -467,6 +524,24 @@ def update_section(
             # that never saw it.
             if _revert_qa_approvals(db, website.id):
                 reverted.append("QA")
+            # Same contract extended to the Task 3 workflow state: a
+            # version that has already moved past DRAFT (into review,
+            # approved, even ready-to-deploy) had its content re-edited
+            # out from under it, so it can no longer be trusted at
+            # whatever stage it reached — bypasses the normal transition
+            # graph (validate=False) since this reset is a safety net,
+            # not a step someone chose to take.
+            if website.workflow_status != WebsiteWorkflowStatus.DRAFT:
+                _apply_transition(
+                    db,
+                    website,
+                    WebsiteWorkflowStatus.DRAFT,
+                    actor_id=None,
+                    actor_label="system",
+                    notes="Content edited after this version had progressed — reset to draft",
+                    validate=False,
+                )
+                reverted.append("workflow status")
 
         summary = f"Updated a {slot['type']} section" + (" and approved it" if data.approved else "")
         if reverted:
@@ -581,6 +656,110 @@ def client_approve_website(
     return get_website(db, workspace_id, website_id)
 
 
+def transition_website_workflow(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, website_id: uuid.UUID, request: WorkflowTransitionRequest
+) -> WebsiteRead | None:
+    """The explicit, operator-driven approval-workflow step (Phase 6
+    Task 3) — 400s with the valid next states rather than silently
+    clamping to the nearest legal one, so an operator always knows
+    exactly why an action was refused."""
+    website = _get_website_in_workspace(db, workspace_id, website_id)
+    if website is None:
+        return None
+
+    actor = db.get(User, actor_id)
+    _apply_transition(
+        db, website, request.to_status, actor_id=actor_id, actor_label=actor.name if actor else None, notes=request.notes
+    )
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=website.project_id,
+        action="website_workflow_transitioned",
+        summary=f"Moved website version to {request.to_status.value.replace('_', ' ')}",
+    )
+    db.commit()
+    return get_website(db, workspace_id, website_id)
+
+
+def apply_client_decision(
+    db: Session, website: Website, to_status: WebsiteWorkflowStatus, actor_label: str, notes: str | None
+) -> None:
+    """Called from modules/website_feedback/service.py when a client
+    submits APPROVAL/REJECTION/CHANGE_REQUEST feedback through a preview
+    link — the client's own action driving the workflow forward, same as
+    an operator's transition_website_workflow call but with no User to
+    attribute it to. Deliberately best-effort/silent rather than 400ing:
+    feedback is still recorded either way (see submit_feedback), and a
+    client leaving a comment on a version that isn't currently in
+    CLIENT_REVIEW (an old version, or one the operator hasn't sent out
+    yet) shouldn't be able to move a workflow state it was never
+    watching. Does not commit — the caller's own transaction covers it,
+    same convention as activity_service.record."""
+    if website.workflow_status != WebsiteWorkflowStatus.CLIENT_REVIEW:
+        return
+    if to_status not in ALLOWED_TRANSITIONS.get(website.workflow_status, set()):
+        return
+    _apply_transition(db, website, to_status, actor_id=None, actor_label=actor_label, notes=notes)
+
+
+def mark_deployed(db: Session, website: Website) -> None:
+    """Called from modules/deployments/service.py on a successful
+    execute — the only workflow transition that isn't triggered by a
+    person clicking a button, since "deployed" simply means the deploy
+    actually succeeded. A no-op (not an error) if the version somehow
+    isn't READY_TO_DEPLOY when this runs, since create_deployment/
+    execute_deployment already independently re-verify that gate; this
+    is belt-and-suspenders, not the primary enforcement point. Does not
+    commit — rides along in execute_deployment's own transaction."""
+    if website.workflow_status != WebsiteWorkflowStatus.READY_TO_DEPLOY:
+        return
+    _apply_transition(
+        db, website, WebsiteWorkflowStatus.DEPLOYED, actor_id=None, actor_label="system: deployment succeeded", notes=None
+    )
+
+
+def is_ready_to_deploy(website: Website) -> bool:
+    """A version is safe to (re-)publish once it's READY_TO_DEPLOY, or
+    once it's already DEPLOYED — redeploying the same still-valid
+    version (refreshing a live site, deploying it to a second
+    environment) is legitimate, not a bypass: DEPLOYED only means "this
+    exact version previously went live and nothing has invalidated it
+    since" (an edit resets an already-DEPLOYED version back to DRAFT,
+    same as any other stage). Shared by modules/deployments/service.py's
+    own gate and modules/approvals/service.py's `can_deploy` so the two
+    never disagree about whether a deploy attempt will actually succeed."""
+    return website.workflow_status in (WebsiteWorkflowStatus.READY_TO_DEPLOY, WebsiteWorkflowStatus.DEPLOYED)
+
+
+def get_workflow_history(db: Session, workspace_id: uuid.UUID, website_id: uuid.UUID) -> list[WorkflowTransitionRead] | None:
+    website = _get_website_in_workspace(db, workspace_id, website_id)
+    if website is None:
+        return None
+
+    transitions = db.scalars(
+        select(WebsiteWorkflowTransition)
+        .where(WebsiteWorkflowTransition.website_id == website_id)
+        .order_by(WebsiteWorkflowTransition.created_at)
+        .options(joinedload(WebsiteWorkflowTransition.actor_user))
+    )
+    return [
+        WorkflowTransitionRead(
+            id=t.id,
+            from_status=t.from_status,
+            to_status=t.to_status,
+            actor_user_name=t.actor_user.name if t.actor_user else None,
+            actor_label=t.actor_label,
+            notes=t.notes,
+            created_at=t.created_at,
+        )
+        for t in transitions
+    ]
+
+
 def _base_query(workspace_id: uuid.UUID):
     return (
         select(Website)
@@ -604,6 +783,7 @@ def list_websites(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -
         WebsiteSummary(
             id=w.id,
             status=w.status,
+            workflow_status=w.workflow_status,
             anti_slop_score=w.anti_slop_score,
             flagged_for_review=w.flagged_for_review,
             generated_by_user_name=w.generated_by_user.name if w.generated_by_user else None,
@@ -625,6 +805,7 @@ def get_website(db: Session, workspace_id: uuid.UUID, website_id: uuid.UUID) -> 
         id=website.id,
         project_id=website.project_id,
         status=website.status,
+        workflow_status=website.workflow_status,
         navigation=config["navigation"],
         footer=config["footer"],
         pages=config["pages"],

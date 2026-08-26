@@ -11,6 +11,135 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — Phase 6 part 2: deployment adapter architecture + delivery workflow
+**Mode:** worktree (`phase6-part2-deployment-delivery`)
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/integrations/deployment/ (new package,
+replaces integrations/deployment.py), apps/api/app/core/settings.py,
+apps/api/.env.example, apps/api/app/modules/deployments/{models,schemas,
+service,routes}.py, apps/api/app/modules/projects/{models,schemas,
+service,routes}.py, two alembic migrations, apps/web/src/lib/api.ts,
+apps/web/src/components/{DeploymentPanel,DeliveryPanel}.tsx,
+apps/web/src/app/dashboard/projects/[id]/page.tsx, docs.
+
+**What happened:** Two-task session, two commits per the operator's
+explicit split.
+
+Task 1 — turned the single-file `MockDeploymentProvider` into a real
+adapter architecture: `integrations/deployment/` package with a
+`DeploymentProvider` interface (`validate_config`/`build`/`deploy`/
+`get_status`/`rollback`), a shared `build_static_site` step (site config
+-> real, minimal, deployable HTML/CSS), and real adapters for Vercel
+(inline-file deploy API), Netlify (zip deploy + real restore-based
+rollback), Cloudflare Pages (direct-upload API), and traditional hosting
+(stdlib `ftplib`, FTPS by default) — every credential read only from
+`app.core.settings`/`.env`, every real provider's factory fails loudly
+(`DeploymentProviderError`) if unconfigured rather than silently
+deploying through mock. `DEPLOY_PROVIDER` still defaults to `mock`.
+`Deployment` gained `provider_ref` for status polling/native rollback.
+18 new provider tests (mocked httpx/ftplib, same pattern as the existing
+`ResendEmailProvider` tests) plus the existing deployment suite updated
+for the new `build()`+`deploy(bundle, artifact)` two-phase call. Full
+backend suite (684 tests) green before committing
+(`d47c88b feat: build deployment architecture`).
+
+Task 2 — completed the delivery workflow: `check-status` (re-poll a
+provider's status — a no-op today since no provider here has an async
+build yet, but the real extension point for one that does) and `verify`
+(reuses the existing SSRF-guarded `fetch_page_signals` to confirm a
+deployment's URL is genuinely live; a `mock` deployment is recorded as a
+simulated pass, never a real fetch against its fake `.mock-deploy.internal`
+URL) endpoints on `Deployment`. `Project` gained `delivered_at`/
+`delivered_by_user_id`, set only by the new `mark_delivered`
+(`POST /projects/{id}/deliver`), gated on the latest deployment being
+successful *and* verified plus every item on the existing post-launch
+handover checklist (`DEFAULT_LAUNCH_TASK_TITLES`, already seeded on
+first deploy — reused as the "final delivery checklist" rather than
+inventing a second one) checked off; `GET /projects/{id}/delivery-status`
+reports every missing reason at once, same shape as the approvals
+endpoint. Frontend: `DeploymentPanel` gained "Check status"/"Verify"
+actions and a verified badge; a new `DeliveryPanel` shows the checklist
+(checkable inline) and a "Mark project delivered" button; the project
+page header shows a "Delivered" badge once set.
+
+Verified for real, not just by test suite: stood up isolated scratch
+Postgres DBs + API/web dev servers on non-default ports (8091/3091 —
+another concurrent worktree session already had 8000/3000 and, it
+turned out, 8010/3010 too), monkeypatched the two LLM-backed generation
+agents the way the test suite does so a full brief -> creative direction
+-> sitemap -> website -> QA -> client-approval chain could be built
+without a real Claude API key, then drove the actual browser via
+Playwright through prepare -> execute -> verify -> check off all five
+checklist items -> mark delivered, confirming the UI state (verified
+badge, checklist gating the delivered button, "Delivered" badge,
+project stage flipping to `complete`) at every step. Full backend suite
+green again (704 tests, including the new delivery tests), frontend
+`next build`/`tsc`/`vitest` all clean. Second commit:
+`feat: complete website delivery workflow`.
+
+**Blockers / follow-ups:** None outstanding for this scope. The build
+step is a deliberately minimal static-HTML exporter, not a port of
+`packages/site-templates` — a pixel-accurate static export is separate,
+later work (see 05_DECISIONS). Real provider adapters (Vercel/Netlify/
+Cloudflare/traditional) have never been exercised against a live
+account — no real hosting credentials exist for this project yet, same
+"nothing here is a live, publicly reachable site" caveat the mock
+provider has always carried.
+
+---
+
+## 2026-08-26 — Phase 6: secure website previews, client feedback, approval workflow
+**Mode:** worktree (`phase6-preview-feedback-approval`)
+**Merge to main after:** yes
+**Scope touched:** apps/api (new `modules/previews/`, `modules/website_feedback/`;
+`modules/websites/` gained `WebsiteWorkflowStatus`/`WebsiteWorkflowTransition`;
+`modules/deployments/service.py` gained the workflow gate; 3 migrations),
+apps/web (new `/preview/[token]` public page, `PreviewSiteRenderer`,
+`PreviewFeedbackForm`, `PreviewLinksPanel`, `WebsiteFeedbackPanel`,
+`WebsiteWorkflowPanel`; `lib/api.ts` and new `lib/previewApi.ts`)
+**What happened:** Closed roadmap M5's last open item across three
+commits — see [[05_DECISIONS]]'s 2026-08-26 entry for the full design.
+Task 1: token-based `PreviewLink` (client/internal audience, desktop/
+tablet/mobile toggle, version selection, expiration/revocation) and a
+public preview page rendering the real site via a new self-contained
+`PreviewSiteRenderer` (not a reuse of `packages/site-templates` — no
+cross-package workspace tooling exists in this repo to share its
+build-less `@/...` imports). Task 2: `WebsiteFeedback` submitted
+through the same token, tied to project/version/page/status. Task 3:
+a formal `WebsiteWorkflowStatus` state machine on `Website` plus
+transition history, layered on top of (not replacing) the existing
+boolean approval checkpoints, wired into `modules/deployments/` so
+neither creating nor executing a deployment can bypass it. Every new
+route/service has real backend test coverage (previews: 17, feedback:
+12, workflow: 19 — all passing alongside the pre-existing suite), and
+each of the three surfaces was verified in a real browser via
+Playwright against locally-run dev servers (API on :8010, web on
+:3010, to avoid colliding with another session already on the default
+ports) — public preview loads/renders/device-toggles, feedback
+submission shows up live in the operator panel and is resolvable,
+workflow transitions and history render and update correctly. A real
+integration gap only surfaced during that browser/test pass, not code
+review: `previews.service._is_visible` initially only checked the old
+`Website.approved` boolean, so a version driven through the *new*
+workflow to CLIENT_REVIEW was invisible on a CLIENT-audience link —
+fixed by making visibility an OR of both checkpoints (see decisions
+entry). A second gap: gating deployment strictly on
+`workflow_status == READY_TO_DEPLOY` broke the existing "redeploy the
+same version" test, since a successful deploy advances it to the
+terminal DEPLOYED state — fixed by accepting both READY_TO_DEPLOY and
+already-DEPLOYED as deployable.
+**Blockers/notes:** Port 8000/3000 and their `.venv`/`node_modules`
+were already in use by another session's dev servers when this session
+tried to browser-verify — worked around by running on :8010/:3010
+against a `node_modules` real-installed in the worktree (a symlinked
+one broke Turbopack: "Symlink [project]/node_modules is invalid, it
+points out of the filesystem root") and the main checkout's Python
+`.venv` invoked by absolute path (worktrees don't get their own
+`.venv`). All smoke-test data (a throwaway business/client/project/
+website/user) was deleted from the shared local dev Postgres afterward.
+
+---
+
 ## 2026-08-26 — Phase 4 "lead to client conversion": audit + hardening, not a rebuild
 
 **Mode:** worktree (`lead-to-client-conversion`, background job)

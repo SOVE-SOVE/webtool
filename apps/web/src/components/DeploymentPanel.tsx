@@ -66,6 +66,32 @@ export function DeploymentPanel({
     }
   }
 
+  async function checkStatus(id: string) {
+    setBusyId(id);
+    setActionError(null);
+    try {
+      await api.checkDeploymentStatus(id);
+      onChanged();
+    } catch {
+      setActionError("Couldn't check the deployment's status.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function verify(id: string) {
+    setBusyId(id);
+    setActionError(null);
+    try {
+      await api.verifyDeployment(id);
+      onChanged();
+    } catch {
+      setActionError("Verification failed — the deployed URL didn't load cleanly.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="mt-3 border-t border-neutral-100 pt-3">
       <div className="flex items-center gap-3">
@@ -89,6 +115,15 @@ export function DeploymentPanel({
                   <span className="rounded bg-white/60 px-1.5 py-0.5 font-medium uppercase tracking-wide">
                     {d.status}
                   </span>
+                  {d.status === "success" && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 font-medium uppercase tracking-wide ${
+                        d.verified_at ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {d.verified_at ? "Verified" : "Unverified"}
+                    </span>
+                  )}
                   <span>
                     {d.environment} · via {d.target}
                     {d.rollback_of_deployment_id && " · rollback"}
@@ -115,6 +150,24 @@ export function DeploymentPanel({
                       {busyId === d.id ? "Running…" : d.status === "failed" ? "Retry" : "Execute"}
                     </button>
                   )}
+                  {d.status === "running" && (
+                    <button
+                      onClick={() => checkStatus(d.id)}
+                      disabled={busyId === d.id}
+                      className="rounded border border-current px-2 py-0.5 font-medium hover:opacity-75 disabled:opacity-50"
+                    >
+                      {busyId === d.id ? "Checking…" : "Check status"}
+                    </button>
+                  )}
+                  {d.status === "success" && !d.verified_at && (
+                    <button
+                      onClick={() => verify(d.id)}
+                      disabled={busyId === d.id}
+                      className="rounded border border-current px-2 py-0.5 font-medium hover:opacity-75 disabled:opacity-50"
+                    >
+                      {busyId === d.id ? "Verifying…" : "Verify"}
+                    </button>
+                  )}
                   {d.status === "success" && d.id !== deployments.find((x) => x.status === "success")?.id && (
                     <button
                       onClick={() => rollback(d.id)}
@@ -130,6 +183,12 @@ export function DeploymentPanel({
                   says outright that nothing was published; showing a green
                   "SUCCESS" without it reads as a real launch. */}
               {typeof d.result?.note === "string" && <p className="mt-1 font-medium">{d.result.note}</p>}
+              {d.verified_at && (
+                <p className="mt-1 text-emerald-700">
+                  Verified{d.verified_by_user_name ? ` by ${d.verified_by_user_name}` : ""} on{" "}
+                  {new Date(d.verified_at).toLocaleString()}
+                </p>
+              )}
               {d.error_message && <p className="mt-1 text-red-700">{d.error_message}</p>}
               {d.notes && <p className="mt-1 text-neutral-500">{d.notes}</p>}
             </li>

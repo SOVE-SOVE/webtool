@@ -287,8 +287,26 @@ export type Project = {
   deadline: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
+  delivered_at: string | null;
+  delivered_by_user_name: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type DeliveryChecklistItem = {
+  task_id: string;
+  title: string;
+  done: boolean;
+};
+
+export type DeliveryStatus = {
+  can_deliver: boolean;
+  already_delivered: boolean;
+  has_successful_deployment: boolean;
+  deployment_verified: boolean;
+  latest_deployment_url: string | null;
+  checklist: DeliveryChecklistItem[];
+  missing: string[];
 };
 
 export type ProjectCreate = {
@@ -769,6 +787,60 @@ export type SitemapPageOrderItem = {
 export const WEBSITE_STATUSES = ["draft", "live"] as const;
 export type WebsiteStatus = (typeof WEBSITE_STATUSES)[number];
 
+// Phase 6 Task 3's formal approval workflow — layered on top of the
+// approved/client_approved booleans below, not replacing them. See
+// apps/api's modules/websites/models.py's WebsiteWorkflowStatus
+// docstring for the full state diagram.
+export const WEBSITE_WORKFLOW_STATUSES = [
+  "draft",
+  "internal_review",
+  "client_review",
+  "changes_requested",
+  "approved",
+  "ready_to_deploy",
+  "deployed",
+] as const;
+export type WebsiteWorkflowStatus = (typeof WEBSITE_WORKFLOW_STATUSES)[number];
+
+export const WORKFLOW_STATUS_LABELS: Record<WebsiteWorkflowStatus, string> = {
+  draft: "Draft",
+  internal_review: "Internal review",
+  client_review: "Client review",
+  changes_requested: "Changes requested",
+  approved: "Approved",
+  ready_to_deploy: "Ready to deploy",
+  deployed: "Deployed",
+};
+
+// Mirrors apps/api's modules/websites/service.py ALLOWED_TRANSITIONS —
+// duplicated here only to decide which buttons to show; the server
+// re-validates every transition regardless, so this being out of sync
+// would only affect which buttons appear, never what's actually allowed.
+export const WORKFLOW_TRANSITIONS: Record<WebsiteWorkflowStatus, WebsiteWorkflowStatus[]> = {
+  draft: ["internal_review"],
+  internal_review: ["client_review", "changes_requested", "draft"],
+  client_review: ["approved", "changes_requested"],
+  changes_requested: ["draft", "internal_review"],
+  approved: ["ready_to_deploy", "changes_requested"],
+  ready_to_deploy: ["deployed", "changes_requested"],
+  deployed: [],
+};
+
+export type WorkflowTransitionRequest = {
+  to_status: WebsiteWorkflowStatus;
+  notes?: string;
+};
+
+export type WorkflowTransition = {
+  id: string;
+  from_status: WebsiteWorkflowStatus;
+  to_status: WebsiteWorkflowStatus;
+  actor_user_name: string | null;
+  actor_label: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
 export const QUALITY_ISSUE_SEVERITIES = ["high", "medium", "low"] as const;
 export type QualityIssueSeverity = (typeof QUALITY_ISSUE_SEVERITIES)[number];
 
@@ -809,6 +881,7 @@ export type Website = {
   id: string;
   project_id: string;
   status: WebsiteStatus;
+  workflow_status: WebsiteWorkflowStatus;
   navigation: WebsiteSection;
   footer: WebsiteSection;
   pages: WebsitePage[];
@@ -837,6 +910,7 @@ export type Website = {
 export type WebsiteSummary = {
   id: string;
   status: WebsiteStatus;
+  workflow_status: WebsiteWorkflowStatus;
   anti_slop_score: number | null;
   flagged_for_review: boolean;
   generated_by_user_name: string | null;
@@ -955,12 +1029,15 @@ export type Deployment = {
   environment: string;
   target: string;
   url: string | null;
+  provider_ref: string | null;
   status: DeploymentStatus;
   result: Record<string, unknown> | null;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
   deployed_at: string | null;
+  verified_at: string | null;
+  verified_by_user_name: string | null;
   rollback_of_deployment_id: string | null;
   approved_by_user_name: string | null;
   notes: string | null;
@@ -975,6 +1052,70 @@ export type CreateDeploymentRequest = {
 export type RollbackDeploymentRequest = {
   target_deployment_id: string;
   notes?: string;
+};
+
+// Secure client/internal preview links (roadmap M5's "secure shareable
+// client-preview link with feedback capture") — see apps/api's
+// modules/previews/. One project can have several links (e.g. one
+// client-facing, one internal); `url` only comes back on the create
+// response, since the raw token isn't recoverable afterward.
+export const PREVIEW_AUDIENCES = ["client", "internal"] as const;
+export type PreviewAudience = (typeof PREVIEW_AUDIENCES)[number];
+
+export type PreviewLink = {
+  id: string;
+  project_id: string;
+  audience: PreviewAudience;
+  label: string | null;
+  url: string | null;
+  token_suffix: string;
+  active: boolean;
+  revoked: boolean;
+  expired: boolean;
+  expires_at: string | null;
+  last_accessed_at: string | null;
+  access_count: number;
+  created_by_user_name: string | null;
+  created_at: string;
+};
+
+export type PreviewLinkCreate = {
+  audience?: PreviewAudience;
+  label?: string;
+  // Omitted defaults to 14 days server-side; null never expires.
+  expires_in_days?: number | null;
+};
+
+// Client feedback captured directly on a website preview (Phase 6 Task
+// 2) — apps/api's modules/website_feedback/. Submission itself happens
+// on the public preview page (see lib/previewApi.ts); these are the
+// operator-side read/triage endpoints.
+export const FEEDBACK_TYPES = ["comment", "change_request", "approval", "rejection", "general"] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
+export const FEEDBACK_STATUSES = ["open", "acknowledged", "resolved", "dismissed"] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+export type WebsiteFeedback = {
+  id: string;
+  project_id: string;
+  website_id: string;
+  feedback_type: FeedbackType;
+  message: string;
+  page_slug: string | null;
+  section_id: string | null;
+  client_name: string | null;
+  client_email: string | null;
+  status: FeedbackStatus;
+  resolved_by_user_name: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+  created_at: string;
+};
+
+export type FeedbackStatusUpdate = {
+  status: FeedbackStatus;
+  resolution_notes?: string;
 };
 
 // The three first-contact channels a qualified lead can be drafted for.
@@ -1536,6 +1677,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data ?? {}),
     }),
+  transitionWebsiteWorkflow: (websiteId: string, data: WorkflowTransitionRequest) =>
+    request<Website>(`/api/v1/websites/${websiteId}/workflow-transition`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listWorkflowHistory: (websiteId: string) =>
+    request<WorkflowTransition[]>(`/api/v1/websites/${websiteId}/workflow-history`),
 
   generateQaReport: (websiteId: string, data?: GenerateQaReportRequest) =>
     request<QaReport>(`/api/v1/websites/${websiteId}/qa-reports`, {
@@ -1557,11 +1705,30 @@ export const api = {
   listDeployments: (projectId: string) => request<Deployment[]>(`/api/v1/projects/${projectId}/deployments`),
   getDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}`),
   executeDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/execute`, { method: "POST" }),
+  checkDeploymentStatus: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/check-status`, { method: "POST" }),
+  verifyDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/verify`, { method: "POST" }),
+  getDeliveryStatus: (projectId: string) => request<DeliveryStatus>(`/api/v1/projects/${projectId}/delivery-status`),
+  deliverProject: (projectId: string) => request<Project>(`/api/v1/projects/${projectId}/deliver`, { method: "POST" }),
   rollbackDeployment: (projectId: string, data: RollbackDeploymentRequest) =>
     request<Deployment>(`/api/v1/projects/${projectId}/deployments/rollback`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  createPreviewLink: (projectId: string, data?: PreviewLinkCreate) =>
+    request<PreviewLink>(`/api/v1/projects/${projectId}/previews`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listPreviewLinks: (projectId: string) => request<PreviewLink[]>(`/api/v1/projects/${projectId}/previews`),
+  revokePreviewLink: (id: string) => request<PreviewLink>(`/api/v1/previews/${id}/revoke`, { method: "POST" }),
+
+  listWebsiteFeedback: (projectId: string, websiteId?: string) =>
+    request<WebsiteFeedback[]>(
+      `/api/v1/projects/${projectId}/feedback${websiteId ? `?website_id=${websiteId}` : ""}`,
+    ),
+  updateWebsiteFeedbackStatus: (id: string, data: FeedbackStatusUpdate) =>
+    request<WebsiteFeedback>(`/api/v1/feedback/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

@@ -368,13 +368,36 @@ Goal: stages 15–18. First real reusable output.
       what's missing, and the deployment gate independently re-verifies
       all six prior checkpoints' *current* state rather than trusting
       an earlier gate already covered it. See [[05_DECISIONS]].
-- [ ] A secure shareable client-preview link with feedback capture —
-      still not built. "Client review" today is an operator recording
-      that the client approved (by email/call/etc, see
-      [[03_AGENT_RULES]]'s existing "Client approval communication"
-      note), not the client viewing/interacting with anything
-      themselves — there's no client-facing surface in this app at all
-      yet.
+- [x] A secure shareable client-preview link with feedback capture —
+      built as Phase 6, three parts. **Previews** (`modules/previews/`):
+      a token-based link per project (SHA-256 hash stored, raw token
+      shown once at creation), CLIENT or INTERNAL audience, desktop/
+      tablet/mobile device toggle and version/page pickers on the public
+      `/preview/[token]` page, expiration (default 14 days) and explicit
+      revocation. A CLIENT link only ever resolves a version that's
+      cleared either the original `Website.approved` checkpoint or the
+      new workflow reaching CLIENT_REVIEW+ — "do not expose unpublished
+      websites publicly" enforced server-side, not just hidden in the
+      UI. **Feedback** (`modules/website_feedback/`): comment/change
+      request/approval/rejection/general feedback, tied to project,
+      exact website version, page/section where picked, who left it (no
+      client login — free-text name/email), timestamp, and status
+      (open/acknowledged/resolved/dismissed). **Formal approval workflow**
+      (`WebsiteWorkflowStatus` on `Website` + `WebsiteWorkflowTransition`
+      history): DRAFT → INTERNAL_REVIEW → CLIENT_REVIEW →
+      CHANGES_REQUESTED → APPROVED → READY_TO_DEPLOY → DEPLOYED, legal
+      transitions enforced server-side, layered *on top of* (not
+      replacing) the existing boolean checkpoints. A client's own
+      APPROVAL/REJECTION/CHANGE_REQUEST feedback drives CLIENT_REVIEW →
+      APPROVED/CHANGES_REQUESTED automatically; editing a section on a
+      version past DRAFT resets it back to DRAFT (same "edit reverts
+      approval" contract the booleans already had). `modules/
+      deployments/` now refuses to create *or* execute a deployment
+      unless the version is READY_TO_DEPLOY (or already DEPLOYED, for a
+      legitimate redeploy of the same version), re-checked fresh at both
+      points — "require explicit approval before deployment" and
+      "prevent accidental deployment of unapproved versions" enforced at
+      the data layer. See [[05_DECISIONS]].
 
 ## M6 — Deployment + maintenance
 
@@ -397,6 +420,47 @@ Goal: stages 19–20. Close the loop to revenue.
       Rollback/version selection re-runs a prior *successful* deployment
       of an older website version, re-verifying that version's own
       approval/QA/client-review flags first. See [[05_DECISIONS]].
+- [x] Provider-agnostic deployment adapter architecture (phase 6 part 2)
+      — `integrations/deployment.py`'s single-file mock became a real
+      package (`integrations/deployment/`): a `DeploymentProvider`
+      interface (`validate_config`/`build`/`deploy`/`get_status`/
+      `rollback`), a shared static-site build step
+      (`build.py::build_static_site`, config -> real HTML/CSS files —
+      minimal but genuinely deployable, not a port of `packages/
+      site-templates`), and real adapters for Vercel, Netlify,
+      Cloudflare Pages, and traditional (FTP/FTPS) hosting alongside
+      the existing mock, selected via `DEPLOY_PROVIDER` — still
+      defaults to `mock`, and every real provider fails loudly rather
+      than silently deploying through mock when its own credentials
+      (env-var-only, never hardcoded — see `.env.example`) aren't set.
+      `Deployment` gained `provider_ref` (a real provider's own
+      deployment id) for status polling and provider-native rollback
+      (Netlify's own restore API; every other provider falls back to
+      re-running build+deploy, same as before). Deployment is still
+      never automatic — `execute_deployment` remains a separate,
+      explicit call from `create_deployment`. See [[05_DECISIONS]].
+- [x] Delivery workflow completed (phase 6 part 2) — the deploy step
+      above now has a "monitor -> receive URL -> verify -> deliver"
+      tail: `POST .../deployments/{id}/check-status` re-polls a real
+      provider's own status (a no-op refresh for every provider today,
+      since none of them have an async build to watch yet — the real
+      extension point for one that does); `POST .../deployments/{id}/
+      verify` reuses `integrations/browser.py`'s SSRF-guarded
+      `fetch_page_signals` to confirm a real deployment's URL actually
+      loads (a `mock` deployment is recorded as a simulated pass — its
+      URL was never reachable in the first place, see
+      `integrations/deployment/mock_provider.py`), setting
+      `Deployment.verified_at`. `Project` gained `delivered_at`/
+      `delivered_by_user_id`, set only by the new `POST /projects/{id}/
+      deliver`, which refuses (`GET .../delivery-status` reports every
+      reason why, all at once) unless the latest deployment succeeded
+      *and* was verified *and* every item on the final delivery
+      checklist — the existing post-launch handover tasks seeded on
+      first deploy (`DEFAULT_LAUNCH_TASK_TITLES`) — is checked off.
+      Advances the project to `COMPLETE`. Surfaced on the project page
+      as a "Verify"/"Check status" pair on each deployment row and a
+      `DeliveryPanel` (checklist + "Mark project delivered") alongside
+      the existing deployment history/rollback UI. See [[05_DECISIONS]].
 - [ ] Payment/invoicing (Stripe) tied to the deploy step.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.

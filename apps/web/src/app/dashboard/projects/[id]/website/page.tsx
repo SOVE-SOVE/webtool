@@ -6,6 +6,9 @@ import { useEffect, useState } from "react";
 import { api, type QaReport, type Website, type WebsiteSummary } from "@/lib/api";
 import { WebsiteView } from "@/components/WebsiteView";
 import { QaReportView } from "@/components/QaReportView";
+import { PreviewLinksPanel } from "@/components/PreviewLinksPanel";
+import { WebsiteFeedbackPanel } from "@/components/WebsiteFeedbackPanel";
+import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
 
 export default function ProjectWebsitePage() {
   const params = useParams<{ id: string }>();
@@ -263,6 +266,8 @@ export default function ProjectWebsitePage() {
         </div>
       )}
 
+      {website && <WebsiteWorkflowPanel website={website} onChange={applyWebsiteApproval} />}
+
       {website && (
         <div className="mt-6">
           <WebsiteView website={website} onChange={handleWebsiteChange} />
@@ -321,6 +326,9 @@ export default function ProjectWebsitePage() {
           )}
         </div>
       )}
+
+      <PreviewLinksPanel projectId={projectId} />
+      {website && <WebsiteFeedbackPanel projectId={projectId} websiteId={website.id} />}
     </div>
   );
 }
