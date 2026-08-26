@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.integrations.discovery import registry
 from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
+from app.jobs import job_types
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
 from app.modules.businesses.models import Business
 from app.modules.discovery import dedup
+from app.modules.jobs import service as jobs_service
 from app.modules.discovery.models import (
     DiscoveredBusiness,
     DiscoveredBusinessStatus,
@@ -132,6 +134,7 @@ def create_and_run_search(
 
     query_sent = " ".join(p for p in (data.industry, data.business_type, data.keywords, data.location) if p)
 
+    created_businesses: list[DiscoveredBusiness] = []
     for result in raw_results:
         dedup_key = dedup.compute_dedup_key(result.name, result.suburb, result.state)
         duplicate_of_business = dedup.find_existing_business_match(db, workspace_id, result)
@@ -141,28 +144,28 @@ def create_and_run_search(
             else dedup.find_duplicate_discovered_business(db, workspace_id, result, dedup_key)
         )
 
-        db.add(
-            DiscoveredBusiness(
-                discovery_search_id=search.id,
-                name=result.name,
-                industry=result.industry,
-                website_url=result.website_url,
-                phone=result.phone,
-                email=result.email,
-                address=result.address,
-                suburb=result.suburb,
-                state=result.state,
-                postcode=result.postcode,
-                social_links="\n".join(result.social_links) or None,
-                source_provider=provider_name,
-                source_query=query_sent,
-                source_external_id=result.source_external_id,
-                dedup_key=dedup_key,
-                duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
-                duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
-                status=DiscoveredBusinessStatus.NEW,
-            )
+        business = DiscoveredBusiness(
+            discovery_search_id=search.id,
+            name=result.name,
+            industry=result.industry,
+            website_url=result.website_url,
+            phone=result.phone,
+            email=result.email,
+            address=result.address,
+            suburb=result.suburb,
+            state=result.state,
+            postcode=result.postcode,
+            social_links="\n".join(result.social_links) or None,
+            source_provider=provider_name,
+            source_query=query_sent,
+            source_external_id=result.source_external_id,
+            dedup_key=dedup_key,
+            duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
+            duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
+            status=DiscoveredBusinessStatus.NEW,
         )
+        db.add(business)
+        created_businesses.append(business)
 
     search.status = DiscoverySearchStatus.COMPLETED
     search.result_count = len(raw_results)
@@ -180,6 +183,24 @@ def create_and_run_search(
 
     db.commit()
     db.refresh(search)
+
+    # Phase 7 Task 3 ("scheduled website research"): every genuinely new
+    # candidate (not a duplicate of something already known) automatically
+    # gets research/analysis/scoring queued — see
+    # app/modules/business_research/automation.py. A duplicate is skipped
+    # here for the same reason run_research's own freshness cache exists:
+    # don't spend a research cycle on a business this workspace already
+    # has a recent read on.
+    for business in created_businesses:
+        if business.duplicate_of_business_id is None and business.duplicate_of_discovered_business_id is None:
+            jobs_service.enqueue(
+                db,
+                workspace_id=workspace_id,
+                job_type=job_types.PROSPECT_RESEARCH,
+                payload={"discovered_business_id": str(business.id)},
+                actor_id=actor_id,
+            )
+
     return DiscoverySearchRead.model_validate(search)
 
 

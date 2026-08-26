@@ -11,6 +11,7 @@ from typing import Callable
 from sqlalchemy.orm import Session
 
 from app.jobs import job_types
+from app.modules.business_research.automation import run_prospect_research
 from app.modules.discovery.automation import run_lead_discovery_batch
 from app.modules.jobs.models import Job
 
@@ -18,4 +19,5 @@ JobHandler = Callable[[Session, Job], dict | None]
 
 HANDLERS: dict[str, JobHandler] = {
     job_types.LEAD_DISCOVERY_BATCH: run_lead_discovery_batch,
+    job_types.PROSPECT_RESEARCH: run_prospect_research,
 }

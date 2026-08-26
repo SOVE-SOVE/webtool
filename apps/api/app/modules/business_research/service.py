@@ -71,6 +71,8 @@ def run_research(
         confirmed_facts=_split(output.confirmed_facts),
         inferred_facts=_split(output.inferred_facts),
         unavailable_fields=_split(output.unavailable_fields),
+        provider="browser",
+        confidence=result.confidence,
         research_error=output.research_error,
     )
     db.add(row)

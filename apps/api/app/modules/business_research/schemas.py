@@ -32,6 +32,8 @@ class BusinessResearchResultRead(BaseModel):
     inferred_facts: list[str]
     unavailable_fields: list[str]
 
+    provider: str
+    confidence: float | None
     research_error: str | None
     researched_at: datetime
 
@@ -56,6 +58,8 @@ class BusinessResearchResultRead(BaseModel):
             confirmed_facts=_split(result.confirmed_facts),
             inferred_facts=_split(result.inferred_facts),
             unavailable_fields=_split(result.unavailable_fields),
+            provider=result.provider,
+            confidence=result.confidence,
             research_error=result.research_error,
             researched_at=result.researched_at,
         )

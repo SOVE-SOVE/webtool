@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,6 +59,17 @@ class BusinessResearchResult(Base):
     inferred_facts: Mapped[str | None] = mapped_column(Text)
     unavailable_fields: Mapped[str | None] = mapped_column(Text)
 
+    # Which research method produced this row — always "browser" today
+    # (agents/business_research.py's Playwright-driven fetch), same
+    # forward-compatibility purpose as DiscoveredBusiness.source_provider
+    # once a second research method exists.
+    provider: Mapped[str] = mapped_column(String(50), default="browser")
+    # The agent's own AgentResult.confidence, previously computed and
+    # discarded — how much the agent trusts this result (e.g. 1.0 for "no
+    # website on record", 0.4 for "site unreachable", 0.85 for a normal
+    # successful fetch), distinct from evidence_completeness which
+    # measures how much *was* measured, not how much to trust it.
+    confidence: Mapped[float | None] = mapped_column(Float)
     research_error: Mapped[str | None] = mapped_column(Text)
     researched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
