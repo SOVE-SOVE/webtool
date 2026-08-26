@@ -9,6 +9,7 @@ import {
   type ActivityItem,
   type Business,
   type Client,
+  type ClientPortalUser,
   type Project,
   type User,
 } from "@/lib/api";
@@ -42,6 +43,18 @@ export default function ClientDetailPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startingIntake, setStartingIntake] = useState(false);
+  const [portalUsers, setPortalUsers] = useState<ClientPortalUser[]>([]);
+  const [newPortalUserName, setNewPortalUserName] = useState("");
+  const [newPortalUserEmail, setNewPortalUserEmail] = useState("");
+  const [creatingPortalUser, setCreatingPortalUser] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [justCreatedPassword, setJustCreatedPassword] = useState<{ email: string; password: string } | null>(
+    null,
+  );
+
+  function loadPortalUsers() {
+    api.listClientPortalUsers(clientId).then(setPortalUsers).catch(() => {});
+  }
 
   function load() {
     api
@@ -58,9 +71,35 @@ export default function ClientDetailPage() {
       .listActivity({ entity_type: "client", entity_id: clientId })
       .then(setActivity)
       .catch(() => {});
+    loadPortalUsers();
   }
 
   useEffect(load, [clientId]);
+
+  async function handleCreatePortalUser(e: React.FormEvent) {
+    e.preventDefault();
+    setPortalError(null);
+    setCreatingPortalUser(true);
+    try {
+      const created = await api.createClientPortalUser(clientId, {
+        email: newPortalUserEmail,
+        name: newPortalUserName,
+      });
+      setJustCreatedPassword({ email: created.email, password: created.temporary_password });
+      setNewPortalUserName("");
+      setNewPortalUserEmail("");
+      loadPortalUsers();
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : "Couldn't create portal access.");
+    } finally {
+      setCreatingPortalUser(false);
+    }
+  }
+
+  async function handleTogglePortalUser(portalUser: ClientPortalUser) {
+    await api.setClientPortalUserActive(clientId, portalUser.id, !portalUser.is_active);
+    loadPortalUsers();
+  }
 
   async function saveClient(data: Parameters<typeof api.updateClient>[1]) {
     const updated = await api.updateClient(clientId, data);
@@ -303,6 +342,84 @@ export default function ClientDetailPage() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-neutral-900">Portal access</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Accounts that can sign in to the client portal to view this project&apos;s status. Portal accounts
+          are completely separate from your team&apos;s logins and can never access this dashboard.
+        </p>
+
+        {justCreatedPassword && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+            <p className="text-neutral-800">
+              Portal account created for <strong>{justCreatedPassword.email}</strong>. Temporary password
+              (shown once — relay it to the client, then have them change it after signing in):
+            </p>
+            <code className="mt-1 block break-all rounded bg-white px-2 py-1 text-xs">
+              {justCreatedPassword.password}
+            </code>
+            <button
+              onClick={() => setJustCreatedPassword(null)}
+              className="mt-2 text-xs text-neutral-500 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {portalUsers.length === 0 && (
+            <li className="px-3 py-3 text-sm text-neutral-500">No portal accounts yet.</li>
+          )}
+          {portalUsers.map((portalUser) => (
+            <li key={portalUser.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <div>
+                <span className="text-neutral-900">{portalUser.name}</span>
+                <span className="ml-2 text-xs text-neutral-500">{portalUser.email}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-neutral-500">
+                <span className={portalUser.is_active ? "text-emerald-700" : "text-neutral-400"}>
+                  {portalUser.is_active ? "Active" : "Deactivated"}
+                </span>
+                <button onClick={() => handleTogglePortalUser(portalUser)} className="hover:underline">
+                  {portalUser.is_active ? "Deactivate" : "Reactivate"}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <form onSubmit={handleCreatePortalUser} className="mt-3 flex items-end gap-2">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-neutral-700">Name</label>
+            <input
+              required
+              value={newPortalUserName}
+              onChange={(e) => setNewPortalUserName(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs font-medium text-neutral-700">Email</label>
+            <input
+              type="email"
+              required
+              value={newPortalUserEmail}
+              onChange={(e) => setNewPortalUserEmail(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={creatingPortalUser}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {creatingPortalUser ? "Adding…" : "Add portal access"}
+          </button>
+        </form>
+        {portalError && <p className="mt-1 text-sm text-red-600">{portalError}</p>}
       </section>
 
       <section className="mt-8">

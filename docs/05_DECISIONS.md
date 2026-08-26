@@ -8,6 +8,73 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-26 — Client portal foundation: a fully separate auth namespace, not a role on `users`
+
+**Decision:** Built `app/modules/portal/` as the foundation for the
+client-facing portal (docs/00_VISION.md's "client intake, client
+approval" side of the pipeline, stages 18+). The core choice: a client
+portal login is a `ClientUser` — a new table, entirely distinct from
+`users` — not a third `UserRole` value. It authenticates via its own
+session cookie (`wdos_portal_session`) signed with its own
+itsdangerous salt (`wdos-portal-session`), verified by its own
+dependency (`get_current_client_user`), reusing only the generic,
+user-agnostic pieces of `app/core/auth.py` (`hash_password`,
+`verify_password`, `verify_password_or_dummy`) and `app/core/
+rate_limit.py`'s login-attempt limiter. Every portal route lives under
+`/api/v1/portal/*` and depends on `get_current_client_user`; no
+existing internal route was touched, and no internal route depends on
+it either. A `ClientUser` is scoped to exactly one `clients` row
+(cascade-deleted with it) and can only ever read that client's own
+`projects` rows, through a filtered, hand-picked-fields response
+(`PortalProjectRead`) — not the internal `Project`/`ProjectRead`
+shape.
+
+This pass ships the full auth/session architecture plus one real
+capability (view own project status) and a portal UI shell with the
+other five capabilities from the brief (website previews, submit
+information, upload assets, feedback, milestone approval) rendered as
+labelled "coming soon" placeholders — each will land as its own
+`/api/v1/portal/...` route reusing the same `get_current_client_user` +
+`client_id`-scoping pattern, not a new auth mechanism. Internal admins
+manage a client's portal accounts from the existing client detail page
+(`/dashboard/clients/[id]`) via `require_admin`-gated routes under
+`/api/v1/clients/{id}/portal-users`; account creation returns a
+server-generated temporary password once, for the admin to relay out
+of band (no invite-email integration exists yet — see
+docs/07_SESSION_LOG.md).
+
+**Why:** The brief was explicit that client permissions must be
+*completely* separated from internal users, and that no internal sales
+data (leads, pipeline, outreach, discovery, business research, revenue
+dashboards, etc. — see docs/06_SECURITY.md) can ever reach a client.
+A third role value on the existing `users`/`UserRole` enum would have
+meant every one of the ~30 internal route modules needed to correctly
+exclude that role, forever, as a discipline problem — one route file
+using `get_current_user` instead of a hypothetical `require_internal`
+silently reopens the leak. Making it a structurally different
+credential (different table, different cookie, different signing
+salt) instead makes the separation a property of the type system and
+the session layer, not of every route author remembering a check. The
+distinct salt technique isn't new here — it mirrors how the Google
+Calendar OAuth `state` param is already isolated from the session
+cookie (docs/06_SECURITY.md), reusing an established pattern rather
+than inventing a second one.
+
+**Alternatives considered:** A `CLIENT` value on `UserRole` — rejected
+for the reason above (a permission-matrix-by-convention that
+docs/01_REQUIREMENTS.md's "two roles only, no permission matrix" note
+was written specifically to avoid extending). Reusing the existing
+(unbuilt) "client-approval link" idea from docs/06_SECURITY.md
+(unguessable, unauthenticated token per action) as the whole portal
+auth model — rejected as the general mechanism: a token-per-link
+works for a single one-shot approval action, not for an
+account a client signs into repeatedly across sessions to check
+several kinds of information. It may still show up later as the
+mechanism for one specific flow (e.g. a shareable read-only preview
+link) layered on top of this, not instead of it.
+
+---
+
 ## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a lead-funnel-only dashboard, plus the missing piece that makes "estimated revenue" a real number
 
 **Decision:** Built `modules/sales_dashboard/` (`GET /api/v1/dashboard/sales`)

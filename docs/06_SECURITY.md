@@ -28,10 +28,35 @@ it gets real (if lightweight) treatment. Revisit as stages in
 - **Secrets management.** All API keys in environment variables, never
   committed. `.env*` gitignored from day one. Production secrets live
   in the hosting platform's env var store, not in code.
-- **Client-approval links (stage 18).** Unguessable tokens, not
-  sequential/guessable IDs, since a draft site may contain a client's
-  unpublished branding/content. Consider expiry once real usage shows
-  how long links actually need to stay live.
+- **Client portal isolation.** **Implemented 2026-08-26** —
+  `app/modules/portal/`. A client's own login (`ClientUser`) is a
+  completely separate credential from an internal `users` row, not a
+  role value on it: its own table, its own session cookie
+  (`wdos_portal_session`), signed with its own itsdangerous salt
+  (`wdos-portal-session`, distinct from the internal session's
+  `wdos-session` salt — same technique already used for the Google
+  Calendar OAuth `state` param below), verified by its own dependency
+  (`get_current_client_user`) that no internal route uses and that
+  itself never accepts an internal session cookie. Every portal route
+  lives under `/api/v1/portal/*`; every response is a hand-picked,
+  client-safe shape (e.g. `PortalProjectRead` excludes `price_cents`,
+  `assigned_user_id/name`, `source_lead_id`) rather than the internal
+  model reused as-is. See docs/05_DECISIONS.md's 2026-08-26 entry for
+  the full rationale and `apps/api/tests/test_portal.py` for the tests
+  exercising cross-client isolation, cookie-namespace isolation, and
+  that a portal session can't reach any internal or sales-only route.
+  Portal account creation is `require_admin`-gated and returns a
+  server-generated temporary password once — there is no invite-email
+  flow yet (Resend is wired for outreach, not for this).
+- **Client-approval links (stage 18+).** Not yet built. Once website
+  previews/milestone approvals land on the portal above, decide
+  whether they ride the same `ClientUser` session (simpler, but
+  requires an account) or a one-shot unguessable token per link
+  (works without an account, e.g. for a prospect who hasn't signed up
+  yet) — see the "alternatives considered" note in the 2026-08-26
+  decision entry. If a token path is used: unguessable, not
+  sequential/guessable IDs. Consider expiry once real usage shows how
+  long links actually need to stay live.
 - **Untrusted content stays data.** Scraped prospect-site text and
   search results are inputs to summarize, never instructions an agent
   follows — a hostile or broken page shouldn't be able to redirect what

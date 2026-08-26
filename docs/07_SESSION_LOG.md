@@ -11,6 +11,82 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — Client portal foundation: secure architecture + basic UI
+**Mode:** worktree (background job)
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/modules/portal (new), apps/api/app/core/settings.py,
+apps/api/app/db/all_models.py, apps/api/app/main.py, apps/api/alembic/versions,
+apps/api/tests/test_portal.py (new), apps/web/src/lib/portalApi.ts (new),
+apps/web/src/app/portal (new), apps/web/src/lib/api.ts,
+apps/web/src/app/dashboard/clients/[id]/page.tsx, docs/05_DECISIONS.md,
+docs/06_SECURITY.md
+**What happened:** Built the foundation for the client-facing portal per
+the brief: view project status, review previews, submit info, upload
+assets, feedback, approve milestones — with client permissions
+*completely* separated from internal users. Core piece: `ClientUser` is
+a new table, not a role on `users` — own session cookie
+(`wdos_portal_session`), own itsdangerous signing salt
+(`wdos-portal-session`, mirrors how the Calendar OAuth `state` param is
+already isolated), own `get_current_client_user` dependency that no
+internal route uses. All portal routes live under `/api/v1/portal/*`;
+project status responses are a hand-filtered shape
+(`PortalProjectRead`) excluding `price_cents`/`assigned_user_*`/
+`source_lead_id`. This pass makes "view project status" fully real and
+renders the other five capabilities as labelled "coming soon" cards in
+the portal UI shell (`/portal`, `/portal/login`) — each will reuse this
+same auth/scoping pattern, not a new mechanism (see
+docs/05_DECISIONS.md's 2026-08-26 entry). Internal admins create/
+deactivate a client's portal accounts from the existing client detail
+page, gated `require_admin`; creation returns a one-time
+server-generated temporary password (no invite-email integration
+exists yet). Added `apps/api/tests/test_portal.py` (14 tests):
+login/logout/me, wrong-password and inactive-account rejection,
+change-password, cross-client project isolation, portal-cookie-can't-
+touch-internal-routes and internal-cookie-can't-touch-portal-routes in
+both directions, and a table-driven check that a valid portal session
+gets 401 from every internal/sales-only route (leads, pipeline,
+dashboard, discovery, businesses, users, workspace, activity, clients,
+projects). New Alembic migration `1e54f929d2e5` (client_users table,
+chained on head `731a8a798e83`).
+**Blockers/issues:** The shared local `webdesignos_test` Postgres DB
+had 3-4 *other* concurrent Claude Code sessions actively running pytest
+against it for the entire second half of this session (same class of
+contention the 2026-08-25 session log entry hit) — repeated
+`UndefinedTable`/`DependentObjectsStillExist`/`ForeignKeyViolation`
+noise on every attempt to run the new tests against it. Rather than
+wait it out, created a throwaway private database
+(`webdesignos_test_portal_verify`), temporarily pointed this worktree's
+`tests/conftest.py` at it, ran `tests/test_portal.py` (14/14 passed)
+and then the full suite (678/678 passed, ~4m51s, zero regressions) in
+isolation, then reverted the `conftest.py` line and dropped the
+throwaway database before committing — `git diff` on `conftest.py`
+confirmed clean before commit. Frontend: this worktree had no
+`node_modules`/`.venv` of its own (both gitignored, not worktree-local)
+— ran `npm ci --prefer-offline` in the worktree (fast, no network
+needed) rather than symlinking the main checkout's `node_modules`,
+since Turbopack refuses a symlink that resolves outside the worktree
+root ("points out of the filesystem root"). `tsc --noEmit`, `eslint`
+(only my new files — 0 problems; the existing 4 errors/3 warnings
+elsewhere in the tree are pre-existing, confirmed via `git diff main`
+showing those files untouched), `vitest run` (53/53, no new frontend
+tests added — prioritized backend security tests, since that's where
+the auth/permission boundary actually lives), and `next build` all
+clean, `/portal` and `/portal/login` both build as static routes.
+**Next up:** The five "coming soon" capabilities (website previews,
+submit information, upload assets, feedback, milestone approvals) each
+need their own data model and `/api/v1/portal/...` routes, reusing
+`get_current_client_user` + `client_id` scoping. No invite-email flow
+yet for portal account creation (temporary password is relayed out of
+band by the admin) — wire through the existing Resend integration if
+that friction turns out to matter. The docs/06_SECURITY.md
+"client-approval links" idea (unguessable one-shot token, no account
+needed) is still open as a *complementary* mechanism for one-shot
+share links, not a replacement for this session-based portal auth —
+see the "alternatives considered" note in docs/05_DECISIONS.md's
+2026-08-26 entry.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes

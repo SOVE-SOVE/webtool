@@ -1375,6 +1375,24 @@ export type OpportunityScoreResult = {
   scored_at: string;
 };
 
+// Client portal accounts (apps/api/app/modules/portal) — a client's own
+// login to the separate client-facing portal, managed here from the
+// internal side. Distinct from `User` above: a ClientPortalUser can
+// never sign in to this dashboard, only to /portal.
+export type ClientPortalUser = {
+  id: string;
+  client_id: string;
+  email: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+};
+
+// Returned only once, from creation — the plaintext temporary password
+// the admin relays to the client out of band. Never returned again.
+export type ClientPortalUserCreated = ClientPortalUser & { temporary_password: string };
+
 export const api = {
   login: (email: string, password: string) =>
     request<Me>("/api/v1/auth/login", {
@@ -1410,6 +1428,19 @@ export const api = {
     request<Client>("/api/v1/clients", { method: "POST", body: JSON.stringify(data) }),
   updateClient: (id: string, data: ClientUpdate) =>
     request<Client>(`/api/v1/clients/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  listClientPortalUsers: (clientId: string) =>
+    request<ClientPortalUser[]>(`/api/v1/clients/${clientId}/portal-users`),
+  createClientPortalUser: (clientId: string, data: { email: string; name: string }) =>
+    request<ClientPortalUserCreated>(`/api/v1/clients/${clientId}/portal-users`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  setClientPortalUserActive: (clientId: string, portalUserId: string, isActive: boolean) =>
+    request<ClientPortalUser>(`/api/v1/clients/${clientId}/portal-users/${portalUserId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    }),
 
   listProjects: () => request<Project[]>("/api/v1/projects"),
   getProject: (id: string) => request<Project>(`/api/v1/projects/${id}`),

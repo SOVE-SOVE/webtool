@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # False for local http dev, True in production (set via .env)
     session_cookie_secure: bool = False
 
+    # client portal auth — a completely separate session namespace from
+    # the internal one above (own cookie name, own itsdangerous salt, own
+    # ClientUser table — see app/modules/portal/auth.py). Shorter default
+    # lifetime than the internal session: a client portal login is
+    # expected to be an occasional check-in, not an all-day work session,
+    # and the shorter window reduces how long a stolen client-side cookie
+    # stays useful.
+    portal_session_cookie_name: str = "wdos_portal_session"
+    portal_session_max_age_seconds: int = 60 * 60 * 24 * 7  # 1 week
+
     # cors — the web app's origin(s), comma-separated
     allowed_origins: str = "http://localhost:3000"
 
