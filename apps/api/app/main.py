@@ -18,6 +18,7 @@ from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.deployments.routes import router as deployments_router
 from app.modules.design_briefs.routes import router as design_briefs_router
 from app.modules.discovery.routes import discovered_businesses_router, router as discovery_router
+from app.modules.jobs.routes import router as jobs_router, schedules_router as job_schedules_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
 from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
@@ -119,6 +120,8 @@ app.include_router(deployments_router)
 app.include_router(approvals_router)
 app.include_router(discovery_router)
 app.include_router(discovered_businesses_router)
+app.include_router(jobs_router)
+app.include_router(job_schedules_router)
 app.include_router(business_research_router)
 app.include_router(website_quality_router)
 app.include_router(opportunity_scoring_router)

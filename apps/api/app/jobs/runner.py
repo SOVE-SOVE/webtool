@@ -1,11 +1,13 @@
 """
-In-process job poller, per docs/02_ARCHITECTURE.md §4. Not wired to
+In-process job poller and scheduler, per docs/02_ARCHITECTURE.md §4 — the
+Phase 7 automation engine's single worker process. Not wired to
 auto-start anywhere — a deployment that needs jobs actually processed
-runs this as its own process (`python -m app.jobs.runner`), same
-pattern as `python -m app.core.seed`. Nothing calls this yet; it exists
-so `app.modules.jobs` is a real, runnable queue and not just a table,
-ready for the first job type (e.g. a scheduled `discovery_search`
-re-run) to register a handler.
+runs this as its own process (`python -m app.jobs.runner`), same pattern
+as `python -m app.core.seed`.
+
+Each tick does two things: materialize any due `JobSchedule` rows into
+new PENDING jobs, then claim and process at most one due job. Handlers
+are registered in `app/jobs/handlers.py`.
 """
 
 import time
@@ -25,8 +27,9 @@ JobHandler = Callable[[Session, Job], dict | None]
 def run_once(handlers: dict[str, JobHandler]) -> bool:
     """
     Claims and processes at most one due job. Returns True if a job was
-    claimed (whether it succeeded or failed), False if the queue was
-    empty — the caller decides whether to sleep before polling again.
+    claimed (whether it succeeded, failed, or was cancelled), False if
+    the queue was empty — the caller decides whether to sleep before
+    polling again.
     """
     db = SessionLocal()
     try:
@@ -42,6 +45,9 @@ def run_once(handlers: dict[str, JobHandler]) -> bool:
         try:
             result = handler(db, job)
             jobs_service.mark_done(db, job, result)
+        except jobs_service.JobCancelled as exc:
+            logger.info("Job %s (%s) cancelled: %s", job.id, job.job_type, exc)
+            jobs_service.mark_cancelled(db, job, str(exc) or "Cancelled")
         except Exception as exc:  # a handler bug must not crash the poller loop
             logger.exception("Job %s (%s) failed", job.id, job.job_type)
             jobs_service.mark_failed(db, job, str(exc))
@@ -50,16 +56,25 @@ def run_once(handlers: dict[str, JobHandler]) -> bool:
         db.close()
 
 
+def tick(handlers: dict[str, JobHandler]) -> bool:
+    """One scheduler-materialize + one job-claim, the poller's full unit of work."""
+    db = SessionLocal()
+    try:
+        jobs_service.materialize_due_schedules(db)
+    finally:
+        db.close()
+    return run_once(handlers)
+
+
 def poll_forever(handlers: dict[str, JobHandler], interval_seconds: float = POLL_INTERVAL_SECONDS) -> None:
     logger.info("Job poller started, handlers=%s", list(handlers))
     while True:
-        claimed = run_once(handlers)
+        claimed = tick(handlers)
         if not claimed:
             time.sleep(interval_seconds)
 
 
 if __name__ == "__main__":
-    # No job types registered yet — the first real handler (e.g.
-    # discovery_search) is added by the capability that needs
-    # asynchronous/scheduled execution, per docs/04_ROADMAP.md.
-    poll_forever(handlers={})
+    from app.jobs.handlers import HANDLERS
+
+    poll_forever(handlers=HANDLERS)
