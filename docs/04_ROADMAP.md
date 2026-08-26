@@ -323,6 +323,39 @@ Goal: stages 15–18. First real reusable output.
       Verified end-to-end in a real browser (not just the 31 backend +
       existing frontend tests) — that pass caught and fixed a real bug
       where regenerating a section didn't refresh the version dropdown.
+      **Phase 5 Part 3 Task 3 checkpoint (2026-08-26):** ran the real
+      generator (creative direction/sitemap hand-simulated to a strong-
+      LLM quality bar — no Anthropic credit in this environment; the
+      generator/anti-slop/QA steps themselves ran for real, unmodified)
+      against a from-scratch fake client (Gold Coast plumber, modern/
+      premium positioning). Found and fixed two real generator bugs it
+      surfaced: (1) a services/products list item like "Hot water
+      systems — gas, electric, solar, heat pump" was discarding
+      everything after the client's own separator instead of using it as
+      the card's description — `_split_service_line`/`_service_cards`
+      now keep it, verbatim, only when the client's own text already
+      has one; (2) the homepage unconditionally repeated a dedicated
+      FAQ/Testimonials/Services page's content verbatim, which anti_slop
+      correctly flagged as duplicate copy (score 79/100) — home now
+      skips a section entirely when a dedicated page already carries
+      it, only showing it there as a fallback. Both fixes, applied
+      together, took the same fixture from anti_slop 79 (3 duplicate-
+      copy issues) to 100 (none), with QA `ready_for_client_review` true
+      throughout (0 critical/failed checks, only 2 pre-existing SEO
+      warnings for pages with no natural meta-description source). Not
+      slop by this system's own definition (no fabricated/generic
+      content — anti_slop's whole job), but not yet a premium-ready
+      *deliverable* either: every non-home hero heading is still just
+      the bare page title (no tagline/headline field exists anywhere in
+      `DesignBrief` for the generator to draw one from), and there is no
+      real-photo pipeline at all (`image_assets` is a free-text notes
+      field, not structured `Media{src, alt}` — no blob storage
+      integration exists, per its own docstring). Recommended next,
+      not started: a per-page/site tagline field on `DesignBrief` (a
+      real, scoped intake+generator change) and real asset upload
+      (bigger — needs blob storage) before calling a generated site
+      "premium, ready to sell" rather than "structurally sound, content-
+      honest, and technically clean."
 - [x] Automated QA checks (build, links, mobile) from [[tests]] —
       `agents/technical_qa.py` / `modules/qa_reports/`: seven categories
       (performance, responsiveness, accessibility, SEO, functionality,
