@@ -281,6 +281,8 @@ class TestNonRootHomeSlug:
 
         assert authed_client.post(f"/api/v1/qa-reports/{report['id']}/approve").status_code == 200
         assert authed_client.post(f"/api/v1/websites/{website['id']}/client-approve").status_code == 200
+        for to_status in ("internal_review", "client_review", "approved", "ready_to_deploy"):
+            authed_client.post(f"/api/v1/websites/{website['id']}/workflow-transition", json={"to_status": to_status})
 
         approvals = authed_client.get(f"/api/v1/projects/{project['id']}/approvals").json()
         assert approvals["can_deploy"] is True, approvals["missing_for_deployment"]

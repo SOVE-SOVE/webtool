@@ -72,3 +72,32 @@ def rollback_deployment(
     if deployment is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return deployment
+
+
+@router.post("/api/v1/deployments/{deployment_id}/check-status", response_model=DeploymentRead)
+def check_deployment_status(
+    deployment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeploymentRead:
+    """The "monitor deployment" step — re-reads the provider's own
+    state for a previously submitted deployment. See service docstring
+    for why this is a no-op refresh for most providers today."""
+    deployment = service.check_deployment_status(db, current_user.workspace_id, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment
+
+
+@router.post("/api/v1/deployments/{deployment_id}/verify", response_model=DeploymentRead)
+def verify_deployment(
+    deployment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeploymentRead:
+    """The "verify deployment" handover step — confirms the published
+    URL is actually live before a project can be marked delivered."""
+    deployment = service.verify_deployment(db, current_user.workspace_id, current_user.id, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return deployment

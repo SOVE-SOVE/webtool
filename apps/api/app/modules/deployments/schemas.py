@@ -23,12 +23,15 @@ class DeploymentRead(BaseModel):
     environment: str
     target: str
     url: str | None
+    provider_ref: str | None
     status: str
     result: dict | None
     error_message: str | None
     started_at: datetime | None
     completed_at: datetime | None
     deployed_at: datetime | None
+    verified_at: datetime | None
+    verified_by_user_name: str | None
     rollback_of_deployment_id: uuid.UUID | None
     approved_by_user_name: str | None
     notes: str | None

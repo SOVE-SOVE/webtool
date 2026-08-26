@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # cors — the web app's origin(s), comma-separated
     allowed_origins: str = "http://localhost:3000"
 
+    # The web app's own public origin — used to build a shareable
+    # preview URL (modules/previews/) server-side, since the API is the
+    # one place that mints the token. Deliberately separate from
+    # allowed_origins (CORS can list several; a shareable link needs
+    # exactly one canonical one).
+    app_base_url: str = "http://localhost:3000"
+
     log_level: str = "INFO"
 
     # llm — Claude API, the one adapter per docs/02_ARCHITECTURE.md §6.
@@ -72,9 +79,41 @@ class Settings(BaseSettings):
     calendar_provider: str = "google"
 
     # deployment — which provider modules/deployments/service.py
-    # publishes through (see app/integrations/deployment.py). Only
-    # "mock" is implemented today; no real hosting account exists yet.
+    # publishes through (see app/integrations/deployment/registry.py).
+    # "mock" (default, safe for dev/tests, never makes a network call),
+    # or "vercel"/"netlify"/"cloudflare"/"traditional" — each real
+    # provider's factory fails loudly if its own credentials below
+    # aren't set, rather than silently deploying through mock instead.
+    # No real hosting account is configured for this app today; these
+    # exist as the adapter architecture's real extension points, not as
+    # a claim that a real deployment has ever been made through them.
     deploy_provider: str = "mock"
+
+    # vercel — https://vercel.com/docs/rest-api. VERCEL_TEAM_ID is only
+    # needed for a team-scoped token; leave blank for a personal token.
+    vercel_api_token: str = ""
+    vercel_project_name: str = ""
+    vercel_team_id: str = ""
+
+    # netlify — https://docs.netlify.com/api/get-started/
+    netlify_api_token: str = ""
+    netlify_site_id: str = ""
+
+    # cloudflare pages — https://developers.cloudflare.com/pages/
+    cloudflare_api_token: str = ""
+    cloudflare_account_id: str = ""
+    cloudflare_pages_project: str = ""
+
+    # traditional hosting (FTP/FTPS) — any shared/cPanel-style host.
+    # BASE_URL is the public site URL to report as the deployment's
+    # url (FTP itself never returns one) — e.g. "https://example.com".
+    traditional_hosting_host: str = ""
+    traditional_hosting_username: str = ""
+    traditional_hosting_password: str = ""
+    traditional_hosting_base_url: str = ""
+    traditional_hosting_port: int = 21
+    traditional_hosting_remote_path: str = "/"
+    traditional_hosting_use_tls: bool = True
 
     # email — which provider modules/outreach/service.py dispatches
     # approved EMAIL outreach through (see app/integrations/email.py).

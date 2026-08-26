@@ -23,6 +23,7 @@ from app.modules.meetings.routes import router as meetings_router
 from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.pipeline.routes import router as pipeline_router
+from app.modules.previews.routes import router as previews_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.qa_reports.routes import router as qa_reports_router
 from app.modules.sales_audits.routes import router as sales_audits_router
@@ -32,6 +33,8 @@ from app.modules.sitemaps.routes import router as sitemaps_router
 from app.modules.tasks.routes import router as tasks_router
 from app.modules.users.routes import router as users_router
 from app.modules.website_audits.routes import router as website_audits_router
+from app.modules.website_briefs.routes import router as website_briefs_router
+from app.modules.website_feedback.routes import router as website_feedback_router
 from app.modules.website_quality.routes import router as website_quality_router
 from app.modules.website_revisions.routes import router as website_revisions_router
 from app.modules.websites.routes import router as websites_router
@@ -112,6 +115,7 @@ app.include_router(calendar_router)
 app.include_router(design_briefs_router)
 app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
+app.include_router(website_briefs_router)
 app.include_router(websites_router)
 app.include_router(website_revisions_router)
 app.include_router(qa_reports_router)
@@ -125,3 +129,5 @@ app.include_router(opportunity_scoring_router)
 app.include_router(pipeline_router)
 app.include_router(sales_opportunities_router)
 app.include_router(sales_dashboard_router)
+app.include_router(previews_router)
+app.include_router(website_feedback_router)

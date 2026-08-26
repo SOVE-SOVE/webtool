@@ -14,6 +14,8 @@ from app.modules.websites.schemas import (
     SectionUpdate,
     WebsiteRead,
     WebsiteSummary,
+    WorkflowTransitionRead,
+    WorkflowTransitionRequest,
 )
 
 router = APIRouter(tags=["websites"])
@@ -110,3 +112,28 @@ def client_approve_website(
     if website is None:
         raise HTTPException(status_code=404, detail="Website not found")
     return website
+
+
+@router.post("/api/v1/websites/{website_id}/workflow-transition", response_model=WebsiteRead)
+def transition_workflow(
+    website_id: uuid.UUID,
+    body: WorkflowTransitionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WebsiteRead:
+    website = service.transition_website_workflow(db, current_user.workspace_id, current_user.id, website_id, body)
+    if website is None:
+        raise HTTPException(status_code=404, detail="Website not found")
+    return website
+
+
+@router.get("/api/v1/websites/{website_id}/workflow-history", response_model=list[WorkflowTransitionRead])
+def get_workflow_history(
+    website_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[WorkflowTransitionRead]:
+    history = service.get_workflow_history(db, current_user.workspace_id, website_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Website not found")
+    return history
