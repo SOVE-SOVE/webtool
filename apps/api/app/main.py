@@ -21,6 +21,7 @@ from app.modules.design_briefs.routes import router as design_briefs_router
 from app.modules.discovery.routes import discovered_businesses_router, router as discovery_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
+from app.modules.notifications.routes import router as notifications_router
 from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.pipeline.routes import router as pipeline_router
@@ -129,3 +130,4 @@ app.include_router(sales_dashboard_router)
 app.include_router(previews_router)
 app.include_router(website_feedback_router)
 app.include_router(action_engine_router)
+app.include_router(notifications_router)

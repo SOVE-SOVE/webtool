@@ -20,6 +20,7 @@ from app.modules.interactions import models as _interactions  # noqa: F401
 from app.modules.jobs import models as _jobs  # noqa: F401
 from app.modules.leads import models as _leads  # noqa: F401
 from app.modules.meetings import models as _meetings  # noqa: F401
+from app.modules.notifications import models as _notifications  # noqa: F401
 from app.modules.opportunity_scoring import models as _opportunity_scoring  # noqa: F401
 from app.modules.outreach import models as _outreach  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401
