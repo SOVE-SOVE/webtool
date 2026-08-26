@@ -397,6 +397,69 @@ via `integrations/calendar/registry.py`.
 
 ---
 
+## 2026-08-26 — AI-assisted website brief generator (roadmap M4)
+**Mode:** worktree (background job)
+**Merge to main after:** yes, once reviewed — branch `worktree-website-brief-generator`, not yet merged/pushed by this session
+**Scope touched:** apps/api/app/agents/website_brief.py, apps/api/app/agents/prompts/website_brief.md, apps/api/app/modules/website_briefs (new module), apps/api/app/db/all_models.py, apps/api/app/main.py, apps/api/alembic/versions/9c1f5a7e3d62_website_briefs.py, apps/api/tests/test_website_briefs.py, apps/web/src/lib/api.ts, apps/web/src/components/WebsiteBriefView.tsx, apps/web/src/app/dashboard/projects/[id]/page.tsx, docs/04_ROADMAP.md, docs/05_DECISIONS.md
+**What happened:** Built the requested website-brief generator as a
+synthesizing rollup over the existing intake (`DesignBrief`)/creative
+direction/sitemap pipeline rather than a fourth place that overlapping
+field set gets authored — see today's [[05_DECISIONS]] entry for the
+full reasoning. New `WebsiteBrief` model/table (versioned, DRAFT→APPROVED,
+same editable-in-place convention as CreativeDirectionBrief/Sitemap),
+`agents/website_brief.py` (LLM synthesis for project_summary/goals/
+target_audience/positioning/sitemap/page_purposes/content_requirements/
+cta_strategy/visual_direction/functionality/seo_considerations/
+technical_requirements), and a service layer that overrides the agent's
+draft with real data wherever a resolved Sitemap/CreativeDirectionBrief
+already exists (sitemap-derived fields assembled deterministically from
+real page rows; CTA strategy/visual direction carried over verbatim).
+Two new fields (`confirmed_requirements` built verbatim from
+`DesignBrief`, `ai_suggestions` an explicit per-section list built by
+the service) satisfy the "clearly distinguish AI suggestions from
+confirmed client requirements" / "do not invent client information"
+requirements directly. Standard CRUD routes
+(`POST/GET /projects/{id}/website-briefs`, `GET/PATCH/POST .../approve`
+on `/website-briefs/{id}`), full REST client + `WebsiteBriefView`
+component (mirrors `CreativeDirectionView`'s edit/save/approve pattern),
+wired into `/dashboard/projects/[id]` between Sitemap and Website.
+Migration `9c1f5a7e3d62` (down_revision `731a8a798e83`, confirmed sole
+head after creation).
+**Blockers/issues:** Full backend `pytest -q` showed 6 failed/833 errors,
+but every one of them was in `test_workspace_isolation.py`/other
+unrelated files with `DependentObjectsStillExist`/`UndefinedTable`/
+duplicate-key errors — the exact same concurrent-shared-test-DB
+contention pattern documented in the 2026-08-25 session log entry (other
+sessions on this machine actively resetting `webdesignos_test` mid-run).
+Confirmed not a regression: `test_website_briefs.py` alone is 9/9 green
+every run; running it together with `test_creative_directions.py`/
+`test_sitemaps.py`/`test_design_briefs.py`/`test_projects.py`/
+`test_workspace_isolation.py` gave 53 passed/14 errors, and
+`test_workspace_isolation.py` run completely alone still threw one
+`DependentObjectsStillExist` during teardown (13 passed/1 error) —
+proof the contention is external, not something this change introduced.
+Nothing in `website_briefs`' own files ever appears in any failure.
+Frontend: `tsc --noEmit` clean except one pre-existing unrelated error
+(`LayoutProps` in `layout.tsx`, a Next.js codegen artifact absent
+because `next dev`/`next build` haven't run in this worktree — not
+touched by this change); `eslint` on changed files clean except two
+pre-existing `react/no-unescaped-entities` warnings on lines this diff
+never touched (confirmed via `git diff --stat`: purely additive, 109
+insertions/0 deletions on the project page); `vitest run` 53/53 green.
+Did not start the dev server / exercise this in a real browser — no
+running Postgres instance was confirmed reachable from this session
+beyond what pytest already used, and this was scoped as a backend+
+frontend build-and-test pass, not a live UI walkthrough.
+**Next up:** A real browser pass (generate a brief on a project with/without
+upstream artifacts present, confirm the confirmed/AI-suggestion split
+renders sensibly) before calling this fully client-ready. Re-run the
+full backend suite once the shared test DB is quiet, as a final sanity
+check, same standing item as the 2026-08-25 entry. Not yet merged to
+main or pushed — this session's commit sits on
+`worktree-website-brief-generator` pending review.
+
+---
+
 ## 2026-08-25 — Phase 3: sales pipeline kanban over existing LeadStatus
 **Mode:** same session (background job)
 **Merge to main after:** yes — committed to main as `feat: build sales pipeline` (5570d82)

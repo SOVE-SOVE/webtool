@@ -8,6 +8,92 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-26 — Website Brief generator: a synthesizing rollup over intake/creative-direction/sitemap, not a fourth place those fields are authored
+
+**Decision:** Built `agents/website_brief.py` / `modules/website_briefs/`
+for the requested "AI-assisted website brief generator" — a single
+client-facing document with project summary, goals, target audience,
+positioning, sitemap, page purposes, content requirements, CTA
+strategy, visual direction, functionality, SEO considerations, and
+technical requirements, generated from a project's onboarding
+information. The field list overlaps heavily with what already exists:
+`DesignBrief` (client intake — target_customers/business_goals/content/
+required_pages/required_functionality), `CreativeDirectionBrief`
+(visual_direction/cta_strategy), and `Sitemap` (page purpose/required
+content/required functionality, as real page rows). Rather than a
+fourth place authoring those same fields independently — which is
+exactly the duplication this codebase has previously rejected (see the
+2026-08-19 "Creative Director: separate module from `design_briefs`"
+entry, which drew the opposite conclusion for a different reason: that
+case was a genuinely *different*, richer concern than the existing stub,
+not an overlap) — `WebsiteBrief` is a synthesizing rollup: it reads
+whatever of those three already exists for the project and assembles
+its own document from them, only calling the LLM fresh for the sections
+nothing else captures (project_summary, positioning,
+seo_considerations, technical_requirements always; the rest only as a
+fallback when no upstream artifact exists yet).
+
+Concretely, `modules/website_briefs/service.py`'s `generate_website_brief`
+always calls `agents/website_brief.py` to draft all twelve sections (so
+an early-stage project with nothing else on record still gets a usable
+document), then **overrides** the agent's draft wherever a real source
+exists: `sitemap_summary`/`page_purposes`/`content_requirements`/
+`functionality` are assembled deterministically from a resolved
+`Sitemap`'s actual pages (same "compose only real fields, never
+re-invent structure that already exists" reasoning as
+`agents/website_generator.py`); `cta_strategy`/`visual_direction` are
+carried over verbatim from a resolved `CreativeDirectionBrief`;
+`target_audience` prefers the creative direction's or the intake
+brief's value verbatim. `CreativeDirectionBrief`/`Sitemap` resolution
+follows the same "explicit id override → latest approved → most recent"
+convention as `sitemaps/service.py`'s `_resolve_creative_direction`.
+
+**The AI-vs-confirmed split the feature explicitly requires** ("clearly
+distinguish AI suggestions from confirmed client requirements"; "do not
+invent client information") is two new first-class fields rather than
+reusing Creative Director's FACTS/ASSUMPTIONS shape verbatim, because
+the semantics differ: FACTS/ASSUMPTIONS is about confidence in a
+*single* generation's own claims, but a Website Brief's sections have
+three different provenances (literal client intake answers, an already
+human-reviewed upstream AI artifact, or this generation's own fresh
+synthesis) and the feature specifically asked for client-confirmed vs.
+AI-suggested, not confirmed vs. unconfirmed-but-still-AI-authored.
+`confirmed_requirements` is built directly from `DesignBrief`'s own
+non-empty fields, verbatim, labelled by source field — the *only*
+"client requirement" source anywhere in this app. `ai_suggestions` is
+an explicit per-section list built by the service (not the LLM) stating
+plainly what this generation is suggesting and why (e.g. "no creative
+direction has been generated/approved for this project yet"), so a
+section carried over from an approved upstream artifact is *not* listed
+as an AI suggestion of *this* generation, while a section this
+generation actually drafted always is — including project_summary/
+positioning/SEO/technical requirements unconditionally, since no source
+in this app ever confirms those for a client project.
+
+Same DRAFT → APPROVED lifecycle, in-place editing, and "edit reverts an
+approved brief to draft" contract as `DesignBrief`/`CreativeDirectionBrief`/
+`Sitemap` (every section must remain editable, per the feature request).
+Approval advances the project to `ProjectStage.DESIGN`, same target as
+creative-direction/sitemap approval (via `advance_stage`'s "forward
+only" guard, so approving whichever of the three finishes last is what
+actually moves the stage). Surfaced on `/dashboard/projects/[id]`
+between Sitemap and Website, matching where it sits in the generation
+chain.
+
+**Alternatives considered:** extending `CreativeDirectionBrief` with the
+new fields (positioning/SEO/technical requirements) — rejected, because
+positioning/SEO/technical requirements aren't a *creative* direction
+concern, and cramming them in would blur that module's actual job the
+same way filling `design_briefs`' stub for Creative Director was already
+rejected for the opposite reason. A single mega-document that fully
+replaces `DesignBrief`/`CreativeDirectionBrief`/`Sitemap` — rejected;
+those three have real, distinct editing surfaces (intake form fields,
+FACTS/ASSUMPTIONS creative judgement, a reorderable page tree) that a
+flat rollup document can't replace without losing capability, so the
+rollup reads from them instead of subsuming them.
+
+---
+
 ## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
 
 **Decision:** A request came in framed as "build the lead-to-client

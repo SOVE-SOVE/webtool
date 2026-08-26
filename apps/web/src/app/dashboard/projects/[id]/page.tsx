@@ -18,6 +18,7 @@ import {
   type ProjectStage,
   type Sitemap,
   type User,
+  type WebsiteBrief,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
 import { BriefEditor } from "@/components/BriefEditor";
@@ -25,6 +26,7 @@ import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { SitemapView } from "@/components/SitemapView";
+import { WebsiteBriefView } from "@/components/WebsiteBriefView";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -57,6 +59,21 @@ export default function ProjectDetailPage() {
   const [sitemapCreativeDirectionId, setSitemapCreativeDirectionId] = useState("");
   const [sitemapAdditionalNotes, setSitemapAdditionalNotes] = useState("");
 
+  const [websiteBriefs, setWebsiteBriefs] = useState<WebsiteBrief[] | null>(null);
+  const [websiteBriefExpandedId, setWebsiteBriefExpandedId] = useState<string | null>(null);
+  const [generatingWebsiteBrief, setGeneratingWebsiteBrief] = useState(false);
+  const [generateWebsiteBriefError, setGenerateWebsiteBriefError] = useState<string | null>(null);
+
+  function loadWebsiteBriefs() {
+    api
+      .listWebsiteBriefs(projectId)
+      .then((list) => {
+        setWebsiteBriefs(list);
+        if (list.length > 0) setWebsiteBriefExpandedId(list[0].id);
+      })
+      .catch(() => {});
+  }
+
   function loadSitemaps() {
     api
       .listSitemaps(projectId)
@@ -87,6 +104,7 @@ export default function ProjectDetailPage() {
       .catch(() => {});
     loadCreativeDirections();
     loadSitemaps();
+    loadWebsiteBriefs();
     loadApprovalsAndDeployments();
     api.listMeetings({ projectId }).then(setMeetings).catch(() => {});
   }
@@ -162,6 +180,24 @@ export default function ProjectDetailPage() {
 
   function handleSitemapUpdated(updated: Sitemap) {
     setSitemaps((prev) => (prev ? prev.map((s) => (s.id === updated.id ? updated : s)) : prev));
+  }
+
+  async function handleGenerateWebsiteBrief() {
+    setGeneratingWebsiteBrief(true);
+    setGenerateWebsiteBriefError(null);
+    try {
+      const generated = await api.generateWebsiteBrief(projectId);
+      setWebsiteBriefs((prev) => [generated, ...(prev ?? [])]);
+      setWebsiteBriefExpandedId(generated.id);
+    } catch (err) {
+      setGenerateWebsiteBriefError(err instanceof ApiError ? err.message : "Couldn't generate a website brief.");
+    } finally {
+      setGeneratingWebsiteBrief(false);
+    }
+  }
+
+  function handleWebsiteBriefUpdated(updated: WebsiteBrief) {
+    setWebsiteBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
   }
 
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -451,6 +487,79 @@ export default function ProjectDetailPage() {
                 {expanded && (
                   <div className="mt-3">
                     <SitemapView sitemap={s} onChange={handleSitemapUpdated} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Website brief</h2>
+            <p className="text-xs text-neutral-500">
+              The AI-assisted client-facing brief — project summary, goals, audience, positioning, sitemap,
+              page purposes, content requirements, CTA strategy, visual direction, functionality, SEO, and
+              technical requirements in one document. Rolls up the brief/creative direction/sitemap above where
+              they exist; every section stays editable, and AI suggestions are always shown separately from
+              what the client actually confirmed.
+            </p>
+          </div>
+          <button
+            onClick={handleGenerateWebsiteBrief}
+            disabled={generatingWebsiteBrief}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+          >
+            {generatingWebsiteBrief
+              ? "Generating…"
+              : websiteBriefs && websiteBriefs.length > 0
+                ? "Regenerate"
+                : "Generate website brief"}
+          </button>
+        </div>
+
+        {generatingWebsiteBrief && (
+          <p className="mt-2 text-sm text-neutral-500">
+            Pulling together the brief, creative direction, and sitemap above — this can take up to a minute.
+          </p>
+        )}
+        {generateWebsiteBriefError && <p className="mt-2 text-sm text-red-600">{generateWebsiteBriefError}</p>}
+
+        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
+            <li className="px-3 py-3 text-sm text-neutral-500">No website brief generated yet.</li>
+          )}
+          {websiteBriefs?.map((b) => {
+            const expanded = websiteBriefExpandedId === b.id;
+            return (
+              <li key={b.id} className="px-3 py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setWebsiteBriefExpandedId(expanded ? null : b.id)}
+                    className="text-left text-neutral-900 hover:underline"
+                  >
+                    {expanded ? "▾" : "▸"} Website brief — {new Date(b.generated_at).toLocaleString()}
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        b.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+                      }`}
+                    >
+                      {b.status}
+                    </span>
+                    {b.flagged_for_review && (
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                        Flagged for review
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {expanded && (
+                  <div className="mt-3">
+                    <WebsiteBriefView brief={b} onChange={handleWebsiteBriefUpdated} />
                   </div>
                 )}
               </li>
