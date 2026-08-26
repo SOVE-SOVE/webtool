@@ -5,6 +5,7 @@ migration or `Base.metadata.create_all` is called. Nothing in this file
 should be imported directly — import from the owning module instead.
 """
 
+from app.modules.action_engine import models as _action_engine  # noqa: F401
 from app.modules.activity_log import models as _activity_log  # noqa: F401
 from app.modules.business_research import models as _business_research  # noqa: F401
 from app.modules.businesses import models as _businesses  # noqa: F401

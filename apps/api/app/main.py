@@ -6,6 +6,7 @@ from app.core.logging import configure_logging, logger
 from app.core.settings import settings
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.integrations.llm import LlmUnavailableError
+from app.modules.action_engine.routes import router as action_engine_router
 from app.modules.activity_log.routes import router as activity_router
 from app.modules.approvals.routes import router as approvals_router
 from app.modules.auth.routes import router as auth_router
@@ -127,3 +128,4 @@ app.include_router(sales_opportunities_router)
 app.include_router(sales_dashboard_router)
 app.include_router(previews_router)
 app.include_router(website_feedback_router)
+app.include_router(action_engine_router)
