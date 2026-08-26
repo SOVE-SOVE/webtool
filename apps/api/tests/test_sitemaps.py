@@ -10,10 +10,14 @@ SITEMAP_LLM_OUTPUT = {
             "parent_slug": None,
             "nav_placement": "primary_nav",
             "purpose": "Convert a visitor into a phone call or quote request within seconds.",
+            "target_audience": None,
             "primary_cta": "Call now",
             "secondary_cta": "Get a quote",
+            "conversion_goal": "Generate same-day phone calls from residential customers with an active leak.",
+            "seo_intent": "Someone searching for a local plumber in Geelong, often urgently.",
             "key_sections": ["Hero", "Services overview", "Service area", "Contact"],
             "required_content": ["Phone number", "Service area suburbs"],
+            "required_assets": [],
             "required_functionality": [],
         },
         {
@@ -23,10 +27,14 @@ SITEMAP_LLM_OUTPUT = {
             "parent_slug": None,
             "nav_placement": "primary_nav",
             "purpose": "List everything Riverside Plumbing does.",
+            "target_audience": None,
             "primary_cta": "Get a quote",
             "secondary_cta": None,
+            "conversion_goal": "Move a visitor comparing services toward requesting a quote.",
+            "seo_intent": "Someone researching what plumbing services are available before calling.",
             "key_sections": ["Services grid"],
             "required_content": ["Service descriptions"],
+            "required_assets": [],
             "required_functionality": [],
         },
         {
@@ -36,10 +44,14 @@ SITEMAP_LLM_OUTPUT = {
             "parent_slug": "services",
             "nav_placement": "not_in_nav",
             "purpose": "Convert urgent, high-intent searchers fast.",
+            "target_audience": "Homeowners with an active plumbing emergency, not general browsers.",
             "primary_cta": "Call now",
             "secondary_cta": None,
+            "conversion_goal": "Generate an immediate phone call from someone with an active emergency.",
+            "seo_intent": "Urgent same-day plumber near me / emergency plumber Geelong.",
             "key_sections": ["Hero", "Response time", "Call button"],
             "required_content": ["Average response time"],
+            "required_assets": [],
             "required_functionality": [],
         },
         {
@@ -49,10 +61,14 @@ SITEMAP_LLM_OUTPUT = {
             "parent_slug": None,
             "nav_placement": "primary_nav",
             "purpose": "Build trust with local credentials.",
+            "target_audience": None,
             "primary_cta": "Call now",
             "secondary_cta": None,
+            "conversion_goal": "Reassure a hesitant visitor enough to call rather than keep comparing plumbers.",
+            "seo_intent": "Someone checking if this is a real, licensed local business before calling.",
             "key_sections": ["Story", "Licensing"],
             "required_content": ["Licence number"],
+            "required_assets": [],
             "required_functionality": [],
         },
         {
@@ -62,10 +78,14 @@ SITEMAP_LLM_OUTPUT = {
             "parent_slug": None,
             "nav_placement": "primary_nav",
             "purpose": "Every remaining way to reach the business.",
+            "target_audience": None,
             "primary_cta": "Send message",
             "secondary_cta": "Call now",
+            "conversion_goal": "Capture a non-urgent enquiry from someone who'd rather message than call.",
+            "seo_intent": "Someone who already decided to use this business and wants contact details/hours.",
             "key_sections": ["Contact form", "Map"],
             "required_content": ["Business hours"],
+            "required_assets": [],
             "required_functionality": ["Contact form with email notification"],
         },
     ],
@@ -88,7 +108,9 @@ def _patch_creative_director(monkeypatch):
         "brand_personality": ["Trustworthy", "Prompt"],
         "colour_direction": "Deep blue with an amber accent.",
         "typography_direction": "A confident, legible sans-serif.",
+        "spacing_system": "Generous section padding with clear breathing room around the call-to-action.",
         "image_direction": "Real photos of the crew and completed jobs.",
+        "component_style": "Solid, squared-off buttons with a slight shadow.",
         "layout_direction": "Short, scannable homepage.",
         "ux_direction": "One-tap call button pinned on mobile.",
         "tone_of_voice": "Plain-spoken, direct.",
@@ -166,6 +188,14 @@ def test_generate_sitemap_happy_path_builds_page_tree(authed_client, monkeypatch
     home = _find(body["pages"], "home")
     assert home["primary_cta"] == "Call now"
     assert home["key_sections"] == ["Hero", "Services overview", "Service area", "Contact"]
+    assert home["conversion_goal"] == SITEMAP_LLM_OUTPUT["pages"][0]["conversion_goal"]
+    assert home["seo_intent"] == SITEMAP_LLM_OUTPUT["pages"][0]["seo_intent"]
+    assert home["target_audience"] is None
+
+    emergency = services["children"][0]
+    # This page's audience genuinely differs from the site's general
+    # audience, so it should carry its own target_audience.
+    assert emergency["target_audience"] == SITEMAP_LLM_OUTPUT["pages"][2]["target_audience"]
 
     # No brief and no creative direction on record — thin evidence, must
     # be flagged per docs/03_AGENT_RULES.md.
@@ -224,10 +254,14 @@ def test_generate_sitemap_dedupes_duplicate_slugs(authed_client, monkeypatch):
                 "parent_slug": None,
                 "nav_placement": "primary_nav",
                 "purpose": "Landing page.",
+                "target_audience": None,
                 "primary_cta": "Call now",
                 "secondary_cta": None,
+                "conversion_goal": "Generate a phone call.",
+                "seo_intent": "Local plumber search.",
                 "key_sections": [],
                 "required_content": [],
+                "required_assets": [],
                 "required_functionality": [],
             },
             {
@@ -237,10 +271,14 @@ def test_generate_sitemap_dedupes_duplicate_slugs(authed_client, monkeypatch):
                 "parent_slug": None,
                 "nav_placement": "not_in_nav",
                 "purpose": "Malformed duplicate.",
+                "target_audience": None,
                 "primary_cta": "N/A",
                 "secondary_cta": None,
+                "conversion_goal": "N/A",
+                "seo_intent": "N/A",
                 "key_sections": [],
                 "required_content": [],
+                "required_assets": [],
                 "required_functionality": [],
             },
         ],
@@ -266,14 +304,22 @@ def test_add_edit_delete_page(authed_client, monkeypatch):
             "slug": "faq",
             "page_type": "faq",
             "purpose": "Answer common questions.",
+            "target_audience": "Prospective customers still deciding whether to call.",
             "primary_cta": "Call now",
+            "conversion_goal": "Remove hesitation before a visitor reaches Contact.",
+            "seo_intent": "Common plumbing FAQ searches.",
             "key_sections": ["Question list"],
+            "required_assets": ["Business logo"],
         },
     )
     assert add_res.status_code == 201
     faq = _find(add_res.json()["pages"], "faq")
     assert faq is not None
     assert faq["purpose"] == "Answer common questions."
+    assert faq["target_audience"] == "Prospective customers still deciding whether to call."
+    assert faq["conversion_goal"] == "Remove hesitation before a visitor reaches Contact."
+    assert faq["seo_intent"] == "Common plumbing FAQ searches."
+    assert faq["required_assets"] == ["Business logo"]
 
     # Duplicate slug rejected.
     dup_res = authed_client.post(
@@ -284,12 +330,19 @@ def test_add_edit_delete_page(authed_client, monkeypatch):
 
     edit_res = authed_client.patch(
         f"/api/v1/sitemaps/{sitemap['id']}/pages/{faq['id']}",
-        json={"title": "Frequently Asked Questions", "primary_cta": "Get a quote"},
+        json={
+            "title": "Frequently Asked Questions",
+            "primary_cta": "Get a quote",
+            "seo_intent": "Updated SEO intent.",
+            "required_assets": ["Business logo", "Team photo"],
+        },
     )
     assert edit_res.status_code == 200
     edited = _find(edit_res.json()["pages"], "faq")
     assert edited["title"] == "Frequently Asked Questions"
     assert edited["primary_cta"] == "Get a quote"
+    assert edited["seo_intent"] == "Updated SEO intent."
+    assert edited["required_assets"] == ["Business logo", "Team photo"]
 
     delete_res = authed_client.delete(f"/api/v1/sitemaps/{sitemap['id']}/pages/{faq['id']}")
     assert delete_res.status_code == 200

@@ -61,10 +61,14 @@ type PageFormValue = {
   page_type: PageType;
   nav_placement: NavPlacement;
   purpose: string;
+  target_audience: string;
   primary_cta: string;
   secondary_cta: string;
+  conversion_goal: string;
+  seo_intent: string;
   key_sections: string;
   required_content: string;
+  required_assets: string;
   required_functionality: string;
 };
 
@@ -74,10 +78,14 @@ const EMPTY_FORM: PageFormValue = {
   page_type: "custom",
   nav_placement: "primary_nav",
   purpose: "",
+  target_audience: "",
   primary_cta: "",
   secondary_cta: "",
+  conversion_goal: "",
+  seo_intent: "",
   key_sections: "",
   required_content: "",
+  required_assets: "",
   required_functionality: "",
 };
 
@@ -88,10 +96,14 @@ function formFromPage(page: SitemapPage): PageFormValue {
     page_type: page.page_type,
     nav_placement: page.nav_placement,
     purpose: page.purpose,
+    target_audience: page.target_audience ?? "",
     primary_cta: page.primary_cta ?? "",
     secondary_cta: page.secondary_cta ?? "",
+    conversion_goal: page.conversion_goal ?? "",
+    seo_intent: page.seo_intent ?? "",
     key_sections: toLines(page.key_sections),
     required_content: toLines(page.required_content),
+    required_assets: toLines(page.required_assets),
     required_functionality: toLines(page.required_functionality),
   };
 }
@@ -173,6 +185,14 @@ function PageForm({
           className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
         />
       </label>
+      <label className="block text-sm">
+        <span className="text-neutral-600">Target audience (only if different from the site's overall audience)</span>
+        <input
+          value={value.target_audience}
+          onChange={(e) => onChange({ ...value, target_audience: e.target.value })}
+          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-neutral-600">Primary CTA</span>
@@ -192,6 +212,24 @@ function PageForm({
         </label>
       </div>
       <label className="block text-sm">
+        <span className="text-neutral-600">Conversion goal (the outcome this page should drive)</span>
+        <textarea
+          value={value.conversion_goal}
+          onChange={(e) => onChange({ ...value, conversion_goal: e.target.value })}
+          rows={2}
+          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+      </label>
+      <label className="block text-sm">
+        <span className="text-neutral-600">SEO intent</span>
+        <textarea
+          value={value.seo_intent}
+          onChange={(e) => onChange({ ...value, seo_intent: e.target.value })}
+          rows={2}
+          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+      </label>
+      <label className="block text-sm">
         <span className="text-neutral-600">Key sections (one per line)</span>
         <textarea
           value={value.key_sections}
@@ -205,6 +243,15 @@ function PageForm({
         <textarea
           value={value.required_content}
           onChange={(e) => onChange({ ...value, required_content: e.target.value })}
+          rows={2}
+          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+      </label>
+      <label className="block text-sm">
+        <span className="text-neutral-600">Required assets (one per line)</span>
+        <textarea
+          value={value.required_assets}
+          onChange={(e) => onChange({ ...value, required_assets: e.target.value })}
           rows={2}
           className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
         />
@@ -293,10 +340,14 @@ function PageRow({
         page_type: draft.page_type,
         nav_placement: draft.nav_placement,
         purpose: draft.purpose,
+        target_audience: draft.target_audience || null,
         primary_cta: draft.primary_cta || null,
         secondary_cta: draft.secondary_cta || null,
+        conversion_goal: draft.conversion_goal || null,
+        seo_intent: draft.seo_intent || null,
         key_sections: fromLines(draft.key_sections),
         required_content: fromLines(draft.required_content),
+        required_assets: fromLines(draft.required_assets),
         required_functionality: fromLines(draft.required_functionality),
       };
       const updated = await api.updateSitemapPage(sitemapId, page.id, update);
@@ -351,10 +402,14 @@ function PageRow({
         parent_page_id: page.id,
         nav_placement: newChild.nav_placement,
         purpose: newChild.purpose,
+        target_audience: newChild.target_audience || null,
         primary_cta: newChild.primary_cta || null,
         secondary_cta: newChild.secondary_cta || null,
+        conversion_goal: newChild.conversion_goal || null,
+        seo_intent: newChild.seo_intent || null,
         key_sections: fromLines(newChild.key_sections),
         required_content: fromLines(newChild.required_content),
+        required_assets: fromLines(newChild.required_assets),
         required_functionality: fromLines(newChild.required_functionality),
       };
       const updated = await api.addSitemapPage(sitemapId, create);
@@ -434,6 +489,12 @@ function PageRow({
       {expanded && !editing && (
         <div className="mt-2 space-y-1.5 pl-1 text-sm text-neutral-700">
           <p>{page.purpose}</p>
+          {page.target_audience && (
+            <p>
+              <span className="text-neutral-500">Target audience: </span>
+              {page.target_audience}
+            </p>
+          )}
           <p>
             <span className="text-neutral-500">Primary CTA: </span>
             {page.primary_cta || "—"}
@@ -444,6 +505,18 @@ function PageRow({
               </>
             )}
           </p>
+          {page.conversion_goal && (
+            <p>
+              <span className="text-neutral-500">Conversion goal: </span>
+              {page.conversion_goal}
+            </p>
+          )}
+          {page.seo_intent && (
+            <p>
+              <span className="text-neutral-500">SEO intent: </span>
+              {page.seo_intent}
+            </p>
+          )}
           {page.key_sections.length > 0 && (
             <div>
               <span className="text-neutral-500">Key sections:</span>
@@ -454,6 +527,12 @@ function PageRow({
             <div>
               <span className="text-neutral-500">Required content:</span>
               {bulletList(page.required_content)}
+            </div>
+          )}
+          {page.required_assets.length > 0 && (
+            <div>
+              <span className="text-neutral-500">Required assets:</span>
+              {bulletList(page.required_assets)}
             </div>
           )}
           {page.required_functionality.length > 0 && (
@@ -543,10 +622,14 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
         page_type: newTop.page_type,
         nav_placement: newTop.nav_placement,
         purpose: newTop.purpose,
+        target_audience: newTop.target_audience || null,
         primary_cta: newTop.primary_cta || null,
         secondary_cta: newTop.secondary_cta || null,
+        conversion_goal: newTop.conversion_goal || null,
+        seo_intent: newTop.seo_intent || null,
         key_sections: fromLines(newTop.key_sections),
         required_content: fromLines(newTop.required_content),
+        required_assets: fromLines(newTop.required_assets),
         required_functionality: fromLines(newTop.required_functionality),
       };
       const updated = await api.addSitemapPage(sitemap.id, create);

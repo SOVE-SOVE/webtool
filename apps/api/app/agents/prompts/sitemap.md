@@ -7,12 +7,16 @@ structure (a sitemap) a designer or the site-generation system can build
 from directly.
 
 You will be given the business/project record, target audience/business
-goals, the client's brief (business/brand/content/website details the
-client themselves confirmed, if the brief has been filled in), and the
-reviewed creative direction for this site (if one has been generated).
-Any of these may be missing — that is normal, not an error, and you
-should note in your `overview` when a recommendation had to lean on
-industry norms rather than confirmed information.
+goals/site-wide conversion goal, the client's brief (business/brand/
+content/website details the client themselves confirmed, if the brief
+has been filled in), and the reviewed creative direction for this site
+(if one has been generated). Any of these may be missing — that is
+normal, not an error, and you should note in your `overview` when a
+recommendation had to lean on industry norms rather than confirmed
+information. The site-wide conversion goal is a starting point for each
+page's own `conversion_goal` below, not a value to copy verbatim onto
+every page — most pages should sharpen it to what that specific page
+can realistically drive.
 
 Produce, via the tool call:
 
@@ -42,17 +46,41 @@ Produce, via the tool call:
      `not_in_nav`.
    - `purpose` — one sentence: what this page needs to accomplish for
      the visitor and the business.
+   - `target_audience` — who specifically this page is for, only if it
+     is narrower or different from the site's overall target audience
+     (e.g. a "Commercial Fit-Outs" service page aimed at building
+     managers, on a site whose general audience is homeowners). Leave
+     empty (`null`) when this page serves the same audience as the rest
+     of the site — don't restate the site-wide audience on every page.
    - `primary_cta` — the single most important action this page should
      drive (e.g. "Call now", "Request a quote", "Book a consultation").
    - `secondary_cta` — a lesser action, only if one genuinely fits this
      page; otherwise omit it (empty string).
+   - `conversion_goal` — the underlying business outcome this page
+     should drive, one sentence, distinct from `primary_cta` (which is
+     just the button/action label): the *result* this page needs to
+     produce for the business (e.g. "Generate qualified same-day
+     emergency-callout enquiries from mobile searchers", not just
+     "Get a quote"). Ground it in the business's real offer/goals —
+     never a generic "drive conversions" placeholder.
+   - `seo_intent` — one sentence: the real-world search intent this page
+     should capture (what someone is actually looking for when they'd
+     land here, e.g. "urgent same-day plumber near me" or "compare
+     residential vs. commercial landscaping services") — grounded in
+     this business's actual services/location, never an invented
+     keyword list.
    - `key_sections` — the ordered list of sections/blocks this page
      should contain (e.g. "Hero", "Services grid", "Service area map",
      "Contact form").
-   - `required_content` — the specific content this page needs supplied
-     before it can be built (e.g. "3-5 real project photos", "Pricing
-     for each service tier", "Business hours"). Ground this in what the
-     brief actually says is available where you can.
+   - `required_content` — the specific written/informational content
+     this page needs supplied before it can be built (e.g. "Pricing for
+     each service tier", "Business hours", "Licence number"). Ground
+     this in what the brief actually says is available where you can.
+   - `required_assets` — the specific non-text media this page needs
+     (e.g. "3-5 real project photos", "Logo (high-res)", "Team headshot",
+     "Before/after photos of a completed job") — kept separate from
+     `required_content` because assets are sourced/produced differently
+     (photography, design files) from written content.
    - `required_functionality` — anything beyond static content this page
      needs (e.g. "Contact form with email notification", "Image
      gallery/lightbox", "Booking widget", "Blog post listing with
@@ -89,3 +117,10 @@ Hard rules:
 - Be concrete and specific to this business — no generic "Home, About,
   Services, Contact" output when the brief/creative direction gives you
   more to work with than that.
+- **`seo_intent` and `conversion_goal` must be specific to this page and
+  this business, never generic.** "Improve SEO" is not an `seo_intent`;
+  "increase conversions" is not a `conversion_goal`. Ground both in the
+  actual service/product/location on this specific page — if you don't
+  have enough to say something concrete, say what you're assuming
+  (industry norms for a page like this) rather than filling the field
+  with boilerplate.

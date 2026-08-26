@@ -139,10 +139,22 @@ class SitemapPage(Base):
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
     purpose: Mapped[str] = mapped_column(Text)
+    # Null when this page targets the same audience as the sitemap's
+    # overall target audience — only set when a specific page's audience
+    # is narrower/different (see agents/prompts/sitemap.md).
+    target_audience: Mapped[str | None] = mapped_column(Text)
     primary_cta: Mapped[str | None] = mapped_column(String(255))
     secondary_cta: Mapped[str | None] = mapped_column(String(255))
+    # The business outcome this page should drive — distinct from
+    # primary_cta (the literal button/action label).
+    conversion_goal: Mapped[str | None] = mapped_column(Text)
+    # The real-world search intent this page should capture.
+    seo_intent: Mapped[str | None] = mapped_column(Text)
     key_sections: Mapped[str | None] = mapped_column(Text)
     required_content: Mapped[str | None] = mapped_column(Text)
+    # Non-text media (photos, logos, video) this page needs — kept
+    # separate from required_content, which is written/informational.
+    required_assets: Mapped[str | None] = mapped_column(Text)
     required_functionality: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

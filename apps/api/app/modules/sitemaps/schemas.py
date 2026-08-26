@@ -37,10 +37,14 @@ class SitemapPageCreate(BaseModel):
     parent_page_id: uuid.UUID | None = None
     nav_placement: NavPlacement = NavPlacement.PRIMARY_NAV
     purpose: str = ""
+    target_audience: str | None = None
     primary_cta: str | None = None
     secondary_cta: str | None = None
+    conversion_goal: str | None = None
+    seo_intent: str | None = None
     key_sections: list[str] = Field(default_factory=list)
     required_content: list[str] = Field(default_factory=list)
+    required_assets: list[str] = Field(default_factory=list)
     required_functionality: list[str] = Field(default_factory=list)
     # Explicit position among its new siblings; omitted appends to the end.
     order_index: int | None = None
@@ -62,10 +66,14 @@ class SitemapPageUpdate(BaseModel):
     parent_page_id: uuid.UUID | None = None
     nav_placement: NavPlacement | None = None
     purpose: str | None = None
+    target_audience: str | None = None
     primary_cta: str | None = None
     secondary_cta: str | None = None
+    conversion_goal: str | None = None
+    seo_intent: str | None = None
     key_sections: list[str] | None = None
     required_content: list[str] | None = None
+    required_assets: list[str] | None = None
     required_functionality: list[str] | None = None
 
 
@@ -93,10 +101,14 @@ class SitemapPageRead(BaseModel):
     nav_placement: NavPlacement
     order_index: int
     purpose: str
+    target_audience: str | None
     primary_cta: str | None
     secondary_cta: str | None
+    conversion_goal: str | None
+    seo_intent: str | None
     key_sections: list[str]
     required_content: list[str]
+    required_assets: list[str]
     required_functionality: list[str]
     created_at: datetime
     updated_at: datetime
@@ -114,10 +126,14 @@ class SitemapPageRead(BaseModel):
             nav_placement=page.nav_placement,
             order_index=page.order_index,
             purpose=page.purpose,
+            target_audience=page.target_audience,
             primary_cta=page.primary_cta,
             secondary_cta=page.secondary_cta,
+            conversion_goal=page.conversion_goal,
+            seo_intent=page.seo_intent,
             key_sections=_split(page.key_sections),
             required_content=_split(page.required_content),
+            required_assets=_split(page.required_assets),
             required_functionality=_split(page.required_functionality),
             created_at=page.created_at,
             updated_at=page.updated_at,

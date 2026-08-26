@@ -101,6 +101,7 @@ def _build_creative_direction_notes(cd: CreativeDirectionBrief | None) -> str | 
             f"Creative concept: {cd.creative_concept}",
             f"UX direction: {cd.ux_direction}",
             f"CTA strategy: {cd.cta_strategy}",
+            f"Conversion goal: {cd.conversion_goal or 'not set'}",
             f"Visual hierarchy: {cd.visual_hierarchy}",
             f"Tone of voice: {cd.tone_of_voice}",
             f"Brand personality: {cd.brand_personality}",
@@ -145,6 +146,9 @@ def generate_sitemap(
     business_goals = (creative_direction.business_goals if creative_direction else None) or (
         brief.business_goals if brief else None
     )
+    conversion_goal = (creative_direction.conversion_goal if creative_direction else None) or (
+        brief.calls_to_action if brief else None
+    )
 
     agent_input = SitemapInput(
         business_name=business.name,
@@ -152,6 +156,7 @@ def generate_sitemap(
         project_name=project.name,
         target_audience=target_audience,
         business_goals=business_goals,
+        conversion_goal=conversion_goal,
         brief_notes=_build_brief_notes(brief),
         creative_direction_notes=_build_creative_direction_notes(creative_direction),
         additional_notes=request.additional_notes,
@@ -197,10 +202,14 @@ def generate_sitemap(
             nav_placement=NavPlacement(page.nav_placement),
             order_index=order_counter[page.parent_slug],
             purpose=page.purpose,
+            target_audience=page.target_audience or None,
             primary_cta=page.primary_cta or None,
             secondary_cta=page.secondary_cta or None,
+            conversion_goal=page.conversion_goal or None,
+            seo_intent=page.seo_intent or None,
             key_sections=_join(page.key_sections),
             required_content=_join(page.required_content),
+            required_assets=_join(page.required_assets),
             required_functionality=_join(page.required_functionality),
         )
         order_counter[page.parent_slug] += 1
@@ -315,10 +324,14 @@ def add_page(
         nav_placement=data.nav_placement,
         order_index=order_index,
         purpose=data.purpose,
+        target_audience=data.target_audience,
         primary_cta=data.primary_cta,
         secondary_cta=data.secondary_cta,
+        conversion_goal=data.conversion_goal,
+        seo_intent=data.seo_intent,
         key_sections=_join(data.key_sections),
         required_content=_join(data.required_content),
+        required_assets=_join(data.required_assets),
         required_functionality=_join(data.required_functionality),
     )
     db.add(page)
@@ -337,7 +350,7 @@ def add_page(
     return get_sitemap(db, workspace_id, sitemap_id)
 
 
-_LIST_FIELDS = {"key_sections", "required_content", "required_functionality"}
+_LIST_FIELDS = {"key_sections", "required_content", "required_assets", "required_functionality"}
 
 
 def update_page(

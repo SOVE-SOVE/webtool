@@ -50,6 +50,7 @@ class SitemapInput(BaseModel):
     project_name: str
     target_audience: str | None
     business_goals: str | None
+    conversion_goal: str | None
     brief_notes: str | None
     creative_direction_notes: str | None
     additional_notes: str | None
@@ -65,10 +66,22 @@ class SitemapPageOutput(BaseModel):
     parent_slug: str | None
     nav_placement: NavPlacementLiteral
     purpose: str
+    # Null when this page's audience is the same as the sitemap's overall
+    # target audience — only set when a *specific* page targets someone
+    # narrower (e.g. a commercial-callout service page vs. the site's
+    # general residential audience).
+    target_audience: str | None
     primary_cta: str
     secondary_cta: str | None
+    # The underlying business outcome this page should drive — distinct
+    # from primary_cta (the literal button/action text), e.g. "generate
+    # qualified same-day emergency callout requests" vs. the CTA text
+    # "Call now".
+    conversion_goal: str
+    seo_intent: str
     key_sections: list[str]
     required_content: list[str]
+    required_assets: list[str]
     required_functionality: list[str]
 
 
@@ -88,9 +101,10 @@ def _build_user_message(input: SitemapInput) -> str:
             f"Business name: {input.business_name}\n"
             f"Industry: {input.industry or 'unknown'}\n"
             f"Project: {input.project_name}",
-            "TARGET AUDIENCE / BUSINESS GOALS",
+            "TARGET AUDIENCE / BUSINESS GOALS / CONVERSION GOAL",
             f"Target audience: {input.target_audience or 'not provided'}\n"
-            f"Business goals for the new site: {input.business_goals or 'not provided'}",
+            f"Business goals for the new site: {input.business_goals or 'not provided'}\n"
+            f"Site-wide primary conversion goal: {input.conversion_goal or 'not provided'}",
             "CLIENT BRIEF (confirmed by the client via intake — treat as fact)",
             input.brief_notes or "No brief on record for this project, or it hasn't been filled in yet.",
             "CREATIVE DIRECTION (the reviewed/approved design direction for this site, if one exists)",
