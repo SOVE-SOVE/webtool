@@ -21,7 +21,17 @@ from app.modules.previews.schemas import (
     PublicPreviewSection,
 )
 from app.modules.projects.models import Project
-from app.modules.websites.models import Website
+from app.modules.websites.models import Website, WebsiteWorkflowStatus
+
+# Task 3's formal workflow states from which a CLIENT-audience link may
+# show a version — anything still DRAFT/INTERNAL_REVIEW stays hidden.
+_CLIENT_VISIBLE_WORKFLOW_STATUSES = {
+    WebsiteWorkflowStatus.CLIENT_REVIEW,
+    WebsiteWorkflowStatus.CHANGES_REQUESTED,
+    WebsiteWorkflowStatus.APPROVED,
+    WebsiteWorkflowStatus.READY_TO_DEPLOY,
+    WebsiteWorkflowStatus.DEPLOYED,
+}
 
 _READ_OPTIONS = (joinedload(PreviewLink.created_by_user), joinedload(PreviewLink.revoked_by_user))
 
@@ -165,11 +175,19 @@ def _check_link_valid(link: PreviewLink | None) -> PreviewLink:
 
 def _is_visible(website: Website, audience: PreviewAudience) -> bool:
     """Do-not-expose-unpublished-websites-publicly gate: a CLIENT
-    audience link only ever resolves a version the operator has already
-    signed off on (checkpoint 4), never a bare draft mid-build. INTERNAL
-    links see every version, including drafts, for the team's own
+    audience link only ever resolves a version that's cleared *either*
+    the original operator-approval checkpoint (`Website.approved`) *or*
+    Task 3's formal workflow reaching CLIENT_REVIEW or beyond — the two
+    checkpoints layer additively rather than one replacing the other
+    (see docs/05_DECISIONS.md), so a project using only the simple
+    "approve website" action keeps working exactly as before. INTERNAL
+    links see every version, including a bare DRAFT, for the team's own
     review — never handed to a client."""
-    return website.config is not None and (audience == PreviewAudience.INTERNAL or website.approved)
+    if website.config is None:
+        return False
+    if audience == PreviewAudience.INTERNAL:
+        return True
+    return website.approved or website.workflow_status in _CLIENT_VISIBLE_WORKFLOW_STATUSES
 
 
 def _section_read(section: dict) -> PublicPreviewSection:

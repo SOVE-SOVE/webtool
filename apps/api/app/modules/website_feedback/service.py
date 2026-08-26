@@ -11,6 +11,8 @@ from app.modules.clients.models import Client
 from app.modules.previews import service as previews_service
 from app.modules.projects.models import Project
 from app.modules.website_feedback.models import FeedbackStatus, FeedbackType, WebsiteFeedback
+from app.modules.websites import service as websites_service
+from app.modules.websites.models import WebsiteWorkflowStatus
 from app.modules.website_feedback.schemas import FeedbackCreate, FeedbackRead, FeedbackStatusUpdate
 
 _READ_OPTIONS = (joinedload(WebsiteFeedback.resolved_by_user),)
@@ -70,8 +72,24 @@ def submit_feedback(db: Session, token: str, website_id: uuid.UUID, request: Fee
     db.add(feedback)
     db.flush()
 
-    workspace_id = link.project.client.business.workspace_id
     who = request.client_name or ("the client" if link.audience.value == "client" else "an internal reviewer")
+
+    # Approval-workflow Task 3 integration: a client's own approve/
+    # reject/change-request feedback drives the version's workflow state
+    # forward, same as an operator clicking through
+    # transition_website_workflow — see apply_client_decision's
+    # docstring for why this is silent/best-effort rather than a hard
+    # requirement.
+    if request.feedback_type == FeedbackType.APPROVAL:
+        websites_service.apply_client_decision(
+            db, website, WebsiteWorkflowStatus.APPROVED, actor_label=f"{who} (via preview link)", notes=request.message
+        )
+    elif request.feedback_type in (FeedbackType.REJECTION, FeedbackType.CHANGE_REQUEST):
+        websites_service.apply_client_decision(
+            db, website, WebsiteWorkflowStatus.CHANGES_REQUESTED, actor_label=f"{who} (via preview link)", notes=request.message
+        )
+
+    workspace_id = link.project.client.business.workspace_id
     activity_service.record(
         db,
         workspace_id=workspace_id,

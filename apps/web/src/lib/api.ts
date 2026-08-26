@@ -769,6 +769,60 @@ export type SitemapPageOrderItem = {
 export const WEBSITE_STATUSES = ["draft", "live"] as const;
 export type WebsiteStatus = (typeof WEBSITE_STATUSES)[number];
 
+// Phase 6 Task 3's formal approval workflow — layered on top of the
+// approved/client_approved booleans below, not replacing them. See
+// apps/api's modules/websites/models.py's WebsiteWorkflowStatus
+// docstring for the full state diagram.
+export const WEBSITE_WORKFLOW_STATUSES = [
+  "draft",
+  "internal_review",
+  "client_review",
+  "changes_requested",
+  "approved",
+  "ready_to_deploy",
+  "deployed",
+] as const;
+export type WebsiteWorkflowStatus = (typeof WEBSITE_WORKFLOW_STATUSES)[number];
+
+export const WORKFLOW_STATUS_LABELS: Record<WebsiteWorkflowStatus, string> = {
+  draft: "Draft",
+  internal_review: "Internal review",
+  client_review: "Client review",
+  changes_requested: "Changes requested",
+  approved: "Approved",
+  ready_to_deploy: "Ready to deploy",
+  deployed: "Deployed",
+};
+
+// Mirrors apps/api's modules/websites/service.py ALLOWED_TRANSITIONS —
+// duplicated here only to decide which buttons to show; the server
+// re-validates every transition regardless, so this being out of sync
+// would only affect which buttons appear, never what's actually allowed.
+export const WORKFLOW_TRANSITIONS: Record<WebsiteWorkflowStatus, WebsiteWorkflowStatus[]> = {
+  draft: ["internal_review"],
+  internal_review: ["client_review", "changes_requested", "draft"],
+  client_review: ["approved", "changes_requested"],
+  changes_requested: ["draft", "internal_review"],
+  approved: ["ready_to_deploy", "changes_requested"],
+  ready_to_deploy: ["deployed", "changes_requested"],
+  deployed: [],
+};
+
+export type WorkflowTransitionRequest = {
+  to_status: WebsiteWorkflowStatus;
+  notes?: string;
+};
+
+export type WorkflowTransition = {
+  id: string;
+  from_status: WebsiteWorkflowStatus;
+  to_status: WebsiteWorkflowStatus;
+  actor_user_name: string | null;
+  actor_label: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
 export const QUALITY_ISSUE_SEVERITIES = ["high", "medium", "low"] as const;
 export type QualityIssueSeverity = (typeof QUALITY_ISSUE_SEVERITIES)[number];
 
@@ -809,6 +863,7 @@ export type Website = {
   id: string;
   project_id: string;
   status: WebsiteStatus;
+  workflow_status: WebsiteWorkflowStatus;
   navigation: WebsiteSection;
   footer: WebsiteSection;
   pages: WebsitePage[];
@@ -837,6 +892,7 @@ export type Website = {
 export type WebsiteSummary = {
   id: string;
   status: WebsiteStatus;
+  workflow_status: WebsiteWorkflowStatus;
   anti_slop_score: number | null;
   flagged_for_review: boolean;
   generated_by_user_name: string | null;
@@ -1600,6 +1656,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data ?? {}),
     }),
+  transitionWebsiteWorkflow: (websiteId: string, data: WorkflowTransitionRequest) =>
+    request<Website>(`/api/v1/websites/${websiteId}/workflow-transition`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listWorkflowHistory: (websiteId: string) =>
+    request<WorkflowTransition[]>(`/api/v1/websites/${websiteId}/workflow-history`),
 
   generateQaReport: (websiteId: string, data?: GenerateQaReportRequest) =>
     request<QaReport>(`/api/v1/websites/${websiteId}/qa-reports`, {

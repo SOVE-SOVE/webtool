@@ -8,6 +8,7 @@ import { WebsiteView } from "@/components/WebsiteView";
 import { QaReportView } from "@/components/QaReportView";
 import { PreviewLinksPanel } from "@/components/PreviewLinksPanel";
 import { WebsiteFeedbackPanel } from "@/components/WebsiteFeedbackPanel";
+import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
 
 export default function ProjectWebsitePage() {
   const params = useParams<{ id: string }>();
@@ -264,6 +265,8 @@ export default function ProjectWebsitePage() {
           {clientApproveError && <p className="mt-2 text-sm text-red-600">{clientApproveError}</p>}
         </div>
       )}
+
+      {website && <WebsiteWorkflowPanel website={website} onChange={applyWebsiteApproval} />}
 
       {website && (
         <div className="mt-6">
