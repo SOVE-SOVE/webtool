@@ -8,6 +8,87 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
 ## 2026-08-26 — Deployment adapter architecture + delivery workflow (phase 6 part 2)
 
 **Decision:** Split into two pieces, matching the operator's own task
@@ -155,6 +236,95 @@ approval/deployment test and every workflow a project already in
 progress had been using, for no benefit the additive approach doesn't
 already provide; the new workflow's value is the *explicit gate before
 deployment*, not eliminating something that already worked.
+
+---
+
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
+**Verified:** full backend suite (664 tests, same 15 test functions in
+`test_clients.py` as before — one of them, the history-preservation
+test, materially strengthened rather than split into more tests),
+`tsc --noEmit`, `eslint` on the two changed files, and `vitest run`
+(53/53) all clean.
 
 ---
 

@@ -140,6 +140,54 @@ website/user) was deleted from the shared local dev Postgres afterward.
 
 ---
 
+## 2026-08-26 — Phase 4 "lead to client conversion": audit + hardening, not a rebuild
+
+**Mode:** worktree (`lead-to-client-conversion`, background job)
+**Merge to main after:** yes, pending review
+**Scope touched:** `apps/api/tests/test_clients.py`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/clients/page.tsx`, this file,
+`docs/05_DECISIONS.md`
+**What happened:** Asked to "build the lead-to-client conversion
+workflow" for Phase 4 (mark a lead WON → convert to client, preserving
+business/contact/research/lead/sales history/notes, preventing
+duplicates, with a confirmation step and tests). Checked
+`docs/04_ROADMAP.md`/`docs/05_DECISIONS.md` first per
+[[03_AGENT_RULES]] and found this already built and marked `[x]`
+(2026-08-19): `POST /api/v1/clients` with `from_lead_id` already does
+the whole thing atomically — reuses the lead's `Business` row, marks
+the lead WON, creates the `Client` + an INTAKE `Project` + starter
+tasks + a WON `SalesOpportunity`, records `source_lead_id`, and 409s on
+a repeat conversion. See the new 2026-08-26 entry in
+`docs/05_DECISIONS.md` for the full audit and reasoning. Closed the two
+real gaps found against the request: extended
+`test_convert_lead_preserves_original_lead_and_its_history` to also
+cover `Contact`, `SalesAuditReport`, and `OutreachMessage` rows (and
+`Business.notes`/other fields) surviving conversion — previously only
+`Interaction`/`WebsiteAudit` were checked — and added an explicit
+`confirm()` dialog before the actual conversion call on both entry
+points (the lead detail page's "Convert to client" form and the
+Clients page's "Add client → Convert a won/open lead" form), matching
+the `window.confirm` pattern `clients/[id]/page.tsx` already uses for
+its own irreversible action.
+**Blockers/issues:** None. The worktree had no `node_modules`/`.next`
+of its own (expected for a fresh worktree — see the 2026-08-24
+follow-up-automation entry's note on this) — symlinked the main
+checkout's `node_modules` and ran `next typegen` to get `tsc --noEmit`
+working. Full backend suite: 664/664 passed (Postgres test DB was
+quiet, single-session run, no contention). Frontend: `tsc --noEmit`
+clean, `eslint` clean on the two changed files, `vitest run` 53/53. Did
+not verify in a real browser — no UI shape changed, only a native
+`confirm()` gate added in front of an already-manually-verified flow
+(the 2026-08-19 entry records that walkthrough).
+**Next up:** Nothing blocking. If a real modal/toast system is ever
+built for this app, `window.confirm` here (and at
+`clients/[id]/page.tsx`'s "Start another project") would be the two
+call sites to migrate together, but neither is worth introducing new
+UI infrastructure for on its own.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes
