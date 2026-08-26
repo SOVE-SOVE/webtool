@@ -8,6 +8,64 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-26 — Deployment adapter architecture + delivery workflow (phase 6 part 2)
+
+**Decision:** Split into two pieces, matching the operator's own task
+split. First, turned `integrations/deployment.py` (a single
+`MockDeploymentProvider` class) into a real package
+(`integrations/deployment/`) with a `DeploymentProvider` interface
+(`validate_config`/`build`/`deploy`/`get_status`/`rollback`), a shared
+static-site build step, and real adapters for Vercel, Netlify,
+Cloudflare Pages, and traditional FTP/FTPS hosting — one class per
+provider, each reading its own credentials only from `app.core.settings`
+(env-var-backed), never a literal in code, and each failing loudly
+(`DeploymentProviderError`) rather than silently falling back to mock
+if selected without its credentials configured. `DEPLOY_PROVIDER`
+still defaults to `mock`, so nothing about this changes today's
+behavior until an operator actually sets real hosting credentials.
+
+Second, closed the gap between "a deployment succeeded" and "this
+project is actually delivered": added `check-status` (re-poll a
+provider's own status — a no-op for every provider here today, since
+none of them have an async build to watch, but the real hook for one
+that does) and `verify` (an explicit confirmation step, reusing the
+existing SSRF-guarded `fetch_page_signals` browser fetch QA's live
+checks already use, rather than a second bespoke HTTP client) on top of
+the existing prepare/execute/rollback lifecycle. `Project.delivered_at`
+is now set by a new `mark_delivered`, gated on the latest deployment
+being both successful *and* verified, plus every item on the existing
+post-launch handover checklist (`DEFAULT_LAUNCH_TASK_TITLES`, already
+seeded on first deploy) checked off — that checklist *is* the "final
+delivery checklist" the task asked for; a new one wasn't invented
+since this one already covered the same handover steps.
+
+**Why:** "Do not hard-code credentials" and "do not automatically
+deploy without explicit approval" were explicit constraints — the
+adapter registry pattern (mirroring `integrations/calendar/` and
+`integrations/email.py`, the two existing multi-provider adapters in
+this codebase) satisfies both: credentials only ever come from the
+environment, and `execute_deployment`/`deploy()` stay a separate,
+explicit call from `create_deployment`/prepare, unchanged. A real
+provider's `build()` step produces genuine static HTML from the
+already-generated site config rather than a fake placeholder — real
+enough to actually publish — but is deliberately not a port of
+`packages/site-templates`' React components (that stays the operator-
+facing visual source of truth); building a pixel-accurate static
+exporter is separate, later work, not a precondition for the
+deployment architecture existing.
+
+**Alternatives considered:** A single `DeploymentProvider.deploy(bundle)`
+call (the pre-existing shape) was rejected once `get_status`/`rollback`
+needed representing — flattening "submit a build," "check on it," and
+"restore an old one" into one method would have made every real
+provider's very different capabilities (Netlify's real restore API vs.
+Vercel/Cloudflare's lack of a simple one) invisible to the service
+layer. Inventing a brand-new "final delivery checklist" task list
+alongside the existing launch-handover one was rejected as redundant —
+they're the same list of post-launch admin steps under two names.
+
+---
+
 ## 2026-08-26 — Phase 6: secure website previews, client feedback, and a formal approval workflow
 
 **Decision:** Closed roadmap M5's last open item ("a secure shareable

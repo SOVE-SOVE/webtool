@@ -287,8 +287,26 @@ export type Project = {
   deadline: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
+  delivered_at: string | null;
+  delivered_by_user_name: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type DeliveryChecklistItem = {
+  task_id: string;
+  title: string;
+  done: boolean;
+};
+
+export type DeliveryStatus = {
+  can_deliver: boolean;
+  already_delivered: boolean;
+  has_successful_deployment: boolean;
+  deployment_verified: boolean;
+  latest_deployment_url: string | null;
+  checklist: DeliveryChecklistItem[];
+  missing: string[];
 };
 
 export type ProjectCreate = {
@@ -1011,12 +1029,15 @@ export type Deployment = {
   environment: string;
   target: string;
   url: string | null;
+  provider_ref: string | null;
   status: DeploymentStatus;
   result: Record<string, unknown> | null;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
   deployed_at: string | null;
+  verified_at: string | null;
+  verified_by_user_name: string | null;
   rollback_of_deployment_id: string | null;
   approved_by_user_name: string | null;
   notes: string | null;
@@ -1684,6 +1705,10 @@ export const api = {
   listDeployments: (projectId: string) => request<Deployment[]>(`/api/v1/projects/${projectId}/deployments`),
   getDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}`),
   executeDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/execute`, { method: "POST" }),
+  checkDeploymentStatus: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/check-status`, { method: "POST" }),
+  verifyDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/verify`, { method: "POST" }),
+  getDeliveryStatus: (projectId: string) => request<DeliveryStatus>(`/api/v1/projects/${projectId}/delivery-status`),
+  deliverProject: (projectId: string) => request<Project>(`/api/v1/projects/${projectId}/deliver`, { method: "POST" }),
   rollbackDeployment: (projectId: string, data: RollbackDeploymentRequest) =>
     request<Deployment>(`/api/v1/projects/${projectId}/deployments/rollback`, {
       method: "POST",
