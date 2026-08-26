@@ -11,6 +11,92 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — Automatic project creation from an approved client brief (project workspace: stages, tasks, deadlines, responsibilities, approval points)
+**Mode:** worktree
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/modules/project_plans (new), apps/api/app/modules/design_briefs/service.py, apps/api/app/modules/projects/service.py, apps/api/app/modules/tasks/{models,schemas,service}.py, apps/api/app/db/all_models.py, apps/api/app/main.py, apps/api/alembic/versions (new migration), apps/api/tests/test_project_plans.py (new), apps/web/src/lib/api.ts, apps/web/src/components/ProjectPlanView.tsx (new), apps/web/src/app/dashboard/projects/[id]/page.tsx
+**What happened:** The existing pipeline already auto-created a bare
+`Project` at intake and advanced its `stage` on brief approval
+(`design_briefs/service.py::approve_brief`), but nothing built out the
+rest of the delivery plan — no per-stage deadlines, ownership, or
+approval points existed as data, only the one enum column. Added
+`modules/project_plans/`: a `project_stage_plans` table, one row per
+`ProjectStage` (all 12), created once — right after `approve_brief`'s
+existing `advance_stage(..., BRIEF)` call, gated on it actually
+returning `True` (same "only once" convention as
+`projects/service.py::create_launch_tasks`, plus a defensive `has_plan`
+re-check) — via `create_plan_for_project`. Each row seeds a sensible
+default: the project's own `assigned_user_id` as the responsible person,
+a due date staggered forward from today by a fixed per-stage duration
+budget, and `requires_approval=True` for the six stages that mirror
+`modules/approvals/service.py`'s existing checkpoints (brief, design,
+development, QA, client review, ready-to-deploy) — with `BRIEF` itself
+seeded already-approved, since the plan is only ever created in response
+to that exact approval. Every field is then freely editable (`PATCH
+/api/v1/project-plan-stages/{id}`), and a checkpoint's own
+`POST .../approve` 400s if it wasn't marked `requires_approval` in the
+first place.
+
+Tasks needed a way to group under a stage without duplicating the
+starter-checklist mechanism that already existed for INTAKE
+(`create_default_tasks`) and DEPLOYED (`create_launch_tasks`): added a
+nullable `stage` column to the existing `Task` table (reusing the
+`project_stage` Postgres enum type, `create_type=False`, same technique
+`pipeline_stage_configs` used for `lead_status`) rather than a new FK to
+the plan-stage row — tasks are tagged by stage value, not linked to a
+specific plan-stage instance, which is simpler and survives a plan being
+absent (e.g. lead tasks, or a project created before this feature
+existed). `create_default_tasks`/`create_launch_tasks` now tag their
+seeded tasks `INTAKE`/`DEPLOYED` respectively so they show up under the
+right stage in the new UI; `create_plan_for_project` seeds its own
+starter checklist for every stage from RESEARCH through
+READY_TO_DEPLOY (INTAKE and DEPLOYED are deliberately skipped — already
+covered by the two existing seeders, seeding them again would
+duplicate).
+
+Frontend: a new "Project workspace" section on `/dashboard/projects/[id]`
+(`ProjectPlanView`, placed right after the Project brief section) —
+one expandable row per stage showing status/due-date/responsible-person
+controls, an Approve button where relevant, a task-progress count, and
+an inline task checklist (toggle done, reassign, add a task) once
+expanded.
+
+37 new backend tests (`test_project_plans.py`) plus a fix to
+`test_start_intake_seeds_the_same_starter_checklist_as_a_lead_conversion`'s
+underlying seeders' now-tagged output; full backend suite 677/677 and
+frontend `tsc`/`eslint`/`vitest` (53/53) all clean, run against a
+throwaway `webdesignos_test_planwork` database (see Blockers) rather
+than the shared one.
+**Blockers/issues:** The shared `webdesignos_test` Postgres database had
+a stale, only-partially-torn-down schema/data from what looks like
+another concurrent session's interrupted run (a duplicate-email
+`UniqueViolation` on the fixture's own admin user, and orphaned tables
+like `onboarding_checklist_items` not present in this branch's models at
+all) — the same class of problem the 2026-08-25 session log entry
+already flagged as a recurring risk of multiple sessions sharing one
+local test DB. Rather than risk further corrupting or being corrupted by
+whatever else was running, this session terminated the existing
+`webdesignos_test` backend connections, dropped and recreated it once
+early on, then did all of its own verification against a separate
+`webdesignos_test_planwork` database instead (temporarily pointing
+`conftest.py` at it, reverted before finishing) — so this session's own
+runs are trustworthy, but anyone else's concurrent run against
+`webdesignos_test` at that moment may have been disrupted by the
+terminate/recreate. Worth a permanent fix (a per-worker/per-session test
+DB name, or a lock) if this keeps recurring.
+**Next up:** Consider whether `ProjectStagePlan.due_at` should reflow
+when an earlier stage's actual completion slips (today, each stage's
+default is only ever set once, at plan-creation time, then manually
+edited from there — there's no automatic re-staggering of later dates
+when an earlier one moves). Also unaddressed: the new plan is created
+once and never regenerated even if the sitemap/creative-direction
+process reveals stages should be skipped (e.g. no REVISIONS needed) —
+same "starting point, not enforced" philosophy as the rest of this
+app's checklists, but worth revisiting if operators find stale
+now-irrelevant stages cluttering the workspace view.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes

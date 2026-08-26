@@ -396,6 +396,7 @@ export type Task = {
   lead_id: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
+  stage: ProjectStage | null;
   context: string;
   created_at: string;
 };
@@ -406,10 +407,52 @@ export type TaskCreate = {
   project_id?: string;
   lead_id?: string;
   assigned_user_id?: string;
+  stage?: ProjectStage;
 };
 
 // assigned_user_id: null unassigns, omitted leaves assignment untouched.
-export type TaskUpdate = { done?: boolean; assigned_user_id?: string | null };
+export type TaskUpdate = { done?: boolean; assigned_user_id?: string | null; stage?: ProjectStage | null };
+
+// The automatically-created project workspace (docs/04_ROADMAP.md M4):
+// approving a project's brief seeds one PlanStage per pipeline stage,
+// each with a sensible default responsible person, due date, and
+// whether it needs an explicit approval — every field then freely
+// editable.
+export const PLAN_STAGE_STATUSES = ["pending", "in_progress", "done"] as const;
+export type PlanStageStatus = (typeof PLAN_STAGE_STATUSES)[number];
+
+export type PlanStage = {
+  id: string;
+  project_id: string;
+  stage: ProjectStage;
+  label: string;
+  sort_order: number;
+  responsible_user_id: string | null;
+  responsible_user_name: string | null;
+  due_at: string | null;
+  requires_approval: boolean;
+  status: PlanStageStatus;
+  approved: boolean;
+  approved_by_user_id: string | null;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+  task_count: number;
+  tasks_done: number;
+};
+
+export type ProjectPlan = {
+  project_id: string;
+  stages: PlanStage[];
+};
+
+// responsible_user_id: null clears it, omitted leaves it untouched.
+export type PlanStageUpdate = {
+  label?: string;
+  due_at?: string | null;
+  requires_approval?: boolean;
+  status?: PlanStageStatus;
+  responsible_user_id?: string | null;
+};
 
 export const MEETING_TYPES = ["sales_call", "client_check_in", "other"] as const;
 export type MeetingType = (typeof MEETING_TYPES)[number];
@@ -1431,6 +1474,15 @@ export const api = {
     request<Task>("/api/v1/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id: string, data: TaskUpdate) =>
     request<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  getProjectPlan: (projectId: string) => request<ProjectPlan>(`/api/v1/projects/${projectId}/plan`),
+  updatePlanStage: (stageId: string, data: PlanStageUpdate) =>
+    request<PlanStage>(`/api/v1/project-plan-stages/${stageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  approvePlanStage: (stageId: string) =>
+    request<PlanStage>(`/api/v1/project-plan-stages/${stageId}/approve`, { method: "POST" }),
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
   salesDashboard: () => request<SalesDashboard>("/api/v1/dashboard/sales"),

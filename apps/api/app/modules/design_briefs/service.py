@@ -9,6 +9,7 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.design_briefs.schemas import BriefIntakeStart, BriefRead, BriefUpdate
+from app.modules.project_plans import service as project_plans_service
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 
@@ -239,9 +240,22 @@ def approve_brief(
 
     # Approving the brief is what "design begins" waits on — advance the
     # project past intake so the pipeline reflects it.
-    projects_service.advance_stage(
+    advanced = projects_service.advance_stage(
         db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.BRIEF
     )
+
+    # First time the project actually reaches BRIEF, build out the rest
+    # of the project workspace — stages, tasks, deadlines,
+    # responsibilities, and approval points — from this one signed-off
+    # brief, so nothing has to be re-keyed by hand. `has_plan` is a
+    # defensive second check alongside the `advanced` gate: an operator
+    # could in principle move a project's stage backward by hand
+    # (ProjectUpdate) and re-approve, which would also make `advanced`
+    # true a second time.
+    if advanced and not project_plans_service.has_plan(db, project.id):
+        project_plans_service.create_plan_for_project(
+            db, workspace_id=workspace_id, actor_id=actor_id, project=project
+        )
 
     activity_service.record(
         db,

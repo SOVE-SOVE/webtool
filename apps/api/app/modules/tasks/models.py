@@ -2,11 +2,12 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.modules.projects.models import ProjectStage
 
 if TYPE_CHECKING:
     from app.modules.leads.models import Lead
@@ -31,6 +32,11 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(255))
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Which pipeline stage this task belongs to, for project tasks seeded
+    # from the project plan (project_plans/service.py). Purely
+    # descriptive grouping — null for hand-added tasks and every lead
+    # task, same as before this column existed.
+    stage: Mapped[ProjectStage | None] = mapped_column(Enum(ProjectStage, name="project_stage"))
     assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

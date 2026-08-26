@@ -36,6 +36,7 @@ def _to_read(task: Task) -> TaskRead:
         lead_id=task.lead_id,
         assigned_user_id=task.assigned_user_id,
         assigned_user_name=task.assigned_user.name if task.assigned_user else None,
+        stage=task.stage,
         context=_context(task),
         created_at=task.created_at,
     )
@@ -112,6 +113,7 @@ def create_task(
         project_id=data.project_id,
         lead_id=data.lead_id,
         assigned_user_id=data.assigned_user_id,
+        stage=data.stage,
     )
     db.add(task)
     db.flush()
@@ -162,6 +164,9 @@ def update_task(
             action="assigned",
             summary="Unassigned" if data.assigned_user_id is None else "Reassigned",
         )
+
+    if "stage" in data.model_fields_set:
+        task.stage = data.stage
 
     db.commit()
     return get_task(db, workspace_id, task_id)

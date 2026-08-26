@@ -22,6 +22,7 @@ from app.modules.meetings import models as _meetings  # noqa: F401
 from app.modules.opportunity_scoring import models as _opportunity_scoring  # noqa: F401
 from app.modules.outreach import models as _outreach  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401
+from app.modules.project_plans import models as _project_plans  # noqa: F401
 from app.modules.projects import models as _projects  # noqa: F401
 from app.modules.qa_reports import models as _qa_reports  # noqa: F401
 from app.modules.sales_audits import models as _sales_audits  # noqa: F401

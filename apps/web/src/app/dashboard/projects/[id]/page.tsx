@@ -14,14 +14,17 @@ import {
   type Meeting,
   type Project,
   type ProjectApprovalStatus,
+  type ProjectPlan,
   type ProjectStage,
   type Sitemap,
+  type Task,
   type User,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
 import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
+import { ProjectPlanView } from "@/components/ProjectPlanView";
 import { SitemapView } from "@/components/SitemapView";
 
 export default function ProjectDetailPage() {
@@ -36,6 +39,8 @@ export default function ProjectDetailPage() {
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [plan, setPlan] = useState<ProjectPlan | null>(null);
+  const [planTasks, setPlanTasks] = useState<Task[]>([]);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -74,6 +79,14 @@ export default function ProjectDetailPage() {
       .catch(() => {});
   }
 
+  function loadPlan() {
+    api.getProjectPlan(projectId).then(setPlan).catch(() => {});
+    api
+      .listTasks()
+      .then((all) => setPlanTasks(all.filter((t) => t.project_id === projectId)))
+      .catch(() => {});
+  }
+
   function load() {
     api.getProject(projectId).then(setProject).catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
@@ -85,6 +98,7 @@ export default function ProjectDetailPage() {
     loadCreativeDirections();
     loadSitemaps();
     loadApprovalsAndDeployments();
+    loadPlan();
     api.listMeetings({ projectId }).then(setMeetings).catch(() => {});
   }
 
@@ -221,6 +235,22 @@ export default function ProjectDetailPage() {
         <div className="mt-3">
           {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : (
             <p className="text-sm text-neutral-500">Loading brief…</p>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold text-neutral-900">Project workspace</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Created automatically once the brief is approved — one stage per pipeline step, each with a
+          default due date, a responsible person, a starter task checklist, and — for the stages that
+          need one — an explicit approval point. Every default here is a starting point, freely editable.
+        </p>
+        <div className="mt-3">
+          {plan ? (
+            <ProjectPlanView plan={plan} tasks={planTasks} users={users} onChange={setPlan} onTasksChanged={loadPlan} />
+          ) : (
+            <p className="text-sm text-neutral-500">Loading project workspace…</p>
           )}
         </div>
       </section>

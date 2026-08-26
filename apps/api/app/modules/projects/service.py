@@ -98,7 +98,7 @@ def _to_read(project: Project) -> ProjectRead:
 def create_default_tasks(db: Session, project_id: uuid.UUID) -> None:
     """Seeds the initial INTAKE task checklist for a newly created project."""
     for title in DEFAULT_INTAKE_TASK_TITLES:
-        db.add(Task(project_id=project_id, title=title))
+        db.add(Task(project_id=project_id, title=title, stage=ProjectStage.INTAKE))
 
 
 def create_launch_tasks(db: Session, project_id: uuid.UUID) -> None:
@@ -106,7 +106,7 @@ def create_launch_tasks(db: Session, project_id: uuid.UUID) -> None:
     a successful `advance_stage(... DEPLOYED)`, which returns True once
     per project, so a redeploy or rollback never duplicates these."""
     for title in DEFAULT_LAUNCH_TASK_TITLES:
-        db.add(Task(project_id=project_id, title=title))
+        db.add(Task(project_id=project_id, title=title, stage=ProjectStage.DEPLOYED))
 
 
 def _base_query(workspace_id: uuid.UUID):
