@@ -1,6 +1,6 @@
 """
 Safe development/testing calendar provider — the calendar-sync mirror
-of integrations/deployment.py's MockDeploymentProvider. Never makes a
+of integrations/deployment/'s MockDeploymentProvider. Never makes a
 network call and never claims a real Google (or any other) calendar
 event was created: every id is obviously synthetic
 (`mock-event-<uuid4>`), so a mock result can never be mistaken for a

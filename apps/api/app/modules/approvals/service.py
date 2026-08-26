@@ -12,6 +12,7 @@ from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.projects.models import Project
 from app.modules.qa_reports.models import QaReport
 from app.modules.sitemaps.models import Sitemap, SitemapStatus
+from app.modules.websites import service as websites_service
 from app.modules.websites.models import Website
 
 # One line of duplication with modules/websites/service.py's own
@@ -172,8 +173,22 @@ def get_project_approval_status(db: Session, workspace_id: uuid.UUID, project_id
     )
 
     prerequisite_checkpoints = checkpoints[:6]  # every stage except deployment itself
-    can_deploy = all(c.approved for c in prerequisite_checkpoints)
     missing_for_deployment = [c.label for c in prerequisite_checkpoints if not c.approved]
+
+    # Phase 6 Task 3's formal workflow is a gate `create_deployment`
+    # enforces independently of these seven boolean checkpoints — a
+    # version can have every one of them set yet never have been walked
+    # through the workflow at all. Folded into `can_deploy` here too, so
+    # this endpoint's answer never disagrees with what a deploy attempt
+    # will actually do (see modules/websites/service.py's
+    # is_ready_to_deploy, the single shared source of truth both read).
+    # Only surfaced once the six above are otherwise satisfied — while
+    # any of *those* is still missing, that's the real blocker to report,
+    # not "also do the formal workflow" noise on top of it.
+    workflow_ready = website is not None and websites_service.is_ready_to_deploy(website)
+    if not missing_for_deployment and not workflow_ready:
+        missing_for_deployment.append("Approval workflow (not yet ready to deploy)")
+    can_deploy = not missing_for_deployment and workflow_ready
 
     return ProjectApprovalStatus(
         project_id=project_id,

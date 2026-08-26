@@ -94,6 +94,326 @@ rollup reads from them instead of subsuming them.
 
 ---
 
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
+## 2026-08-26 — Deployment adapter architecture + delivery workflow (phase 6 part 2)
+
+**Decision:** Split into two pieces, matching the operator's own task
+split. First, turned `integrations/deployment.py` (a single
+`MockDeploymentProvider` class) into a real package
+(`integrations/deployment/`) with a `DeploymentProvider` interface
+(`validate_config`/`build`/`deploy`/`get_status`/`rollback`), a shared
+static-site build step, and real adapters for Vercel, Netlify,
+Cloudflare Pages, and traditional FTP/FTPS hosting — one class per
+provider, each reading its own credentials only from `app.core.settings`
+(env-var-backed), never a literal in code, and each failing loudly
+(`DeploymentProviderError`) rather than silently falling back to mock
+if selected without its credentials configured. `DEPLOY_PROVIDER`
+still defaults to `mock`, so nothing about this changes today's
+behavior until an operator actually sets real hosting credentials.
+
+Second, closed the gap between "a deployment succeeded" and "this
+project is actually delivered": added `check-status` (re-poll a
+provider's own status — a no-op for every provider here today, since
+none of them have an async build to watch, but the real hook for one
+that does) and `verify` (an explicit confirmation step, reusing the
+existing SSRF-guarded `fetch_page_signals` browser fetch QA's live
+checks already use, rather than a second bespoke HTTP client) on top of
+the existing prepare/execute/rollback lifecycle. `Project.delivered_at`
+is now set by a new `mark_delivered`, gated on the latest deployment
+being both successful *and* verified, plus every item on the existing
+post-launch handover checklist (`DEFAULT_LAUNCH_TASK_TITLES`, already
+seeded on first deploy) checked off — that checklist *is* the "final
+delivery checklist" the task asked for; a new one wasn't invented
+since this one already covered the same handover steps.
+
+**Why:** "Do not hard-code credentials" and "do not automatically
+deploy without explicit approval" were explicit constraints — the
+adapter registry pattern (mirroring `integrations/calendar/` and
+`integrations/email.py`, the two existing multi-provider adapters in
+this codebase) satisfies both: credentials only ever come from the
+environment, and `execute_deployment`/`deploy()` stay a separate,
+explicit call from `create_deployment`/prepare, unchanged. A real
+provider's `build()` step produces genuine static HTML from the
+already-generated site config rather than a fake placeholder — real
+enough to actually publish — but is deliberately not a port of
+`packages/site-templates`' React components (that stays the operator-
+facing visual source of truth); building a pixel-accurate static
+exporter is separate, later work, not a precondition for the
+deployment architecture existing.
+
+**Alternatives considered:** A single `DeploymentProvider.deploy(bundle)`
+call (the pre-existing shape) was rejected once `get_status`/`rollback`
+needed representing — flattening "submit a build," "check on it," and
+"restore an old one" into one method would have made every real
+provider's very different capabilities (Netlify's real restore API vs.
+Vercel/Cloudflare's lack of a simple one) invisible to the service
+layer. Inventing a brand-new "final delivery checklist" task list
+alongside the existing launch-handover one was rejected as redundant —
+they're the same list of post-launch admin steps under two names.
+
+---
+
+## 2026-08-26 — Phase 6: secure website previews, client feedback, and a formal approval workflow
+
+**Decision:** Closed roadmap M5's last open item ("a secure shareable
+client-preview link with feedback capture") in three additive layers,
+each its own module, each its own commit:
+
+**1. `modules/previews/`** — a token-based `PreviewLink` per project
+(not per website version, so one link supports "version selection"
+across a project's history). The token is `secrets.token_urlsafe(32)`;
+only its SHA-256 hash (`token_hash`) is stored, looked up by exact
+match on every request — same "never store the real secret" posture as
+password hashing, but SHA-256 rather than bcrypt since this is a
+high-entropy generated token, not a human-chosen password needing
+slow-hash brute-force resistance. `token_suffix` (last 6 chars, plain
+text) exists purely so an operator can tell several links for the same
+project apart in a list — negligible entropy loss against a 43-char
+token. CLIENT vs. INTERNAL audience is the "client access"/"internal
+access" requirement: a CLIENT link only resolves a website version that
+has cleared review (see workflow note below); an INTERNAL link sees
+every version including a bare draft, for the team's own review, never
+handed to a client. Device preview (desktop/tablet/mobile) is a pure
+frontend concern — a max-width wrapper around a new, self-contained
+`PreviewSiteRenderer` component in `apps/web`, deliberately *not* a
+reuse of `packages/site-templates`: that package has no build step and
+resolves its own `@/...` imports via its own tsconfig, which this repo
+has no cross-package workspace tooling to share (no root `package.json`
+workspaces, no pnpm workspace file) — wiring that up was out of scope
+for this change, so the ~17 section types are re-implemented with
+plain Tailwind instead. Expiration (`expires_at`, default 14 days,
+`None` = never) and revocation (`revoked_at`/`revoked_by_user_id`) are
+both explicit fields, checked on every public resolution
+(`_check_link_valid`), never swept/deleted so the operator can still
+see a dead link's history.
+
+**2. `modules/website_feedback/`** — `WebsiteFeedback` rows submitted
+through the same public token (reusing `previews.service.
+resolve_link_and_website`, extracted for this purpose), always carrying
+project, the *exact* website version, page/section where the viewer
+picked one, who left it (free-text `client_name`/`client_email` — see
+`docs/03_AGENT_RULES`'s "client approval communication" note: there's
+still no client login anywhere in this app), a timestamp, and a status
+(open/acknowledged/resolved/dismissed) the operator triages from a
+panel on the website page.
+
+**3. Formal approval workflow** — `WebsiteWorkflowStatus` (DRAFT →
+INTERNAL_REVIEW → CLIENT_REVIEW → CHANGES_REQUESTED → APPROVED →
+READY_TO_DEPLOY → DEPLOYED) on `Website`, plus an append-only
+`WebsiteWorkflowTransition` history table. Legal transitions live in
+one place, `modules/websites/service.py`'s `ALLOWED_TRANSITIONS`, and
+every mutation goes through `_apply_transition`, which 400s with the
+valid next states rather than silently clamping — "require explicit
+approval before deployment" made literal. `modules/deployments/service.py`
+now refuses to *create or execute* a deployment unless the version's
+workflow status is READY_TO_DEPLOY (or already DEPLOYED, for a
+legitimate redeploy of the same still-valid version — the exact edge
+`TestLaunchChecklist::test_a_redeploy_does_not_duplicate_the_checklist`
+caught: DEPLOYED had to remain deployable, not become a second terminal
+dead-end alongside the workflow graph's own lack of outgoing edges from
+it), re-checked fresh at both points, independent of and *in addition
+to* the seven-checkpoint boolean system `modules/approvals/` already
+enforces — a version can have every boolean checkpoint set yet never
+have been walked through the new workflow at all, and this closes that
+gap rather than assuming the old system already covered it.
+
+**Deliberately layered, not replacing:** the boolean checkpoints
+(`Website.approved`, `.client_approved`, `QaReport.human_approved`, the
+`modules/approvals/` aggregate) stay exactly as they were — a project
+using only "approve website" / "record client approval" keeps working
+unchanged. The new workflow is additive: `previews.service._is_visible`
+grants CLIENT-audience visibility on *either* `website.approved` *or*
+the workflow reaching CLIENT_REVIEW+, so neither system has to be
+adopted before the other works. Editing a section's content on a
+version that's progressed past DRAFT resets it back to DRAFT
+(`update_section`, `validate=False` — a safety reset from *any* state,
+not a step someone chose to take, same "edit reverts approval" contract
+the booleans already had), and a client's own APPROVAL/REJECTION/
+CHANGE_REQUEST feedback drives CLIENT_REVIEW → APPROVED/
+CHANGES_REQUESTED automatically (`apply_client_decision`, silent/no-op
+outside CLIENT_REVIEW rather than erroring — feedback on a stale or
+not-yet-sent version is still recorded, it just can't move a workflow
+state it was never watching).
+
+**Alternative considered:** require every deployment to walk the new
+workflow with no fallback to the old booleans, dropping the boolean
+system entirely. Rejected — it would have broken every existing
+approval/deployment test and every workflow a project already in
+progress had been using, for no benefit the additive approach doesn't
+already provide; the new workflow's value is the *explicit gate before
+deployment*, not eliminating something that already worked.
+
+---
+
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
+**Verified:** full backend suite (664 tests, same 15 test functions in
+`test_clients.py` as before — one of them, the history-preservation
+test, materially strengthened rather than split into more tests),
+`tsc --noEmit`, `eslint` on the two changed files, and `vitest run`
+(53/53) all clean.
+
+---
+
 ## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a lead-funnel-only dashboard, plus the missing piece that makes "estimated revenue" a real number
 
 **Decision:** Built `modules/sales_dashboard/` (`GET /api/v1/dashboard/sales`)

@@ -269,6 +269,18 @@ export default function LeadDetailPage() {
 
   async function handleConvert(e: React.FormEvent) {
     e.preventDefault();
+    if (!business) return;
+    const summary = [
+      `Convert ${business.name} to a client?`,
+      "",
+      "This marks the lead WON and creates a new client and an INTAKE-stage project" +
+        (convertPackage ? ` (${convertPackage})` : "") +
+        ".",
+      "The lead's history — audits, outreach, sales opportunities, and notes — stays exactly where it is, attached to the lead.",
+      "This can't be undone.",
+    ].join("\n");
+    if (!confirm(summary)) return;
+
     setConverting(true);
     setConvertError(null);
     try {

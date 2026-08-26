@@ -1,6 +1,6 @@
 """
 Email provider adapter layer (roadmap M3's outreach send path). Mirrors
-integrations/deployment.py's shape: a narrow `EmailProvider` interface
+integrations/deployment/'s shape: a narrow `EmailProvider` interface
 plus a factory keyed off settings, so `modules/outreach/service.py` codes
 against the interface, never a concrete provider — a real host can be
 swapped in later (or changed again) without touching the calling code.
@@ -164,7 +164,7 @@ class EmailProviderError(RuntimeError):
 
 def get_email_provider() -> EmailProvider:
     """Factory for the configured provider, mirroring
-    `integrations/deployment.py`'s `get_deployment_provider()`."""
+    `integrations/deployment/`'s `get_deployment_provider()`."""
     provider = settings.email_provider
     if provider == "mock":
         return MockEmailProvider()

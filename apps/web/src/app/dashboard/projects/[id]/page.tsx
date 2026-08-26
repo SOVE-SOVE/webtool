@@ -10,6 +10,7 @@ import {
   type ActivityItem,
   type Brief,
   type CreativeDirectionBrief,
+  type DeliveryStatus,
   type Deployment,
   type Meeting,
   type Project,
@@ -22,6 +23,7 @@ import {
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
 import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
+import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
@@ -37,6 +39,7 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
@@ -109,6 +112,8 @@ export default function ProjectDetailPage() {
   function loadApprovalsAndDeployments() {
     api.getProjectApprovals(projectId).then(setApprovalStatus).catch(() => {});
     api.listDeployments(projectId).then(setDeployments).catch(() => {});
+    api.getDeliveryStatus(projectId).then(setDeliveryStatus).catch(() => {});
+    api.getProject(projectId).then(setProject).catch(() => {});
   }
 
   useEffect(load, [projectId]);
@@ -206,7 +211,14 @@ export default function ProjectDetailPage() {
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">{project.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-neutral-900">{project.name}</h1>
+            {project.delivered_at && (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800">
+                Delivered
+              </span>
+            )}
+          </div>
           <p className="text-sm text-neutral-500">{project.client_business_name}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -245,6 +257,9 @@ export default function ProjectDetailPage() {
             deployments={deployments}
             onChanged={loadApprovalsAndDeployments}
           />
+          {deliveryStatus && (
+            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={loadApprovalsAndDeployments} />
+          )}
         </section>
       )}
 

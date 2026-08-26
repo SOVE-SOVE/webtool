@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -7,11 +8,19 @@ from sqlalchemy.orm import Session, joinedload
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
+from app.modules.deployments.models import Deployment
 from app.modules.pipeline import service as pipeline_service
 from app.modules.projects.models import Project, ProjectStage
-from app.modules.projects.schemas import ProjectCreate, ProjectRead, ProjectUpdate
+from app.modules.projects.schemas import (
+    DeliveryChecklistItemRead,
+    DeliveryStatusRead,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.modules.tasks.models import Task
 from app.modules.users.service import require_user_in_workspace
+from app.modules.websites.models import Website
 
 _STAGE_ORDER = list(ProjectStage)
 
@@ -90,6 +99,8 @@ def _to_read(project: Project) -> ProjectRead:
         deadline=project.deadline,
         assigned_user_id=project.assigned_user_id,
         assigned_user_name=project.assigned_user.name if project.assigned_user else None,
+        delivered_at=project.delivered_at,
+        delivered_by_user_name=project.delivered_by_user.name if project.delivered_by_user else None,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
@@ -116,7 +127,9 @@ def _base_query(workspace_id: uuid.UUID):
         .join(Business, Client.business_id == Business.id)
         .where(Business.workspace_id == workspace_id)
         .options(
-            joinedload(Project.client).joinedload(Client.business), joinedload(Project.assigned_user)
+            joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.assigned_user),
+            joinedload(Project.delivered_by_user),
         )
     )
 
@@ -228,6 +241,111 @@ def update_project(
             action="assigned",
             summary="Unassigned" if data.assigned_user_id is None else "Reassigned",
         )
+
+    db.commit()
+    return get_project(db, workspace_id, project_id)
+
+
+def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
+    return db.scalar(
+        select(Project)
+        .join(Client, Project.client_id == Client.id)
+        .join(Business, Client.business_id == Business.id)
+        .where(Project.id == project_id, Business.workspace_id == workspace_id)
+    )
+
+
+def _latest_deployment(db: Session, project_id: uuid.UUID) -> Deployment | None:
+    return db.scalar(
+        select(Deployment)
+        .join(Website, Deployment.website_id == Website.id)
+        .where(Website.project_id == project_id)
+        .order_by(Deployment.created_at.desc())
+    )
+
+
+def _delivery_checklist_tasks(db: Session, project_id: uuid.UUID) -> list[Task]:
+    return list(
+        db.scalars(
+            select(Task)
+            .where(Task.project_id == project_id, Task.title.in_(DEFAULT_LAUNCH_TASK_TITLES))
+            .order_by(Task.created_at)
+        )
+    )
+
+
+def get_delivery_status(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> DeliveryStatusRead | None:
+    """
+    Everything still blocking `mark_delivered`, all at once — same
+    "report every missing thing together" shape as
+    modules/approvals/service.py's ProjectApprovalStatus, so the
+    operator never has to fix one gap only to discover another on the
+    next attempt. The checklist here *is* the "final delivery
+    checklist": the launch-handover tasks seeded on first deploy (see
+    DEFAULT_LAUNCH_TASK_TITLES) — a project can't be delivered with any
+    of them still unchecked.
+    """
+    project = _get_project_in_workspace(db, workspace_id, project_id)
+    if project is None:
+        return None
+
+    deployment = _latest_deployment(db, project_id)
+    has_successful_deployment = deployment is not None and deployment.status == "success"
+    deployment_verified = has_successful_deployment and deployment.verified_at is not None
+    checklist = _delivery_checklist_tasks(db, project_id)
+
+    missing: list[str] = []
+    if project.delivered_at is not None:
+        missing.append("this project has already been marked delivered")
+    if not has_successful_deployment:
+        missing.append("a successful deployment")
+    elif not deployment_verified:
+        missing.append("deployment verification")
+    unchecked = [t.title for t in checklist if not t.done]
+    if unchecked:
+        missing.append(f"final delivery checklist item(s): {', '.join(unchecked)}")
+
+    return DeliveryStatusRead(
+        can_deliver=not missing,
+        already_delivered=project.delivered_at is not None,
+        has_successful_deployment=has_successful_deployment,
+        deployment_verified=deployment_verified,
+        latest_deployment_url=deployment.url if deployment else None,
+        checklist=[DeliveryChecklistItemRead(task_id=t.id, title=t.title, done=t.done) for t in checklist],
+        missing=missing,
+    )
+
+
+def mark_delivered(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, project_id: uuid.UUID) -> ProjectRead | None:
+    """
+    The final "mark project delivered" handover action (docs/04_ROADMAP.md
+    M6's delivery workflow: approve -> deploy -> monitor -> receive URL
+    -> verify -> deliver). Refuses outright — never silently proceeds —
+    unless `get_delivery_status` reports nothing missing: a verified,
+    successful deployment and every final-delivery-checklist item
+    checked off. Records who/when, and this is the only place
+    `Project.delivered_at` is ever set.
+    """
+    status = get_delivery_status(db, workspace_id, project_id)
+    if status is None:
+        return None
+    if not status.can_deliver:
+        raise HTTPException(status_code=400, detail=f"Cannot mark this project delivered — still missing: {'; '.join(status.missing)}.")
+
+    project = _get_project_in_workspace(db, workspace_id, project_id)
+    project.delivered_at = datetime.now(timezone.utc)
+    project.delivered_by_user_id = actor_id
+    advance_stage(db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.COMPLETE)
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=project_id,
+        action="project_delivered",
+        summary=f"Marked delivered — live at {status.latest_deployment_url}",
+    )
 
     db.commit()
     return get_project(db, workspace_id, project_id)

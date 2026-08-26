@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -5,7 +6,9 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.integrations.deployment import DeploymentBundle, DeploymentProvider, get_deployment_provider
+from app.integrations.browser import fetch_page_signals
+from app.integrations.deployment.base import DeploymentBundle, DeploymentProvider, DeploymentProviderError
+from app.integrations.deployment.registry import get_deployment_provider
 from app.modules.activity_log import service as activity_service
 from app.modules.approvals import service as approvals_service
 from app.modules.businesses.models import Business
@@ -17,9 +20,10 @@ from app.modules.design_briefs.models import DesignBrief
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
+from app.modules.websites import service as websites_service
 from app.modules.websites.models import Website, WebsiteStatus
 
-_READ_OPTIONS = (joinedload(Deployment.approved_by_user),)
+_READ_OPTIONS = (joinedload(Deployment.approved_by_user), joinedload(Deployment.verified_by_user))
 
 
 def _latest_website(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Website | None:
@@ -55,6 +59,13 @@ def create_deployment(
     version is actually safe to publish. The row starts `status="pending"`
     — nothing is actually published until `execute_deployment` runs.
     """
+    # `status.can_deploy`/`missing_for_deployment` already fold in Phase
+    # 6 Task 3's formal workflow gate (modules/approvals/service.py's
+    # `is_ready_to_deploy` check) alongside the seven boolean
+    # checkpoints — one refusal message covers both, so a version can't
+    # have every boolean checkpoint set yet skip the formal
+    # INTERNAL_REVIEW -> CLIENT_REVIEW -> APPROVED -> READY_TO_DEPLOY
+    # walk unnoticed.
     status = approvals_service.get_project_approval_status(db, workspace_id, project_id)
     if status is None:
         return None
@@ -120,12 +131,13 @@ def _get_deployment_in_workspace(db: Session, workspace_id: uuid.UUID, deploymen
 def _run_provider(deployment: Deployment, provider: DeploymentProvider) -> None:
     """
     Mutates `deployment` in place with the outcome — pending -> running
-    (in-memory only; a synchronous mock provider never leaves a
-    persisted "running" row behind) -> success/failed. Never raises: a
-    provider exception is caught and recorded as a failed deployment,
-    same as an outcome the provider itself reports as not-ok, so a bug
-    in a future real provider can't crash the request instead of
-    cleanly failing the deployment.
+    (in-memory only; every provider here deploys synchronously, so no
+    "running" row is ever left persisted between requests) -> build ->
+    deploy -> success/failed. Never raises: a provider or build
+    exception is caught and recorded as a failed deployment, same as an
+    outcome the provider itself reports as not-ok, so a bug in a
+    provider adapter can't crash the request instead of cleanly failing
+    the deployment.
     """
     deployment.status = "running"
     deployment.started_at = datetime.now(timezone.utc)
@@ -135,7 +147,21 @@ def _run_provider(deployment: Deployment, provider: DeploymentProvider) -> None:
     bundle = DeploymentBundle(business_slug=business.name, environment=deployment.environment, config=website.config or {})
 
     try:
-        outcome = provider.deploy(bundle)
+        artifact = provider.build(bundle)
+    except Exception as exc:  # noqa: BLE001 — a build bug becomes a failed deployment, never a 500
+        deployment.status = "failed"
+        deployment.error_message = str(exc)
+        deployment.completed_at = datetime.now(timezone.utc)
+        return
+
+    if not artifact.ok:
+        deployment.status = "failed"
+        deployment.error_message = artifact.error or "Build failed for an unknown reason"
+        deployment.completed_at = datetime.now(timezone.utc)
+        return
+
+    try:
+        outcome = provider.deploy(bundle, artifact)
     except Exception as exc:  # noqa: BLE001 — provider failures become a failed deployment, never a 500
         deployment.status = "failed"
         deployment.error_message = str(exc)
@@ -146,6 +172,7 @@ def _run_provider(deployment: Deployment, provider: DeploymentProvider) -> None:
     if outcome.ok:
         deployment.status = "success"
         deployment.url = outcome.url
+        deployment.provider_ref = outcome.provider_ref
         deployment.result = outcome.detail
         deployment.deployed_at = deployment.completed_at
         website.status = WebsiteStatus.LIVE
@@ -154,10 +181,52 @@ def _run_provider(deployment: Deployment, provider: DeploymentProvider) -> None:
         deployment.error_message = outcome.error or "Deployment failed for an unknown reason"
 
 
+def _run_rollback(deployment: Deployment, target: Deployment, provider: DeploymentProvider) -> None:
+    """
+    Prefers the provider's own rollback (e.g. "restore this earlier
+    deploy") when the currently configured provider is the same one
+    `target` was originally published through and it has a
+    `provider_ref` to restore — genuinely faster and provider-verified,
+    since it reuses a build the provider already has rather than
+    re-publishing from scratch. Falls back to re-running build+deploy
+    against the target version's own bundle for every other case (a
+    provider with no native rollback, a provider switch since the
+    original deploy, or a target with no provider_ref) — so rollback
+    always works, just not always via the provider's own history.
+    """
+    if target.target == provider.name and target.provider_ref:
+        deployment.status = "running"
+        deployment.started_at = datetime.now(timezone.utc)
+        try:
+            outcome = provider.rollback(target.provider_ref)
+        except NotImplementedError:
+            _run_provider(deployment, provider)
+            return
+        except Exception as exc:  # noqa: BLE001 — same "never crash the request" contract as _run_provider
+            deployment.status = "failed"
+            deployment.error_message = str(exc)
+            deployment.completed_at = datetime.now(timezone.utc)
+            return
+
+        deployment.completed_at = datetime.now(timezone.utc)
+        if outcome.ok:
+            deployment.status = "success"
+            deployment.url = outcome.url
+            deployment.provider_ref = outcome.provider_ref
+            deployment.result = outcome.detail
+            deployment.deployed_at = deployment.completed_at
+            deployment.website.status = WebsiteStatus.LIVE
+        else:
+            deployment.status = "failed"
+            deployment.error_message = outcome.error or "Rollback failed for an unknown reason"
+    else:
+        _run_provider(deployment, provider)
+
+
 def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, deployment_id: uuid.UUID) -> DeploymentRead | None:
     """
     Runs the prepared deployment through the configured provider
-    (mock today — see integrations/deployment.py). Only a `pending` or
+    (mock today — see integrations/deployment/). Only a `pending` or
     previously-`failed` deployment can be (re-)executed; a `success`ful
     one is immutable history, and re-running a `running` one isn't
     supported.
@@ -176,11 +245,23 @@ def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID
     if current_status not in ("pending", "failed"):
         raise HTTPException(status_code=400, detail=f"Cannot execute a deployment that is already '{current_status}'.")
 
+    # Re-verified at execution, not just trusted from create_deployment's
+    # earlier check — the version's workflow state could have moved
+    # (a content edit resets it to draft) between preparing and
+    # executing a deployment. Never re-run a real publish against a
+    # version that's no longer actually approved.
+    if not websites_service.is_ready_to_deploy(deployment.website):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot execute — this version's workflow status is now '{deployment.website.workflow_status.value}', no longer 'ready_to_deploy'.",
+        )
+
     provider = get_deployment_provider()
     _run_provider(deployment, provider)
 
     project = deployment.website.project
     if deployment.status == "success":
+        websites_service.mark_deployed(db, deployment.website)
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -239,6 +320,8 @@ def rollback_deployment(
         missing.append("client review")
     if latest_qa is None or not latest_qa.human_approved:
         missing.append("QA")
+    if not websites_service.is_ready_to_deploy(website):
+        missing.append("workflow status (reset since this version was last deployed)")
     if missing:
         raise HTTPException(
             status_code=400,
@@ -268,10 +351,11 @@ def rollback_deployment(
         summary=f"Rolling back {target.environment} to an earlier deployed version",
     )
 
-    _run_provider(deployment, provider)
+    _run_rollback(deployment, target, provider)
 
     project = website.project
     if deployment.status == "success":
+        websites_service.mark_deployed(db, website)
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -300,6 +384,102 @@ def rollback_deployment(
     return _to_read(deployment)
 
 
+def check_deployment_status(db: Session, workspace_id: uuid.UUID, deployment_id: uuid.UUID) -> DeploymentRead | None:
+    """
+    The "monitor deployment" step: re-queries the provider for a
+    previously submitted deployment's current state. Every provider
+    here deploys synchronously and already returns a final status, so
+    for them this is a genuine but usually no-op refresh; a provider
+    that does support polling (`get_status`) has this call actually
+    re-read the provider's own state rather than trusting the value
+    stored at deploy time — the extension point a future async-build
+    provider would use for real. A provider that doesn't implement
+    `get_status` (or a deployment with no `provider_ref` to poll) just
+    returns the deployment unchanged, since there's nothing to check.
+    """
+    deployment = _get_deployment_in_workspace(db, workspace_id, deployment_id)
+    if deployment is None:
+        return None
+    if not deployment.provider_ref or deployment.status not in ("running", "success", "failed"):
+        return _to_read(deployment)
+
+    try:
+        provider = get_deployment_provider(deployment.target)
+    except DeploymentProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    try:
+        result = provider.get_status(deployment.provider_ref)
+    except NotImplementedError:
+        return _to_read(deployment)
+
+    if result.state == "error" and deployment.status != "failed":
+        deployment.status = "failed"
+        deployment.error_message = result.error or "Provider reported the deployment as failed"
+        deployment.completed_at = datetime.now(timezone.utc)
+    elif result.state == "ready":
+        deployment.url = result.url or deployment.url
+        if deployment.status != "success":
+            deployment.status = "success"
+            deployment.completed_at = datetime.now(timezone.utc)
+            deployment.deployed_at = deployment.completed_at
+            deployment.website.status = WebsiteStatus.LIVE
+    elif result.state in ("queued", "building"):
+        deployment.status = "running"
+
+    db.commit()
+    return _to_read(deployment)
+
+
+def verify_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, deployment_id: uuid.UUID) -> DeploymentRead | None:
+    """
+    The "verify deployment" handover step (docs/04_ROADMAP.md M6): an
+    explicit action confirming the published URL is actually live,
+    before a project can be marked delivered (see
+    modules/projects/service.py::mark_delivered) — a provider reporting
+    "success" only means the publish call succeeded, not that anyone
+    has confirmed the result is reachable. Reuses `fetch_page_signals`'s
+    real, SSRF-guarded fetch (same one QA's live checks use) rather
+    than a second bespoke HTTP client. A `mock` deployment's URL is
+    never a real, publicly reachable site (see
+    integrations/deployment/mock_provider.py), so verifying one is
+    recorded as a simulated pass rather than attempting a real fetch
+    that could only ever fail on DNS.
+    """
+    deployment = _get_deployment_in_workspace(db, workspace_id, deployment_id)
+    if deployment is None:
+        return None
+    if deployment.status != "success" or not deployment.url:
+        raise HTTPException(status_code=400, detail="Only a successfully deployed URL can be verified.")
+
+    if deployment.target == "mock":
+        note = "Simulated verification — no real hosting is configured, so no live fetch was made."
+    else:
+        signals = asyncio.run(fetch_page_signals(deployment.url))
+        if signals.error or (signals.http_status is not None and signals.http_status >= 400):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Verification failed — the deployed URL did not load cleanly: {signals.error or f'HTTP {signals.http_status}'}.",
+            )
+        note = f"Verified live at {deployment.url} (HTTP {signals.http_status})."
+
+    deployment.verified_at = datetime.now(timezone.utc)
+    deployment.verified_by_user_id = actor_id
+    db.flush()
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=deployment.website.project_id,
+        action="deployment_verified",
+        summary=note,
+    )
+    db.commit()
+    return _to_read(deployment)
+
+
 def _to_read(d: Deployment) -> DeploymentRead:
     return DeploymentRead(
         id=d.id,
@@ -307,12 +487,15 @@ def _to_read(d: Deployment) -> DeploymentRead:
         environment=d.environment,
         target=d.target,
         url=d.url,
+        provider_ref=d.provider_ref,
         status=d.status,
         result=d.result,
         error_message=d.error_message,
         started_at=d.started_at,
         completed_at=d.completed_at,
         deployed_at=d.deployed_at,
+        verified_at=d.verified_at,
+        verified_by_user_name=d.verified_by_user.name if d.verified_by_user else None,
         rollback_of_deployment_id=d.rollback_of_deployment_id,
         approved_by_user_name=d.approved_by_user.name if d.approved_by_user else None,
         notes=d.notes,
