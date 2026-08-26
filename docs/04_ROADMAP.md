@@ -256,6 +256,33 @@ spec with no re-keying.
       as the structural source of truth for the (not-yet-built)
       site-generation step. Generates no website code, per the
       operator's explicit scope for this piece.
+- [x] Website Brief generator — `agents/website_brief.py` /
+      `modules/website_briefs/`: an AI-assisted rollup of everything
+      already known/decided about a project (client intake brief,
+      reviewed creative direction, reviewed sitemap, wherever any of
+      those exist) into one client-facing document: project summary,
+      goals, target audience, positioning, sitemap, page purposes,
+      content requirements, CTA strategy, visual direction,
+      functionality, SEO considerations, and technical requirements.
+      Deliberately a synthesizing rollup, not a fourth place those
+      fields are independently authored — sitemap/page-purpose/content-
+      requirement/functionality sections are assembled from a real
+      approved (or latest) `Sitemap`'s pages when one exists, and CTA
+      strategy/visual direction are carried over from an approved (or
+      latest) `CreativeDirectionBrief` verbatim, rather than a fresh
+      LLM guess replacing already-reviewed decisions. `confirmed_requirements`
+      (verbatim from the client's own intake answers) and
+      `ai_suggestions` (explicit, per-section callouts of what this
+      generation itself is suggesting) are first-class fields —
+      the feature's required "clearly distinguish AI suggestions from
+      confirmed client requirements" — never invents client information:
+      every section not traceable to intake/an approved artifact is
+      labelled as AI's own synthesis. DRAFT → APPROVED with in-place
+      editing (every section stays editable, edit reverts an approved
+      brief to draft) — same "review before continuing" gate as
+      brief/creative-direction/sitemap, surfaced on the same
+      `/dashboard/projects/[id]` page between Sitemap and Website. See
+      [[05_DECISIONS]].
 - [ ] Copy drafts generated from intake + research, for operator
       sign-off before build — the intake collection, Creative Director,
       and sitemap above are the foundation this reads from.
