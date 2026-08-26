@@ -387,6 +387,75 @@ export type Brief = {
   updated_at: string;
 };
 
+// The fixed set of areas a client onboarding needs to cover — see
+// apps/api/app/modules/onboarding/models.py's OnboardingCategory. Which
+// *items* exist within a category, and whether one even applies, is
+// per-project: any item can be marked not_applicable, and operators add
+// their own custom items on top (the checklist is never forced into one
+// fixed structure).
+export const ONBOARDING_CATEGORIES = [
+  "client_information",
+  "project_type",
+  "goals",
+  "target_audience",
+  "services",
+  "branding",
+  "existing_assets",
+  "domain",
+  "hosting",
+  "required_pages",
+  "functionality",
+  "content",
+  "deadlines",
+  "budget",
+  "approvals",
+] as const;
+export type OnboardingCategory = (typeof ONBOARDING_CATEGORIES)[number];
+
+export const ONBOARDING_ITEM_STATUSES = ["pending", "done", "not_applicable"] as const;
+export type OnboardingItemStatus = (typeof ONBOARDING_ITEM_STATUSES)[number];
+
+export type OnboardingItem = {
+  id: string;
+  project_id: string;
+  category: OnboardingCategory;
+  label: string;
+  status: OnboardingItemStatus;
+  notes: string | null;
+  is_custom: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
+export type OnboardingItemCreate = {
+  category: OnboardingCategory;
+  label: string;
+  notes?: string;
+};
+
+export type OnboardingItemUpdate = {
+  status?: OnboardingItemStatus;
+  notes?: string | null;
+};
+
+export type OnboardingCategoryProgress = {
+  category: OnboardingCategory;
+  total: number;
+  done: number;
+  not_applicable: number;
+  complete: boolean;
+};
+
+export type OnboardingChecklist = {
+  project_id: string;
+  items: OnboardingItem[];
+  categories: OnboardingCategoryProgress[];
+  total_items: number;
+  done_items: number;
+  not_applicable_items: number;
+  percent_complete: number;
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -1425,6 +1494,21 @@ export const api = {
     request<Brief>(`/api/v1/projects/${projectId}/brief`, { method: "PATCH", body: JSON.stringify(data) }),
   approveBrief: (projectId: string) =>
     request<Brief>(`/api/v1/projects/${projectId}/brief/approve`, { method: "POST" }),
+
+  getOnboardingChecklist: (projectId: string) =>
+    request<OnboardingChecklist>(`/api/v1/projects/${projectId}/onboarding`),
+  addOnboardingItem: (projectId: string, data: OnboardingItemCreate) =>
+    request<OnboardingChecklist>(`/api/v1/projects/${projectId}/onboarding/items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateOnboardingItem: (itemId: string, data: OnboardingItemUpdate) =>
+    request<OnboardingChecklist>(`/api/v1/onboarding-items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteOnboardingItem: (itemId: string) =>
+    request<OnboardingChecklist>(`/api/v1/onboarding-items/${itemId}`, { method: "DELETE" }),
 
   listTasks: () => request<Task[]>("/api/v1/tasks"),
   createTask: (data: TaskCreate) =>

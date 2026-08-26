@@ -12,6 +12,7 @@ import {
   type CreativeDirectionBrief,
   type Deployment,
   type Meeting,
+  type OnboardingChecklist,
   type Project,
   type ProjectApprovalStatus,
   type ProjectStage,
@@ -33,6 +34,7 @@ export default function ProjectDetailPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingChecklist | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
@@ -77,6 +79,7 @@ export default function ProjectDetailPage() {
   function load() {
     api.getProject(projectId).then(setProject).catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
+    api.getOnboardingChecklist(projectId).then(setOnboarding).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
     api
       .listActivity({ entity_type: "project", entity_id: projectId })
@@ -211,6 +214,30 @@ export default function ProjectDetailPage() {
           />
         </section>
       )}
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Onboarding checklist</h2>
+            <p className="text-xs text-neutral-500">
+              Client information, project type, goals, branding, assets, domain, hosting, pages,
+              functionality, content, deadlines, budget, and approvals — tracked per project, not a fixed
+              one-size-fits-all list.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {onboarding && (
+              <span className="text-xs text-neutral-500">{onboarding.percent_complete}% complete</span>
+            )}
+            <Link
+              href={`/dashboard/projects/${projectId}/onboarding`}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+            >
+              Open checklist
+            </Link>
+          </div>
+        </div>
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-neutral-900">Project brief</h2>

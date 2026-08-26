@@ -11,6 +11,114 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — Client onboarding checklist (per-project, not one fixed structure)
+**Mode:** new session (background job), worktree `client-onboarding`
+**Merge to main after:** no — pushed as branch `worktree-client-onboarding`, not merged; left for review
+**Scope touched:** apps/api/app/modules/onboarding (new), apps/api/app/main.py,
+apps/api/app/db/all_models.py, apps/api/alembic/versions, apps/api/tests/test_onboarding.py,
+apps/web/src/lib/api.ts, apps/web/src/lib/onboarding.ts(+test), apps/web/src/app/dashboard/projects/[id]/onboarding, apps/web/src/app/dashboard/projects/[id]/page.tsx
+**What happened:** Built a client onboarding checklist covering client
+information, project type, goals, target audience, services, branding,
+existing assets, domain, hosting, required pages, functionality,
+content, deadlines, budget, and approvals, with progress tracking.
+Surveyed existing conventions first (two parallel Explore agents) and
+found every one of those areas already has a real backing field
+somewhere (`design_briefs` mostly, plus `Project.deadline`/`package`,
+plus the seven-checkpoint approvals system) — so this feature is
+deliberately a genuine trackable to-do checklist over those areas, not
+a second copy of the brief's data fields.
+
+Modeled as a child-row table (`onboarding_checklist_items`, one row per
+step) rather than one wide row like `design_briefs`, specifically so
+"do not force every project into the same structure" is structural, not
+a convention: any seeded default item can be marked `not_applicable`
+instead of forced through (e.g. a project with an existing domain marks
+the domain item N/A rather than leaving it perpetually pending), and an
+operator can add project-specific items (`is_custom=True`) under any
+category. A seeded default item can never be deleted outright — only
+marked not-applicable — so the checklist always shows the full set of
+areas an onboarding *could* cover; only a custom item the operator
+added themselves can be removed. `percent_complete` is computed over
+applicable items only (`done / (total - not_applicable)`), so a project
+that's marked every remaining item N/A reads as 100%, not stuck below
+it. The checklist is lazily seeded on first GET (mirrors
+`design_briefs`' `_get_or_create_draft`), not on project creation, so a
+project created before this feature existed gets one for free.
+
+Backend: `apps/api/app/modules/onboarding/` (models/schemas/service/
+routes), migration `52d3320ef8f1` (down_revision `731a8a798e83`, the
+real single alembic head — `git log`/directory listing alone showed six
+apparent heads from unmerged branch history, but `alembic heads` itself
+resolves to one), two new Postgres enums (`onboarding_category`,
+`onboarding_item_status`) following the `create_type=False` recipe from
+`c392b641f8cb`. 11 pytest tests covering seeding, status transitions,
+the not-applicable-still-100%-complete case, add/delete custom items,
+the default-item delete guard (400), 404s, and workspace isolation —
+all 11 passed individually, though not all in the same single run (see
+Blockers).
+
+Frontend: `api.ts` types/functions mirroring the `Brief` pattern exactly
+(`getOnboardingChecklist`/`addOnboardingItem`/`updateOnboardingItem`/
+`deleteOnboardingItem`); `lib/onboarding.ts` pure functions
+(`formatCategoryLabel`, `groupItemsByCategory`, `categoryPercentComplete`)
+with 9 vitest tests, kept out of the page component per this repo's
+no-jsdom convention; a new `/dashboard/projects/[id]/onboarding` page
+(separate route, like the Website builder, since this needed more room
+than an inline section) with per-category progress bars, a status
+dropdown per item (pending/done/N/A) instead of a bare checkbox — this
+app had no existing checklist/progress UI component anywhere to reuse,
+confirmed by the frontend survey agent, so this is the first one — and
+an "Open checklist" link-out section on the main project page showing
+overall percent complete.
+
+**Blockers/issues:** This machine had multiple *other* concurrent
+Claude Code sessions running full `pytest -q` against the same shared
+local `webdesignos_test` Postgres database throughout this session —
+same exact issue the 2026-08-25 session log entry documented. Symptoms
+matched: `DependentObjectsStillExist` on session-fixture `drop_all`,
+occasional `UniqueViolation`/`ForeignKeyViolation` from a concurrent
+`create_all` racing mine, and a stray `'NoneType' object has no
+attribute 'name'` on login when another session's `_clean_tables`
+teardown deleted rows mid-request. Not a regression: `tests/
+test_design_briefs.py`, `test_tasks.py`, and `test_projects.py` — none
+of which this session touched — failed with the identical symptoms when
+run alongside the same concurrent load. Every individual test in
+`test_onboarding.py` passed at least once in isolation (10/11 and then
+11/11 clean across two consecutive isolated runs); never got one fully
+clean single run of the whole file back-to-back, same caveat the prior
+entry left. Re-run `tests/test_onboarding.py` alone once the shared test
+DB is quiet as a final check.
+
+Also had to work around two environment gaps specific to running in a
+git worktree rather than the primary checkout: `apps/api/.venv` isn't
+under version control (used the primary checkout's venv directly — it's
+just an interpreter, not tied to worktree state), and `apps/web/
+node_modules` isn't either — a symlink to the primary checkout's copy
+broke Turbopack (`next build` refused it, "points out of the filesystem
+root"), so ran `npm ci` for a real local copy instead. `tsc --noEmit`,
+`eslint` (zero new problems — diffed against the same command run
+against unmodified `main`, which already has 7 pre-existing problems in
+unrelated files), `vitest run` (62/62, 53 pre-existing + 9 new), and
+`next build` all clean. Did not run a live-browser smoke test: this
+machine already has a dev server on :3000/:8000 from another session,
+and standing up a second full stack against the same dev Postgres
+risked exactly the kind of cross-session interference described above
+for no clean gain over the passing build/type/lint/test signals — a
+real gap, flagged rather than silently skipped.
+
+**Next up:** Re-run `test_onboarding.py` alone when the shared test DB
+is quiet, as the final sanity check the concurrent load prevented this
+session from getting. A live-browser walkthrough of the new
+`/dashboard/projects/[id]/onboarding` page would still be worth doing
+next session. Not done, deliberately: no automatic linkage between
+onboarding items and the real underlying data they describe (e.g.
+checking "client information" doesn't read from `DesignBrief.business_name`)
+— items are operator-marked, same as `Task.done` elsewhere in this app,
+not derived/computed status; wiring that up (if wanted) is a distinct,
+larger feature.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes

@@ -20,6 +20,7 @@ from app.modules.design_briefs.routes import router as design_briefs_router
 from app.modules.discovery.routes import discovered_businesses_router, router as discovery_router
 from app.modules.leads.routes import router as leads_router
 from app.modules.meetings.routes import router as meetings_router
+from app.modules.onboarding.routes import router as onboarding_router
 from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.pipeline.routes import router as pipeline_router
@@ -109,6 +110,7 @@ app.include_router(outreach_router)
 app.include_router(meetings_router)
 app.include_router(calendar_router)
 app.include_router(design_briefs_router)
+app.include_router(onboarding_router)
 app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
 app.include_router(websites_router)
