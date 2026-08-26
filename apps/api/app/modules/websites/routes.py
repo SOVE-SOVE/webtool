@@ -110,3 +110,15 @@ def client_approve_website(
     if website is None:
         raise HTTPException(status_code=404, detail="Website not found")
     return website
+
+
+@router.post("/api/v1/websites/{website_id}/rollback", response_model=WebsiteRead, status_code=201)
+def rollback_website(
+    website_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WebsiteRead:
+    website = service.rollback_website(db, current_user.workspace_id, current_user.id, website_id)
+    if website is None:
+        raise HTTPException(status_code=404, detail="Website not found")
+    return website

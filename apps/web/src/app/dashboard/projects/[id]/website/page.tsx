@@ -28,6 +28,9 @@ export default function ProjectWebsitePage() {
   const [clientApproving, setClientApproving] = useState(false);
   const [clientApproveError, setClientApproveError] = useState<string | null>(null);
 
+  const [rollingBack, setRollingBack] = useState(false);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
+
   function loadLatestQaReport(websiteId: string) {
     api
       .listQaReports(websiteId)
@@ -145,6 +148,21 @@ export default function ProjectWebsitePage() {
     }).catch(() => {});
   }
 
+  async function handleRollback(versionId: string) {
+    setRollingBack(true);
+    setRollbackError(null);
+    try {
+      const restored = await api.rollbackWebsite(versionId);
+      setWebsite(restored);
+      setQaReport(null);
+      loadVersions(restored.id);
+    } catch {
+      setRollbackError("Couldn't roll back to that version.");
+    } finally {
+      setRollingBack(false);
+    }
+  }
+
   // Approving/editing a section mutates the current version in place
   // (no new row), but regenerating a section always creates a new one
   // — refresh the version list too so a just-created version shows up
@@ -212,8 +230,19 @@ export default function ProjectWebsitePage() {
               </option>
             ))}
           </select>
+          {website && versions.length > 1 && (
+            <button
+              onClick={() => handleRollback(website.id)}
+              disabled={rollingBack}
+              title="Create a new version with this version's content, so you can pick up an older build again"
+              className="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+            >
+              {rollingBack ? "Rolling back…" : "Roll back to this version"}
+            </button>
+          )}
         </div>
       )}
+      {rollbackError && <p className="mt-2 text-sm text-red-600">{rollbackError}</p>}
 
       {!website && (
         <p className="mt-6 text-sm text-neutral-500">

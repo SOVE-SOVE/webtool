@@ -11,6 +11,65 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-26 — AI website content generation + workflow wiring (roadmap M4/M5)
+**Mode:** worktree (`ai-website-content-and-workflow`)
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/api/app/agents/content_generator.py (new),
+apps/api/app/modules/content_drafts/ (new module), apps/api/alembic
+migration `c8f1a5e93d07`, apps/api/app/agents/website_generator.py,
+apps/api/app/modules/websites/{service,schemas,routes}.py,
+apps/api/app/db/all_models.py, apps/api/app/main.py,
+apps/api/tests/{test_content_drafts.py (new), test_websites.py},
+apps/web/src/lib/api.ts, apps/web/src/app/dashboard/projects/[id]/{page.tsx,
+content/page.tsx (new), website/page.tsx}.
+**What happened:** Closed roadmap M4's last open item — "Copy drafts
+generated from intake + research, for operator sign-off before build" —
+and used it to complete the three-task ask (content generation /
+component generation / end-to-end workflow) given this session. Three
+commits:
+1. `feat: add AI website content generation` — `agents/content_generator.py`
+   follows the same LLM-call pattern as `creative_director.py`/`sitemap.py`
+   (grounded-facts-only prompt, tone control, `flagged_for_review`/
+   `missing_information` instead of guessing). `modules/content_drafts/`
+   persists it exactly like Website/Sitemap/CreativeDirectionBrief:
+   versioned (newest first), per-page edit-in-place, approve, and a new
+   `rollback` action that clones an older version into a fresh
+   (unapproved) latest row.
+2. `feat: add website component generation` — `website_generator.py`
+   stays deterministic (per the 2026-08-20 decision) but now accepts an
+   optional `content_by_page_id` and prefers an approved ContentDraft's
+   grounded copy for the exact fields it already knew how to build (hero
+   heading/subheading, SEO title/meta description, service card
+   descriptions matched by name, FAQ answers filling real gaps, CTA
+   copy) — never a new section type, still runs through the same
+   registry/anti-slop pipeline.
+3. `feat: build AI website generation workflow` — added `POST
+   /websites/{id}/rollback` (same clone-into-new-version convention as
+   ContentDraft's), a new `/dashboard/projects/[id]/content` page (tone
+   selector, version picker, per-page field editing, approve, rollback),
+   a "Content" step added to the project page between sitemap and
+   website, and a rollback control on the website page's version picker.
+   Deployment is untouched — nothing here calls it, so nothing
+   auto-deploys.
+
+Verified: 9 new `test_content_drafts.py` tests, 4 new tests in
+`test_websites.py` (content-enrichment + rollback), full backend suite
+677/677, frontend vitest 53/53, `tsc --noEmit` clean (one pre-existing
+`layout.tsx` `LayoutProps` error from missing Next.js-generated types,
+unrelated to this work).
+**Blockers/issues:** The shared local `webdesignos_test` Postgres DB was
+being hit concurrently by at least two other sibling worktree sessions'
+full test runs during this session (table-drop races causing spurious
+FK-violation/`NoneType` failures unrelated to this branch's code) — same
+class of issue prior session-log entries have flagged. Worked around by
+creating a private `webdesignos_test_awc` database and pointing
+`tests/conftest.py` at it only for local verification runs, then
+reverting that one-line change before committing (never landed on the
+branch). The private database was dropped again at the end of the
+session.
+
+---
+
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
 **Mode:** same session
 **Merge to main after:** yes

@@ -635,6 +635,46 @@ def client_approve_website(
     return get_website(db, workspace_id, website_id)
 
 
+def rollback_website(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, website_id: uuid.UUID) -> WebsiteRead | None:
+    """Creates a brand-new latest version whose config is a copy of an
+    older version's — same "nothing is ever deleted, newest wins"
+    convention as every other version-tracked entity here (see
+    modules/content_drafts/service.py's rollback_content_draft), made an
+    explicit action per roadmap Task 3's "allow rollback to previous
+    versions". Starts unapproved: a restored version needs its own
+    operator/QA/client sign-off rather than inheriting whatever most
+    recently replaced it, same "edit reverts approval" contract as
+    update_section."""
+    target = _get_website_in_workspace(db, workspace_id, website_id)
+    if target is None:
+        return None
+
+    config = copy.deepcopy(target.config)
+    anti_slop = _recompute_anti_slop(config)
+    restored = Website(
+        project_id=target.project_id,
+        config=config,
+        anti_slop_score=anti_slop.score,
+        flagged_for_review=bool(config.get("missing_information")) or not anti_slop.passed,
+        sources_note=f"Rolled back to the version generated at {target.generated_at.isoformat()}. {target.sources_note or ''}".strip(),
+        generated_by_user_id=actor_id,
+    )
+    db.add(restored)
+    db.flush()
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=target.project_id,
+        action="website_rolled_back",
+        summary=f"Rolled back website to the version generated at {target.generated_at.isoformat()}",
+    )
+    db.commit()
+    return get_website(db, workspace_id, restored.id)
+
+
 def _base_query(workspace_id: uuid.UUID):
     return (
         select(Website)

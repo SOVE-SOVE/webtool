@@ -447,10 +447,28 @@ export default function ProjectDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Content</h2>
+            <p className="text-xs text-neutral-500">
+              AI-drafted headings, body copy, CTAs, service descriptions, FAQ answers, and SEO metadata from the
+              approved sitemap above — grounded in confirmed facts, tone-controlled, every field editable.
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/projects/${projectId}/content`}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+          >
+            Open content
+          </Link>
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <div>
             <h2 className="text-sm font-semibold text-neutral-900">Website</h2>
             <p className="text-xs text-neutral-500">
-              Generated from the approved sitemap, brief, and creative direction above — every section is
-              reviewable and editable, never a locked mockup.
+              Generated from the approved sitemap, brief, creative direction, and drafted content above — every
+              section is reviewable and editable, never a locked mockup. Never deploys automatically.
             </p>
           </div>
           <Link

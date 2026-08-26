@@ -507,3 +507,38 @@ class TestContentDraftEnrichesGeneratedWebsite:
 
         body = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
         assert body["pages"][0]["sections"][0]["config"]["heading"] == "Approved heading"
+
+
+class TestRollbackWebsite:
+    def test_rollback_creates_new_version_with_old_config_and_unapproved(self, authed_client, monkeypatch):
+        project, sitemap = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+        home_id = next(p["id"] for p in sitemap["pages"] if p["page_type"] == "home")
+
+        _patch_content_generator(monkeypatch, [{"page_id": home_id, "hero_heading": "Version one heading"}])
+        draft_v1 = authed_client.post(f"/api/v1/projects/{project['id']}/content-drafts").json()
+        authed_client.post(f"/api/v1/content-drafts/{draft_v1['id']}/approve")
+        v1 = authed_client.post(f"/api/v1/projects/{project['id']}/websites").json()
+        authed_client.post(f"/api/v1/websites/{v1['id']}/approve")
+
+        _patch_content_generator(monkeypatch, [{"page_id": home_id, "hero_heading": "Version two heading"}])
+        draft_v2 = authed_client.post(f"/api/v1/projects/{project['id']}/content-drafts").json()
+        authed_client.post(f"/api/v1/content-drafts/{draft_v2['id']}/approve")
+        v2 = authed_client.post(f"/api/v1/projects/{project['id']}/websites", json={"force_regenerate_all": True}).json()
+        assert v2["pages"][0]["sections"][0]["config"]["heading"] == "Version two heading"
+
+        res = authed_client.post(f"/api/v1/websites/{v1['id']}/rollback")
+        assert res.status_code == 201
+        restored = res.json()
+        assert restored["id"] not in (v1["id"], v2["id"])
+        assert restored["approved"] is False
+        assert restored["pages"][0]["sections"][0]["config"]["heading"] == "Version one heading"
+
+        versions = authed_client.get(f"/api/v1/projects/{project['id']}/websites").json()
+        assert versions[0]["id"] == restored["id"]
+
+        activity = authed_client.get(f"/api/v1/activity?entity_type=project&entity_id={project['id']}").json()
+        assert any(a["action"] == "website_rolled_back" for a in activity)
+
+    def test_rollback_unknown_website_404s(self, authed_client):
+        res = authed_client.post("/api/v1/websites/00000000-0000-0000-0000-000000000000/rollback")
+        assert res.status_code == 404

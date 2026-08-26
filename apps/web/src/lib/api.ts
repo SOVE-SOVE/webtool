@@ -848,6 +848,7 @@ export type WebsiteSummary = {
 export type GenerateWebsiteRequest = {
   sitemap_id?: string;
   creative_direction_id?: string;
+  content_draft_id?: string;
   force_regenerate_all?: boolean;
 };
 
@@ -858,6 +859,87 @@ export type ApproveWebsiteRequest = {
 export type SectionUpdate = {
   config?: Record<string, unknown>;
   approved?: boolean;
+};
+
+export const CONTENT_TONES = ["professional", "friendly", "bold", "minimal", "luxury"] as const;
+export type ContentTone = (typeof CONTENT_TONES)[number];
+
+export const CONTENT_DRAFT_STATUSES = ["draft", "approved"] as const;
+export type ContentDraftStatus = (typeof CONTENT_DRAFT_STATUSES)[number];
+
+export type DraftedServiceItem = { title: string; description: string };
+export type DraftedFaqItem = { question: string; answer: string };
+
+export type PageContentDraft = {
+  page_id: string;
+  page_title: string;
+  seo_title: string | null;
+  meta_description: string | null;
+  hero_heading: string | null;
+  hero_subheading: string | null;
+  body: string | null;
+  services: DraftedServiceItem[];
+  faqs: DraftedFaqItem[];
+  cta_heading: string | null;
+  cta_body: string | null;
+};
+
+export type ContentDraft = {
+  id: string;
+  project_id: string;
+  status: ContentDraftStatus;
+  tone: string;
+  sitemap_id: string | null;
+  creative_direction_id: string | null;
+  pages: PageContentDraft[];
+  missing_information: string[];
+  rolled_back_from_id: string | null;
+
+  sources_note: string | null;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  model_used: string | null;
+
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  updated_at: string;
+
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+};
+
+export type ContentDraftSummary = {
+  id: string;
+  status: ContentDraftStatus;
+  tone: string;
+  flagged_for_review: boolean;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  approved: boolean;
+};
+
+export type GenerateContentDraftRequest = {
+  tone?: ContentTone;
+  sitemap_id?: string;
+  creative_direction_id?: string;
+  additional_notes?: string;
+};
+
+export type ContentPageUpdate = {
+  seo_title?: string | null;
+  meta_description?: string | null;
+  hero_heading?: string | null;
+  hero_subheading?: string | null;
+  body?: string | null;
+  services?: DraftedServiceItem[];
+  faqs?: DraftedFaqItem[];
+  cta_heading?: string | null;
+  cta_body?: string | null;
+};
+
+export type ApproveContentDraftRequest = {
+  notes?: string;
 };
 
 export const QA_CATEGORIES = ["performance", "responsiveness", "accessibility", "seo", "functionality", "security"] as const;
@@ -1515,6 +1597,27 @@ export const api = {
       body: JSON.stringify({ items }),
     }),
 
+  generateContentDraft: (projectId: string, data?: GenerateContentDraftRequest) =>
+    request<ContentDraft>(`/api/v1/projects/${projectId}/content-drafts`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listContentDrafts: (projectId: string) =>
+    request<ContentDraftSummary[]>(`/api/v1/projects/${projectId}/content-drafts`),
+  getContentDraft: (id: string) => request<ContentDraft>(`/api/v1/content-drafts/${id}`),
+  updateContentDraftPage: (draftId: string, pageId: string, data: ContentPageUpdate) =>
+    request<ContentDraft>(`/api/v1/content-drafts/${draftId}/pages/${encodeURIComponent(pageId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  approveContentDraft: (draftId: string, data?: ApproveContentDraftRequest) =>
+    request<ContentDraft>(`/api/v1/content-drafts/${draftId}/approve`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  rollbackContentDraft: (draftId: string) =>
+    request<ContentDraft>(`/api/v1/content-drafts/${draftId}/rollback`, { method: "POST" }),
+
   generateWebsite: (projectId: string, data?: GenerateWebsiteRequest) =>
     request<Website>(`/api/v1/projects/${projectId}/websites`, {
       method: "POST",
@@ -1536,6 +1639,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data ?? {}),
     }),
+  rollbackWebsite: (websiteId: string) =>
+    request<Website>(`/api/v1/websites/${websiteId}/rollback`, { method: "POST" }),
 
   generateQaReport: (websiteId: string, data?: GenerateQaReportRequest) =>
     request<QaReport>(`/api/v1/websites/${websiteId}/qa-reports`, {
