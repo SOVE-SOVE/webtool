@@ -66,6 +66,98 @@ they're the same list of post-launch admin steps under two names.
 
 ---
 
+## 2026-08-26 — Phase 6: secure website previews, client feedback, and a formal approval workflow
+
+**Decision:** Closed roadmap M5's last open item ("a secure shareable
+client-preview link with feedback capture") in three additive layers,
+each its own module, each its own commit:
+
+**1. `modules/previews/`** — a token-based `PreviewLink` per project
+(not per website version, so one link supports "version selection"
+across a project's history). The token is `secrets.token_urlsafe(32)`;
+only its SHA-256 hash (`token_hash`) is stored, looked up by exact
+match on every request — same "never store the real secret" posture as
+password hashing, but SHA-256 rather than bcrypt since this is a
+high-entropy generated token, not a human-chosen password needing
+slow-hash brute-force resistance. `token_suffix` (last 6 chars, plain
+text) exists purely so an operator can tell several links for the same
+project apart in a list — negligible entropy loss against a 43-char
+token. CLIENT vs. INTERNAL audience is the "client access"/"internal
+access" requirement: a CLIENT link only resolves a website version that
+has cleared review (see workflow note below); an INTERNAL link sees
+every version including a bare draft, for the team's own review, never
+handed to a client. Device preview (desktop/tablet/mobile) is a pure
+frontend concern — a max-width wrapper around a new, self-contained
+`PreviewSiteRenderer` component in `apps/web`, deliberately *not* a
+reuse of `packages/site-templates`: that package has no build step and
+resolves its own `@/...` imports via its own tsconfig, which this repo
+has no cross-package workspace tooling to share (no root `package.json`
+workspaces, no pnpm workspace file) — wiring that up was out of scope
+for this change, so the ~17 section types are re-implemented with
+plain Tailwind instead. Expiration (`expires_at`, default 14 days,
+`None` = never) and revocation (`revoked_at`/`revoked_by_user_id`) are
+both explicit fields, checked on every public resolution
+(`_check_link_valid`), never swept/deleted so the operator can still
+see a dead link's history.
+
+**2. `modules/website_feedback/`** — `WebsiteFeedback` rows submitted
+through the same public token (reusing `previews.service.
+resolve_link_and_website`, extracted for this purpose), always carrying
+project, the *exact* website version, page/section where the viewer
+picked one, who left it (free-text `client_name`/`client_email` — see
+`docs/03_AGENT_RULES`'s "client approval communication" note: there's
+still no client login anywhere in this app), a timestamp, and a status
+(open/acknowledged/resolved/dismissed) the operator triages from a
+panel on the website page.
+
+**3. Formal approval workflow** — `WebsiteWorkflowStatus` (DRAFT →
+INTERNAL_REVIEW → CLIENT_REVIEW → CHANGES_REQUESTED → APPROVED →
+READY_TO_DEPLOY → DEPLOYED) on `Website`, plus an append-only
+`WebsiteWorkflowTransition` history table. Legal transitions live in
+one place, `modules/websites/service.py`'s `ALLOWED_TRANSITIONS`, and
+every mutation goes through `_apply_transition`, which 400s with the
+valid next states rather than silently clamping — "require explicit
+approval before deployment" made literal. `modules/deployments/service.py`
+now refuses to *create or execute* a deployment unless the version's
+workflow status is READY_TO_DEPLOY (or already DEPLOYED, for a
+legitimate redeploy of the same still-valid version — the exact edge
+`TestLaunchChecklist::test_a_redeploy_does_not_duplicate_the_checklist`
+caught: DEPLOYED had to remain deployable, not become a second terminal
+dead-end alongside the workflow graph's own lack of outgoing edges from
+it), re-checked fresh at both points, independent of and *in addition
+to* the seven-checkpoint boolean system `modules/approvals/` already
+enforces — a version can have every boolean checkpoint set yet never
+have been walked through the new workflow at all, and this closes that
+gap rather than assuming the old system already covered it.
+
+**Deliberately layered, not replacing:** the boolean checkpoints
+(`Website.approved`, `.client_approved`, `QaReport.human_approved`, the
+`modules/approvals/` aggregate) stay exactly as they were — a project
+using only "approve website" / "record client approval" keeps working
+unchanged. The new workflow is additive: `previews.service._is_visible`
+grants CLIENT-audience visibility on *either* `website.approved` *or*
+the workflow reaching CLIENT_REVIEW+, so neither system has to be
+adopted before the other works. Editing a section's content on a
+version that's progressed past DRAFT resets it back to DRAFT
+(`update_section`, `validate=False` — a safety reset from *any* state,
+not a step someone chose to take, same "edit reverts approval" contract
+the booleans already had), and a client's own APPROVAL/REJECTION/
+CHANGE_REQUEST feedback drives CLIENT_REVIEW → APPROVED/
+CHANGES_REQUESTED automatically (`apply_client_decision`, silent/no-op
+outside CLIENT_REVIEW rather than erroring — feedback on a stale or
+not-yet-sent version is still recorded, it just can't move a workflow
+state it was never watching).
+
+**Alternative considered:** require every deployment to walk the new
+workflow with no fallback to the old booleans, dropping the boolean
+system entirely. Rejected — it would have broken every existing
+approval/deployment test and every workflow a project already in
+progress had been using, for no benefit the additive approach doesn't
+already provide; the new workflow's value is the *explicit gate before
+deployment*, not eliminating something that already worked.
+
+---
+
 ## 2026-08-25 — Sales Command Centre (Phase 3 checkpoint): a lead-funnel-only dashboard, plus the missing piece that makes "estimated revenue" a real number
 
 **Decision:** Built `modules/sales_dashboard/` (`GET /api/v1/dashboard/sales`)

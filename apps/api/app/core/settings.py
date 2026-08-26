@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # cors — the web app's origin(s), comma-separated
     allowed_origins: str = "http://localhost:3000"
 
+    # The web app's own public origin — used to build a shareable
+    # preview URL (modules/previews/) server-side, since the API is the
+    # one place that mints the token. Deliberately separate from
+    # allowed_origins (CORS can list several; a shareable link needs
+    # exactly one canonical one).
+    app_base_url: str = "http://localhost:3000"
+
     log_level: str = "INFO"
 
     # llm — Claude API, the one adapter per docs/02_ARCHITECTURE.md §6.

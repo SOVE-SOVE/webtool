@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.websites.models import WebsiteStatus
+from app.modules.websites.models import WebsiteStatus, WebsiteWorkflowStatus
 
 
 class GenerateWebsiteRequest(BaseModel):
@@ -59,6 +59,7 @@ class WebsiteRead(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     status: WebsiteStatus
+    workflow_status: WebsiteWorkflowStatus
 
     navigation: SectionRead
     footer: SectionRead
@@ -92,6 +93,7 @@ class WebsiteSummary(BaseModel):
 
     id: uuid.UUID
     status: WebsiteStatus
+    workflow_status: WebsiteWorkflowStatus
     anti_slop_score: int | None
     flagged_for_review: bool
     generated_by_user_name: str | None
@@ -116,3 +118,18 @@ class SectionUpdate(BaseModel):
 
     config: dict | None = None
     approved: bool | None = None
+
+
+class WorkflowTransitionRequest(BaseModel):
+    to_status: WebsiteWorkflowStatus
+    notes: str | None = None
+
+
+class WorkflowTransitionRead(BaseModel):
+    id: uuid.UUID
+    from_status: WebsiteWorkflowStatus
+    to_status: WebsiteWorkflowStatus
+    actor_user_name: str | None
+    actor_label: str | None
+    notes: str | None
+    created_at: datetime

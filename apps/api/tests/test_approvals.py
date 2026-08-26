@@ -149,6 +149,15 @@ class TestPipelineProgression:
         assert client_approve_res.status_code == 200
         status = authed_client.get(f"/api/v1/projects/{project_id}/approvals").json()
         assert _find(status["checkpoints"], "client_review")["approved"] is True
+        # can_deploy also requires Phase 6 Task 3's formal workflow to
+        # have reached READY_TO_DEPLOY, independent of these seven
+        # boolean checkpoints — not yet walked at this point.
+        assert status["can_deploy"] is False
+        assert status["missing_for_deployment"] == ["Approval workflow (not yet ready to deploy)"]
+
+        for to_status in ("internal_review", "client_review", "approved", "ready_to_deploy"):
+            authed_client.post(f"/api/v1/websites/{website['id']}/workflow-transition", json={"to_status": to_status})
+        status = authed_client.get(f"/api/v1/projects/{project_id}/approvals").json()
         assert status["can_deploy"] is True
         assert status["missing_for_deployment"] == []
 

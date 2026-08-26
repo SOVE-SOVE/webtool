@@ -20,6 +20,7 @@ from app.modules.design_briefs.models import DesignBrief
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
+from app.modules.websites import service as websites_service
 from app.modules.websites.models import Website, WebsiteStatus
 
 _READ_OPTIONS = (joinedload(Deployment.approved_by_user), joinedload(Deployment.verified_by_user))
@@ -58,6 +59,13 @@ def create_deployment(
     version is actually safe to publish. The row starts `status="pending"`
     — nothing is actually published until `execute_deployment` runs.
     """
+    # `status.can_deploy`/`missing_for_deployment` already fold in Phase
+    # 6 Task 3's formal workflow gate (modules/approvals/service.py's
+    # `is_ready_to_deploy` check) alongside the seven boolean
+    # checkpoints — one refusal message covers both, so a version can't
+    # have every boolean checkpoint set yet skip the formal
+    # INTERNAL_REVIEW -> CLIENT_REVIEW -> APPROVED -> READY_TO_DEPLOY
+    # walk unnoticed.
     status = approvals_service.get_project_approval_status(db, workspace_id, project_id)
     if status is None:
         return None
@@ -237,11 +245,23 @@ def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID
     if current_status not in ("pending", "failed"):
         raise HTTPException(status_code=400, detail=f"Cannot execute a deployment that is already '{current_status}'.")
 
+    # Re-verified at execution, not just trusted from create_deployment's
+    # earlier check — the version's workflow state could have moved
+    # (a content edit resets it to draft) between preparing and
+    # executing a deployment. Never re-run a real publish against a
+    # version that's no longer actually approved.
+    if not websites_service.is_ready_to_deploy(deployment.website):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot execute — this version's workflow status is now '{deployment.website.workflow_status.value}', no longer 'ready_to_deploy'.",
+        )
+
     provider = get_deployment_provider()
     _run_provider(deployment, provider)
 
     project = deployment.website.project
     if deployment.status == "success":
+        websites_service.mark_deployed(db, deployment.website)
         activity_service.record(
             db,
             workspace_id=workspace_id,
@@ -300,6 +320,8 @@ def rollback_deployment(
         missing.append("client review")
     if latest_qa is None or not latest_qa.human_approved:
         missing.append("QA")
+    if not websites_service.is_ready_to_deploy(website):
+        missing.append("workflow status (reset since this version was last deployed)")
     if missing:
         raise HTTPException(
             status_code=400,
@@ -333,6 +355,7 @@ def rollback_deployment(
 
     project = website.project
     if deployment.status == "success":
+        websites_service.mark_deployed(db, website)
         activity_service.record(
             db,
             workspace_id=workspace_id,

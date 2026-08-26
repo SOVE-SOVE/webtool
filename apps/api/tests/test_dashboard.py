@@ -327,6 +327,8 @@ def test_project_reports_only_its_first_unmet_gate(authed_client, monkeypatch):
     assert item["label"] == "Deploy"
     assert item["action"] == "Deploy the site"
 
+    for to_status in ("internal_review", "client_review", "approved", "ready_to_deploy"):
+        authed_client.post(f"/api/v1/websites/{website['id']}/workflow-transition", json={"to_status": to_status})
     authed_client.post(f"/api/v1/projects/{pid}/deployments")
     # Fully approved and deployed — nothing left for the operator to do.
     assert _project_items(authed_client, pid) == []
