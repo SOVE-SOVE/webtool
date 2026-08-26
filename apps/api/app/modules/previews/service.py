@@ -207,6 +207,21 @@ def _to_public(link: PreviewLink, website: Website, visible_versions: list[Websi
     )
 
 
+def resolve_link_and_website(db: Session, token: str, website_id: uuid.UUID) -> tuple[PreviewLink, Website]:
+    """Shared resolution + visibility gate for anything reached through a
+    preview link, not just the preview page itself — see
+    modules/website_feedback/service.py's submit_feedback, which needs
+    the exact version a piece of feedback was left against without
+    needing every other visible version alongside it. Does not touch
+    access-tracking fields; only resolve_preview (an actual page view)
+    does that."""
+    link = _check_link_valid(_get_link_by_token(db, token))
+    website = db.scalar(select(Website).where(Website.id == website_id, Website.project_id == link.project_id))
+    if website is None or not _is_visible(website, link.audience):
+        raise HTTPException(status_code=404, detail="That website version isn't available on this preview link")
+    return link, website
+
+
 def resolve_preview(db: Session, token: str, website_id: uuid.UUID | None) -> PublicPreviewRead:
     link = _check_link_valid(_get_link_by_token(db, token))
 

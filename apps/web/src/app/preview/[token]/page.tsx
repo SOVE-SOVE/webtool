@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { PreviewApiError, previewApi, type PublicPreview } from "@/lib/previewApi";
 import { PreviewSiteRenderer } from "@/components/PreviewSiteRenderer";
+import { PreviewFeedbackForm } from "@/components/PreviewFeedbackForm";
 
 // Fixed max-widths, not a live resize — this is a proxy for "how does
 // this look on a phone/tablet", not a real device emulator.
@@ -110,6 +111,8 @@ export default function PublicPreviewPage() {
           )}
         </div>
       </div>
+
+      <PreviewFeedbackForm token={token} websiteId={preview.website_id} pageSlug={activePage?.slug ?? null} />
     </div>
   );
 }

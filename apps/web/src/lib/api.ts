@@ -1009,6 +1009,38 @@ export type PreviewLinkCreate = {
   expires_in_days?: number | null;
 };
 
+// Client feedback captured directly on a website preview (Phase 6 Task
+// 2) — apps/api's modules/website_feedback/. Submission itself happens
+// on the public preview page (see lib/previewApi.ts); these are the
+// operator-side read/triage endpoints.
+export const FEEDBACK_TYPES = ["comment", "change_request", "approval", "rejection", "general"] as const;
+export type FeedbackType = (typeof FEEDBACK_TYPES)[number];
+
+export const FEEDBACK_STATUSES = ["open", "acknowledged", "resolved", "dismissed"] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+export type WebsiteFeedback = {
+  id: string;
+  project_id: string;
+  website_id: string;
+  feedback_type: FeedbackType;
+  message: string;
+  page_slug: string | null;
+  section_id: string | null;
+  client_name: string | null;
+  client_email: string | null;
+  status: FeedbackStatus;
+  resolved_by_user_name: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+  created_at: string;
+};
+
+export type FeedbackStatusUpdate = {
+  status: FeedbackStatus;
+  resolution_notes?: string;
+};
+
 // The three first-contact channels a qualified lead can be drafted for.
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
 // "follow_up" is a fourth, drafted-message-only channel (see api docs on
@@ -1602,6 +1634,13 @@ export const api = {
     }),
   listPreviewLinks: (projectId: string) => request<PreviewLink[]>(`/api/v1/projects/${projectId}/previews`),
   revokePreviewLink: (id: string) => request<PreviewLink>(`/api/v1/previews/${id}/revoke`, { method: "POST" }),
+
+  listWebsiteFeedback: (projectId: string, websiteId?: string) =>
+    request<WebsiteFeedback[]>(
+      `/api/v1/projects/${projectId}/feedback${websiteId ? `?website_id=${websiteId}` : ""}`,
+    ),
+  updateWebsiteFeedbackStatus: (id: string, data: FeedbackStatusUpdate) =>
+    request<WebsiteFeedback>(`/api/v1/feedback/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {

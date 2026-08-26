@@ -33,6 +33,7 @@ from app.modules.sitemaps.routes import router as sitemaps_router
 from app.modules.tasks.routes import router as tasks_router
 from app.modules.users.routes import router as users_router
 from app.modules.website_audits.routes import router as website_audits_router
+from app.modules.website_feedback.routes import router as website_feedback_router
 from app.modules.website_quality.routes import router as website_quality_router
 from app.modules.websites.routes import router as websites_router
 from app.modules.workspaces.routes import router as workspaces_router
@@ -125,3 +126,4 @@ app.include_router(pipeline_router)
 app.include_router(sales_opportunities_router)
 app.include_router(sales_dashboard_router)
 app.include_router(previews_router)
+app.include_router(website_feedback_router)
