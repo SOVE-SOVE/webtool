@@ -8,7 +8,7 @@ from app.core.auth import get_current_user
 from app.core.rate_limit import enforce_generation_rate_limit
 from app.db.session import get_db
 from app.integrations.discovery.registry import UnknownProviderError
-from app.modules.discovery import service
+from app.modules.discovery import automation as discovery_automation, service
 from app.modules.discovery.schemas import (
     BulkApproveRequest,
     BulkApproveResult,
@@ -16,7 +16,12 @@ from app.modules.discovery.schemas import (
     DiscoveredBusinessReviewRead,
     DiscoverySearchCreate,
     DiscoverySearchRead,
+    LeadDiscoveryScheduleCreate,
+    LeadDiscoveryScheduleRead,
+    LeadDiscoveryScheduleUpdate,
 )
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.schemas import JobRead
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/discovery-searches", tags=["discovery"])
@@ -162,3 +167,70 @@ def import_to_lead(
     if business is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return business
+
+
+discovery_schedules_router = APIRouter(prefix="/api/v1/discovery-schedules", tags=["discovery", "jobs"])
+
+
+@discovery_schedules_router.get("", response_model=list[LeadDiscoveryScheduleRead])
+def list_discovery_schedules(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[LeadDiscoveryScheduleRead]:
+    return [
+        LeadDiscoveryScheduleRead.from_model(s)
+        for s in discovery_automation.list_discovery_schedules(db, current_user.workspace_id)
+    ]
+
+
+@discovery_schedules_router.post("", response_model=LeadDiscoveryScheduleRead, status_code=201)
+def create_discovery_schedule(
+    data: LeadDiscoveryScheduleCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LeadDiscoveryScheduleRead:
+    schedule = discovery_automation.create_discovery_schedule(db, current_user.workspace_id, current_user.id, data)
+    return LeadDiscoveryScheduleRead.from_model(schedule)
+
+
+@discovery_schedules_router.get("/{schedule_id}", response_model=LeadDiscoveryScheduleRead)
+def get_discovery_schedule(
+    schedule_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> LeadDiscoveryScheduleRead:
+    schedule = discovery_automation.get_discovery_schedule(db, current_user.workspace_id, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    return LeadDiscoveryScheduleRead.from_model(schedule)
+
+
+@discovery_schedules_router.patch("/{schedule_id}", response_model=LeadDiscoveryScheduleRead)
+def update_discovery_schedule(
+    schedule_id: uuid.UUID,
+    data: LeadDiscoveryScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LeadDiscoveryScheduleRead:
+    schedule = discovery_automation.get_discovery_schedule(db, current_user.workspace_id, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    updated = discovery_automation.update_discovery_schedule(db, schedule, data)
+    return LeadDiscoveryScheduleRead.from_model(updated)
+
+
+@discovery_schedules_router.delete("/{schedule_id}", status_code=204)
+def delete_discovery_schedule(
+    schedule_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> None:
+    schedule = discovery_automation.get_discovery_schedule(db, current_user.workspace_id, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    jobs_service.delete_schedule(db, schedule)
+
+
+@discovery_schedules_router.post("/{schedule_id}/run-now", response_model=JobRead, status_code=201)
+def run_discovery_schedule_now(
+    schedule_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> JobRead:
+    schedule = discovery_automation.get_discovery_schedule(db, current_user.workspace_id, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Discovery schedule not found")
+    return jobs_service.run_schedule_now(db, schedule)

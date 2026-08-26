@@ -71,8 +71,18 @@ class InvalidSearchError(ValueError):
 
 
 def create_and_run_search(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: DiscoverySearchCreate
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    data: DiscoverySearchCreate,
+    max_results: int | None = None,
 ) -> DiscoverySearchRead:
+    """
+    `max_results` lets an automated caller (a scheduled `lead_discovery_batch`
+    job — see app/modules/discovery/automation.py) enforce its own configured
+    "maximum leads per run" without duplicating discovery logic; the manual
+    route leaves it unset and gets the normal MAX_RESULTS_PER_SEARCH cap.
+    """
     if not any([data.location, data.industry, data.business_type, data.keywords]):
         raise InvalidSearchError(
             "A discovery search needs at least one of location, industry, business_type, or keywords"
@@ -104,7 +114,7 @@ def create_and_run_search(
         industry=data.industry,
         business_type=data.business_type,
         keywords=data.keywords,
-        limit=MAX_RESULTS_PER_SEARCH,
+        limit=min(MAX_RESULTS_PER_SEARCH, max_results) if max_results is not None else MAX_RESULTS_PER_SEARCH,
     )
 
     try:

@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
+from app.modules.jobs.models import ScheduleFrequency
 
 
 class DiscoverySearchCreate(BaseModel):
@@ -113,6 +114,96 @@ class DiscoveredBusinessReviewRead(BaseModel):
     score_category: OpportunityScoreCategory | None
     confidence: float | None
     recommended_sales_angle: str | None
+
+
+class LeadDiscoveryScheduleCreate(BaseModel):
+    """
+    The operator-facing config for a recurring `lead_discovery_batch` job
+    (Phase 7 Task 2) — reuses `DiscoverySearchCreate`'s own criteria
+    shape rather than inventing a second one, plus the two knobs the
+    spec asks for that a one-off search doesn't need: how many
+    candidates to pull per run, and the score floor below which a
+    researched-and-scored result is auto-archived out of the review
+    queue (see app/modules/business_research/automation.py).
+    """
+
+    name: str | None = None
+    query_label: str | None = None
+    location: str | None = None
+    industry: str | None = None
+    business_type: str | None = None
+    keywords: str | None = None
+    provider: str | None = None
+    max_leads: int = 20
+    min_score: int | None = None
+    frequency: ScheduleFrequency = ScheduleFrequency.DAILY
+    run_at_hour: int = 7
+    day_of_week: int | None = None
+    interval_minutes: int | None = None
+
+
+class LeadDiscoveryScheduleUpdate(BaseModel):
+    name: str | None = None
+    query_label: str | None = None
+    location: str | None = None
+    industry: str | None = None
+    business_type: str | None = None
+    keywords: str | None = None
+    provider: str | None = None
+    max_leads: int | None = None
+    min_score: int | None = None
+    frequency: ScheduleFrequency | None = None
+    run_at_hour: int | None = None
+    day_of_week: int | None = None
+    interval_minutes: int | None = None
+    is_enabled: bool | None = None
+
+
+class LeadDiscoveryScheduleRead(BaseModel):
+    id: uuid.UUID
+    name: str | None
+    query_label: str | None
+    location: str | None
+    industry: str | None
+    business_type: str | None
+    keywords: str | None
+    provider: str | None
+    max_leads: int
+    min_score: int | None
+    frequency: ScheduleFrequency
+    run_at_hour: int
+    day_of_week: int | None
+    interval_minutes: int | None
+    is_enabled: bool
+    next_run_at: datetime
+    last_run_at: datetime | None
+    last_job_id: uuid.UUID | None
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, schedule) -> "LeadDiscoveryScheduleRead":
+        payload = schedule.payload
+        return cls(
+            id=schedule.id,
+            name=schedule.name,
+            query_label=payload.get("query_label"),
+            location=payload.get("location"),
+            industry=payload.get("industry"),
+            business_type=payload.get("business_type"),
+            keywords=payload.get("keywords"),
+            provider=payload.get("provider"),
+            max_leads=payload.get("max_leads", 20),
+            min_score=payload.get("min_score"),
+            frequency=schedule.frequency,
+            run_at_hour=schedule.run_at_hour,
+            day_of_week=schedule.day_of_week,
+            interval_minutes=schedule.interval_minutes,
+            is_enabled=schedule.is_enabled,
+            next_run_at=schedule.next_run_at,
+            last_run_at=schedule.last_run_at,
+            last_job_id=schedule.last_job_id,
+            created_at=schedule.created_at,
+        )
 
 
 class BulkApproveRequest(BaseModel):
