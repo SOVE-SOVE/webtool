@@ -372,6 +372,31 @@ Goal: stages 15–18. First real reusable output.
       what's missing, and the deployment gate independently re-verifies
       all six prior checkpoints' *current* state rather than trusting
       an earlier gate already covered it. See [[05_DECISIONS]].
+- [x] Website revision workflow (Phase 5 Part 3 Task 2) —
+      `modules/website_revisions/` / `agents/website_revision.py`:
+      operator free-text feedback ("make the hero less generic",
+      "change the CTA", "make mobile spacing tighter") becomes a
+      targeted edit to just the section it names, never a full
+      regeneration — a deep copy of the current `Website` version's
+      config has only that one slot replaced, so unrelated
+      approved/edited sections are never touched. Spacing feedback
+      ("tighter", "cramped", "padding", ...) is handled deterministically
+      (no LLM call) by setting the new `spacing: "compact"` field
+      `packages/site-templates` now supports on `hero`/`cta` sections
+      (Section.tsx's padding classes); anything else needs a `section_id`
+      and goes through the LLM-backed agent, which is instructed to
+      edit only fields the section's config already has and never
+      fabricate new facts. Every revision is a row in
+      `website_revisions` — sequential `revision_number` per project,
+      the operator's `requested_change`, the agent's own
+      `generated_change` summary, PENDING/APPROVED/REVERTED status, and
+      pointers to the `Website` version immediately before/after —
+      approving one marks that section reviewed; rolling one back
+      restores the prior version's config as a *new* version (never
+      rewriting history) and is only allowed on a project's single most
+      recent revision, so an older rollback can't silently discard a
+      newer, unrelated change layered on top. No frontend surface yet —
+      backend + tests only, per the operator's Phase 5 Part 3 scope.
 - [ ] A secure shareable client-preview link with feedback capture —
       still not built. "Client review" today is an operator recording
       that the client approved (by email/call/etc, see

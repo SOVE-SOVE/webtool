@@ -31,5 +31,6 @@ from app.modules.tasks import models as _tasks  # noqa: F401
 from app.modules.users import models as _users  # noqa: F401
 from app.modules.website_audits import models as _website_audits  # noqa: F401
 from app.modules.website_quality import models as _website_quality  # noqa: F401
+from app.modules.website_revisions import models as _website_revisions  # noqa: F401
 from app.modules.websites import models as _websites  # noqa: F401
 from app.modules.workspaces import models as _workspaces  # noqa: F401
