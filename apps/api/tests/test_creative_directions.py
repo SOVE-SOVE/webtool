@@ -23,7 +23,11 @@ CREATIVE_DIRECTION_LLM_OUTPUT = {
     "brand_personality": ["Trustworthy", "Prompt", "No-nonsense"],
     "colour_direction": "A deep blue primary with a warm amber accent for CTAs, echoing trade-industry trust cues.",
     "typography_direction": "A confident, highly legible sans-serif for both headings and body.",
+    "spacing_system": "Generous section padding with extra breathing room around the phone number so it reads "
+    "as the one obvious action on a small mobile screen.",
     "image_direction": "Real photos of the crew and completed jobs in Geelong, not stock plumbing photos.",
+    "component_style": "Solid, squared-off buttons with a slight shadow for a dependable, no-nonsense feel; "
+    "minimal iconography.",
     "layout_direction": "Short, scannable homepage: hero, services grid, service area, contact.",
     "ux_direction": "One-tap call button pinned on mobile; quote-request form never more than one tap away.",
     "tone_of_voice": "Plain-spoken, direct, no jargon — talk like a tradie talking to a neighbour.",
@@ -117,6 +121,7 @@ def test_generate_creative_direction_happy_path(authed_client, monkeypatch):
         json={
             "target_audience": "Homeowners aged 30-60 in Geelong needing urgent or planned plumbing work",
             "business_goals": "Generate more phone enquiries from mobile visitors",
+            "conversion_goal": "Same-day phone calls for emergency callouts",
         },
     )
     assert res.status_code == 201
@@ -128,6 +133,9 @@ def test_generate_creative_direction_happy_path(authed_client, monkeypatch):
     assert body["brand_personality"] == CREATIVE_DIRECTION_LLM_OUTPUT["brand_personality"]
     assert body["things_to_avoid"] == CREATIVE_DIRECTION_LLM_OUTPUT["things_to_avoid"]
     assert body["facts"] == CREATIVE_DIRECTION_LLM_OUTPUT["facts"]
+    assert body["spacing_system"] == CREATIVE_DIRECTION_LLM_OUTPUT["spacing_system"]
+    assert body["component_style"] == CREATIVE_DIRECTION_LLM_OUTPUT["component_style"]
+    assert body["conversion_goal"] == "Same-day phone calls for emergency callouts"
     # Both target audience and business goals were supplied — not thin
     # evidence, so this should not be flagged.
     assert body["flagged_for_review"] is False
@@ -173,12 +181,16 @@ def test_update_creative_direction_edits_fields(authed_client, monkeypatch):
         json={
             "creative_concept": "Operator-revised concept: warm, family-run cafe feel.",
             "things_to_avoid": ["Cold corporate imagery", "Overly formal tone"],
+            "spacing_system": "Operator-revised: tighter section padding to fit more menu items above the fold.",
+            "component_style": "Operator-revised: soft rounded cards throughout, no hard edges.",
         },
     )
     assert res.status_code == 200
     body = res.json()
     assert body["creative_concept"] == "Operator-revised concept: warm, family-run cafe feel."
     assert body["things_to_avoid"] == ["Cold corporate imagery", "Overly formal tone"]
+    assert body["spacing_system"] == "Operator-revised: tighter section padding to fit more menu items above the fold."
+    assert body["component_style"] == "Operator-revised: soft rounded cards throughout, no hard edges."
     # Untouched fields survive the partial edit.
     assert body["visual_direction"] == CREATIVE_DIRECTION_LLM_OUTPUT["visual_direction"]
     assert body["edited_by_user_name"] == "Ada Admin"
@@ -230,6 +242,7 @@ def test_generate_creative_direction_uses_intake_brief_when_not_overridden(authe
         json={
             "target_customers": "Young families looking for weekend brunch spots",
             "business_goals": "Drive more weekend foot traffic and online gift-card sales",
+            "calls_to_action": "Book a table for weekend brunch",
             "brand_colours": "Terracotta and cream",
             "business_description": "A neighbourhood cafe known for its all-day breakfast menu.",
         },
@@ -244,6 +257,7 @@ def test_generate_creative_direction_uses_intake_brief_when_not_overridden(authe
     # so this should not be flagged as missing client context.
     assert body["target_audience"] == "Young families looking for weekend brunch spots"
     assert body["business_goals"] == "Drive more weekend foot traffic and online gift-card sales"
+    assert body["conversion_goal"] == "Book a table for weekend brunch"
     assert body["flagged_for_review"] is False
     assert "from client intake brief" in body["sources_note"]
 
@@ -253,20 +267,26 @@ def test_generate_creative_direction_request_overrides_intake_brief(authed_clien
     project = _create_project_without_lead(authed_client)
     authed_client.patch(
         f"/api/v1/projects/{project['id']}/brief",
-        json={"target_customers": "From the brief", "business_goals": "From the brief"},
+        json={
+            "target_customers": "From the brief",
+            "business_goals": "From the brief",
+            "calls_to_action": "From the brief",
+        },
     )
 
     res = authed_client.post(
         f"/api/v1/projects/{project['id']}/creative-directions",
-        json={"target_audience": "Operator override audience"},
+        json={"target_audience": "Operator override audience", "conversion_goal": "Operator override goal"},
     )
     assert res.status_code == 201
     body = res.json()
 
-    # target_audience explicitly overridden at generation time; business
-    # goals had no override, so it still falls back to the brief.
+    # target_audience/conversion_goal explicitly overridden at generation
+    # time; business goals had no override, so it still falls back to
+    # the brief.
     assert body["target_audience"] == "Operator override audience"
     assert body["business_goals"] == "From the brief"
+    assert body["conversion_goal"] == "Operator override goal"
     assert "operator-supplied" in body["sources_note"]
     assert "from client intake brief" in body["sources_note"]
 

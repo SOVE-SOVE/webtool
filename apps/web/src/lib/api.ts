@@ -609,6 +609,7 @@ export type CreativeDirectionBrief = {
   status: CreativeDirectionStatus;
   target_audience: string | null;
   business_goals: string | null;
+  conversion_goal: string | null;
   facts: string[];
   assumptions: string[];
   creative_concept: string;
@@ -616,7 +617,9 @@ export type CreativeDirectionBrief = {
   brand_personality: string[];
   colour_direction: string;
   typography_direction: string;
+  spacing_system: string;
   image_direction: string;
+  component_style: string;
   layout_direction: string;
   ux_direction: string;
   tone_of_voice: string;
@@ -640,6 +643,7 @@ export type CreativeDirectionBrief = {
 export type GenerateCreativeDirectionRequest = {
   target_audience?: string;
   business_goals?: string;
+  conversion_goal?: string;
   additional_notes?: string;
 };
 
@@ -651,7 +655,9 @@ export type CreativeDirectionUpdate = {
   brand_personality?: string[];
   colour_direction?: string;
   typography_direction?: string;
+  spacing_system?: string;
   image_direction?: string;
+  component_style?: string;
   layout_direction?: string;
   ux_direction?: string;
   tone_of_voice?: string;

@@ -48,6 +48,7 @@ class CreativeDirectorInput(BaseModel):
     prior_suggested_offer: str | None
     target_audience: str | None
     business_goals: str | None
+    conversion_goal: str | None
     additional_notes: str | None
     intake_notes: str | None
 
@@ -60,7 +61,9 @@ class CreativeDirectorOutput(BaseModel):
     brand_personality: list[str]
     colour_direction: str
     typography_direction: str
+    spacing_system: str
     image_direction: str
+    component_style: str
     layout_direction: str
     ux_direction: str
     tone_of_voice: str
@@ -121,11 +124,13 @@ def _build_user_message(input: CreativeDirectorInput) -> str:
             + f"\nSuggested offer/tier: {input.prior_suggested_offer or 'none on record'}",
             "CLIENT INTAKE BRIEF (confirmed by the client, via the intake form — treat as fact, not assumption)",
             input.intake_notes or "No intake brief on record for this project, or it hasn't been filled in yet.",
-            "TARGET AUDIENCE / BUSINESS GOALS (resolved from the intake brief above, or operator-entered at "
-            "generation time if the brief doesn't have them — 'not provided' means neither source has it, and "
-            "you do not know it: treat any statement about it as an assumption, not a fact)",
+            "TARGET AUDIENCE / BUSINESS GOALS / CONVERSION GOAL (resolved from the intake brief above, or "
+            "operator-entered at generation time if the brief doesn't have them — 'not provided' means neither "
+            "source has it, and you do not know it: treat any statement about it as an assumption, not a fact)",
             f"Target audience: {input.target_audience or 'not provided'}\n"
             f"Business goals for the new site: {input.business_goals or 'not provided'}\n"
+            f"Primary conversion goal (the single outcome this site most needs to drive): "
+            f"{input.conversion_goal or 'not provided'}\n"
             f"Additional notes: {input.additional_notes or 'none'}",
         ]
     )

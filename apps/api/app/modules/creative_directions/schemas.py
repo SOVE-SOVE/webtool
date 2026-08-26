@@ -20,6 +20,7 @@ class GenerateCreativeDirectionRequest(BaseModel):
 
     target_audience: str | None = None
     business_goals: str | None = None
+    conversion_goal: str | None = None
     additional_notes: str | None = None
 
 
@@ -37,7 +38,9 @@ class CreativeDirectionUpdate(BaseModel):
     brand_personality: list[str] | None = None
     colour_direction: str | None = None
     typography_direction: str | None = None
+    spacing_system: str | None = None
     image_direction: str | None = None
+    component_style: str | None = None
     layout_direction: str | None = None
     ux_direction: str | None = None
     tone_of_voice: str | None = None
@@ -54,6 +57,7 @@ class CreativeDirectionRead(BaseModel):
 
     target_audience: str | None
     business_goals: str | None
+    conversion_goal: str | None
 
     facts: list[str]
     assumptions: list[str]
@@ -63,7 +67,9 @@ class CreativeDirectionRead(BaseModel):
     brand_personality: list[str]
     colour_direction: str
     typography_direction: str
+    spacing_system: str
     image_direction: str
+    component_style: str
     layout_direction: str
     ux_direction: str
     tone_of_voice: str
@@ -95,6 +101,7 @@ class CreativeDirectionRead(BaseModel):
             status=brief.status,
             target_audience=brief.target_audience,
             business_goals=brief.business_goals,
+            conversion_goal=brief.conversion_goal,
             facts=_split(brief.facts),
             assumptions=_split(brief.assumptions),
             creative_concept=brief.creative_concept,
@@ -102,7 +109,9 @@ class CreativeDirectionRead(BaseModel):
             brand_personality=_split(brief.brand_personality),
             colour_direction=brief.colour_direction,
             typography_direction=brief.typography_direction,
+            spacing_system=brief.spacing_system,
             image_direction=brief.image_direction,
+            component_style=brief.component_style,
             layout_direction=brief.layout_direction,
             ux_direction=brief.ux_direction,
             tone_of_voice=brief.tone_of_voice,

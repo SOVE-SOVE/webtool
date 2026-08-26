@@ -57,6 +57,7 @@ class CreativeDirectionBrief(Base):
     # agents/creative_director.py). Kept for traceability/re-generation.
     target_audience: Mapped[str | None] = mapped_column(Text)
     business_goals: Mapped[str | None] = mapped_column(Text)
+    conversion_goal: Mapped[str | None] = mapped_column(Text)
 
     # FACTS / RECOMMENDATIONS / ASSUMPTIONS framework required by the
     # Creative Director feature — facts and assumptions are explicit
@@ -69,7 +70,9 @@ class CreativeDirectionBrief(Base):
     brand_personality: Mapped[str] = mapped_column(Text)
     colour_direction: Mapped[str] = mapped_column(Text)
     typography_direction: Mapped[str] = mapped_column(Text)
+    spacing_system: Mapped[str] = mapped_column(Text, server_default="")
     image_direction: Mapped[str] = mapped_column(Text)
+    component_style: Mapped[str] = mapped_column(Text, server_default="")
     layout_direction: Mapped[str] = mapped_column(Text)
     ux_direction: Mapped[str] = mapped_column(Text)
     tone_of_voice: Mapped[str] = mapped_column(Text)

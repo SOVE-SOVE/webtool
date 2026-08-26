@@ -9,7 +9,9 @@ type StrField = keyof Pick<
   | "visual_direction"
   | "colour_direction"
   | "typography_direction"
+  | "spacing_system"
   | "image_direction"
+  | "component_style"
   | "layout_direction"
   | "ux_direction"
   | "tone_of_voice"
@@ -25,10 +27,12 @@ type ListField = keyof Pick<
 const STR_SECTIONS: { field: StrField; label: string }[] = [
   { field: "creative_concept", label: "Creative concept" },
   { field: "visual_direction", label: "Visual direction" },
-  { field: "colour_direction", label: "Colour direction" },
+  { field: "colour_direction", label: "Colour system" },
   { field: "typography_direction", label: "Typography direction" },
-  { field: "image_direction", label: "Image direction" },
-  { field: "layout_direction", label: "Layout direction" },
+  { field: "spacing_system", label: "Spacing system" },
+  { field: "image_direction", label: "Imagery direction" },
+  { field: "component_style", label: "Component style" },
+  { field: "layout_direction", label: "Layout principles" },
   { field: "ux_direction", label: "UX direction" },
   { field: "tone_of_voice", label: "Tone of voice" },
   { field: "visual_hierarchy", label: "Recommended visual hierarchy" },
@@ -38,7 +42,7 @@ const STR_SECTIONS: { field: StrField; label: string }[] = [
 const LIST_SECTIONS: { field: ListField; label: string }[] = [
   { field: "brand_personality", label: "Brand personality" },
   { field: "things_to_avoid", label: "Things to avoid" },
-  { field: "references_inspiration", label: "References / inspiration" },
+  { field: "references_inspiration", label: "Design references" },
 ];
 
 function section(title: string, content: React.ReactNode) {
@@ -234,7 +238,7 @@ export function CreativeDirectionView({
         ),
       )}
 
-      {(brief.target_audience || brief.business_goals) &&
+      {(brief.target_audience || brief.business_goals || brief.conversion_goal) &&
         section(
           "Client-supplied context used",
           <div className="space-y-1">
@@ -248,6 +252,12 @@ export function CreativeDirectionView({
               <p>
                 <span className="text-neutral-500">Business goals: </span>
                 {brief.business_goals}
+              </p>
+            )}
+            {brief.conversion_goal && (
+              <p>
+                <span className="text-neutral-500">Conversion goal: </span>
+                {brief.conversion_goal}
               </p>
             )}
           </div>,

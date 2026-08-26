@@ -118,6 +118,7 @@ def _build_sources_note(
     design_brief: DesignBrief | None,
     target_audience_source: str,
     business_goals_source: str,
+    conversion_goal_source: str,
 ) -> str:
     parts = [f"Business record: {business.name} ({business.industry or 'industry unknown'})"]
     if website_audit is None:
@@ -143,6 +144,7 @@ def _build_sources_note(
 
     parts.append(f"Target audience: {target_audience_source}")
     parts.append(f"Business goals: {business_goals_source}")
+    parts.append(f"Conversion goal: {conversion_goal_source}")
     return "; ".join(parts)
 
 
@@ -180,6 +182,9 @@ def generate_creative_direction(
     business_goals, business_goals_source = _resolve(
         request.business_goals, design_brief.business_goals if design_brief else None
     )
+    conversion_goal, conversion_goal_source = _resolve(
+        request.conversion_goal, design_brief.calls_to_action if design_brief else None
+    )
 
     agent_input = CreativeDirectorInput(
         business_name=business.name,
@@ -199,6 +204,7 @@ def generate_creative_direction(
         prior_suggested_offer=sales_audit.suggested_offer if sales_audit else None,
         target_audience=target_audience,
         business_goals=business_goals,
+        conversion_goal=conversion_goal,
         additional_notes=request.additional_notes,
         intake_notes=_build_intake_notes(design_brief),
     )
@@ -210,6 +216,7 @@ def generate_creative_direction(
         status=CreativeDirectionStatus.DRAFT,
         target_audience=target_audience,
         business_goals=business_goals,
+        conversion_goal=conversion_goal,
         facts=_join(output.facts),
         assumptions=_join(output.assumptions),
         creative_concept=output.creative_concept,
@@ -217,7 +224,9 @@ def generate_creative_direction(
         brand_personality=_join(output.brand_personality),
         colour_direction=output.colour_direction,
         typography_direction=output.typography_direction,
+        spacing_system=output.spacing_system,
         image_direction=output.image_direction,
+        component_style=output.component_style,
         layout_direction=output.layout_direction,
         ux_direction=output.ux_direction,
         tone_of_voice=output.tone_of_voice,
@@ -226,7 +235,14 @@ def generate_creative_direction(
         things_to_avoid=_join(output.things_to_avoid),
         references_inspiration=_join(output.references_inspiration),
         sources_note=_build_sources_note(
-            business, lead, website_audit, sales_audit, design_brief, target_audience_source, business_goals_source
+            business,
+            lead,
+            website_audit,
+            sales_audit,
+            design_brief,
+            target_audience_source,
+            business_goals_source,
+            conversion_goal_source,
         ),
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,

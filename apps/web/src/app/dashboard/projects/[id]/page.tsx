@@ -44,6 +44,7 @@ export default function ProjectDetailPage() {
   const [showGenerateForm, setShowGenerateForm] = useState(false);
   const [targetAudience, setTargetAudience] = useState("");
   const [businessGoals, setBusinessGoals] = useState("");
+  const [conversionGoal, setConversionGoal] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
 
   const [sitemaps, setSitemaps] = useState<Sitemap[] | null>(null);
@@ -115,6 +116,7 @@ export default function ProjectDetailPage() {
       const generated = await api.generateCreativeDirection(projectId, {
         target_audience: targetAudience || undefined,
         business_goals: businessGoals || undefined,
+        conversion_goal: conversionGoal || undefined,
         additional_notes: additionalNotes || undefined,
       });
       setBriefs((prev) => [generated, ...(prev ?? [])]);
@@ -122,6 +124,7 @@ export default function ProjectDetailPage() {
       setShowGenerateForm(false);
       setTargetAudience("");
       setBusinessGoals("");
+      setConversionGoal("");
       setAdditionalNotes("");
     } catch (err) {
       setGenerateError(err instanceof ApiError ? err.message : "Couldn't generate a creative direction.");
@@ -269,6 +272,16 @@ export default function ProjectDetailPage() {
                 rows={2}
                 className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
                 placeholder="e.g. More phone enquiries from mobile visitors"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-neutral-600">Primary conversion goal</span>
+              <textarea
+                value={conversionGoal}
+                onChange={(e) => setConversionGoal(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                placeholder="e.g. Same-day phone calls for emergency callouts"
               />
             </label>
             <label className="block text-sm">
