@@ -13,6 +13,7 @@ from app.modules.business_research.routes import router as business_research_rou
 from app.modules.businesses.routes import router as businesses_router
 from app.modules.calendar.routes import router as calendar_router
 from app.modules.clients.routes import router as clients_router
+from app.modules.content_drafts.routes import router as content_drafts_router
 from app.modules.creative_directions.routes import router as creative_directions_router
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.deployments.routes import router as deployments_router
@@ -111,6 +112,7 @@ app.include_router(calendar_router)
 app.include_router(design_briefs_router)
 app.include_router(creative_directions_router)
 app.include_router(sitemaps_router)
+app.include_router(content_drafts_router)
 app.include_router(websites_router)
 app.include_router(qa_reports_router)
 app.include_router(deployments_router)

@@ -11,6 +11,7 @@ from app.modules.businesses import models as _businesses  # noqa: F401
 from app.modules.calendar import models as _calendar  # noqa: F401
 from app.modules.clients import models as _clients  # noqa: F401
 from app.modules.contacts import models as _contacts  # noqa: F401
+from app.modules.content_drafts import models as _content_drafts  # noqa: F401
 from app.modules.creative_directions import models as _creative_directions  # noqa: F401
 from app.modules.deployments import models as _deployments  # noqa: F401
 from app.modules.design_briefs import models as _design_briefs  # noqa: F401
