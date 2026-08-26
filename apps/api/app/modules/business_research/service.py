@@ -10,6 +10,8 @@ from app.modules.activity_log import service as activity_service
 from app.modules.business_research.models import BusinessResearchResult
 from app.modules.business_research.schemas import BusinessResearchResultRead
 from app.modules.discovery.models import DiscoveredBusiness, DiscoveredBusinessStatus, DiscoverySearch
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_WEBSITE_QUALITY_AUDIT
 
 # How long a research result stays "fresh enough" that re-researching the
 # same business is skipped — per the "same business is not repeatedly
@@ -92,6 +94,20 @@ def run_research(
 
     db.commit()
     db.refresh(row)
+
+    # Automation hand-off: analysis (website quality audit) runs next on
+    # its own — only off a genuine new research run, not the cache-hit
+    # branch above, so re-requesting research within RESEARCH_FRESHNESS
+    # doesn't spam a duplicate audit for a business already through the
+    # chain.
+    jobs_service.enqueue(
+        db,
+        workspace_id=workspace_id,
+        job_type=JOB_WEBSITE_QUALITY_AUDIT,
+        payload={"discovered_business_id": str(business.id)},
+        actor_id=actor_id,
+    )
+
     return BusinessResearchResultRead.from_model(row)
 
 

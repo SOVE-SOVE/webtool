@@ -19,7 +19,12 @@ from app.modules.qa_reports.schemas import (
     QaReportRead,
     QaReportSummary,
 )
+from app.modules.tasks import service as tasks_service
+from app.modules.tasks.models import Task
+from app.modules.tasks.schemas import TaskCreate
 from app.modules.websites.models import Website
+
+CLIENT_REVIEW_TASK_TITLE = "Request client review"
 
 _READ_OPTIONS = (joinedload(QaReport.generated_by_user), joinedload(QaReport.approved_by_user))
 
@@ -90,7 +95,34 @@ def run_qa(
     )
     db.add(report)
     db.commit()
+
+    # Internal-only reminder, never a message to the client: once a QA
+    # run says the site is genuinely ready, drop a task on the operator's
+    # own list so "ask the client to look at it" doesn't get missed —
+    # sharing the preview link and interpreting feedback stays a human
+    # action either way (docs/03_AGENT_RULES.md "client approval
+    # communication"). Skipped if an open one already exists so re-
+    # running QA (e.g. after a content edit) doesn't stack up reminders.
+    if output.ready_for_client_review and not _has_open_client_review_task(db, website.project_id):
+        tasks_service.create_task(
+            db,
+            workspace_id=workspace_id,
+            actor_id=actor_id,
+            data=TaskCreate(title=CLIENT_REVIEW_TASK_TITLE, project_id=website.project_id),
+        )
+
     return get_qa_report(db, workspace_id, report.id)
+
+
+def _has_open_client_review_task(db: Session, project_id: uuid.UUID) -> bool:
+    return (
+        db.scalar(
+            select(Task.id).where(
+                Task.project_id == project_id, Task.title == CLIENT_REVIEW_TASK_TITLE, Task.done.is_(False)
+            )
+        )
+        is not None
+    )
 
 
 def approve_qa_report(

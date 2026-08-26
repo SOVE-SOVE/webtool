@@ -16,6 +16,8 @@ from app.modules.discovery.schemas import (
     DiscoveredBusinessReviewRead,
     DiscoverySearchCreate,
     DiscoverySearchRead,
+    ScheduledSearchRead,
+    ScheduleRecurringSearchRequest,
 )
 from app.modules.users.models import User
 
@@ -36,11 +38,13 @@ def create_discovery_search(
     db: Session = Depends(get_db),
 ) -> DiscoverySearchRead:
     """
-    Creates and immediately runs a search — synchronous for now (the
-    provider call is a single bounded HTTP request, same shape as Sales
-    Audit generation). The `jobs` queue (see app/modules/jobs/) exists
-    for a future asynchronous/scheduled path without needing a route
-    change; nothing here uses it yet.
+    Creates and immediately runs a search — synchronous, the provider call
+    is a single bounded HTTP request, same shape as Sales Audit
+    generation. Every discovered business it finds then flows on its own
+    through research -> analysis -> scoring via the `jobs` queue (see
+    app/modules/jobs/ and app/jobs/handlers.py) — see `schedule` below
+    for a search that runs on its own on a recurring cadence instead of
+    once, right now.
     """
     try:
         return service.create_and_run_search(db, current_user.workspace_id, current_user.id, data)
@@ -48,6 +52,36 @@ def create_discovery_search(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except UnknownProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/schedule", response_model=ScheduledSearchRead, status_code=201)
+def schedule_recurring_search(
+    data: ScheduleRecurringSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ScheduledSearchRead:
+    """
+    Scheduled discovery: enqueues the same search criteria as a job that
+    runs on its own every `interval_hours`, re-enqueueing its own next
+    run each time it completes — see
+    `app/jobs/handlers.py::handle_discovery_search`. Requires a job
+    poller process running (`python -m app.jobs.runner`) to actually
+    execute; the row exists the moment this returns either way.
+    """
+    try:
+        job = service.schedule_recurring_search(
+            db, current_user.workspace_id, current_user.id, data, interval_hours=data.interval_hours
+        )
+    except service.InvalidSearchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return job
+
+
+@router.get("/schedule", response_model=list[ScheduledSearchRead])
+def list_scheduled_searches(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[ScheduledSearchRead]:
+    return service.list_scheduled_searches(db, current_user.workspace_id)
 
 
 @router.get("/{search_id}", response_model=DiscoverySearchRead)

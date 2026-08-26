@@ -19,6 +19,8 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.contacts.models import Contact
 from app.modules.interactions.models import Interaction, InteractionKind
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_FOLLOW_UP_DRAFT
 from app.modules.leads import service as leads_service
 from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import Meeting, MeetingStatus
@@ -403,6 +405,21 @@ def _apply_sent_side_effects(
         action=action,
         summary=summary,
     )
+
+    # Automation hand-off: "follow-up" gets suggested on its own once
+    # outreach has actually gone out — suggestion only, per
+    # docs/03_AGENT_RULES.md ("same for follow-up messages"); resolving
+    # or snoozing it stays an explicit operator action either way. Skips
+    # if a follow-up is already pending for this lead so a second SENT
+    # message (e.g. a different channel) doesn't stack up duplicates.
+    if not _has_pending_follow_up(db, message.lead_id):
+        jobs_service.enqueue(
+            db,
+            workspace_id=workspace_id,
+            job_type=JOB_FOLLOW_UP_DRAFT,
+            payload={"lead_id": str(message.lead_id)},
+            actor_id=actor_id,
+        )
 
 
 def mark_outreach_sent(

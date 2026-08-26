@@ -11,6 +11,97 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-27 — Phase 7 Part 3 (PHASE 7 CHECKPOINT): connect the major automation systems end to end
+**Mode:** worktree (`phase7-part3-connect-automation`, background job)
+**Merge to main after:** yes
+**Scope touched:** `apps/api/app/jobs/handlers.py` (new), `apps/api/app/jobs/runner.py`,
+`apps/api/app/modules/jobs/job_types.py` + `routes.py` (new),
+`apps/api/app/modules/{discovery,business_research,website_quality,
+sales_audits,outreach,sitemaps,websites,qa_reports}/service.py`,
+`apps/api/app/modules/discovery/{routes,schemas}.py`, `apps/api/app/main.py`,
+`scripts/{start-mac.sh,stop-mac.sh}`,
+`apps/api/tests/{test_automation_pipeline.py,test_job_runner.py}` (new)
+**What happened:** The job queue (`apps/api/app/jobs/`) has existed since
+M7 but was never wired to anything — `poll_forever` was called with
+`handlers={}`. This pass registers a handler per automatable stage
+(`handlers.py`) and adds an `enqueue` call at each stage's completion
+point in the relevant service module, so the pipeline in
+[[00_VISION]] now advances on its own wherever that's safe, while every
+explicitly-listed human gate (importing a discovered business, sending
+outreach, winning/closing a deal, approving website content, deploying)
+stays an untouched, explicit operator action — see the new M8 entry in
+[[04_ROADMAP]] for the full list of what now chains automatically.
+
+Two real bugs were caught by writing the tests, not by inspection:
+the outreach-draft handler had no dedup guard at all (re-generating a
+lead's sales audit would draft a second, duplicate outreach message
+every time) — fixed by checking `outreach_service.list_outreach` inside
+the handler, mirroring the guard the follow-up handler already had. And
+the QA "client review ready" reminder task's dedup-testing code in the
+new e2e test itself briefly held a stale QA-report reference, which
+would have hidden a mismatch between "the latest report" the approval
+system checks and the one actually approved — caught the same way
+`test_end_to_end_workflow.py`'s docstring says one long walk catches
+handoff bugs a single-module test can't.
+
+Also closed M7's own "scheduled/recurring discovery" gap:
+`POST /api/v1/discovery-searches/schedule` enqueues a self-rescheduling
+`discovery_search` job (survives a provider failure — still reschedules
+itself even when a run fails) rather than adding a new scheduler
+process or table, per the design note already on `Job.run_after`.
+`scripts/start-mac.sh`/`stop-mac.sh` now start/stop the job runner
+alongside the API and web app, so this isn't dead code locally.
+
+**Blockers/issues:** Discovered mid-session that several other Claude
+Code sessions were concurrently working on closely related or
+overlapping ground — a peer worktree (`phase7-part2-action-engine`,
+session "automation engine setup") building its own job-scheduling
+architecture (`app/modules/action_engine/`, `job_schedules` table) and
+another ("daily priority action engine") that had been assigned the
+same Task 3 brief this session was doing. Messaged both directly
+(cross-session) to confirm scope and avoid duplicate work; the second
+session confirmed it would report Task 3 as covered by this worktree
+rather than re-build it. Separately, that other session's
+`job_schedules` table (added to the *shared* `webdesignos_test` Postgres
+database every worktree's `conftest.py` points at) broke this session's
+own test teardown (`Base.metadata.drop_all()` — `DependentObjectsStillExist`
+via an FK from a table not in this worktree's SQLAlchemy metadata).
+Auto-mode correctly blocked an attempt to reset the shared schema, so
+verification instead ran against a throwaway, separately-ported Postgres
+container (`localhost:5433`) with `conftest.py`'s `DATABASE_URL`
+temporarily repointed for the run and reverted before committing — full
+suite (719 tests) passed clean there. This is a standing hazard for any
+session running tests in a worktree while others do too: everyone's
+`conftest.py` hardcodes the same `localhost:5432`/`webdesignos_test`,
+so schema and row-level changes from concurrent sessions can and do leak
+into each other's runs. Worth a real fix later (a per-worktree test DB
+name derived from the branch, or a documented "isolate before you
+verify" convention) rather than each session improvising its own
+workaround.
+
+Also caught, while reading the wrong (main-checkout, pre-Phase-6) copy
+of two files early in the session out of habit: this worktree's
+`approvals`/`websites` modules already carry a newer "formal approval
+workflow" state machine (`WebsiteWorkflowStatus`, Phase 6 Task 3) that
+`test_end_to_end_workflow.py` already exercises and that `can_deploy`
+now depends on independently of the seven boolean checkpoints — the new
+e2e test had to add the same `workflow-transition` sequence once this
+was found. Worth remembering for any future session in a worktree: read
+from the worktree path every time, not muscle-memory into the main
+checkout, especially right after `EnterWorktree`.
+
+**Next up:** M7's "a second real provider behind `DiscoveryProvider`"
+is still open. The reconciliation this session flagged (shared test DB
+across concurrent worktree sessions) isn't fixed, just worked around for
+this session. Whoever next merges multiple worktree branches into `main`
+should expect to reconcile this session's job-queue wiring against
+`phase7-part2-action-engine`'s `action_engine`/`job_schedules` work if
+both land — they touch adjacent but distinct territory (this session
+registers handlers for the *existing* queue and never added new tables;
+the other added scheduling infrastructure of its own).
+
+---
+
 ## 2026-08-26 — Phase 6: secure website previews, client feedback, approval workflow
 **Mode:** worktree (`phase6-preview-feedback-approval`)
 **Merge to main after:** yes

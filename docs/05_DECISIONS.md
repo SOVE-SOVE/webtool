@@ -8,6 +8,85 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-08-27 — Phase 7 Part 3: connecting the automation systems — what stayed manual and why
+
+**Decision:** Wired the previously-inert job queue (`apps/api/app/jobs/`,
+built in M7 but never given a handler) to actually drive the pipeline,
+but drew the automatic/manual line as follows rather than automating
+everything the queue technically could:
+
+**Review + CRM import stays manual for every discovered business, not
+just "questionable" ones.** The task brief said human approval must
+remain required for "importing questionable prospects," which reads as
+permission to auto-import a confident/non-questionable one. Chose not
+to build that distinction. `DiscoveredBusiness`'s own docstring already
+states the design intent explicitly: "nothing here is CRM data until a
+human reviews and imports it... per the explicit 'do not automatically
+import every discovered business' requirement." A score-based
+"questionable vs. not" heuristic would be a real behavior change (some
+prospects skip human eyes entirely) sitting on the fuzziest signal in
+the whole pipeline (`OpportunityScoreResult.confidence`, which is
+itself just evidence-completeness, not certainty the business is a good
+fit) — and the target workflow in the brief lists "review" as its own
+explicit stage between scoring and CRM, which only makes sense if review
+is unconditional. The score/confidence still exists and sorts the
+review queue; it never skips it.
+
+**No new scheduling table.** `Job.run_after`'s own docstring already
+described exactly this: "an operator or a cron-triggered enqueuer
+inserts a `discovery_search` job with `run_after` set to the next
+scheduled time; no schema change needed when that scheduler is actually
+built." Built it that way — `handle_discovery_search` re-enqueues its
+own next run on completion (including after a failure, so one bad cycle
+doesn't end the recurrence) — rather than adding a `JobSchedule`/cron
+table. Turned out to matter more than expected: a concurrent session in
+a sibling worktree was independently building a `job_schedules` table
+for the same purpose at the same time; not needing one avoided that
+collision entirely for this piece (see [[07_SESSION_LOG]] for the
+broader concurrent-session friction that session surfaced).
+
+**Outreach and follow-up drafting automate; sending and resolving
+don't.** Generating a lead's sales audit now also drafts outreach;
+marking outreach sent now also drafts a follow-up. Both stop at DRAFTED/
+PENDING — approving, sending, marking replied, and resolving/snoozing a
+follow-up are all still explicit operator actions, unchanged. This is
+the existing `docs/03_AGENT_RULES.md` line ("draft it, don't send it...
+same for follow-up messages") applied to a new trigger, not a new
+policy.
+
+**Website generation and QA automate past sitemap approval; the
+Phase-6 workflow-transition gate and deployment don't.** Once a sitemap
+is approved, generating a website version and running QA against it are
+both read/compute-only against already-approved sources — the same
+class of action `docs/03_AGENT_RULES.md` already lists as autonomous
+("generating and iterating on the website build," "running automated QA
+checks"). Nothing about approving that content, walking it through the
+Phase 6 Task 3 workflow-transition states, or deploying changed — those
+remain exactly as gated as before this pass, verified directly in the
+new e2e test (`_deploy_refusal`-style assertions at each point content
+exists but isn't yet approved).
+
+**A passing QA report creates an internal task, never client contact.**
+"Client review" in the target workflow could have meant auto-emailing
+the client a preview link. Explicitly did not build that — sharing the
+link and interpreting feedback is listed as a human judgment call in
+`docs/03_AGENT_RULES.md` ("client approval communication"), and this
+system doesn't send client-facing email at all today. A task on the
+operator's own list ("Request client review") is the "connect this
+stage" version that doesn't cross that line.
+
+**Alternatives considered:** A generic pipeline-stage-transition
+framework (a single "advance(entity, from, to)" function all of this
+routes through) — rejected as premature abstraction for eight
+call-sites with genuinely different payloads and completion signals;
+each `enqueue` call living next to the specific mutation it follows is
+more readable than a shared indirection layer would be, and matches
+this codebase's existing preference (per `docs/02_ARCHITECTURE.md`'s
+"what this is deliberately not") for concrete code over a generic
+orchestration layer.
+
+---
+
 ## 2026-08-26 — Phase 6: secure website previews, client feedback, and a formal approval workflow
 
 **Decision:** Closed roadmap M5's last open item ("a secure shareable

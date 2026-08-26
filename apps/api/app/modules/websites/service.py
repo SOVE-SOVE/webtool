@@ -17,6 +17,8 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_QA_REPORT
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
@@ -342,6 +344,19 @@ def generate_website(
         db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DEVELOPMENT
     )
     db.commit()
+
+    # Automation hand-off: technical QA runs next on its own — read-only
+    # checks against the generated config, never a gate an operator hasn't
+    # seen (docs/03_AGENT_RULES.md: automated QA "assists stage 17, it
+    # doesn't replace it").
+    jobs_service.enqueue(
+        db,
+        workspace_id=workspace_id,
+        job_type=JOB_QA_REPORT,
+        payload={"website_id": str(website.id)},
+        actor_id=actor_id,
+    )
+
     return get_website(db, workspace_id, website.id)
 
 
