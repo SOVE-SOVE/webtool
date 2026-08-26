@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api, type QaReport, type Website, type WebsiteSummary } from "@/lib/api";
 import { WebsiteView } from "@/components/WebsiteView";
 import { QaReportView } from "@/components/QaReportView";
+import { PreviewLinksPanel } from "@/components/PreviewLinksPanel";
 
 export default function ProjectWebsitePage() {
   const params = useParams<{ id: string }>();
@@ -321,6 +322,8 @@ export default function ProjectWebsitePage() {
           )}
         </div>
       )}
+
+      <PreviewLinksPanel projectId={projectId} />
     </div>
   );
 }

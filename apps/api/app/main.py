@@ -23,6 +23,7 @@ from app.modules.meetings.routes import router as meetings_router
 from app.modules.opportunity_scoring.routes import router as opportunity_scoring_router
 from app.modules.outreach.routes import router as outreach_router
 from app.modules.pipeline.routes import router as pipeline_router
+from app.modules.previews.routes import router as previews_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.qa_reports.routes import router as qa_reports_router
 from app.modules.sales_audits.routes import router as sales_audits_router
@@ -123,3 +124,4 @@ app.include_router(opportunity_scoring_router)
 app.include_router(pipeline_router)
 app.include_router(sales_opportunities_router)
 app.include_router(sales_dashboard_router)
+app.include_router(previews_router)

@@ -977,6 +977,38 @@ export type RollbackDeploymentRequest = {
   notes?: string;
 };
 
+// Secure client/internal preview links (roadmap M5's "secure shareable
+// client-preview link with feedback capture") — see apps/api's
+// modules/previews/. One project can have several links (e.g. one
+// client-facing, one internal); `url` only comes back on the create
+// response, since the raw token isn't recoverable afterward.
+export const PREVIEW_AUDIENCES = ["client", "internal"] as const;
+export type PreviewAudience = (typeof PREVIEW_AUDIENCES)[number];
+
+export type PreviewLink = {
+  id: string;
+  project_id: string;
+  audience: PreviewAudience;
+  label: string | null;
+  url: string | null;
+  token_suffix: string;
+  active: boolean;
+  revoked: boolean;
+  expired: boolean;
+  expires_at: string | null;
+  last_accessed_at: string | null;
+  access_count: number;
+  created_by_user_name: string | null;
+  created_at: string;
+};
+
+export type PreviewLinkCreate = {
+  audience?: PreviewAudience;
+  label?: string;
+  // Omitted defaults to 14 days server-side; null never expires.
+  expires_in_days?: number | null;
+};
+
 // The three first-contact channels a qualified lead can be drafted for.
 export const OUTREACH_CHANNELS = ["email", "phone", "in_person"] as const;
 // "follow_up" is a fourth, drafted-message-only channel (see api docs on
@@ -1562,6 +1594,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  createPreviewLink: (projectId: string, data?: PreviewLinkCreate) =>
+    request<PreviewLink>(`/api/v1/projects/${projectId}/previews`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listPreviewLinks: (projectId: string) => request<PreviewLink[]>(`/api/v1/projects/${projectId}/previews`),
+  revokePreviewLink: (id: string) => request<PreviewLink>(`/api/v1/previews/${id}/revoke`, { method: "POST" }),
 
   generateOutreach: (leadId: string, channel: OutreachChannel) =>
     request<OutreachMessage>(`/api/v1/leads/${leadId}/outreach`, {
