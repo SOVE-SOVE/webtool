@@ -11,6 +11,34 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-27 — Fix: illegible form-field text in OS dark mode
+**Mode:** worktree (`input-text-contrast`)
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/globals.css
+
+**What happened:** User reported that text typed into any input/textarea
+was too light to read. Root cause: the app UI is built light-only
+(`bg-white`, `text-neutral-*`, zero `dark:` classes anywhere), but
+`globals.css` flips `--foreground` to `#ededed` under
+`prefers-color-scheme: dark`, and Tailwind's preflight makes form
+controls `color: inherit` — so on a dark-mode OS, fields rendered
+near-white text on a white field.
+
+Fix: added `--field-background` / `--field-foreground` /
+`--field-placeholder` tokens (light + dark values), set
+`color-scheme: light dark` on `:root`, and an `@layer base` block that
+applies those tokens to `input` (excluding checkbox/radio/range/color),
+`textarea`, `select`, plus a `::placeholder` color. Kept in `@layer base`
+so any future per-component Tailwind utilities still win. Result: black
+text on white field in light mode, white text on `#1a1a1a` field in dark
+mode. Verified globals.css compiles via `@tailwindcss/postcss`.
+
+**Next session:** the app still has no real dark-mode theme — surfaces
+(`bg-white` cards, sidebar) stay light in dark mode, so dark-mode fields
+now sit on light cards. A proper dark theme pass is still open.
+
+---
+
 ## 2026-08-26 — Phase 6 part 2: deployment adapter architecture + delivery workflow
 **Mode:** worktree (`phase6-part2-deployment-delivery`)
 **Merge to main after:** yes

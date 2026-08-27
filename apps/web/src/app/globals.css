@@ -3,6 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --field-background: #ffffff;
+  --field-foreground: #171717;
+  --field-placeholder: #6b7280;
+  color-scheme: light dark;
 }
 
 @theme inline {
@@ -16,6 +20,9 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --field-background: #1a1a1a;
+    --field-foreground: #ffffff;
+    --field-placeholder: #9ca3af;
   }
 }
 
@@ -23,4 +30,21 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Keep typed text legible in form fields regardless of OS light/dark mode.
+   Lives in @layer base so per-component Tailwind utilities still override it. */
+@layer base {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
+  textarea,
+  select {
+    color: var(--field-foreground);
+    background-color: var(--field-background);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--field-placeholder);
+    opacity: 1;
+  }
 }
