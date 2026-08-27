@@ -1,3 +1,8 @@
+# Local development only. POSTGRES_PASSWORD below is a fixed, public
+# default — safe only because this binds to localhost:5432 on a dev
+# machine. Never reuse these credentials, or this file unchanged, for
+# anything reachable over a network; production uses a managed Postgres
+# connection string (Neon/Supabase) via DATABASE_URL instead.
 services:
   postgres:
     image: postgres:16-alpine

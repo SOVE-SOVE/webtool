@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_public_preview_rate_limit
 from app.db.session import get_db
 from app.modules.previews import service
 from app.modules.previews.schemas import PreviewLinkCreate, PreviewLinkRead, PublicPreviewRead
@@ -53,11 +54,15 @@ def revoke_preview_link(
 # credential — see modules/previews/service.py's resolve_preview. ---
 
 
-@router.get("/api/v1/preview/{token}", response_model=PublicPreviewRead)
+@router.get("/api/v1/preview/{token}", response_model=PublicPreviewRead, dependencies=[Depends(enforce_public_preview_rate_limit)])
 def get_preview(token: str, db: Session = Depends(get_db)) -> PublicPreviewRead:
     return service.resolve_preview(db, token, website_id=None)
 
 
-@router.get("/api/v1/preview/{token}/versions/{website_id}", response_model=PublicPreviewRead)
+@router.get(
+    "/api/v1/preview/{token}/versions/{website_id}",
+    response_model=PublicPreviewRead,
+    dependencies=[Depends(enforce_public_preview_rate_limit)],
+)
 def get_preview_version(token: str, website_id: uuid.UUID, db: Session = Depends(get_db)) -> PublicPreviewRead:
     return service.resolve_preview(db, token, website_id=website_id)

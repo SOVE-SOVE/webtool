@@ -1,4 +1,6 @@
-from pydantic import field_validator
+from urllib.parse import urlparse
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Signing keys that are public knowledge (this file, .env.example) or
@@ -7,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # password — see app/core/auth.py.
 _SESSION_SECRET_MIN_LENGTH = 32
 _UNSAFE_SESSION_SECRETS = {"", "change-me-in-.env", "changeme", "secret", "dev", "test"}
+_LOCAL_ORIGIN_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 class Settings(BaseSettings):
@@ -146,6 +149,30 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _reject_insecure_cookie_outside_dev(self) -> "Settings":
+        """
+        SESSION_COOKIE_SECURE=False means the session cookie is sent over
+        plain HTTP — fine for local http://localhost dev, unsafe anywhere
+        else. ALLOWED_ORIGINS listing a non-localhost origin is this
+        app's existing signal for "this is a real deployment" (it's the
+        one other setting every real deploy must already change from its
+        default), so reuse it here rather than adding a whole separate
+        ENV/APP_ENV setting just for this one check. Same fail-loudly
+        pattern as the SESSION_SECRET guard above.
+        """
+        if not self.session_cookie_secure:
+            for origin in self.allowed_origins_list:
+                host = urlparse(origin).hostname or ""
+                if host not in _LOCAL_ORIGIN_HOSTS:
+                    raise ValueError(
+                        f"SESSION_COOKIE_SECURE is False but ALLOWED_ORIGINS includes a non-localhost "
+                        f"origin ({origin!r}). Set SESSION_COOKIE_SECURE=True for any real deployment — "
+                        "otherwise the session cookie is sent over plain HTTP and can be intercepted "
+                        "on the network."
+                    )
+        return self
 
 
 settings = Settings()

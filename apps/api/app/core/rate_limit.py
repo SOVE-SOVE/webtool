@@ -10,7 +10,7 @@ import time
 from collections import defaultdict, deque
 from threading import Lock
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from app.core.auth import get_current_user
 from app.core.settings import settings
@@ -92,6 +92,27 @@ def record_login_failure(email: str, client_ip: str) -> None:
 
 def clear_login_failures(email: str, client_ip: str) -> None:
     _login_limiter.clear(_login_keys(email, client_ip)[0])
+
+
+
+# Public preview/feedback routes (modules/previews, modules/website_feedback)
+# have no auth dependency at all — the token in the URL is the credential.
+# That token is high-entropy (secrets.token_urlsafe(32)), so this isn't
+# brute-force protection; it's just a floor against a leaked/shared link
+# being used to script a flood of requests or feedback spam. Keyed by IP
+# only (not the token) since a single leaked token being hit hard from
+# many IPs should still be capped per-source, and legitimate viewers of
+# one link are never more than a handful of people on a handful of IPs.
+_public_preview_limiter = _InMemoryRateLimiter()
+_PUBLIC_PREVIEW_WINDOW_SECONDS = 60
+_MAX_PUBLIC_PREVIEW_REQUESTS_PER_MINUTE = 60
+
+
+def enforce_public_preview_rate_limit(request: Request) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    _public_preview_limiter.check(
+        f"ip:{client_ip}", _MAX_PUBLIC_PREVIEW_REQUESTS_PER_MINUTE, _PUBLIC_PREVIEW_WINDOW_SECONDS
+    )
 
 
 def enforce_generation_rate_limit(current_user: User = Depends(get_current_user)) -> User:
