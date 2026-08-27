@@ -9,6 +9,7 @@ import { QaReportView } from "@/components/QaReportView";
 import { PreviewLinksPanel } from "@/components/PreviewLinksPanel";
 import { WebsiteFeedbackPanel } from "@/components/WebsiteFeedbackPanel";
 import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 export default function ProjectWebsitePage() {
   const params = useParams<{ id: string }>();
@@ -48,6 +49,7 @@ export default function ProjectWebsitePage() {
     api
       .listWebsites(projectId)
       .then((list) => {
+        setLoadError(null);
         setVersions(list);
         const target = selectId ?? list[0]?.id;
         if (target) {
@@ -165,23 +167,29 @@ export default function ProjectWebsitePage() {
       .catch(() => {});
   }
 
-  if (loadError) return <div className="p-6 text-sm text-red-600">{loadError}</div>;
-  if (versions === null) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  if (loadError) {
+    return (
+      <div className="p-6">
+        <ErrorState message={loadError} onRetry={() => loadVersions()} />
+      </div>
+    );
+  }
+  if (versions === null) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   return (
     <div className="mx-auto max-w-4xl p-6">
-      <Link href={`/dashboard/projects/${projectId}`} className="text-sm text-neutral-500 hover:underline">
+      <Link href={`/dashboard/projects/${projectId}`} className="text-sm text-fg-muted hover:underline">
         ← Back to project
       </Link>
 
       <div className="mt-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Website</h1>
+        <h1 className="text-lg font-semibold text-fg">Website</h1>
         <div className="flex items-center gap-2">
           {website && (
             <button
               onClick={() => handleGenerate(true)}
               disabled={generating}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
               title="Rebuild every section from scratch, discarding approvals and edits"
             >
               Regenerate all
@@ -190,22 +198,22 @@ export default function ProjectWebsitePage() {
           <button
             onClick={() => handleGenerate(false)}
             disabled={generating}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {generating ? "Generating…" : website ? "Regenerate" : "Generate website"}
           </button>
         </div>
       </div>
 
-      {generateError && <p className="mt-2 text-sm text-red-600">{generateError}</p>}
+      {generateError && <p className="mt-2 text-error">{generateError}</p>}
 
       {versions.length > 0 && (
         <div className="mt-4 flex items-center gap-2 text-sm">
-          <span className="text-neutral-500">Version:</span>
+          <span className="text-fg-muted">Version:</span>
           <select
             value={website?.id ?? ""}
             onChange={(e) => handleSelectVersion(e.target.value)}
-            className="rounded-md border border-neutral-300 px-2 py-1"
+            className="rounded-md border border-border-strong px-2 py-1"
           >
             {versions.map((v) => (
               <option key={v.id} value={v.id}>
@@ -219,17 +227,17 @@ export default function ProjectWebsitePage() {
       )}
 
       {!website && (
-        <p className="mt-6 text-sm text-neutral-500">
+        <p className="mt-6 text-sm text-fg-muted">
           No website generated yet. This needs an approved sitemap with pages first.
         </p>
       )}
 
       {website && (
-        <div className="mt-6 rounded-md border border-neutral-200 p-4">
+        <div className="mt-6 rounded-md border border-border p-4">
           <div className="flex flex-wrap items-center gap-3">
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
-                website.approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+                website.approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
               }`}
             >
               {website.approved ? `Approved by ${website.approved_by_user_name}` : "Not approved"}
@@ -238,14 +246,14 @@ export default function ProjectWebsitePage() {
               <button
                 onClick={handleApproveWebsite}
                 disabled={approvingWebsite}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
               >
                 {approvingWebsite ? "Approving…" : "Approve website"}
               </button>
             )}
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
-                website.client_approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+                website.client_approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
               }`}
             >
               {website.client_approved ? `Client approved (recorded by ${website.client_approved_by_user_name})` : "Client review not recorded"}
@@ -254,15 +262,15 @@ export default function ProjectWebsitePage() {
               <button
                 onClick={handleClientApprove}
                 disabled={clientApproving}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
                 title="Record that the client has reviewed and approved this version"
               >
                 {clientApproving ? "Recording…" : "Record client approval"}
               </button>
             )}
           </div>
-          {approveError && <p className="mt-2 text-sm text-red-600">{approveError}</p>}
-          {clientApproveError && <p className="mt-2 text-sm text-red-600">{clientApproveError}</p>}
+          {approveError && <p className="mt-2 text-error">{approveError}</p>}
+          {clientApproveError && <p className="mt-2 text-error">{clientApproveError}</p>}
         </div>
       )}
 
@@ -275,20 +283,20 @@ export default function ProjectWebsitePage() {
       )}
 
       {website && (
-        <div className="mt-8 border-t border-neutral-200 pt-6">
+        <div className="mt-8 border-t border-border pt-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-900">Technical QA</h2>
+            <h2 className="text-sm font-semibold text-fg">Technical QA</h2>
             <button
               onClick={handleRunQa}
               disabled={runningQa}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
             >
               {runningQa ? "Running…" : qaReport ? "Re-run QA check" : "Run QA check"}
             </button>
           </div>
-          {qaError && <p className="mt-2 text-sm text-red-600">{qaError}</p>}
+          {qaError && <p className="mt-2 text-error">{qaError}</p>}
           {!qaReport && !runningQa && (
-            <p className="mt-3 text-sm text-neutral-500">
+            <p className="mt-3 text-sm text-fg-muted">
               No QA check run against this version yet — content and structure checks only until a live preview
               URL exists (roadmap M6 deployment).
             </p>
@@ -299,7 +307,7 @@ export default function ProjectWebsitePage() {
               <div className="mt-3 flex items-center gap-3">
                 <span
                   className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    qaReport.human_approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+                    qaReport.human_approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
                   }`}
                 >
                   {qaReport.human_approved ? `QA approved by ${qaReport.approved_by_user_name}` : "QA not approved"}
@@ -315,13 +323,13 @@ export default function ProjectWebsitePage() {
                           ? "This report has unresolved critical issues"
                           : undefined
                     }
-                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
                   >
                     {approvingQa ? "Approving…" : "Approve QA"}
                   </button>
                 )}
               </div>
-              {qaApproveError && <p className="mt-2 text-sm text-red-600">{qaApproveError}</p>}
+              {qaApproveError && <p className="mt-2 text-error">{qaApproveError}</p>}
             </div>
           )}
         </div>

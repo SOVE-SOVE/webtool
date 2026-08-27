@@ -11,6 +11,7 @@ import {
   type Lead,
   type LeadStatus,
 } from "@/lib/api";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 const SNOOZE_OPTIONS: { label: string; days: number }[] = [
   { label: "+1 day", days: 1 },
@@ -44,21 +45,21 @@ function FollowUpRow({
     <li className="px-4 py-3 text-sm">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-neutral-900 hover:underline">
+          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-fg hover:underline">
             {item.business_name}
           </Link>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-xs text-fg-muted">
             {item.previous_outreach
               ? `Previous: ${item.previous_outreach.channel.replace("_", " ")} (${item.previous_outreach.status.replace("_", " ")}) — ${item.previous_outreach.excerpt}`
               : "No previous outreach"}
           </p>
-          <p className="mt-1 text-neutral-800">{item.suggested_next_action}</p>
+          <p className="mt-1 text-fg">{item.suggested_next_action}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
             {item.channel.replace("_", " ")}
           </span>
-          <span className="text-xs text-neutral-500">{new Date(item.due_date).toLocaleDateString()}</span>
+          <span className="text-xs text-fg-muted">{new Date(item.due_date).toLocaleDateString()}</span>
           <div className="flex items-center gap-2">
             <select
               value=""
@@ -66,7 +67,7 @@ function FollowUpRow({
                 const days = Number(e.target.value);
                 if (days) onSnooze(item.id, days);
               }}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              className="rounded-md border border-border-strong px-2 py-1 text-xs"
             >
               <option value="">Snooze…</option>
               {SNOOZE_OPTIONS.map((opt) => (
@@ -77,7 +78,7 @@ function FollowUpRow({
             </select>
             <button
               onClick={() => onResolve(item.id)}
-              className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
             >
               Mark done
             </button>
@@ -97,11 +98,11 @@ function bucketSection(
 ) {
   return (
     <section className="mt-6">
-      <h2 className="text-sm font-semibold text-neutral-900">
-        {title} <span className="font-normal text-neutral-500">({items.length})</span>
+      <h2 className="text-sm font-semibold text-fg">
+        {title} <span className="font-normal text-fg-muted">({items.length})</span>
       </h2>
-      <ul className="mt-2 divide-y divide-neutral-200 border border-neutral-200">
-        {items.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">{emptyLabel}</li>}
+      <ul className="mt-2 divide-y divide-border border border-border">
+        {items.length === 0 && <li className="px-4 py-3 text-sm text-fg-muted">{emptyLabel}</li>}
         {items.map((item) => (
           <FollowUpRow key={item.id} item={item} onResolve={onResolve} onSnooze={onSnooze} />
         ))}
@@ -123,11 +124,11 @@ function NeedsFollowUpRow({
     <li className="px-4 py-3 text-sm">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-neutral-900 hover:underline">
+          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-fg hover:underline">
             {item.business_name}
           </Link>
-          <p className="mt-0.5 text-xs text-neutral-500">Status: {item.lead_status.replace("_", " ")}</p>
-          <p className="mt-1 text-neutral-800">{item.reason}</p>
+          <p className="mt-0.5 text-xs text-fg-muted">Status: {item.lead_status.replace("_", " ")}</p>
+          <p className="mt-1 text-fg">{item.reason}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
@@ -136,7 +137,7 @@ function NeedsFollowUpRow({
           <button
             onClick={() => onSchedule(item.lead_id)}
             disabled={scheduling}
-            className="rounded-md bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
             Schedule
           </button>
@@ -156,7 +157,13 @@ export default function FollowUpsPage() {
   const [error, setError] = useState<string | null>(null);
 
   function load() {
-    api.listFollowUps().then(setBuckets).catch(() => setError("Couldn't load follow-ups."));
+    api
+      .listFollowUps()
+      .then((b) => {
+        setError(null);
+        setBuckets(b);
+      })
+      .catch(() => setError("Couldn't load follow-ups."));
     api.listNeedsFollowUp().then(setCandidates).catch(() => {});
     api.listLeads().then(setLeads).catch(() => {});
   }
@@ -205,8 +212,8 @@ export default function FollowUpsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-lg font-semibold text-neutral-900">Follow-ups</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-lg font-semibold text-fg">Follow-ups</h1>
+      <p className="mt-1 text-sm text-fg-muted">
         Your daily action queue — leads that need a touch, snoozed reminders, and nothing gets contacted without you.
       </p>
 
@@ -214,7 +221,7 @@ export default function FollowUpsPage() {
         <select
           value={selectedLeadId}
           onChange={(e) => setSelectedLeadId(e.target.value)}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
         >
           <option value="">Select a lead…</option>
           {eligibleLeads.map((lead) => (
@@ -226,24 +233,28 @@ export default function FollowUpsPage() {
         <button
           onClick={handleGenerate}
           disabled={!selectedLeadId || generating}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {generating ? "Generating…" : "Generate follow-up"}
         </button>
       </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-2">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
 
       <section className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">
-          Needs a follow-up scheduled <span className="font-normal text-neutral-500">({candidates.length})</span>
+        <h2 className="text-sm font-semibold text-fg">
+          Needs a follow-up scheduled <span className="font-normal text-fg-muted">({candidates.length})</span>
         </h2>
-        <p className="mt-0.5 text-xs text-neutral-500">
+        <p className="mt-0.5 text-xs text-fg-muted">
           Detected automatically from last contact, pipeline stage, and meeting outcomes — nothing is sent until you
           click Schedule.
         </p>
-        <ul className="mt-2 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-2 divide-y divide-border border border-border">
           {candidates.length === 0 && (
-            <li className="px-4 py-3 text-sm text-neutral-500">
+            <li className="px-4 py-3 text-sm text-fg-muted">
               Nothing&apos;s gone quiet — you&apos;re caught up.
             </li>
           )}

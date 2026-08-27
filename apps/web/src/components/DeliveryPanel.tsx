@@ -44,17 +44,17 @@ export function DeliveryPanel({
 
   if (deliveryStatus.already_delivered) {
     return (
-      <div className="mt-3 border-t border-neutral-100 pt-3 text-sm text-emerald-700">
+      <div className="mt-3 border-t border-border pt-3 text-sm text-emerald-700">
         ✓ Delivered{deliveryStatus.latest_deployment_url ? ` — live at ${deliveryStatus.latest_deployment_url}` : ""}.
       </div>
     );
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-100 pt-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Final delivery checklist</h3>
+    <div className="mt-3 border-t border-border pt-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Final delivery checklist</h3>
       {deliveryStatus.checklist.length === 0 ? (
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-fg-muted">
           Seeded automatically once this project&apos;s first deployment succeeds.
         </p>
       ) : (
@@ -67,7 +67,7 @@ export function DeliveryPanel({
                 disabled={taskBusyId === item.task_id}
                 onChange={() => toggleTask(item.task_id, item.done)}
               />
-              <span className={item.done ? "text-neutral-400 line-through" : "text-neutral-800"}>{item.title}</span>
+              <span className={item.done ? "text-fg-subtle line-through" : "text-fg"}>{item.title}</span>
             </li>
           ))}
         </ul>
@@ -83,9 +83,9 @@ export function DeliveryPanel({
           {busy ? "Marking delivered…" : "Mark project delivered"}
         </button>
         {!deliveryStatus.can_deliver && deliveryStatus.missing.length > 0 && (
-          <p className="text-sm text-neutral-500">Missing: {deliveryStatus.missing.join("; ")}</p>
+          <p className="text-sm text-fg-muted">Missing: {deliveryStatus.missing.join("; ")}</p>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-error">{error}</p>}
       </div>
     </div>
   );

@@ -3,14 +3,14 @@ import type { SalesAuditReport } from "@/lib/api";
 function section(title: string, content: React.ReactNode) {
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
-      <div className="mt-1 text-sm text-neutral-800">{content}</div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h3>
+      <div className="mt-1 text-sm text-fg">{content}</div>
     </div>
   );
 }
 
 function bulletList(items: string[]) {
-  if (items.length === 0) return <p className="text-neutral-400">—</p>;
+  if (items.length === 0) return <p className="text-fg-subtle">—</p>;
   return (
     <ul className="list-disc space-y-1 pl-5">
       {items.map((item, i) => (
@@ -39,7 +39,7 @@ export function SalesAuditReportView({ report }: { report: SalesAuditReport }) {
       {section("Potential objections", bulletList(report.potential_objections))}
       {section("Suggested offer", <p>{report.suggested_offer}</p>)}
       {report.sources_note && (
-        <p className="mt-6 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+        <p className="mt-6 border-t border-border pt-3 text-xs text-fg-muted">
           Sources: {report.sources_note}
         </p>
       )}

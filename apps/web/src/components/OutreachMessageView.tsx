@@ -3,14 +3,14 @@ import type { OutreachMessage } from "@/lib/api";
 function section(title: string, content: React.ReactNode) {
   return (
     <div className="mt-3">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h4>
-      <div className="mt-1 text-sm text-neutral-800">{content}</div>
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h4>
+      <div className="mt-1 text-sm text-fg">{content}</div>
     </div>
   );
 }
 
 function bulletList(items: string[]) {
-  if (items.length === 0) return <p className="text-neutral-400">—</p>;
+  if (items.length === 0) return <p className="text-fg-subtle">—</p>;
   return (
     <ul className="list-disc space-y-1 pl-5">
       {items.map((item, i) => (

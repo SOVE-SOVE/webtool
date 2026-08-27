@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, type DiscoverySearch } from "@/lib/api";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 
 const STATUS_LABEL: Record<DiscoverySearch["status"], string> = {
   pending: "Pending",
@@ -32,7 +34,10 @@ export default function DiscoverySearchesPage() {
   function load() {
     api
       .listDiscoverySearches()
-      .then(setSearches)
+      .then((rows) => {
+        setError(null);
+        setSearches(rows);
+      })
       .catch(() => setError("Couldn't load discovery searches."));
   }
 
@@ -69,22 +74,22 @@ export default function DiscoverySearchesPage() {
     <div className="p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Discovery</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-lg font-semibold text-fg">Discovery</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Find businesses that might be a good fit for a website redesign, before they enter the CRM.
           </p>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+          className="btn btn-primary"
         >
           {showForm ? "Cancel" : "New search"}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-2 gap-3 border border-neutral-200 p-4">
-          <p className="col-span-2 text-xs text-neutral-500">
+        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-2 gap-3 border border-border p-4">
+          <p className="col-span-2 text-xs text-fg-muted">
             e.g. industry &ldquo;Plumbing&rdquo; + location &ldquo;Gold Coast&rdquo; finds plumbing businesses on
             the Gold Coast. At least one of industry, location, business type, or keywords is required.
           </p>
@@ -92,57 +97,67 @@ export default function DiscoverySearchesPage() {
             placeholder="Industry (e.g. Plumbing)"
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
           <input
             placeholder="Location (e.g. Gold Coast)"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
           <input
             placeholder="Business type"
             value={businessType}
             onChange={(e) => setBusinessType(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
           <input
             placeholder="Keywords"
             value={keywords}
             onChange={(e) => setKeywords(e.target.value)}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
           <select
             value={hasWebsite}
             onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className="col-span-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="col-span-2 rounded-md border border-border-strong px-3 py-1.5 text-sm"
           >
             <option value="">Website: don&apos;t care</option>
             <option value="true">Only businesses with a website</option>
             <option value="false">Only businesses without a website</option>
           </select>
-          {formError && <p className="col-span-2 text-sm text-red-600">{formError}</p>}
+          {formError && <p className="col-span-2 text-error">{formError}</p>}
           <button
             type="submit"
             disabled={saving}
-            className="col-span-2 rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="col-span-2 btn btn-primary"
           >
             {saving ? "Searching…" : "Run search"}
           </button>
         </form>
       )}
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
+
+      {!searches && !error && (
+        <div className="mt-4">
+          <TableSkeleton rows={4} cols={4} />
+        </div>
+      )}
 
       {searches && searches.length === 0 && (
-        <div className="mt-6 rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
+        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
           No discovery searches yet. Try &ldquo;plumbing businesses on the Gold Coast&rdquo; above.
         </div>
       )}
 
       {searches && searches.length > 0 && (
-        <table className="mt-4 w-full border border-neutral-200 text-left text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+        <table className="mt-4 w-full border border-border text-left text-sm">
+          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
             <tr>
               <th className="px-3 py-2">Search</th>
               <th className="px-3 py-2">Provider</th>
@@ -151,23 +166,23 @@ export default function DiscoverySearchesPage() {
               <th className="px-3 py-2">Created</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-200">
+          <tbody className="divide-y divide-border">
             {searches.map((search) => (
               <tr key={search.id}>
                 <td className="px-3 py-2">
                   <Link
                     href={`/dashboard/discovery/${search.id}`}
-                    className="font-medium text-neutral-900 hover:underline"
+                    className="font-medium text-fg hover:underline"
                   >
                     {search.query_label ?? criteriaSummary(search)}
                   </Link>
-                  <div className="text-xs text-neutral-500">{criteriaSummary(search)}</div>
+                  <div className="text-xs text-fg-muted">{criteriaSummary(search)}</div>
                   {search.error_message && <div className="text-xs text-red-600">{search.error_message}</div>}
                 </td>
-                <td className="px-3 py-2 text-neutral-600">{search.provider}</td>
-                <td className="px-3 py-2 text-neutral-600">{STATUS_LABEL[search.status]}</td>
-                <td className="px-3 py-2 text-neutral-600">{search.result_count}</td>
-                <td className="px-3 py-2 text-neutral-600">{new Date(search.created_at).toLocaleDateString()}</td>
+                <td className="px-3 py-2 text-fg-muted">{search.provider}</td>
+                <td className="px-3 py-2 text-fg-muted">{STATUS_LABEL[search.status]}</td>
+                <td className="px-3 py-2 text-fg-muted">{search.result_count}</td>
+                <td className="px-3 py-2 text-fg-muted">{new Date(search.created_at).toLocaleDateString()}</td>
               </tr>
             ))}
           </tbody>

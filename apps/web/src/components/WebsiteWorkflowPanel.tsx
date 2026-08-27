@@ -11,13 +11,13 @@ import {
 } from "@/lib/api";
 
 const STATUS_STYLES: Record<WebsiteWorkflowStatus, string> = {
-  draft: "bg-neutral-100 text-neutral-600",
+  draft: "bg-surface-subtle text-fg-muted",
   internal_review: "bg-blue-100 text-blue-800",
   client_review: "bg-purple-100 text-purple-800",
   changes_requested: "bg-amber-100 text-amber-800",
   approved: "bg-emerald-100 text-emerald-800",
   ready_to_deploy: "bg-teal-100 text-teal-800",
-  deployed: "bg-neutral-900 text-white",
+  deployed: "bg-accent text-accent-fg",
 };
 
 export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; onChange: (w: Website) => void }) {
@@ -53,15 +53,15 @@ export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; 
   const nextStates = WORKFLOW_TRANSITIONS[website.workflow_status];
 
   return (
-    <div className="mt-6 rounded-md border border-neutral-200 p-4">
+    <div className="mt-6 rounded-md border border-border p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-neutral-500">Approval workflow:</span>
+          <span className="text-sm text-fg-muted">Approval workflow:</span>
           <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[website.workflow_status]}`}>
             {WORKFLOW_STATUS_LABELS[website.workflow_status]}
           </span>
         </div>
-        <button onClick={toggleHistory} className="text-xs text-neutral-500 hover:underline">
+        <button onClick={toggleHistory} className="text-xs text-fg-muted hover:underline">
           {showHistory ? "Hide history" : "Show history"}
         </button>
       </div>
@@ -73,24 +73,24 @@ export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; 
               key={s}
               onClick={() => handleTransition(s)}
               disabled={transitioning}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
             >
               Move to {WORKFLOW_STATUS_LABELS[s]}
             </button>
           ))}
         </div>
       ) : (
-        <p className="mt-3 text-xs text-neutral-500">
+        <p className="mt-3 text-xs text-fg-muted">
           This version has been deployed — regenerate or edit it to start a new draft.
         </p>
       )}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-error">{error}</p>}
 
       {showHistory && (
-        <div className="mt-4 border-t border-neutral-100 pt-3">
-          {history === null && <p className="text-sm text-neutral-500">Loading…</p>}
-          {history !== null && history.length === 0 && <p className="text-sm text-neutral-500">No transitions yet.</p>}
-          <ul className="space-y-1 text-xs text-neutral-600">
+        <div className="mt-4 border-t border-border pt-3">
+          {history === null && <p className="text-sm text-fg-muted">Loading…</p>}
+          {history !== null && history.length === 0 && <p className="text-sm text-fg-muted">No transitions yet.</p>}
+          <ul className="space-y-1 text-xs text-fg-muted">
             {history?.map((h) => (
               <li key={h.id}>
                 {WORKFLOW_STATUS_LABELS[h.from_status]} → {WORKFLOW_STATUS_LABELS[h.to_status]} —{" "}

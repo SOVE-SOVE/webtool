@@ -15,15 +15,15 @@ const STATUS_CLASSES: Record<QaCheck["status"], string> = {
   pass: "bg-emerald-100 text-emerald-800",
   fail: "bg-red-100 text-red-800",
   warning: "bg-amber-100 text-amber-800",
-  skipped: "bg-neutral-100 text-neutral-500",
+  skipped: "bg-surface-subtle text-fg-muted",
 };
 
 const SEVERITY_CLASSES: Record<QaCheck["severity"], string> = {
   critical: "bg-red-600 text-white",
   high: "bg-red-100 text-red-800",
   medium: "bg-amber-100 text-amber-800",
-  low: "bg-neutral-100 text-neutral-700",
-  info: "bg-neutral-100 text-neutral-500",
+  low: "bg-surface-subtle text-fg-muted",
+  info: "bg-surface-subtle text-fg-muted",
 };
 
 function CheckRow({ check }: { check: QaCheck }) {
@@ -34,10 +34,10 @@ function CheckRow({ check }: { check: QaCheck }) {
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${SEVERITY_CLASSES[check.severity]}`}>{check.severity}</span>
       )}
       <div>
-        <p className="font-medium text-neutral-900">{check.name}</p>
-        <p className="text-neutral-600">{check.message}</p>
-        {check.recommended_fix && <p className="mt-0.5 text-xs text-neutral-500">Fix: {check.recommended_fix}</p>}
-        {check.location && <p className="text-xs text-neutral-400">{check.location}</p>}
+        <p className="font-medium text-fg">{check.name}</p>
+        <p className="text-fg-muted">{check.message}</p>
+        {check.recommended_fix && <p className="mt-0.5 text-xs text-fg-muted">Fix: {check.recommended_fix}</p>}
+        {check.location && <p className="text-xs text-fg-subtle">{check.location}</p>}
       </div>
     </li>
   );
@@ -54,11 +54,11 @@ export function QaReportView({ report }: { report: QaReport }) {
         >
           {report.passed ? "Ready for client review" : "Not ready for client review — critical issues found"}
         </span>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-fg-muted">
           {report.passed_count} passed · {report.failed_count} failed · {report.warning_count} warnings · {report.skipped_count} skipped
         </span>
       </div>
-      <p className="mt-1 text-xs text-neutral-400">
+      <p className="mt-1 text-xs text-fg-subtle">
         {new Date(report.created_at).toLocaleString()}
         {report.generated_by_user_name ? ` · ${report.generated_by_user_name}` : ""}
         {report.preview_url ? ` · checked against ${report.preview_url}` : " · static check only (no live preview yet)"}
@@ -70,8 +70,8 @@ export function QaReportView({ report }: { report: QaReport }) {
           if (checks.length === 0) return null;
           return (
             <div key={category}>
-              <h4 className="text-sm font-semibold text-neutral-900">{CATEGORY_LABELS[category]}</h4>
-              <ul className="divide-y divide-neutral-100 border-t border-neutral-100">
+              <h4 className="text-sm font-semibold text-fg">{CATEGORY_LABELS[category]}</h4>
+              <ul className="divide-y divide-border border-t border-border">
                 {checks.map((check, i) => (
                   <CheckRow key={i} check={check} />
                 ))}

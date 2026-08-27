@@ -12,17 +12,19 @@ import {
   type Project,
   type User,
 } from "@/lib/api";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 function field(label: string, value: React.ReactNode) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
       <div className="mt-1">{value}</div>
     </div>
   );
 }
 
-const inputClass = "w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm";
+const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
 // Client.contract_signed_at is a full timestamp; <input type="date"> needs
 // just the date portion, and round-trips back out as UTC midnight.
@@ -33,6 +35,7 @@ function toDateInputValue(iso: string | null): string {
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const confirm = useConfirm();
   const clientId = params.id;
 
   const [clientRecord, setClientRecord] = useState<Client | null>(null);
@@ -50,7 +53,10 @@ export default function ClientDetailPage() {
         setClientRecord(c);
         return api.getBusiness(c.business_id);
       })
-      .then(setBusiness)
+      .then((b) => {
+        setError(null);
+        setBusiness(b);
+      })
       .catch(() => setError("Couldn't load this client."));
     api.listUsers().then(setUsers).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
@@ -101,8 +107,14 @@ export default function ClientDetailPage() {
     }
   }
 
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
-  if (!clientRecord || !business) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  if (error) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!clientRecord || !business) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   const clientProjects = projects.filter((p) => p.client_id === clientId);
   const activeProject = clientProjects.find(
@@ -111,15 +123,15 @@ export default function ClientDetailPage() {
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/clients" className="text-sm text-neutral-500 hover:underline">
+      <Link href="/dashboard/clients" className="text-sm text-fg-muted hover:underline">
         ← All clients
       </Link>
 
-      <h1 className="mt-2 text-lg font-semibold text-neutral-900">{business.name}</h1>
+      <h1 className="mt-2 text-lg font-semibold text-fg">{business.name}</h1>
 
       <div className="mt-6 grid grid-cols-2 gap-8">
         <section>
-          <h2 className="text-sm font-semibold text-neutral-900">Business</h2>
+          <h2 className="text-sm font-semibold text-fg">Business</h2>
           <div className="mt-3 grid grid-cols-2 gap-4">
             {field(
               "Name",
@@ -193,7 +205,7 @@ export default function ClientDetailPage() {
         </section>
 
         <section>
-          <h2 className="text-sm font-semibold text-neutral-900">Client</h2>
+          <h2 className="text-sm font-semibold text-fg">Client</h2>
           <div className="mt-3 grid grid-cols-2 gap-4">
             {field(
               "Billing email",
@@ -235,7 +247,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Client since",
-              <span className="text-sm text-neutral-700">
+              <span className="text-sm text-fg-muted">
                 {new Date(clientRecord.created_at).toLocaleDateString()}
               </span>,
             )}
@@ -245,21 +257,20 @@ export default function ClientDetailPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">Projects</h2>
+          <h2 className="text-sm font-semibold text-fg">Projects</h2>
           <div className="flex items-center gap-3">
             {activeProject && (
               <button
-                onClick={() => {
-                  if (
-                    confirm(
-                      `${activeProject.name} is still in progress. Start a separate, additional project for this client?`,
-                    )
-                  ) {
-                    handleStartIntake(true);
-                  }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Start an additional project?",
+                    description: `${activeProject.name} is still in progress. This starts a separate, additional project for this client.`,
+                    confirmLabel: "Start project",
+                  });
+                  if (ok) handleStartIntake(true);
                 }}
                 disabled={startingIntake}
-                className="text-xs text-neutral-500 hover:text-neutral-900 hover:underline disabled:opacity-50"
+                className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
               >
                 Start another project
               </button>
@@ -267,35 +278,35 @@ export default function ClientDetailPage() {
             <button
               onClick={() => handleStartIntake()}
               disabled={startingIntake}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="btn btn-primary"
             >
               {startingIntake ? "Starting…" : activeProject ? "Open intake" : "Start intake"}
             </button>
           </div>
         </div>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {clientProjects.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">
+            <li className="px-3 py-3 text-sm text-fg-muted">
               No projects yet. Start intake creates one and opens its client intake form.
             </li>
           )}
           {clientProjects.map((project) => (
             <li key={project.id} className="flex items-center justify-between px-3 py-2 text-sm">
               <div>
-                <Link href={`/dashboard/projects/${project.id}`} className="text-neutral-900 hover:underline">
+                <Link href={`/dashboard/projects/${project.id}`} className="text-fg hover:underline">
                   {project.name}
                 </Link>
                 {project.source_lead_id && (
                   <Link
                     href={`/dashboard/leads/${project.source_lead_id}`}
-                    className="ml-2 text-xs text-neutral-500 hover:underline"
+                    className="ml-2 text-xs text-fg-muted hover:underline"
                   >
                     from lead
                   </Link>
                 )}
               </div>
-              <span className="flex items-center gap-3 text-xs text-neutral-500">
-                <span className="rounded bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700">
+              <span className="flex items-center gap-3 text-xs text-fg-muted">
+                <span className="rounded bg-surface-subtle px-2 py-0.5 font-medium text-fg-muted">
                   {PROJECT_STAGE_LABELS[project.stage]}
                 </span>
                 {project.assigned_user_name && <span>· {project.assigned_user_name}</span>}
@@ -306,15 +317,15 @@ export default function ClientDetailPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
+        <ul className="mt-3 divide-y divide-border border border-border">
           {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No activity yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
           )}
           {activity?.map((item) => (
             <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-neutral-900">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-neutral-500">
+              <span className="text-fg">{item.summary ?? item.action}</span>
+              <span className="ml-2 text-xs text-fg-muted">
                 {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
               </span>
             </li>

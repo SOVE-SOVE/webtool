@@ -4,8 +4,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, type Client, type Lead, type User } from "@/lib/api";
 import { filterClients, UNASSIGNED } from "@/lib/filters";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 
 export default function ClientsPage() {
+  const confirm = useConfirm();
   const [clients, setClients] = useState<Client[] | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -25,7 +30,10 @@ export default function ClientsPage() {
   function load() {
     api
       .listClients()
-      .then(setClients)
+      .then((rows) => {
+        setError(null);
+        setClients(rows);
+      })
       .catch(() => setError("Couldn't load clients."));
     api.listLeads().then(setLeads).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
@@ -42,13 +50,15 @@ export default function ClientsPage() {
       if (mode === "convert") {
         if (!leadId) return;
         const selectedLead = openLeads.find((l) => l.id === leadId);
-        if (
-          !confirm(
-            `Convert ${selectedLead?.business_name ?? "this lead"} to a client? This marks the lead WON and ` +
-              "creates a new client and an INTAKE-stage project. The lead's history stays attached to it. " +
-              "This can't be undone.",
-          )
-        ) {
+        const ok = await confirm({
+          title: `Convert ${selectedLead?.business_name ?? "this lead"} to a client?`,
+          description:
+            "This marks the lead WON and creates a new client and an INTAKE-stage project. " +
+            "The lead's history stays attached to it. This can't be undone.",
+          confirmLabel: "Convert to client",
+          danger: true,
+        });
+        if (!ok) {
           setSaving(false);
           return;
         }
@@ -93,17 +103,17 @@ export default function ClientsPage() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Clients</h1>
+        <h1 className="text-lg font-semibold text-fg">Clients</h1>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+          className="btn btn-primary"
         >
           {showForm ? "Cancel" : "Add client"}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-neutral-200 p-4">
+        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5">
               <input type="radio" checked={mode === "direct"} onChange={() => setMode("direct")} />
@@ -121,7 +131,7 @@ export default function ClientsPage() {
               placeholder="Business name"
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+              className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
             />
           ) : (
             <>
@@ -129,7 +139,7 @@ export default function ClientsPage() {
                 required
                 value={leadId}
                 onChange={(e) => setLeadId(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
               >
                 <option value="">Select a lead…</option>
                 {openLeads.map((lead) => (
@@ -145,7 +155,7 @@ export default function ClientsPage() {
                 placeholder="Won price, AUD (optional — counts toward revenue)"
                 value={wonPrice}
                 onChange={(e) => setWonPrice(e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
               />
             </>
           )}
@@ -154,13 +164,13 @@ export default function ClientsPage() {
             placeholder="Billing email (optional)"
             value={billingEmail}
             onChange={(e) => setBillingEmail(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
 
           <select
             value={assignedUserId}
             onChange={(e) => setAssignedUserId(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
           >
             <option value="">Unassigned</option>
             {users.map((user) => (
@@ -173,7 +183,7 @@ export default function ClientsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {saving ? "Saving…" : "Save client"}
           </button>
@@ -185,12 +195,12 @@ export default function ClientsPage() {
           placeholder="Search business or billing email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-72 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          className="w-72 rounded-md border border-border-strong px-3 py-1.5 text-sm"
         />
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
         >
           <option value="">Anyone assigned</option>
           <option value={UNASSIGNED}>Unassigned</option>
@@ -202,11 +212,35 @@ export default function ClientsPage() {
         </select>
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
 
-      {visibleClients && (
-        <table className="mt-4 w-full border border-neutral-200 text-left text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+      {!clients && !error && (
+        <div className="mt-4">
+          <TableSkeleton rows={6} cols={5} />
+        </div>
+      )}
+
+      {clients && clients.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No clients yet"
+            description="Convert a won lead, or add a client directly if you're working with them outside the pipeline."
+            action={
+              <button onClick={() => setShowForm(true)} className="btn btn-primary">
+                Add client
+              </button>
+            }
+          />
+        </div>
+      )}
+
+      {visibleClients && clients && clients.length > 0 && (
+        <table className="mt-4 w-full border border-border text-left text-sm">
+          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
             <tr>
               <th className="px-3 py-2">Business</th>
               <th className="px-3 py-2">Billing email</th>
@@ -215,31 +249,46 @@ export default function ClientsPage() {
               <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-200">
+          <tbody className="divide-y divide-border">
             {visibleClients.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
-                  {clients && clients.length === 0 ? "No clients yet." : "No clients match."}
+                <td colSpan={5} className="px-3 py-0">
+                  <EmptyState
+                    compact
+                    title="No clients match"
+                    description="Try a different search or clear the filters above."
+                    action={
+                      <button
+                        onClick={() => {
+                          setSearch("");
+                          setAssigneeFilter("");
+                        }}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Clear filters
+                      </button>
+                    }
+                  />
                 </td>
               </tr>
             )}
             {visibleClients.map((client) => (
               <tr key={client.id}>
-                <td className="px-3 py-2 font-medium text-neutral-900">
+                <td className="px-3 py-2 font-medium text-fg">
                   <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
                     {client.business_name}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-neutral-600">{client.billing_email ?? "—"}</td>
-                <td className="px-3 py-2 text-neutral-600">{client.project_count}</td>
-                <td className="px-3 py-2 text-neutral-600">
+                <td className="px-3 py-2 text-fg-muted">{client.billing_email ?? "—"}</td>
+                <td className="px-3 py-2 text-fg-muted">{client.project_count}</td>
+                <td className="px-3 py-2 text-fg-muted">
                   {new Date(client.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-3 py-2">
                   <select
                     value={client.assigned_user_id ?? ""}
                     onChange={(e) => handleAssigneeChange(client.id, e.target.value)}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
                   >
                     <option value="">Unassigned</option>
                     {users.map((user) => (

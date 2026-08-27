@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, type Lead, type LeadPriority, type LeadStatus, type PipelineStage } from "@/lib/api";
 import { STALE_DAYS, countStale, daysSince, groupLeadsByStatus, isStale, orderStages } from "@/lib/pipeline";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 const PRIORITY_STYLE: Record<LeadPriority, string> = {
-  low: "bg-neutral-100 text-neutral-600",
+  low: "bg-surface-subtle text-fg-muted",
   medium: "bg-blue-100 text-blue-700",
   high: "bg-red-100 text-red-700",
 };
@@ -19,8 +21,20 @@ export default function PipelinePage() {
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
   function load() {
-    api.listPipelineStages().then(setStages).catch(() => setError("Couldn't load pipeline stages."));
-    api.listLeads().then(setLeads).catch(() => setError("Couldn't load leads."));
+    api
+      .listPipelineStages()
+      .then((rows) => {
+        setError(null);
+        setStages(rows);
+      })
+      .catch(() => setError("Couldn't load pipeline stages."));
+    api
+      .listLeads()
+      .then((rows) => {
+        setError(null);
+        setLeads(rows);
+      })
+      .catch(() => setError("Couldn't load leads."));
   }
 
   useEffect(load, []);
@@ -48,8 +62,8 @@ export default function PipelinePage() {
     <div className="p-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Pipeline</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <h1 className="text-lg font-semibold text-fg">Pipeline</h1>
+          <p className="mt-1 text-sm text-fg-muted">
             Every active lead by stage. Drag a card to move it, or use a lead&apos;s detail page.
           </p>
         </div>
@@ -60,7 +74,23 @@ export default function PipelinePage() {
         )}
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
+
+      {!(orderedStages && leads) && !error && (
+        <div className="mt-4 flex gap-3 overflow-x-auto pb-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex w-64 shrink-0 flex-col gap-2 rounded-md border border-border p-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ))}
+        </div>
+      )}
 
       {orderedStages && leads && (
         <div className="mt-4 flex gap-3 overflow-x-auto pb-4">
@@ -82,25 +112,25 @@ export default function PipelinePage() {
                   if (leadId) moveLead(leadId, stage.key);
                 }}
                 className={`flex w-64 shrink-0 flex-col rounded-md border ${
-                  isDragOver ? "border-neutral-900 bg-neutral-50" : "border-neutral-200"
+                  isDragOver ? "border-fg bg-surface-subtle" : "border-border"
                 }`}
               >
                 <div
-                  className={`flex items-center justify-between border-b border-neutral-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
+                  className={`flex items-center justify-between border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
                     stage.is_won
                       ? "text-emerald-700"
                       : stage.is_lost
                         ? "text-red-700"
-                        : "text-neutral-600"
+                        : "text-fg-muted"
                   }`}
                 >
                   <span>{stage.label}</span>
-                  <span className="text-neutral-400">{stageLeads.length}</span>
+                  <span className="text-fg-subtle">{stageLeads.length}</span>
                 </div>
 
                 <div className="flex-1 space-y-2 p-2">
                   {stageLeads.length === 0 && (
-                    <p className="px-1 py-2 text-center text-xs text-neutral-400">No leads</p>
+                    <p className="px-1 py-2 text-center text-xs text-fg-subtle">No leads</p>
                   )}
                   {stageLeads.map((lead) => {
                     const stale = isStale(lead, stage);
@@ -112,24 +142,24 @@ export default function PipelinePage() {
                           e.dataTransfer.setData("text/lead-id", lead.id);
                           e.dataTransfer.effectAllowed = "move";
                         }}
-                        className={`cursor-grab rounded-md border bg-white p-2.5 text-sm shadow-sm active:cursor-grabbing ${
-                          stale ? "border-amber-300" : "border-neutral-200"
+                        className={`cursor-grab rounded-md border bg-surface p-2.5 text-sm shadow-sm active:cursor-grabbing ${
+                          stale ? "border-amber-300" : "border-border"
                         } ${movingLeadId === lead.id ? "opacity-50" : ""}`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <Link
                             href={`/dashboard/leads/${lead.id}`}
-                            className="font-medium text-neutral-900 hover:underline"
+                            className="font-medium text-fg hover:underline"
                           >
                             {lead.business_name}
                           </Link>
                           {lead.score !== null && (
-                            <span className="shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-700">
+                            <span className="shrink-0 rounded-full bg-surface-subtle px-1.5 py-0.5 text-[11px] font-medium text-fg-muted">
                               {lead.score}
                             </span>
                           )}
                         </div>
-                        {lead.industry && <p className="mt-0.5 text-xs text-neutral-500">{lead.industry}</p>}
+                        {lead.industry && <p className="mt-0.5 text-xs text-fg-muted">{lead.industry}</p>}
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <span
                             className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${PRIORITY_STYLE[lead.priority]}`}
@@ -137,7 +167,7 @@ export default function PipelinePage() {
                             {lead.priority}
                           </span>
                           {lead.assigned_user_name && (
-                            <span className="text-[11px] text-neutral-500">{lead.assigned_user_name}</span>
+                            <span className="text-[11px] text-fg-muted">{lead.assigned_user_name}</span>
                           )}
                           {stale && (
                             <span className="ml-auto text-[11px] font-medium text-amber-700">

@@ -12,6 +12,9 @@ import {
   type User,
 } from "@/lib/api";
 import { filterProjects, UNASSIGNED } from "@/lib/filters";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 
 function formatPrice(cents: number | null): string {
   return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
@@ -36,7 +39,10 @@ export default function ProjectsPage() {
   function load() {
     api
       .listProjects()
-      .then(setProjects)
+      .then((rows) => {
+        setError(null);
+        setProjects(rows);
+      })
       .catch(() => setError("Couldn't load projects."));
     api.listClients().then(setClients).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
@@ -88,11 +94,11 @@ export default function ProjectsPage() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Projects</h1>
+        <h1 className="text-lg font-semibold text-fg">Projects</h1>
         <button
           onClick={() => setShowForm((v) => !v)}
           disabled={clients.length === 0}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
           title={clients.length === 0 ? "Add a client first" : undefined}
         >
           {showForm ? "Cancel" : "Add project"}
@@ -100,12 +106,12 @@ export default function ProjectsPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-neutral-200 p-4">
+        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
           <select
             required
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
           >
             <option value="">Select a client…</option>
             {clients.map((client) => (
@@ -119,12 +125,12 @@ export default function ProjectsPage() {
             placeholder="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
           />
           <select
             value={assignedUserId}
             onChange={(e) => setAssignedUserId(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
           >
             <option value="">Unassigned</option>
             {users.map((user) => (
@@ -136,7 +142,7 @@ export default function ProjectsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {saving ? "Saving…" : "Save project"}
           </button>
@@ -148,12 +154,12 @@ export default function ProjectsPage() {
           placeholder="Search project, client, package…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-72 rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+          className="w-72 rounded-md border border-border-strong px-3 py-1.5 text-sm"
         />
         <select
           value={stageFilter}
           onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
-          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
         >
           <option value="">All stages</option>
           {PROJECT_STAGES.map((stage) => (
@@ -165,7 +171,7 @@ export default function ProjectsPage() {
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
-          className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
         >
           <option value="">Anyone assigned</option>
           <option value={UNASSIGNED}>Unassigned</option>
@@ -175,7 +181,7 @@ export default function ProjectsPage() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
           <input
             type="checkbox"
             checked={showFinished}
@@ -186,11 +192,41 @@ export default function ProjectsPage() {
         </label>
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
 
-      {visibleProjects && (
-        <table className="mt-4 w-full border border-neutral-200 text-left text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+      {!projects && !error && (
+        <div className="mt-4">
+          <TableSkeleton rows={6} cols={7} />
+        </div>
+      )}
+
+      {projects && projects.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No projects yet"
+            description={
+              clients.length === 0
+                ? "Add a client first, then start a project for them."
+                : "Start a project for an existing client, or convert a won lead from the Clients page."
+            }
+            action={
+              clients.length > 0 ? (
+                <button onClick={() => setShowForm(true)} className="btn btn-primary">
+                  Add project
+                </button>
+              ) : undefined
+            }
+          />
+        </div>
+      )}
+
+      {visibleProjects && projects && projects.length > 0 && (
+        <table className="mt-4 w-full border border-border text-left text-sm">
+          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
             <tr>
               <th className="px-3 py-2">Project</th>
               <th className="px-3 py-2">Client</th>
@@ -201,43 +237,59 @@ export default function ProjectsPage() {
               <th className="px-3 py-2">Assigned to</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-200">
+          <tbody className="divide-y divide-border">
             {visibleProjects.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-neutral-500">
-                  {projects && projects.length === 0 ? "No projects yet." : "No projects match."}
+                <td colSpan={7} className="px-3 py-0">
+                  <EmptyState
+                    compact
+                    title="No projects match"
+                    description="Try a different search or clear the filters above."
+                    action={
+                      <button
+                        onClick={() => {
+                          setSearch("");
+                          setStageFilter("");
+                          setAssigneeFilter("");
+                        }}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Clear filters
+                      </button>
+                    }
+                  />
                 </td>
               </tr>
             )}
             {visibleProjects.map((project) => (
               <tr key={project.id}>
-                <td className="px-3 py-2 font-medium text-neutral-900">
+                <td className="px-3 py-2 font-medium text-fg">
                   <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">
                     {project.name}
                   </Link>
                   {project.source_lead_id && (
                     <Link
                       href={`/dashboard/leads/${project.source_lead_id}`}
-                      className="ml-2 text-xs font-normal text-neutral-500 hover:underline"
+                      className="ml-2 text-xs font-normal text-fg-muted hover:underline"
                     >
                       from lead
                     </Link>
                   )}
                 </td>
-                <td className="px-3 py-2 text-neutral-600">
+                <td className="px-3 py-2 text-fg-muted">
                   <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
                     {project.client_business_name}
                   </Link>
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                    <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
                       {PROJECT_STAGE_LABELS[project.stage]}
                     </span>
                     <select
                       value={project.stage}
                       onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
-                      className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                      className="rounded-md border border-border-strong px-2 py-1 text-sm"
                     >
                       {PROJECT_STAGES.map((stage) => (
                         <option key={stage} value={stage}>
@@ -247,16 +299,16 @@ export default function ProjectsPage() {
                     </select>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-neutral-600">{project.package ?? "—"}</td>
-                <td className="px-3 py-2 text-neutral-600">{formatPrice(project.price_cents)}</td>
-                <td className="px-3 py-2 text-neutral-600">
+                <td className="px-3 py-2 text-fg-muted">{project.package ?? "—"}</td>
+                <td className="px-3 py-2 text-fg-muted">{formatPrice(project.price_cents)}</td>
+                <td className="px-3 py-2 text-fg-muted">
                   {project.deadline ? new Date(project.deadline).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-3 py-2">
                   <select
                     value={project.assigned_user_id ?? ""}
                     onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
                   >
                     <option value="">Unassigned</option>
                     {users.map((user) => (

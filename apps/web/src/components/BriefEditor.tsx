@@ -81,7 +81,7 @@ function toText(value: BriefFieldValue): string {
   return Array.isArray(value) ? value.join("\n") : value;
 }
 
-const inputClass = "w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm";
+const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
 export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brief: Brief) => void }) {
   const [saving, setSaving] = useState<string | null>(null);
@@ -118,19 +118,19 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-4 py-3">
         <div>
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
               brief.status === "approved"
                 ? "bg-emerald-100 text-emerald-800"
-                : "bg-neutral-200 text-neutral-700"
+                : "bg-surface-hover text-fg-muted"
             }`}
           >
             {brief.status === "approved" ? "Approved" : "Draft"}
           </span>
           {brief.status === "approved" && brief.approved_at && (
-            <span className="ml-2 text-xs text-neutral-500">
+            <span className="ml-2 text-xs text-fg-muted">
               Approved {new Date(brief.approved_at).toLocaleString()}
               {brief.approved_by_user_name && ` by ${brief.approved_by_user_name}`}
             </span>
@@ -147,19 +147,19 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
         <button
           onClick={approve}
           disabled={approving || brief.status === "approved"}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {brief.status === "approved" ? "Approved — ready for design" : approving ? "Approving…" : "Approve brief"}
         </button>
       </div>
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-error">{error}</p>}
 
       {SECTIONS.map((section) => {
         const data = brief[section.key];
         return (
           <section key={section.key} className="mt-6">
-            <h3 className="text-sm font-semibold text-neutral-900">{SECTION_LABELS[section.key]}</h3>
+            <h3 className="text-sm font-semibold text-fg">{SECTION_LABELS[section.key]}</h3>
             <div className="mt-3 grid grid-cols-2 gap-4">
               {section.fields.map((f) => {
                 const value = data.fields[f.key as string];
@@ -167,7 +167,7 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
                 const wide = f.kind !== "text";
                 return (
                   <div key={f.key as string} className={wide ? "col-span-2" : undefined}>
-                    <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-neutral-500">
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
                       <span>{f.label}</span>
                       {isMissing && (
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-800">

@@ -15,6 +15,7 @@ import {
   type Project,
   type User,
 } from "@/lib/api";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -47,7 +48,7 @@ function monthGrid(year: number, month: number): Date[] {
   });
 }
 
-const inputClass = "w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm";
+const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
@@ -85,7 +86,10 @@ export default function CalendarPage() {
     const end = days[days.length - 1];
     api
       .listCalendarEvents(toDateKey(start), toDateKey(end))
-      .then(setEvents)
+      .then((rows) => {
+        setError(null);
+        setEvents(rows);
+      })
       .catch(() => setError("Couldn't load the calendar."));
   }
 
@@ -258,10 +262,10 @@ export default function CalendarPage() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Calendar</h1>
+        <h1 className="text-lg font-semibold text-fg">Calendar</h1>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+          className="btn btn-primary"
         >
           {showForm ? "Cancel" : "Schedule meeting"}
         </button>
@@ -294,7 +298,7 @@ export default function CalendarPage() {
       )}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-neutral-200 p-4">
+        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
           <input
             required
             placeholder="Meeting title"
@@ -394,38 +398,42 @@ export default function CalendarPage() {
             rows={2}
             className={inputClass}
           />
-          {formError && <p className="text-sm text-red-600">{formError}</p>}
+          {formError && <p className="text-error">{formError}</p>}
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {saving ? "Saving…" : "Save meeting"}
           </button>
         </form>
       )}
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="mt-4">
+          <ErrorState message={error} onRetry={load} compact />
+        </div>
+      )}
 
       <div className="mt-6 flex items-center justify-between">
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
-          className="rounded-md border border-neutral-300 px-2.5 py-1 text-sm hover:bg-neutral-50"
+          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
         >
           ← Prev
         </button>
-        <span className="text-sm font-medium text-neutral-900">{monthLabel}</span>
+        <span className="text-sm font-medium text-fg">{monthLabel}</span>
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
-          className="rounded-md border border-neutral-300 px-2.5 py-1 text-sm hover:bg-neutral-50"
+          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
         >
           Next →
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 border-l border-t border-neutral-200 text-xs">
+      <div className="mt-3 grid grid-cols-7 border-l border-t border-border text-xs">
         {WEEKDAY_LABELS.map((label) => (
-          <div key={label} className="border-b border-r border-neutral-200 bg-neutral-50 px-2 py-1 font-medium text-neutral-500">
+          <div key={label} className="border-b border-r border-border bg-surface-subtle px-2 py-1 font-medium text-fg-muted">
             {label}
           </div>
         ))}
@@ -436,17 +444,17 @@ export default function CalendarPage() {
           return (
             <div
               key={key}
-              className={`min-h-[6rem] border-b border-r border-neutral-200 px-1.5 py-1 align-top ${
-                inMonth ? "bg-white" : "bg-neutral-50"
+              className={`min-h-[6rem] border-b border-r border-border px-1.5 py-1 align-top ${
+                inMonth ? "bg-surface" : "bg-surface-subtle"
               }`}
             >
               <div
                 className={`text-[11px] ${
                   key === todayKey
-                    ? "font-semibold text-neutral-900"
+                    ? "font-semibold text-fg"
                     : inMonth
-                      ? "text-neutral-500"
-                      : "text-neutral-300"
+                      ? "text-fg-muted"
+                      : "text-fg-subtle"
                 }`}
               >
                 {day.getDate()}
@@ -459,7 +467,7 @@ export default function CalendarPage() {
                       onClick={() => openMeeting(event.id)}
                       title={event.detail}
                       className={`block w-full truncate rounded px-1 py-0.5 text-left text-[11px] hover:opacity-80 ${
-                        event.done ? "bg-neutral-200 text-neutral-500 line-through" : "bg-blue-100 text-blue-900"
+                        event.done ? "bg-surface-hover text-fg-muted line-through" : "bg-blue-100 text-blue-900"
                       }`}
                     >
                       {new Date(event.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}{" "}
@@ -483,25 +491,25 @@ export default function CalendarPage() {
       </div>
 
       {selectedMeeting && (
-        <section className="mt-6 max-w-2xl border border-neutral-200 p-4">
+        <section className="mt-6 max-w-2xl border border-border p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-900">{selectedMeeting.title}</h2>
-            <button onClick={() => setSelectedMeeting(null)} className="text-xs text-neutral-500 hover:underline">
+            <h2 className="text-sm font-semibold text-fg">{selectedMeeting.title}</h2>
+            <button onClick={() => setSelectedMeeting(null)} className="text-xs text-fg-muted hover:underline">
               Close
             </button>
           </div>
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-1 text-xs text-fg-muted">
             {selectedMeeting.context} · {MEETING_TYPE_LABELS[selectedMeeting.meeting_type]} ·{" "}
             {new Date(selectedMeeting.scheduled_at).toLocaleString()} ({selectedMeeting.duration_minutes} min)
           </p>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-            <span className="rounded bg-neutral-100 px-2 py-0.5 text-neutral-700">
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+            <span className="rounded bg-surface-subtle px-2 py-0.5 text-fg-muted">
               {MEETING_STATUS_LABELS[selectedMeeting.status]}
             </span>
             {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
             {selectedMeeting.synced_to_calendar && <span className="text-emerald-700">Synced to calendar</span>}
           </p>
-          {meetingError && <p className="mt-2 text-sm text-red-600">{meetingError}</p>}
+          {meetingError && <p className="mt-2 text-error">{meetingError}</p>}
 
           <div className="mt-3 grid grid-cols-2 gap-4">
             {field(
@@ -530,21 +538,21 @@ export default function CalendarPage() {
                 <button
                   onClick={() => handleStatusChange("held")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                 >
                   Mark held
                 </button>
                 <button
                   onClick={() => handleStatusChange("no_show")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                 >
                   Mark no-show
                 </button>
                 <button
                   onClick={() => handleStatusChange("cancelled")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                 >
                   Cancel meeting
                 </button>
@@ -554,7 +562,7 @@ export default function CalendarPage() {
               <button
                 onClick={handleGenerateBrief}
                 disabled={meetingBusy}
-                className="ml-auto rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                className="ml-auto rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
               >
                 {meetingBusy ? "Generating…" : selectedMeeting.brief ? "Regenerate brief" : "Generate brief"}
               </button>
@@ -592,19 +600,19 @@ function AttendeesPanel({
   const [name, setName] = useState("");
 
   return (
-    <div className="mt-5 border-t border-neutral-200 pt-4">
-      <h3 className="text-sm font-semibold text-neutral-900">Attendees</h3>
+    <div className="mt-5 border-t border-border pt-4">
+      <h3 className="text-sm font-semibold text-fg">Attendees</h3>
       {attendees.length > 0 ? (
         <ul className="mt-2 space-y-1">
           {attendees.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-2 text-sm text-neutral-700">
+            <li key={a.id} className="flex items-center justify-between gap-2 text-sm text-fg-muted">
               <span className="truncate">
                 {a.name ? `${a.name} <${a.email}>` : a.email}
-                {a.is_organizer && <span className="ml-1 text-xs text-neutral-400">(organizer)</span>}
+                {a.is_organizer && <span className="ml-1 text-xs text-fg-subtle">(organizer)</span>}
               </span>
               <button
                 onClick={() => onRemove(a.id)}
-                className="shrink-0 text-xs text-neutral-400 hover:text-red-600"
+                className="shrink-0 text-xs text-fg-subtle hover:text-red-600"
               >
                 Remove
               </button>
@@ -612,7 +620,7 @@ function AttendeesPanel({
           ))}
         </ul>
       ) : (
-        <p className="mt-1 text-sm text-neutral-400">No attendees added yet.</p>
+        <p className="mt-1 text-sm text-fg-subtle">No attendees added yet.</p>
       )}
       <form
         onSubmit={(e) => {
@@ -640,7 +648,7 @@ function AttendeesPanel({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
         >
           Add
         </button>
@@ -662,23 +670,23 @@ function RemindersPanel({
   const [note, setNote] = useState("");
 
   return (
-    <div className="mt-5 border-t border-neutral-200 pt-4">
-      <h3 className="text-sm font-semibold text-neutral-900">Reminders</h3>
-      <p className="mt-0.5 text-xs text-neutral-400">
+    <div className="mt-5 border-t border-border pt-4">
+      <h3 className="text-sm font-semibold text-fg">Reminders</h3>
+      <p className="mt-0.5 text-xs text-fg-subtle">
         Shown here (and in the banner above) once due — this app has no email/push delivery.
       </p>
       {reminders.length > 0 ? (
         <ul className="mt-2 space-y-1">
           {reminders.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-2 text-sm text-neutral-700">
+            <li key={r.id} className="flex items-center justify-between gap-2 text-sm text-fg-muted">
               <span className="truncate">
                 {new Date(r.remind_at).toLocaleString()}
                 {r.note ? ` — ${r.note}` : ""}
-                {r.acknowledged_at && <span className="ml-1 text-xs text-neutral-400">(dismissed)</span>}
+                {r.acknowledged_at && <span className="ml-1 text-xs text-fg-subtle">(dismissed)</span>}
               </span>
               <button
                 onClick={() => onRemove(r.id)}
-                className="shrink-0 text-xs text-neutral-400 hover:text-red-600"
+                className="shrink-0 text-xs text-fg-subtle hover:text-red-600"
               >
                 Remove
               </button>
@@ -686,7 +694,7 @@ function RemindersPanel({
           ))}
         </ul>
       ) : (
-        <p className="mt-1 text-sm text-neutral-400">No reminders set.</p>
+        <p className="mt-1 text-sm text-fg-subtle">No reminders set.</p>
       )}
       <form
         onSubmit={(e) => {
@@ -713,7 +721,7 @@ function RemindersPanel({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
         >
           Add
         </button>
@@ -725,15 +733,15 @@ function RemindersPanel({
 function briefList(label: string, items: string[], empty: string) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-fg-muted">{label}</p>
       {items.length > 0 ? (
-        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-neutral-700">
+        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-fg-muted">
           {items.map((item, i) => (
             <li key={i}>{item}</li>
           ))}
         </ul>
       ) : (
-        <p className="mt-1 text-sm text-neutral-400">{empty}</p>
+        <p className="mt-1 text-sm text-fg-subtle">{empty}</p>
       )}
     </div>
   );
@@ -741,25 +749,25 @@ function briefList(label: string, items: string[], empty: string) {
 
 function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) {
   return (
-    <div className="mt-5 border-t border-neutral-200 pt-4">
+    <div className="mt-5 border-t border-border pt-4">
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-neutral-900">Meeting brief</h3>
+        <h3 className="text-sm font-semibold text-fg">Meeting brief</h3>
         {brief.flagged_for_review && (
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
         )}
       </div>
-      {brief.review_notes && <p className="mt-1 text-xs text-neutral-500">{brief.review_notes}</p>}
+      {brief.review_notes && <p className="mt-1 text-xs text-fg-muted">{brief.review_notes}</p>}
 
       <div className="mt-3 space-y-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Business</p>
-          <p className="mt-1 text-sm text-neutral-700">
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg">Business</p>
+          <p className="mt-1 text-sm text-fg-muted">
             {brief.business_name}
             {brief.business_industry ? ` · ${brief.business_industry}` : ""}
             {brief.business_location ? ` · ${brief.business_location}` : ""}
           </p>
           {brief.business_website && (
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-fg-muted">
               <a href={brief.business_website} target="_blank" rel="noreferrer" className="hover:underline">
                 {brief.business_website}
               </a>
@@ -768,7 +776,7 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Website</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg">Website</p>
           <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {briefList("Strengths", brief.website_strengths, "None on record")}
             {briefList("Weaknesses", brief.website_weaknesses, "None on record")}
@@ -777,8 +785,8 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Sales</p>
-          <p className="mt-1 text-sm text-neutral-700">
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg">Sales</p>
+          <p className="mt-1 text-sm text-fg-muted">
             Lead score: {brief.lead_score !== null ? brief.lead_score : "not scored"}
           </p>
           <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -789,17 +797,17 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-900">Discovery</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg">Discovery</p>
           <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {briefList("Questions to ask", brief.questions_to_ask, "Not generated")}
             {briefList("Likely requirements", brief.likely_requirements, "Not generated")}
           </div>
-          <p className="mt-2 text-sm text-neutral-700">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">Possible package: </span>
+          <p className="mt-2 text-sm text-fg-muted">
+            <span className="text-xs uppercase tracking-wide text-fg-muted">Possible package: </span>
             {brief.possible_package}
           </p>
-          <p className="text-sm text-neutral-700">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">Suggested pricing range: </span>
+          <p className="text-sm text-fg-muted">
+            <span className="text-xs uppercase tracking-wide text-fg-muted">Suggested pricing range: </span>
             {brief.suggested_pricing_range}
           </p>
         </div>
@@ -811,7 +819,7 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
 function field(label: string, value: React.ReactNode) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
       <div className="mt-1">{value}</div>
     </div>
   );

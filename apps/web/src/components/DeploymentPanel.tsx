@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, type Deployment, type ProjectApprovalStatus } from "@/lib/api";
 
 const STATUS_STYLE: Record<Deployment["status"], string> = {
-  pending: "border-neutral-200 bg-neutral-50 text-neutral-600",
+  pending: "border-border bg-surface-subtle text-fg-muted",
   running: "border-amber-200 bg-amber-50 text-amber-800",
   success: "border-emerald-200 bg-emerald-50 text-emerald-800",
   failed: "border-red-200 bg-red-50 text-red-800",
@@ -93,17 +93,17 @@ export function DeploymentPanel({
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-100 pt-3">
+    <div className="mt-3 border-t border-border pt-3">
       <div className="flex items-center gap-3">
         <button
           onClick={prepare}
           disabled={!approvalStatus.can_deploy || preparing || !!outstanding}
           title={approvalStatus.can_deploy ? undefined : `Missing: ${approvalStatus.missing_for_deployment.join(", ")}`}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {preparing ? "Preparing…" : "Prepare deployment"}
         </button>
-        {actionError && <p className="text-sm text-red-600">{actionError}</p>}
+        {actionError && <p className="text-error">{actionError}</p>}
       </div>
 
       {deployments.length > 0 && (
@@ -112,7 +112,7 @@ export function DeploymentPanel({
             <li key={d.id} className={`rounded-md border px-3 py-2 text-xs ${STATUS_STYLE[d.status]}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-white/60 px-1.5 py-0.5 font-medium uppercase tracking-wide">
+                  <span className="rounded bg-surface/60 px-1.5 py-0.5 font-medium uppercase tracking-wide">
                     {d.status}
                   </span>
                   {d.status === "success" && (
@@ -190,7 +190,7 @@ export function DeploymentPanel({
                 </p>
               )}
               {d.error_message && <p className="mt-1 text-red-700">{d.error_message}</p>}
-              {d.notes && <p className="mt-1 text-neutral-500">{d.notes}</p>}
+              {d.notes && <p className="mt-1 text-fg-muted">{d.notes}</p>}
             </li>
           ))}
         </ul>
