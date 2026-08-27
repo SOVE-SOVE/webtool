@@ -338,7 +338,7 @@ export default function LeadDetailPage() {
         </button>
       </div>
       {lead.archived_at && (
-        <p className="mt-1 text-sm text-amber-600">
+        <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
           Archived on {new Date(lead.archived_at).toLocaleDateString()}
         </p>
       )}
@@ -672,7 +672,7 @@ export default function LeadDetailPage() {
                     </button>
                     <div className="flex items-center gap-3">
                       {report.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                           Flagged for review
                         </span>
                       )}
@@ -744,7 +744,7 @@ export default function LeadDetailPage() {
                     </button>
                     <div className="flex items-center gap-2">
                       {message.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged</span>
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
                       )}
                       <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
                         {OUTREACH_STATUS_LABELS[message.status]}

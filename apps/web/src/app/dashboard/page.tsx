@@ -24,15 +24,15 @@ function MetricTile({ label, value }: { label: string; value: string | number })
 // Colour carries the same ranking the API sorted by, so the top of the
 // list reads as "this is on fire" at a glance without reading every row.
 const BADGE_CLASS: Record<AttentionItem["kind"], string> = {
-  project: "bg-violet-100 text-violet-800",
-  follow_up: "bg-amber-100 text-amber-800",
-  meeting: "bg-sky-100 text-sky-800",
+  project: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
+  follow_up: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  meeting: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
   task: "bg-surface-subtle text-fg-muted",
   stale_lead: "bg-surface-subtle text-fg-muted",
   // Sales command centre kinds (see /dashboard/sales) — this page's own
   // needs_attention list never emits these, but the type is shared.
-  hot_lead: "bg-rose-100 text-rose-800",
-  stale_proposal: "bg-violet-100 text-violet-800",
+  hot_lead: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300",
+  stale_proposal: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
   new_lead: "bg-surface-subtle text-fg-muted",
 };
 

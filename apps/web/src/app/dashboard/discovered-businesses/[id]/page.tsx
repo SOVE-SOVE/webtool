@@ -16,16 +16,16 @@ import {
 import { ErrorState } from "@/components/ui/ErrorState";
 
 const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
-  critical: "bg-red-100 text-red-800",
-  high: "bg-orange-100 text-orange-800",
-  medium: "bg-amber-100 text-amber-800",
+  critical: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
+  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   low: "bg-surface-subtle text-fg-muted",
 };
 
 const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800",
-  warm: "bg-amber-100 text-amber-800",
-  cold: "bg-blue-100 text-blue-800",
+  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
   review: "bg-surface-hover text-fg-muted",
 };
 
@@ -43,7 +43,7 @@ function Fact({ label, value }: { label: string; value: string | boolean | null 
 function ListSection({ title, items, tone }: { title: string; items: string[]; tone: "confirmed" | "inferred" | "unavailable" }) {
   if (items.length === 0) return null;
   const toneClass =
-    tone === "confirmed" ? "text-fg-muted" : tone === "inferred" ? "text-amber-700" : "text-fg-subtle";
+    tone === "confirmed" ? "text-fg-muted" : tone === "inferred" ? "text-amber-700 dark:text-amber-400" : "text-fg-subtle";
   return (
     <div className="mt-3">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h3>

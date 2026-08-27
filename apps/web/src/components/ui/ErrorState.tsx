@@ -10,7 +10,7 @@ export function ErrorState({
 }) {
   if (compact) {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+      <div className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30">
         <span>{message}</span>
         {onRetry && (
           <button onClick={onRetry} className="shrink-0 font-medium underline hover:no-underline">

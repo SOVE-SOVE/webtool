@@ -9,8 +9,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 
 const PRIORITY_STYLE: Record<LeadPriority, string> = {
   low: "bg-surface-subtle text-fg-muted",
-  medium: "bg-blue-100 text-blue-700",
-  high: "bg-red-100 text-red-700",
+  medium: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  high: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 };
 
 export default function PipelinePage() {
@@ -68,7 +68,7 @@ export default function PipelinePage() {
           </p>
         </div>
         {staleCount > 0 && (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
             {staleCount} need{staleCount === 1 ? "s" : ""} attention — no movement in {STALE_DAYS}+ days
           </span>
         )}
@@ -118,9 +118,9 @@ export default function PipelinePage() {
                 <div
                   className={`flex items-center justify-between border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
                     stage.is_won
-                      ? "text-emerald-700"
+                      ? "text-emerald-700 dark:text-emerald-400"
                       : stage.is_lost
-                        ? "text-red-700"
+                        ? "text-red-700 dark:text-red-400"
                         : "text-fg-muted"
                   }`}
                 >
@@ -170,7 +170,7 @@ export default function PipelinePage() {
                             <span className="text-[11px] text-fg-muted">{lead.assigned_user_name}</span>
                           )}
                           {stale && (
-                            <span className="ml-auto text-[11px] font-medium text-amber-700">
+                            <span className="ml-auto text-[11px] font-medium text-amber-700 dark:text-amber-400">
                               {daysSince(lead.updated_at)}d idle
                             </span>
                           )}

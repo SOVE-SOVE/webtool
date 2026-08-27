@@ -227,7 +227,7 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-semibold text-fg">{project.name}</h1>
             {project.delivered_at && (
-              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800">
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
                 Delivered
               </span>
             )}
@@ -379,13 +379,13 @@ export default function ProjectDetailPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {cd.status}
                     </span>
                     {cd.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}
@@ -485,13 +485,13 @@ export default function ProjectDetailPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        s.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                        s.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {s.status}
                     </span>
                     {s.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}
@@ -558,13 +558,13 @@ export default function ProjectDetailPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        b.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                        b.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {b.status}
                     </span>
                     {b.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}

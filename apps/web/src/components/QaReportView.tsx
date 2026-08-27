@@ -12,16 +12,16 @@ const CATEGORY_LABELS: Record<(typeof QA_CATEGORIES)[number], string> = {
 };
 
 const STATUS_CLASSES: Record<QaCheck["status"], string> = {
-  pass: "bg-emerald-100 text-emerald-800",
-  fail: "bg-red-100 text-red-800",
-  warning: "bg-amber-100 text-amber-800",
+  pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+  fail: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  warning: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   skipped: "bg-surface-subtle text-fg-muted",
 };
 
 const SEVERITY_CLASSES: Record<QaCheck["severity"], string> = {
   critical: "bg-red-600 text-white",
-  high: "bg-red-100 text-red-800",
-  medium: "bg-amber-100 text-amber-800",
+  high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   low: "bg-surface-subtle text-fg-muted",
   info: "bg-surface-subtle text-fg-muted",
 };
@@ -49,7 +49,7 @@ export function QaReportView({ report }: { report: QaReport }) {
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded px-2 py-0.5 text-xs font-medium ${
-            report.passed ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+            report.passed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
           }`}
         >
           {report.passed ? "Ready for client review" : "Not ready for client review — critical issues found"}

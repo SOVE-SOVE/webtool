@@ -237,7 +237,7 @@ export default function ProjectWebsitePage() {
           <div className="flex flex-wrap items-center gap-3">
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
-                website.approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                website.approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
               }`}
             >
               {website.approved ? `Approved by ${website.approved_by_user_name}` : "Not approved"}
@@ -253,7 +253,7 @@ export default function ProjectWebsitePage() {
             )}
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
-                website.client_approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                website.client_approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
               }`}
             >
               {website.client_approved ? `Client approved (recorded by ${website.client_approved_by_user_name})` : "Client review not recorded"}
@@ -307,7 +307,7 @@ export default function ProjectWebsitePage() {
               <div className="mt-3 flex items-center gap-3">
                 <span
                   className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    qaReport.human_approved ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+                    qaReport.human_approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                   }`}
                 >
                   {qaReport.human_approved ? `QA approved by ${qaReport.approved_by_user_name}` : "QA not approved"}

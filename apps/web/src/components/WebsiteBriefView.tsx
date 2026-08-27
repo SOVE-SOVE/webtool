@@ -126,13 +126,13 @@ export function WebsiteBriefView({
         <div className="flex items-center gap-2">
           <span
             className={`rounded px-2 py-0.5 text-xs font-medium ${
-              brief.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-surface-subtle text-fg-muted"
+              brief.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
             }`}
           >
             {brief.status === "approved" ? "Approved" : "Draft — review before continuing"}
           </span>
           {brief.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export function WebsiteBriefView({
       </div>
       {error && <p className="mt-2 text-error">{error}</p>}
       {brief.review_notes && (
-        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
           {brief.review_notes}
         </p>
       )}
@@ -189,7 +189,7 @@ export function WebsiteBriefView({
         brief.ai_suggestions.length === 0 ? (
           <p className="text-fg-subtle">—</p>
         ) : (
-          <ul className="list-disc space-y-1 pl-5 text-amber-800">
+          <ul className="list-disc space-y-1 pl-5 text-amber-800 dark:text-amber-400">
             {brief.ai_suggestions.map((item, i) => (
               <li key={i}>{item}</li>
             ))}

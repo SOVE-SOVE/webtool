@@ -44,7 +44,7 @@ export function DeliveryPanel({
 
   if (deliveryStatus.already_delivered) {
     return (
-      <div className="mt-3 border-t border-border pt-3 text-sm text-emerald-700">
+      <div className="mt-3 border-t border-border pt-3 text-sm text-emerald-700 dark:text-emerald-400">
         ✓ Delivered{deliveryStatus.latest_deployment_url ? ` — live at ${deliveryStatus.latest_deployment_url}` : ""}.
       </div>
     );

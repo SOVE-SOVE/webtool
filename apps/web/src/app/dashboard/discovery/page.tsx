@@ -177,7 +177,7 @@ export default function DiscoverySearchesPage() {
                     {search.query_label ?? criteriaSummary(search)}
                   </Link>
                   <div className="text-xs text-fg-muted">{criteriaSummary(search)}</div>
-                  {search.error_message && <div className="text-xs text-red-600">{search.error_message}</div>}
+                  {search.error_message && <div className="text-xs text-red-600 dark:text-red-400">{search.error_message}</div>}
                 </td>
                 <td className="px-3 py-2 text-fg-muted">{search.provider}</td>
                 <td className="px-3 py-2 text-fg-muted">{STATUS_LABEL[search.status]}</td>

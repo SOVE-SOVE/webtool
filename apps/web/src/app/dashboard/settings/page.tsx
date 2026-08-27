@@ -3,9 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type CalendarConnection, type Me, type Role, type User } from "@/lib/api";
+import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
+
+const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
+  { mode: "light", label: "Light" },
+  { mode: "dark", label: "Dark" },
+  { mode: "system", label: "Match system" },
+];
+
+const FONT_OPTIONS = Object.keys(FONT_LABELS) as FontChoice[];
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { theme, setTheme, font, setFont } = useTheme();
   const [me, setMe] = useState<Me | null>(null);
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +129,47 @@ export default function SettingsPage() {
       {error && <p className="mt-4 max-w-md text-error">{error}</p>}
 
       <section className="mt-6 max-w-md border border-border p-4">
+        <h2 className="text-sm font-semibold text-fg">Appearance</h2>
+        <p className="mt-1 text-xs text-fg-muted">Saved to this browser and applied every time you sign in here.</p>
+
+        <div className="mt-3">
+          <p className="field-label">Theme</p>
+          <div className="mt-1.5 flex gap-2">
+            {THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.mode}
+                type="button"
+                onClick={() => setTheme(opt.mode)}
+                aria-pressed={theme === opt.mode}
+                className={`flex-1 rounded-md border px-3 py-1.5 text-sm ${
+                  theme === opt.mode
+                    ? "border-accent bg-accent text-accent-fg"
+                    : "border-border-strong text-fg hover:bg-surface-hover"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className="field-label">Font</p>
+          <select
+            value={font}
+            onChange={(e) => setFont(e.target.value as FontChoice)}
+            className="input mt-1.5"
+          >
+            {FONT_OPTIONS.map((f) => (
+              <option key={f} value={f}>
+                {FONT_LABELS[f]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-md border border-border p-4">
         <h2 className="text-sm font-semibold text-fg">Calendar</h2>
         <p className="mt-1 text-xs text-fg-muted">
           Connect your Google Calendar so booked meetings you&apos;re assigned to appear on it
@@ -127,7 +178,7 @@ export default function SettingsPage() {
         </p>
 
         {calendarStatus === "connected" && (
-          <p className="mt-2 text-sm text-emerald-700">Google Calendar connected.</p>
+          <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">Google Calendar connected.</p>
         )}
         {calendarStatus === "error" && (
           <p className="mt-2 text-error">

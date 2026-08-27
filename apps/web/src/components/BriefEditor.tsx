@@ -123,7 +123,7 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
               brief.status === "approved"
-                ? "bg-emerald-100 text-emerald-800"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
                 : "bg-surface-hover text-fg-muted"
             }`}
           >
@@ -136,12 +136,12 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
             </span>
           )}
           {missingCount > 0 ? (
-            <p className="mt-1 text-sm text-amber-700">
+            <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
               {missingCount} field{missingCount === 1 ? "" : "s"} still missing — nothing has been
               filled in for you.
             </p>
           ) : (
-            <p className="mt-1 text-sm text-emerald-700">Every field has been collected.</p>
+            <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">Every field has been collected.</p>
           )}
         </div>
         <button
@@ -170,7 +170,7 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
                     <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
                       <span>{f.label}</span>
                       {isMissing && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-800">
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                           Missing
                         </span>
                       )}

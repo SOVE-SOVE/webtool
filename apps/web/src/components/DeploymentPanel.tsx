@@ -5,9 +5,9 @@ import { api, type Deployment, type ProjectApprovalStatus } from "@/lib/api";
 
 const STATUS_STYLE: Record<Deployment["status"], string> = {
   pending: "border-border bg-surface-subtle text-fg-muted",
-  running: "border-amber-200 bg-amber-50 text-amber-800",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  failed: "border-red-200 bg-red-50 text-red-800",
+  running: "border-amber-200 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30",
+  failed: "border-red-200 bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30",
 };
 
 export function DeploymentPanel({
@@ -118,7 +118,7 @@ export function DeploymentPanel({
                   {d.status === "success" && (
                     <span
                       className={`rounded px-1.5 py-0.5 font-medium uppercase tracking-wide ${
-                        d.verified_at ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        d.verified_at ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
                       }`}
                     >
                       {d.verified_at ? "Verified" : "Unverified"}
@@ -184,12 +184,12 @@ export function DeploymentPanel({
                   "SUCCESS" without it reads as a real launch. */}
               {typeof d.result?.note === "string" && <p className="mt-1 font-medium">{d.result.note}</p>}
               {d.verified_at && (
-                <p className="mt-1 text-emerald-700">
+                <p className="mt-1 text-emerald-700 dark:text-emerald-400">
                   Verified{d.verified_by_user_name ? ` by ${d.verified_by_user_name}` : ""} on{" "}
                   {new Date(d.verified_at).toLocaleString()}
                 </p>
               )}
-              {d.error_message && <p className="mt-1 text-red-700">{d.error_message}</p>}
+              {d.error_message && <p className="mt-1 text-red-700 dark:text-red-400">{d.error_message}</p>}
               {d.notes && <p className="mt-1 text-fg-muted">{d.notes}</p>}
             </li>
           ))}

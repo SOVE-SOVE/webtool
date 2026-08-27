@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 type NavItem = { href: string; label: string };
 type NavGroup = { label: string; items: NavItem[] };
@@ -103,13 +104,20 @@ function SidebarContent({ me, pathname, onNavigate }: { me: Me; pathname: string
       </nav>
 
       <div className="border-t border-border px-4 py-3">
-        <p className="truncate text-xs font-medium text-fg">{me.name}</p>
-        <p className="truncate text-xs text-fg-muted">
-          {me.email} · {me.role}
-        </p>
-        <button onClick={handleLogout} className="mt-1 text-xs text-fg-muted hover:text-fg">
-          Sign out
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-fg">{me.name}</p>
+            <p className="truncate text-xs text-fg-muted">
+              {me.email} · {me.role}
+            </p>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <ThemeToggle />
+          <button onClick={handleLogout} className="shrink-0 text-xs text-fg-muted hover:text-fg">
+            Sign out
+          </button>
+        </div>
       </div>
     </>
   );

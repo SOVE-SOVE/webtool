@@ -24,7 +24,7 @@ export function SalesAuditReportView({ report }: { report: SalesAuditReport }) {
   return (
     <div>
       {report.flagged_for_review && (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
           Flagged for review — evidence was limited when this report was generated.
           {report.review_notes && <p className="mt-1">{report.review_notes}</p>}
         </div>

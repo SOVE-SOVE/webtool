@@ -272,15 +272,15 @@ export default function CalendarPage() {
       </div>
 
       {dueReminders.length > 0 && (
-        <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+        <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-400">
             Reminders due ({dueReminders.length})
           </p>
           {dueReminders.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-3 text-sm">
               <button
                 onClick={() => openMeeting(r.meeting_id)}
-                className="truncate text-left text-amber-900 hover:underline"
+                className="truncate text-left text-amber-900 hover:underline dark:text-amber-400"
                 title={r.note ?? undefined}
               >
                 {r.meeting_title} — {r.meeting_context} ({new Date(r.meeting_scheduled_at).toLocaleString()})
@@ -288,7 +288,7 @@ export default function CalendarPage() {
               </button>
               <button
                 onClick={() => handleAcknowledgeReminder(r.meeting_id, r.id)}
-                className="shrink-0 rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-100"
+                className="shrink-0 rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30"
               >
                 Dismiss
               </button>
@@ -467,7 +467,7 @@ export default function CalendarPage() {
                       onClick={() => openMeeting(event.id)}
                       title={event.detail}
                       className={`block w-full truncate rounded px-1 py-0.5 text-left text-[11px] hover:opacity-80 ${
-                        event.done ? "bg-surface-hover text-fg-muted line-through" : "bg-blue-100 text-blue-900"
+                        event.done ? "bg-surface-hover text-fg-muted line-through" : "bg-blue-100 text-blue-900 dark:bg-blue-500/15 dark:text-blue-300"
                       }`}
                     >
                       {new Date(event.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}{" "}
@@ -478,7 +478,7 @@ export default function CalendarPage() {
                       key={`${event.kind}-${event.id}`}
                       href={event.href}
                       title={event.detail}
-                      className="block truncate rounded bg-amber-100 px-1 py-0.5 text-[11px] text-amber-900 hover:opacity-80"
+                      className="block truncate rounded bg-amber-100 px-1 py-0.5 text-[11px] text-amber-900 hover:opacity-80 dark:bg-amber-500/15 dark:text-amber-300"
                     >
                       ✓ {event.title}
                     </Link>
@@ -507,7 +507,7 @@ export default function CalendarPage() {
               {MEETING_STATUS_LABELS[selectedMeeting.status]}
             </span>
             {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
-            {selectedMeeting.synced_to_calendar && <span className="text-emerald-700">Synced to calendar</span>}
+            {selectedMeeting.synced_to_calendar && <span className="text-emerald-700 dark:text-emerald-400">Synced to calendar</span>}
           </p>
           {meetingError && <p className="mt-2 text-error">{meetingError}</p>}
 
@@ -552,7 +552,7 @@ export default function CalendarPage() {
                 <button
                   onClick={() => handleStatusChange("cancelled")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:bg-red-500/10 dark:text-red-300"
                 >
                   Cancel meeting
                 </button>
@@ -612,7 +612,7 @@ function AttendeesPanel({
               </span>
               <button
                 onClick={() => onRemove(a.id)}
-                className="shrink-0 text-xs text-fg-subtle hover:text-red-600"
+                className="shrink-0 text-xs text-fg-subtle hover:text-red-600 dark:text-red-400"
               >
                 Remove
               </button>
@@ -686,7 +686,7 @@ function RemindersPanel({
               </span>
               <button
                 onClick={() => onRemove(r.id)}
-                className="shrink-0 text-xs text-fg-subtle hover:text-red-600"
+                className="shrink-0 text-xs text-fg-subtle hover:text-red-600 dark:text-red-400"
               >
                 Remove
               </button>
@@ -753,7 +753,7 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-fg">Meeting brief</h3>
         {brief.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
         )}
       </div>
       {brief.review_notes && <p className="mt-1 text-xs text-fg-muted">{brief.review_notes}</p>}

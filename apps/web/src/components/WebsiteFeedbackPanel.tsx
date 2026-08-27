@@ -12,17 +12,17 @@ const TYPE_LABELS: Record<FeedbackType, string> = {
 };
 
 const STATUS_STYLES: Record<FeedbackStatus, string> = {
-  open: "bg-amber-100 text-amber-800",
-  acknowledged: "bg-blue-100 text-blue-800",
-  resolved: "bg-emerald-100 text-emerald-800",
+  open: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  acknowledged: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
+  resolved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
   dismissed: "bg-surface-subtle text-fg-muted",
 };
 
 // Feedback that carries a decision on the whole version — surfaced
 // distinctly since it's read differently from a comment/change request.
 const TYPE_STYLES: Partial<Record<FeedbackType, string>> = {
-  approval: "border-emerald-200 bg-emerald-50",
-  rejection: "border-red-200 bg-red-50",
+  approval: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30",
+  rejection: "border-red-200 bg-red-50 dark:border-red-500/30",
 };
 
 export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: string; websiteId?: string }) {

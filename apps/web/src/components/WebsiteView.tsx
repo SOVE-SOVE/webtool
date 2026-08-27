@@ -4,8 +4,8 @@ import { useState } from "react";
 import { api, type QualityIssue, type Website, type WebsiteSection } from "@/lib/api";
 
 const SEVERITY_CLASSES: Record<QualityIssue["severity"], string> = {
-  high: "bg-red-100 text-red-800",
-  medium: "bg-amber-100 text-amber-800",
+  high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   low: "bg-surface-subtle text-fg-muted",
 };
 
@@ -89,7 +89,7 @@ function SectionCard({
         <div className="flex items-center gap-2">
           <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">{section.type}</span>
           {section.approved && (
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Approved</span>
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">Approved</span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -109,7 +109,7 @@ function SectionCard({
         </div>
       </div>
 
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="mt-2">
         {editing ? (
@@ -142,22 +142,22 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded px-2 py-0.5 text-xs font-medium ${
-            website.anti_slop_passed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            website.anti_slop_passed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
           }`}
         >
           Quality score {website.anti_slop_score}/100{website.anti_slop_passed ? " — passed" : ""}
         </span>
         {website.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
         )}
       </div>
 
       {website.sources_note && <p className="mt-2 text-xs text-fg-muted">{website.sources_note}</p>}
 
       {website.missing_information.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-900">Missing information — not invented, needs real content</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800">
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-400">Missing information — not invented, needs real content</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800 dark:text-amber-400">
             {website.missing_information.map((m, i) => (
               <li key={i}>{m}</li>
             ))}

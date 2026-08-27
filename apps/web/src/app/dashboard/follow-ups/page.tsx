@@ -131,7 +131,7 @@ function NeedsFollowUpRow({
           <p className="mt-1 text-fg">{item.reason}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
             Suggest: {item.suggested_channel.replace("_", " ")}
           </span>
           <button
