@@ -3,14 +3,14 @@ import type { OutreachMessage } from "@/lib/api";
 function section(title: string, content: React.ReactNode) {
   return (
     <div className="mt-3">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h4>
-      <div className="mt-1 text-sm text-neutral-800">{content}</div>
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h4>
+      <div className="mt-1 text-sm text-fg">{content}</div>
     </div>
   );
 }
 
 function bulletList(items: string[]) {
-  if (items.length === 0) return <p className="text-neutral-400">—</p>;
+  if (items.length === 0) return <p className="text-fg-subtle">—</p>;
   return (
     <ul className="list-disc space-y-1 pl-5">
       {items.map((item, i) => (
@@ -24,7 +24,7 @@ export function OutreachMessageView({ message }: { message: OutreachMessage }) {
   return (
     <div>
       {message.flagged_for_review && (
-        <div className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
           Flagged for review — evidence was limited when this draft was generated.
           {message.review_notes && <p className="mt-1">{message.review_notes}</p>}
         </div>

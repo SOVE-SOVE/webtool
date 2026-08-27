@@ -4,9 +4,9 @@ import { useState } from "react";
 import { api, type QualityIssue, type Website, type WebsiteSection } from "@/lib/api";
 
 const SEVERITY_CLASSES: Record<QualityIssue["severity"], string> = {
-  high: "bg-red-100 text-red-800",
-  medium: "bg-amber-100 text-amber-800",
-  low: "bg-neutral-100 text-neutral-700",
+  high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  low: "bg-surface-subtle text-fg-muted",
 };
 
 function SectionSummary({ section }: { section: WebsiteSection }) {
@@ -17,15 +17,15 @@ function SectionSummary({ section }: { section: WebsiteSection }) {
   const listField = listFields.find((f) => Array.isArray(config[f]));
 
   return (
-    <div className="text-sm text-neutral-700">
-      {heading && <p className="font-medium text-neutral-900">{heading}</p>}
-      {subheading && <p className="mt-1 text-neutral-600">{subheading}</p>}
+    <div className="text-sm text-fg-muted">
+      {heading && <p className="font-medium text-fg">{heading}</p>}
+      {subheading && <p className="mt-1 text-fg-muted">{subheading}</p>}
       {listField && (
-        <p className="mt-1 text-neutral-500">
+        <p className="mt-1 text-fg-muted">
           {(config[listField] as unknown[]).length} {listField}
         </p>
       )}
-      {!heading && !listField && <p className="text-neutral-400 italic">No preview available — see raw config.</p>}
+      {!heading && !listField && <p className="text-fg-subtle italic">No preview available — see raw config.</p>}
     </div>
   );
 }
@@ -84,32 +84,32 @@ function SectionCard({
   }
 
   return (
-    <div className="rounded-md border border-neutral-200 p-3">
+    <div className="rounded-md border border-border p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">{section.type}</span>
+          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">{section.type}</span>
           {section.approved && (
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Approved</span>
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">Approved</span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <button onClick={() => setEditing((v) => !v)} disabled={busy} className="text-neutral-600 hover:underline">
+          <button onClick={() => setEditing((v) => !v)} disabled={busy} className="text-fg-muted hover:underline">
             {editing ? "Cancel" : "Edit"}
           </button>
-          <button onClick={handleRegenerate} disabled={busy} className="text-neutral-600 hover:underline disabled:opacity-50">
+          <button onClick={handleRegenerate} disabled={busy} className="text-fg-muted hover:underline disabled:opacity-50">
             Regenerate
           </button>
           <button
             onClick={handleApprove}
             disabled={busy}
-            className="rounded border border-neutral-300 px-2 py-1 font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded border border-border-strong px-2 py-1 font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
           >
             {section.approved ? "Unapprove" : "Approve"}
           </button>
         </div>
       </div>
 
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="mt-2">
         {editing ? (
@@ -118,12 +118,12 @@ function SectionCard({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={10}
-              className="w-full rounded-md border border-neutral-300 p-2 font-mono text-xs"
+              className="w-full rounded-md border border-border-strong p-2 font-mono text-xs"
             />
             <button
               onClick={handleSaveEdit}
               disabled={busy}
-              className="mt-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="mt-2 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>
@@ -142,22 +142,22 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`rounded px-2 py-0.5 text-xs font-medium ${
-            website.anti_slop_passed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            website.anti_slop_passed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
           }`}
         >
           Quality score {website.anti_slop_score}/100{website.anti_slop_passed ? " — passed" : ""}
         </span>
         {website.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
         )}
       </div>
 
-      {website.sources_note && <p className="mt-2 text-xs text-neutral-500">{website.sources_note}</p>}
+      {website.sources_note && <p className="mt-2 text-xs text-fg-muted">{website.sources_note}</p>}
 
       {website.missing_information.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-900">Missing information — not invented, needs real content</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800">
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-400">Missing information — not invented, needs real content</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800 dark:text-amber-400">
             {website.missing_information.map((m, i) => (
               <li key={i}>{m}</li>
             ))}
@@ -166,17 +166,17 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
       )}
 
       {website.anti_slop_issues.length > 0 && (
-        <div className="mt-3 rounded-md border border-neutral-200 p-3">
-          <p className="text-sm font-medium text-neutral-900">Quality issues</p>
+        <div className="mt-3 rounded-md border border-border p-3">
+          <p className="text-sm font-medium text-fg">Quality issues</p>
           <ul className="mt-2 space-y-1.5">
             {website.anti_slop_issues.map((issue, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
                 <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${SEVERITY_CLASSES[issue.severity]}`}>
                   {issue.severity}
                 </span>
-                <span className="text-neutral-700">
+                <span className="text-fg-muted">
                   {issue.message}
-                  {issue.location && <span className="text-neutral-400"> — {issue.location}</span>}
+                  {issue.location && <span className="text-fg-subtle"> — {issue.location}</span>}
                 </span>
               </li>
             ))}
@@ -185,26 +185,26 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
       )}
 
       <div className="mt-6 space-y-2">
-        <h3 className="text-sm font-semibold text-neutral-900">Navigation</h3>
+        <h3 className="text-sm font-semibold text-fg">Navigation</h3>
         <SectionCard websiteId={website.id} section={website.navigation} onChange={onChange} />
       </div>
 
       {website.pages.map((page) => (
         <div key={page.sitemap_page_id} className="mt-6">
-          <h3 className="text-sm font-semibold text-neutral-900">
-            {page.name} <span className="font-normal text-neutral-400">/{page.slug}</span>
+          <h3 className="text-sm font-semibold text-fg">
+            {page.name} <span className="font-normal text-fg-subtle">/{page.slug}</span>
           </h3>
           <div className="mt-2 space-y-2">
             {page.sections.map((section) => (
               <SectionCard key={section.id} websiteId={website.id} section={section} onChange={onChange} />
             ))}
-            {page.sections.length === 0 && <p className="text-sm text-neutral-400">No sections generated for this page.</p>}
+            {page.sections.length === 0 && <p className="text-sm text-fg-subtle">No sections generated for this page.</p>}
           </div>
         </div>
       ))}
 
       <div className="mt-6 space-y-2">
-        <h3 className="text-sm font-semibold text-neutral-900">Footer</h3>
+        <h3 className="text-sm font-semibold text-fg">Footer</h3>
         <SectionCard websiteId={website.id} section={website.footer} onChange={onChange} />
       </div>
     </div>

@@ -4,10 +4,10 @@ import { useState } from "react";
 import { api, type Deployment, type ProjectApprovalStatus } from "@/lib/api";
 
 const STATUS_STYLE: Record<Deployment["status"], string> = {
-  pending: "border-neutral-200 bg-neutral-50 text-neutral-600",
-  running: "border-amber-200 bg-amber-50 text-amber-800",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  failed: "border-red-200 bg-red-50 text-red-800",
+  pending: "border-border bg-surface-subtle text-fg-muted",
+  running: "border-amber-200 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30",
+  failed: "border-red-200 bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30",
 };
 
 export function DeploymentPanel({
@@ -93,17 +93,17 @@ export function DeploymentPanel({
   }
 
   return (
-    <div className="mt-3 border-t border-neutral-100 pt-3">
+    <div className="mt-3 border-t border-border pt-3">
       <div className="flex items-center gap-3">
         <button
           onClick={prepare}
           disabled={!approvalStatus.can_deploy || preparing || !!outstanding}
           title={approvalStatus.can_deploy ? undefined : `Missing: ${approvalStatus.missing_for_deployment.join(", ")}`}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {preparing ? "Preparing…" : "Prepare deployment"}
         </button>
-        {actionError && <p className="text-sm text-red-600">{actionError}</p>}
+        {actionError && <p className="text-error">{actionError}</p>}
       </div>
 
       {deployments.length > 0 && (
@@ -112,13 +112,13 @@ export function DeploymentPanel({
             <li key={d.id} className={`rounded-md border px-3 py-2 text-xs ${STATUS_STYLE[d.status]}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-white/60 px-1.5 py-0.5 font-medium uppercase tracking-wide">
+                  <span className="rounded bg-surface/60 px-1.5 py-0.5 font-medium uppercase tracking-wide">
                     {d.status}
                   </span>
                   {d.status === "success" && (
                     <span
                       className={`rounded px-1.5 py-0.5 font-medium uppercase tracking-wide ${
-                        d.verified_at ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        d.verified_at ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
                       }`}
                     >
                       {d.verified_at ? "Verified" : "Unverified"}
@@ -184,13 +184,13 @@ export function DeploymentPanel({
                   "SUCCESS" without it reads as a real launch. */}
               {typeof d.result?.note === "string" && <p className="mt-1 font-medium">{d.result.note}</p>}
               {d.verified_at && (
-                <p className="mt-1 text-emerald-700">
+                <p className="mt-1 text-emerald-700 dark:text-emerald-400">
                   Verified{d.verified_by_user_name ? ` by ${d.verified_by_user_name}` : ""} on{" "}
                   {new Date(d.verified_at).toLocaleString()}
                 </p>
               )}
-              {d.error_message && <p className="mt-1 text-red-700">{d.error_message}</p>}
-              {d.notes && <p className="mt-1 text-neutral-500">{d.notes}</p>}
+              {d.error_message && <p className="mt-1 text-red-700 dark:text-red-400">{d.error_message}</p>}
+              {d.notes && <p className="mt-1 text-fg-muted">{d.notes}</p>}
             </li>
           ))}
         </ul>

@@ -44,14 +44,14 @@ const LIST_SECTIONS: { field: ListField; label: string }[] = [
 function section(title: string, content: React.ReactNode) {
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
-      <div className="mt-1 text-sm text-neutral-800">{content}</div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">{title}</h3>
+      <div className="mt-1 text-sm text-fg">{content}</div>
     </div>
   );
 }
 
 function bulletList(items: string[]) {
-  if (items.length === 0) return <p className="text-neutral-400">—</p>;
+  if (items.length === 0) return <p className="text-fg-subtle">—</p>;
   return (
     <ul className="list-disc space-y-1 pl-5">
       {items.map((item, i) => (
@@ -130,20 +130,20 @@ export function CreativeDirectionView({
         <div className="flex items-center gap-2">
           <span
             className={`rounded px-2 py-0.5 text-xs font-medium ${
-              brief.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+              brief.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
             }`}
           >
             {brief.status === "approved" ? "Approved" : "Draft — review before continuing"}
           </span>
           {brief.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {!editing && (
             <button
               onClick={startEditing}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
             >
               Edit
             </button>
@@ -153,14 +153,14 @@ export function CreativeDirectionView({
               <button
                 onClick={() => setEditing(false)}
                 disabled={saving}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                className="btn btn-primary"
               >
                 {saving ? "Saving…" : "Save changes"}
               </button>
@@ -177,9 +177,9 @@ export function CreativeDirectionView({
           )}
         </div>
       </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-error">{error}</p>}
       {brief.review_notes && (
-        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
           {brief.review_notes}
         </p>
       )}
@@ -191,9 +191,9 @@ export function CreativeDirectionView({
       {section(
         "Assumptions (not confirmed — verify with the client before relying on these)",
         brief.assumptions.length === 0 ? (
-          <p className="text-neutral-400">—</p>
+          <p className="text-fg-subtle">—</p>
         ) : (
-          <ul className="list-disc space-y-1 pl-5 text-amber-800">
+          <ul className="list-disc space-y-1 pl-5 text-amber-800 dark:text-amber-400">
             {brief.assumptions.map((item, i) => (
               <li key={i}>{item}</li>
             ))}
@@ -209,7 +209,7 @@ export function CreativeDirectionView({
               value={draft[field] ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
             />
           ) : (
             <p>{brief[field]}</p>
@@ -226,7 +226,7 @@ export function CreativeDirectionView({
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}
               placeholder="One per line"
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
             />
           ) : (
             bulletList(brief[field])
@@ -240,13 +240,13 @@ export function CreativeDirectionView({
           <div className="space-y-1">
             {brief.target_audience && (
               <p>
-                <span className="text-neutral-500">Target audience: </span>
+                <span className="text-fg-muted">Target audience: </span>
                 {brief.target_audience}
               </p>
             )}
             {brief.business_goals && (
               <p>
-                <span className="text-neutral-500">Business goals: </span>
+                <span className="text-fg-muted">Business goals: </span>
                 {brief.business_goals}
               </p>
             )}
@@ -254,11 +254,11 @@ export function CreativeDirectionView({
         )}
 
       {brief.sources_note && (
-        <p className="mt-6 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+        <p className="mt-6 border-t border-border pt-3 text-xs text-fg-muted">
           Sources: {brief.sources_note}
         </p>
       )}
-      <p className="mt-2 text-xs text-neutral-400">
+      <p className="mt-2 text-xs text-fg-subtle">
         Generated {new Date(brief.generated_at).toLocaleString()}
         {brief.generated_by_user_name ? ` by ${brief.generated_by_user_name}` : ""}
         {brief.edited_at ? ` · edited ${new Date(brief.edited_at).toLocaleString()}` : ""}

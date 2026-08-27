@@ -27,6 +27,7 @@ import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -95,7 +96,13 @@ export default function ProjectDetailPage() {
   }
 
   function load() {
-    api.getProject(projectId).then(setProject).catch(() => setError("Couldn't load this project."));
+    api
+      .getProject(projectId)
+      .then((p) => {
+        setError(null);
+        setProject(p);
+      })
+      .catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
     api
@@ -200,32 +207,38 @@ export default function ProjectDetailPage() {
     setWebsiteBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
   }
 
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
-  if (!project) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  if (error) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!project) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/projects" className="text-sm text-neutral-500 hover:underline">
+      <Link href="/dashboard/projects" className="text-sm text-fg-muted hover:underline">
         ← All projects
       </Link>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-neutral-900">{project.name}</h1>
+            <h1 className="text-lg font-semibold text-fg">{project.name}</h1>
             {project.delivered_at && (
-              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800">
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
                 Delivered
               </span>
             )}
           </div>
-          <p className="text-sm text-neutral-500">{project.client_business_name}</p>
+          <p className="text-sm text-fg-muted">{project.client_business_name}</p>
         </div>
         <div className="flex items-center gap-3">
           <select
             value={project.stage}
             onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
-            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             {PROJECT_STAGES.map((stage) => (
               <option key={stage} value={stage}>
@@ -236,7 +249,7 @@ export default function ProjectDetailPage() {
           <select
             value={project.assigned_user_id ?? ""}
             onChange={(e) => handleAssigneeChange(e.target.value)}
-            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             <option value="">Unassigned</option>
             {users.map((user) => (
@@ -249,7 +262,7 @@ export default function ProjectDetailPage() {
       </div>
 
       {approvalStatus && (
-        <section className="mt-6 rounded-md border border-neutral-200 p-4">
+        <section className="mt-6 rounded-md border border-border p-4">
           <ApprovalPipelineView status={approvalStatus} />
           <DeploymentPanel
             projectId={projectId}
@@ -264,14 +277,14 @@ export default function ProjectDetailPage() {
       )}
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-neutral-900">Project brief</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+        <h2 className="text-sm font-semibold text-fg">Project brief</h2>
+        <p className="mt-1 text-sm text-fg-muted">
           The structured client intake — this becomes the source of truth for the build. Every field
           saves as you leave it; missing fields are flagged, never guessed at.
         </p>
         <div className="mt-3">
           {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : (
-            <p className="text-sm text-neutral-500">Loading brief…</p>
+            <p className="text-sm text-fg-muted">Loading brief…</p>
           )}
         </div>
       </section>
@@ -279,8 +292,8 @@ export default function ProjectDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">Creative direction</h2>
-            <p className="text-xs text-neutral-500">
+            <h2 className="text-sm font-semibold text-fg">Creative direction</h2>
+            <p className="text-xs text-fg-muted">
               The creative concept, visual direction, and brand direction for this project — review and edit
               before design/build work starts. Uses the brief above when it has answers, and flags what's
               still missing.
@@ -289,68 +302,68 @@ export default function ProjectDetailPage() {
           <button
             onClick={() => setShowGenerateForm((v) => !v)}
             disabled={generating}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
           >
             {showGenerateForm ? "Cancel" : briefs && briefs.length > 0 ? "Regenerate" : "Generate creative direction"}
           </button>
         </div>
 
         {showGenerateForm && (
-          <form onSubmit={handleGenerate} className="mt-3 space-y-3 border border-neutral-200 p-4">
-            <p className="text-xs text-neutral-500">
+          <form onSubmit={handleGenerate} className="mt-3 space-y-3 border border-border p-4">
+            <p className="text-xs text-fg-muted">
               Optional — overrides the brief above for this generation only. Left blank, target audience and
               business goals are pulled from the project brief when it has them; if the brief doesn't have them
               either, the gap is marked as an assumption to confirm later.
             </p>
             <label className="block text-sm">
-              <span className="text-neutral-600">Target audience</span>
+              <span className="text-fg-muted">Target audience</span>
               <textarea
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
                 placeholder="e.g. Homeowners aged 30-60 needing urgent or planned trade work"
               />
             </label>
             <label className="block text-sm">
-              <span className="text-neutral-600">Business goals for the new site</span>
+              <span className="text-fg-muted">Business goals for the new site</span>
               <textarea
                 value={businessGoals}
                 onChange={(e) => setBusinessGoals(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
                 placeholder="e.g. More phone enquiries from mobile visitors"
               />
             </label>
             <label className="block text-sm">
-              <span className="text-neutral-600">Additional notes</span>
+              <span className="text-fg-muted">Additional notes</span>
               <textarea
                 value={additionalNotes}
                 onChange={(e) => setAdditionalNotes(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
               />
             </label>
             <button
               type="submit"
               disabled={generating}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="btn btn-primary"
             >
               {generating ? "Generating…" : "Generate"}
             </button>
           </form>
         )}
         {generating && (
-          <p className="mt-2 text-sm text-neutral-500">
+          <p className="mt-2 text-sm text-fg-muted">
             Pulling together the business record, brief, website audit, and prior research — this can take up
             to a minute.
           </p>
         )}
-        {generateError && <p className="mt-2 text-sm text-red-600">{generateError}</p>}
+        {generateError && <p className="mt-2 text-error">{generateError}</p>}
 
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {briefs && briefs.length === 0 && !generating && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No creative direction generated yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No creative direction generated yet.</li>
           )}
           {briefs?.map((cd) => {
             const expanded = expandedId === cd.id;
@@ -359,20 +372,20 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => setExpandedId(expanded ? null : cd.id)}
-                    className="text-left text-neutral-900 hover:underline"
+                    className="text-left text-fg hover:underline"
                   >
                     {expanded ? "▾" : "▸"} Creative direction — {new Date(cd.generated_at).toLocaleString()}
                   </button>
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {cd.status}
                     </span>
                     {cd.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}
@@ -392,8 +405,8 @@ export default function ProjectDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">Sitemap</h2>
-            <p className="text-xs text-neutral-500">
+            <h2 className="text-sm font-semibold text-fg">Sitemap</h2>
+            <p className="text-xs text-fg-muted">
               The recommended page structure for this site — review, edit, add/remove/reorder pages, then
               approve. The approved sitemap becomes the structural source of truth for website generation.
             </p>
@@ -401,23 +414,23 @@ export default function ProjectDetailPage() {
           <button
             onClick={() => setShowGenerateSitemapForm((v) => !v)}
             disabled={generatingSitemap}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
           >
             {showGenerateSitemapForm ? "Cancel" : sitemaps && sitemaps.length > 0 ? "Regenerate" : "Generate sitemap"}
           </button>
         </div>
 
         {showGenerateSitemapForm && (
-          <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 border border-neutral-200 p-4">
-            <p className="text-xs text-neutral-500">
+          <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 border border-border p-4">
+            <p className="text-xs text-fg-muted">
               Uses the project brief and the latest approved creative direction above by default.
             </p>
             <label className="block text-sm">
-              <span className="text-neutral-600">Creative direction to use</span>
+              <span className="text-fg-muted">Creative direction to use</span>
               <select
                 value={sitemapCreativeDirectionId}
                 onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
-                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
               >
                 <option value="">Auto (latest approved, or most recent)</option>
                 {briefs?.map((cd) => (
@@ -428,34 +441,34 @@ export default function ProjectDetailPage() {
               </select>
             </label>
             <label className="block text-sm">
-              <span className="text-neutral-600">Additional notes</span>
+              <span className="text-fg-muted">Additional notes</span>
               <textarea
                 value={sitemapAdditionalNotes}
                 onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
               />
             </label>
             <button
               type="submit"
               disabled={generatingSitemap}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="btn btn-primary"
             >
               {generatingSitemap ? "Generating…" : "Generate"}
             </button>
           </form>
         )}
         {generatingSitemap && (
-          <p className="mt-2 text-sm text-neutral-500">
+          <p className="mt-2 text-sm text-fg-muted">
             Pulling together the brief and creative direction to recommend a page structure — this can take up
             to a minute.
           </p>
         )}
-        {generateSitemapError && <p className="mt-2 text-sm text-red-600">{generateSitemapError}</p>}
+        {generateSitemapError && <p className="mt-2 text-error">{generateSitemapError}</p>}
 
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No sitemap generated yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No sitemap generated yet.</li>
           )}
           {sitemaps?.map((s) => {
             const expanded = sitemapExpandedId === s.id;
@@ -464,7 +477,7 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => setSitemapExpandedId(expanded ? null : s.id)}
-                    className="text-left text-neutral-900 hover:underline"
+                    className="text-left text-fg hover:underline"
                   >
                     {expanded ? "▾" : "▸"} Sitemap — {new Date(s.generated_at).toLocaleString()} ({s.pages.length}{" "}
                     top-level pages)
@@ -472,13 +485,13 @@ export default function ProjectDetailPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        s.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+                        s.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {s.status}
                     </span>
                     {s.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}
@@ -498,8 +511,8 @@ export default function ProjectDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">Website brief</h2>
-            <p className="text-xs text-neutral-500">
+            <h2 className="text-sm font-semibold text-fg">Website brief</h2>
+            <p className="text-xs text-fg-muted">
               The AI-assisted client-facing brief — project summary, goals, audience, positioning, sitemap,
               page purposes, content requirements, CTA strategy, visual direction, functionality, SEO, and
               technical requirements in one document. Rolls up the brief/creative direction/sitemap above where
@@ -510,7 +523,7 @@ export default function ProjectDetailPage() {
           <button
             onClick={handleGenerateWebsiteBrief}
             disabled={generatingWebsiteBrief}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
           >
             {generatingWebsiteBrief
               ? "Generating…"
@@ -521,15 +534,15 @@ export default function ProjectDetailPage() {
         </div>
 
         {generatingWebsiteBrief && (
-          <p className="mt-2 text-sm text-neutral-500">
+          <p className="mt-2 text-sm text-fg-muted">
             Pulling together the brief, creative direction, and sitemap above — this can take up to a minute.
           </p>
         )}
-        {generateWebsiteBriefError && <p className="mt-2 text-sm text-red-600">{generateWebsiteBriefError}</p>}
+        {generateWebsiteBriefError && <p className="mt-2 text-error">{generateWebsiteBriefError}</p>}
 
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No website brief generated yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No website brief generated yet.</li>
           )}
           {websiteBriefs?.map((b) => {
             const expanded = websiteBriefExpandedId === b.id;
@@ -538,20 +551,20 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => setWebsiteBriefExpandedId(expanded ? null : b.id)}
-                    className="text-left text-neutral-900 hover:underline"
+                    className="text-left text-fg hover:underline"
                   >
                     {expanded ? "▾" : "▸"} Website brief — {new Date(b.generated_at).toLocaleString()}
                   </button>
                   <div className="flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        b.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+                        b.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
                       }`}
                     >
                       {b.status}
                     </span>
                     {b.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                         Flagged for review
                       </span>
                     )}
@@ -571,15 +584,15 @@ export default function ProjectDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">Website</h2>
-            <p className="text-xs text-neutral-500">
+            <h2 className="text-sm font-semibold text-fg">Website</h2>
+            <p className="text-xs text-fg-muted">
               Generated from the approved sitemap, brief, and creative direction above — every section is
               reviewable and editable, never a locked mockup.
             </p>
           </div>
           <Link
             href={`/dashboard/projects/${projectId}/website`}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
           >
             Open website
           </Link>
@@ -588,40 +601,40 @@ export default function ProjectDetailPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">Meetings</h2>
-          <Link href="/dashboard/calendar" className="text-xs text-neutral-500 hover:underline">
+          <h2 className="text-sm font-semibold text-fg">Meetings</h2>
+          <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
             Schedule on calendar →
           </Link>
         </div>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {meetings && meetings.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No meetings scheduled yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
           )}
           {meetings?.map((m) => (
             <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="text-neutral-900">
+              <span className="text-fg">
                 {m.title}
-                <span className="ml-2 text-xs text-neutral-500">
+                <span className="ml-2 text-xs text-fg-muted">
                   {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
                   {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
                 </span>
               </span>
-              {m.outcome && <span className="shrink-0 text-xs text-neutral-500">{m.outcome}</span>}
+              {m.outcome && <span className="shrink-0 text-xs text-fg-muted">{m.outcome}</span>}
             </li>
           ))}
         </ul>
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
+        <ul className="mt-3 divide-y divide-border border border-border">
           {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No activity yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
           )}
           {activity?.map((item) => (
             <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-neutral-900">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-neutral-500">
+              <span className="text-fg">{item.summary ?? item.action}</span>
+              <span className="ml-2 text-xs text-fg-muted">
                 {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
               </span>
             </li>

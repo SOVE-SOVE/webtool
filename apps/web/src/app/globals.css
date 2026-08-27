@@ -1,26 +1,235 @@
 @import "tailwindcss";
 
+/* Drives Tailwind's `dark:` variant off our own toggle (data-theme on
+   <html>, set by ThemeProvider) instead of only prefers-color-scheme —
+   so the user's explicit choice always wins, with system as a mode. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---------------------------------------------------------------------
+ * Design tokens
+ *
+ * Every color used by app UI should come from one of these tokens (or a
+ * semantic status color further down), not a raw Tailwind neutral-*
+ * shade. That keeps light/dark theming to one place: change the token
+ * values here and the whole app follows.
+ * ------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #fafafa; /* app shell background, behind panels */
+  --surface: #ffffff; /* cards, panels, table rows, inputs, popovers */
+  --surface-subtle: #f5f5f5; /* table headers, sidebar, subtle fills */
+  --surface-hover: #f5f5f5; /* hover state for list rows / nav items */
+  --border: #e5e5e5; /* default hairline border */
+  --border-strong: #d4d4d4; /* input borders, emphasized dividers */
+  --fg: #171717; /* primary text */
+  --fg-muted: #737373; /* secondary text, labels, metadata */
+  --fg-subtle: #a3a3a3; /* placeholders, disabled, faint metadata */
+  --accent: #171717; /* primary action bg */
+  --accent-fg: #ffffff; /* primary action text */
+  --focus-ring: #171717;
+  --overlay: rgb(0 0 0 / 0.4); /* modal/drawer backdrop */
+  --danger: #dc2626;
+  --danger-fg: #ffffff;
+}
+
+/* Dark palette. Same tokens, different values — every component built
+   on the tokens above picks this up automatically, no per-component
+   dark: classes needed. Not pure black: panels sit one step above the
+   canvas so structure stays visible (see docs/05_DECISIONS.md UX audit
+   notes on "backgrounds, panels and overlays must be visually
+   separated"). */
+[data-theme="dark"] {
+  --canvas: #0a0a0a;
+  --surface: #171717;
+  --surface-subtle: #1f1f1f;
+  --surface-hover: #262626;
+  --border: #2a2a2a;
+  --border-strong: #404040;
+  --fg: #f5f5f5;
+  --fg-muted: #a3a3a3;
+  --fg-subtle: #71717a;
+  --accent: #f5f5f5;
+  --accent-fg: #171717;
+  --focus-ring: #f5f5f5;
+  --overlay: rgb(0 0 0 / 0.6);
+  --danger: #f87171;
+  --danger-fg: #171717;
+}
+
+/* Until ThemeProvider's blocking script runs, fall back to the OS
+   preference so a first-ever visit (empty localStorage) never flashes
+   the wrong theme either. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --canvas: #0a0a0a;
+    --surface: #171717;
+    --surface-subtle: #1f1f1f;
+    --surface-hover: #262626;
+    --border: #2a2a2a;
+    --border-strong: #404040;
+    --fg: #f5f5f5;
+    --fg-muted: #a3a3a3;
+    --fg-subtle: #71717a;
+    --accent: #f5f5f5;
+    --accent-fg: #171717;
+    --focus-ring: #f5f5f5;
+    --overlay: rgb(0 0 0 / 0.6);
+    --danger: #f87171;
+    --danger-fg: #171717;
+  }
+}
+
+/* Font choices, applied via data-font on <html> (ThemeProvider). All
+   system-stack except "geist", so switching never depends on a network
+   fetch completing. */
+:root {
+  --font-app: var(--font-geist-sans);
+}
+html[data-font="system"] {
+  --font-app: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+html[data-font="serif"] {
+  --font-app: Georgia, Cambria, "Times New Roman", Times, serif;
+}
+html[data-font="mono"] {
+  --font-app: var(--font-geist-mono);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-focus-ring: var(--focus-ring);
+  --color-overlay: var(--overlay);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+
+  --font-sans: var(--font-app, var(--font-geist-sans));
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* ---------------------------------------------------------------------
+ * Reusable component classes
+ *
+ * These exist so pages share one definition of "what a button/input/
+ * card/table looks like" instead of repeating (and slowly drifting
+ * from) the same Tailwind utility strings in every file.
+ * ------------------------------------------------------------------- */
+
+@layer components {
+  /* Buttons. `.btn` carries shape/sizing; combine with a color modifier,
+     e.g. className="btn btn-primary". */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-fg hover:opacity-90;
+  }
+  .btn-secondary {
+    @apply border border-border-strong bg-surface text-fg hover:bg-surface-hover;
+  }
+  .btn-ghost {
+    @apply text-fg-muted hover:bg-surface-hover hover:text-fg;
+  }
+  .btn-danger {
+    @apply bg-danger text-danger-fg hover:opacity-90;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
+  }
+
+  /* Form controls */
+  .field-label {
+    @apply text-sm font-medium text-fg;
+  }
+  .input {
+    @apply w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-fg focus:outline-none focus:ring-1 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  select.input {
+    @apply pr-8;
+  }
+
+  /* Surfaces */
+  .card {
+    @apply rounded-md border border-border bg-surface;
+  }
+  .panel {
+    @apply rounded-md border border-border bg-surface p-4;
+  }
+
+  /* Tables */
+  .table-shell {
+    @apply overflow-x-auto rounded-md border border-border;
+  }
+  .table {
+    @apply w-full min-w-max text-left text-sm;
+  }
+  .table thead {
+    @apply bg-surface-subtle text-xs uppercase tracking-wide text-fg-muted;
+  }
+  .table tbody {
+    @apply divide-y divide-border;
+  }
+  .table tbody tr {
+    @apply bg-surface;
+  }
+
+  /* Text hierarchy */
+  .page-title {
+    @apply text-lg font-semibold text-fg;
+  }
+  .page-subtitle {
+    @apply mt-1 text-sm text-fg-muted;
+  }
+  .section-title {
+    @apply text-sm font-semibold text-fg;
+  }
+  .text-error {
+    @apply text-sm text-danger;
+  }
+
+  /* Overlays */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4;
+  }
+  .modal-panel {
+    @apply w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-xl;
+  }
+
+  /* Loading */
+  .skeleton {
+    @apply animate-pulse rounded bg-surface-subtle;
+  }
+}
+
+/* Scrollbars: keep them visible-but-quiet in both themes instead of the
+   OS default, which can be invisible against a dark panel. */
+* {
+  scrollbar-color: var(--border-strong) transparent;
 }
