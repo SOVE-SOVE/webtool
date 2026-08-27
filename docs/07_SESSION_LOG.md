@@ -11,6 +11,112 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-27 — Phase 8 part 3, task 1: cross-platform + deployment QA
+**Mode:** worktree (`phase8-part3-qa-audit`)
+**Merge to main after:** yes
+**Scope touched:** scripts/start-mac.sh only (code); this entry (docs).
+
+**What happened:** Live-tested the macOS launcher against the actual
+running dev stack (Postgres via Docker, uvicorn on :8000, `next dev` on
+:3000) rather than a throwaway copy, since that's what was already up
+on this machine — every stop/start cycle below is real, not simulated,
+and `docker compose stop` (not `down`) made it safe to do so.
+
+Verified on macOS, live: cold start (fresh `stop-mac.sh` → `start-mac.sh`,
+~9s end to end), idempotent re-start while already running (no duplicate
+processes), stop/start/restart, database persistence across a full
+stop/start cycle (row counts identical before/after), occupied-port
+detection (planted an unrelated process on :8000 — the script correctly
+refused rather than sharing the port), missing-`.env` detection (fails
+immediately with the documented message), and — unplanned but
+genuinely useful — Docker Desktop quit entirely mid-session (unrelated
+to this work) and `start-mac.sh`'s "Docker isn't running → launch it →
+wait up to 60s" path recovered the whole stack automatically with no
+data loss.
+
+Found and fixed one real bug in this process: `start-mac.sh`'s
+readiness checks (`curl -fs -o /dev/null $URL`) had no request timeout.
+Reproduced live — blanked `SESSION_SECRET` to make the API crash during
+import — and confirmed uvicorn's `--reload` reloader pre-binds the
+listening socket before the crash, so the port accepts a TCP connection
+but never answers it. Without a timeout, `curl` blocks on that
+connection indefinitely, so the documented "fails within 30s with the
+log tail" contract never fires — the script just hangs. Fixed by adding
+`--max-time 3` to all three health-check `curl` calls (`url_up()` plus
+both `wait_for` calls), verified against an isolated raw socket that
+accepts and never responds (confirmed hang without the flag, confirmed
+a clean 3s bail-out with it), then re-verified the exact original
+failure scenario now fails correctly within the documented window.
+`stop-mac.sh` and both Windows scripts were unaffected — Windows
+already used `Invoke-WebRequest -TimeoutSec 2`, so this was a
+Mac/curl-specific gap, not a design gap.
+
+Windows (`start-windows.ps1`/`.bat`, `stop-windows.ps1`/`.bat`):
+reviewed in full; **could not be live-tested — no Windows machine or VM
+available in this environment.** Findings from code review only:
+- Health-check timeouts are already correct (`-TimeoutSec 2`), so the
+  Mac bug above has no Windows equivalent.
+- Docker Desktop auto-start hardcodes
+  `C:\Program Files\Docker\Docker\Docker Desktop.exe`; a non-default
+  install location means auto-start silently can't find it and the
+  script asks the user to start it manually — already handled as a
+  clear failure message, not a crash, so left as-is.
+- `stop-windows.ps1` always force-kills (`taskkill /PID /T /F`)
+  immediately, versus macOS's graceful-SIGTERM-then-10s-then-SIGKILL.
+  This is an intentional platform difference (Windows has no clean
+  cross-process SIGTERM-equivalent for a console app without attaching
+  a job object), not a bug — dev-mode `uvicorn --reload`/`next dev`
+  have nothing meaningful to flush on exit. Documented here since it's
+  a real, if minor, behavioral asymmetry between the two platforms.
+- Path handling, `.env`/`.env.local` presence checks, and the
+  Docker/Postgres readiness sequence are structurally identical to the
+  (now live-verified) macOS script — same commands, same flags, same
+  order — so they're taken as correct by parity rather than
+  independently proven.
+
+Also surfaced, environment-specific (not a code or architecture issue,
+not fixed): this machine has a **native Homebrew PostgreSQL 16 service
+running independently of this project**, bound to `localhost` (both
+`127.0.0.1` and `::1`) via a `launchd` agent. macOS routes `localhost`
+traffic to that specific-address bind ahead of Docker's wildcard-bound
+port-forward, so every `DATABASE_URL=...@localhost:5432/...` connection
+— the app's own, and any ad-hoc script or migration run from this
+machine's host — reaches the **native** Postgres, not the
+`docker compose`-managed container. Confirmed by tracing the running
+API process's actual TCP connection to its serving `postgres` backend
+PID, whose parent is the native service, not the container. Practical
+consequences: `stop-mac.sh`'s `docker compose stop postgres` does not
+actually stop the database backing the app *on this machine*; the
+Docker container has grown its own independent, effectively-abandoned
+`webdesignos` database (still at its original single-row seed) that
+nothing real ever touches. Real data is safe (confirmed: 3 users, 2
+workspaces, 4 leads, 4 clients, 9 projects, all intact throughout this
+session), but anyone assuming the Docker volume is the durable copy of
+this project's data is wrong on this specific machine. Left the
+app/Docker architecture unchanged since this is a one-machine
+environment conflict, not a defect — noted here so a human can decide
+whether to stop/disable the native service (`brew services stop
+postgresql@16`) or move it off port 5432.
+
+Fresh-database-setup verified separately and safely: created an
+isolated scratch database on the *actually-in-use* (native) Postgres
+instance, ran `alembic upgrade head` against it from empty — the full
+~30-migration chain applied cleanly with no errors — then dropped it.
+Did not touch the real `webdesignos` database's migration state: its
+`alembic_version` currently points to a revision from an unmerged
+concurrent worktree branch (`worktree-phase7-part2-action-engine`,
+today's "add notification system" work) that hasn't reached `main` yet
+— expected in this multi-worktree shared-Postgres workflow, not drift,
+and not something to touch from an unrelated audit session.
+
+**Blockers / follow-ups:** Windows behavior above is code-reviewed only,
+never executed — flagged per the task's explicit instruction rather than
+silently assumed correct. The native-Postgres-vs-Docker port conflict is
+a real machine hazard worth a human decision (see above); not acted on
+here since it's outside this project's code/architecture.
+
+---
+
 ## 2026-08-26 — Phase 6 part 2: deployment adapter architecture + delivery workflow
 **Mode:** worktree (`phase6-part2-deployment-delivery`)
 **Merge to main after:** yes

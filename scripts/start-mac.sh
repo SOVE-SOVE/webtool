@@ -61,7 +61,7 @@ wait_for() {
   return 0
 }
 
-url_up() { curl -fs -o /dev/null "$1" 2>/dev/null; }
+url_up() { curl -fs --max-time 3 -o /dev/null "$1" 2>/dev/null; }
 
 echo ""
 echo "Web Design OS - starting local development environment"
@@ -105,7 +105,7 @@ else
   info "Starting the API..."
   ( cd "$API_DIR" && nohup ./.venv/bin/uvicorn app.main:app --reload --port "$API_PORT" >"$API_LOG" 2>&1 & echo $! >"$API_PID_FILE" )
 
-  wait_for 30 curl -fs -o /dev/null "$API_URL/health" \
+  wait_for 30 curl -fs --max-time 3 -o /dev/null "$API_URL/health" \
     || fail "The API didn't respond at $API_URL/health within 30s." "$API_LOG"
   ok "API is ready at $API_URL"
 fi
@@ -127,7 +127,7 @@ else
   # capture is the real dev-server process, not an npm wrapper around it.
   ( cd "$WEB_DIR" && nohup ./node_modules/.bin/next dev --port "$WEB_PORT" >"$WEB_LOG" 2>&1 & echo $! >"$WEB_PID_FILE" )
 
-  wait_for 60 curl -fs -o /dev/null "$WEB_URL" \
+  wait_for 60 curl -fs --max-time 3 -o /dev/null "$WEB_URL" \
     || fail "The web app didn't respond at $WEB_URL within 60s." "$WEB_LOG"
   ok "Web app is ready at $WEB_URL"
 fi
