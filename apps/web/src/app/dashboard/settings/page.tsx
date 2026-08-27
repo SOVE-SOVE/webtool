@@ -18,6 +18,11 @@ export default function SettingsPage() {
   // redirect. "connected" | "error" | null.
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
   useEffect(() => {
+    // window.location is only available post-hydration, so this can't be
+    // a lazy useState initializer (that also runs during SSR) — an effect
+    // is the correct tool here, not the derived-state case this rule
+    // targets.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCalendarStatus(new URLSearchParams(window.location.search).get("calendar"));
   }, []);
 
@@ -32,11 +37,14 @@ export default function SettingsPage() {
   const [savingUser, setSavingUser] = useState(false);
 
   function load() {
-    api.me().then((m) => {
-      setMe(m);
-      setWorkspaceName(m.workspace_name);
-    }).catch(() => {});
-    api.listUsers().then(setUsers).catch(() => {});
+    api
+      .me()
+      .then((m) => {
+        setMe(m);
+        setWorkspaceName(m.workspace_name);
+      })
+      .catch(() => setError("Couldn't load your account. Try refreshing the page."));
+    api.listUsers().then(setUsers).catch(() => setError("Couldn't load teammates."));
     api.getGoogleCalendarStatus().then(setCalendarConnection).catch(() => setCalendarConnection(null));
   }
 
@@ -91,8 +99,13 @@ export default function SettingsPage() {
   }
 
   async function handleRoleChange(userId: string, newRole: Role) {
-    await api.updateUserRole(userId, { role: newRole });
-    load();
+    try {
+      await api.updateUserRole(userId, { role: newRole });
+      setError(null);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't change that teammate's role.");
+    }
   }
 
   const isAdmin = me?.role === "admin";

@@ -585,11 +585,12 @@ function AttendeesPanel({
   onRemove,
 }: {
   attendees: Meeting["attendees"];
-  onAdd: (email: string, name: string) => void;
+  onAdd: (email: string, name: string) => Promise<void>;
   onRemove: (attendeeId: string) => void;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <div className="mt-5 border-t border-neutral-200 pt-4">
@@ -615,12 +616,17 @@ function AttendeesPanel({
         <p className="mt-1 text-sm text-neutral-400">No attendees added yet.</p>
       )}
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          if (!email) return;
-          onAdd(email, name);
-          setEmail("");
-          setName("");
+          if (!email || submitting) return;
+          setSubmitting(true);
+          try {
+            await onAdd(email, name);
+            setEmail("");
+            setName("");
+          } finally {
+            setSubmitting(false);
+          }
         }}
         className="mt-2 flex gap-2"
       >
@@ -640,7 +646,8 @@ function AttendeesPanel({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+          disabled={submitting}
+          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
         >
           Add
         </button>
@@ -655,11 +662,12 @@ function RemindersPanel({
   onRemove,
 }: {
   reminders: Meeting["reminders"];
-  onAdd: (remindAt: string, note: string) => void;
+  onAdd: (remindAt: string, note: string) => Promise<void>;
   onRemove: (reminderId: string) => void;
 }) {
   const [remindAt, setRemindAt] = useState("");
   const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <div className="mt-5 border-t border-neutral-200 pt-4">
@@ -689,12 +697,17 @@ function RemindersPanel({
         <p className="mt-1 text-sm text-neutral-400">No reminders set.</p>
       )}
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          if (!remindAt) return;
-          onAdd(remindAt, note);
-          setRemindAt("");
-          setNote("");
+          if (!remindAt || submitting) return;
+          setSubmitting(true);
+          try {
+            await onAdd(remindAt, note);
+            setRemindAt("");
+            setNote("");
+          } finally {
+            setSubmitting(false);
+          }
         }}
         className="mt-2 flex gap-2"
       >
@@ -713,7 +726,8 @@ function RemindersPanel({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+          disabled={submitting}
+          className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
         >
           Add
         </button>

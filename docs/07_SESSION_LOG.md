@@ -11,6 +11,162 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-27 — Phase 8 part 3, task 2: final production audit
+**Mode:** worktree (`phase8-part3-qa-audit`)
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/modules/{meetings,outreach,website_revisions}/models.py
+(index fixes only), apps/web/src/app/dashboard/{calendar,layout}.tsx,
+apps/web/src/app/dashboard/{discovery,discovered-businesses}/[id]/page.tsx,
+apps/web/src/app/dashboard/{leads,projects}/[id]/page.tsx,
+apps/web/src/app/dashboard/settings/page.tsx,
+apps/web/src/components/{PreviewLinksPanel,WebsiteFeedbackPanel}.tsx; this entry.
+
+**What happened:** End-to-end production audit of the full 28-stage
+workflow (startup → auth → dashboard → lead discovery/research/scoring/
+approval → CRM → outreach → follow-ups → calendar → conversion → onboarding
+→ brief → creative direction → sitemap → content → generation → QA →
+revisions → preview → feedback → approval → deployment → delivery →
+notifications → background automation), per the operator's explicit
+"treat this as a real business" brief. Picked up mid-way through
+main's own timeline: this worktree branched at `aea0009`, and `origin/
+main` had already advanced two more merges (a website-revisions PR and,
+concurrently during this very session, another worktree's alembic-heads
+merge) by the time this task started — fast-forward-merged
+`origin/main` into this branch before auditing, so the audit and every
+fix below targets the actual current app, not a stale branch point.
+
+**Tests run:** apps/api's full pytest suite (isolated from a *second*
+concurrent Claude Code session also hitting the same shared local
+Postgres and running the identical suite at the same time — waited for
+each collision to clear rather than trust a polluted result): **798
+passed**, 1 session-teardown-only error (`Base.metadata.drop_all`
+choked on a `job_schedules→jobs` FK left behind by yet another
+unmerged concurrent worktree's schema in the shared `webdesignos_test`
+database — that table doesn't exist in this codebase at all; every
+real test assertion passed). `alembic check`: found and fixed real
+model/migration drift (see below) — clean after the fix. Frontend:
+`npm run test` (53/53), `npm run lint` (found and fixed 4 real errors,
+see below; 3 pre-existing `exhaustive-deps` warnings left as-is,
+non-blocking), `tsc --noEmit` (clean), `npm run build` (clean,
+17 routes), `npm audit` (0 vulnerabilities). Frontend checks against
+this worktree's code required a temporary `node_modules`/`.venv`
+symlink (Turbopack itself refused the symlink for the `build` step, so
+that one — and the final start/stop cycle — instead ran by
+overlaying this worktree's changed files onto the main checkout,
+verifying byte-for-byte, then restoring the main checkout exactly;
+symlinks removed before committing).
+
+**Confirmed bugs found and fixed:**
+1. **Migration/model drift** (`apps/api/app/modules/{meetings,outreach,
+   website_revisions}/models.py`): five FK columns
+   (`email_sends.lead_id`/`outreach_message_id`, `meeting_attendees.
+   meeting_id`, `meeting_reminders.meeting_id`, `website_revisions.
+   project_id`) have a real index in their migrations
+   (`op.create_index(...)`, deliberate — e.g. email history is looked
+   up by `lead_id`) that the ORM models never declared (`index=True`
+   missing), so `alembic check` reported them as spurious indexes
+   alembic would want to drop. Fixed by adding `index=True` to match
+   the migrations, which are the source of truth here. Verified against
+   a from-empty scratch database: `alembic check` → "No new upgrade
+   operations detected."
+2. **4 real ESLint errors** (`react-hooks/set-state-in-effect`,
+   `react/no-unescaped-entities`) in `dashboard/layout.tsx`, `dashboard/
+   settings/page.tsx`, `dashboard/projects/[id]/page.tsx`. The two
+   `set-state-in-effect` hits are legitimate, SSR-safe patterns (fetch-
+   on-mount auth check; reading `window.location` post-hydration, which
+   can't be a lazy `useState` initializer since that also runs during
+   SSR) — not restructured, just given an `eslint-disable-next-line`
+   with a comment explaining why, rather than a fake fix (a
+   `queueMicrotask` workaround was tried first, reverted — it silenced
+   the rule without genuinely fixing or improving anything). The two
+   unescaped-apostrophe errors were trivial `&apos;` fixes.
+3. **Two blank/no-loading-indicator detail pages** (`dashboard/
+   discovery/[id]`, `dashboard/discovered-businesses/[id]`) — the
+   latter rendered completely blank, not even the back-link, until its
+   fetch resolved. Added the same `Loading…` early-return every sibling
+   detail page already uses.
+4. **Silent-failure inline saves** (`dashboard/leads/[id]/page.tsx`):
+   `saveBusiness` (backing 9 inline-edit fields) and
+   `handleArchiveToggle` had no try/catch at all — a failed save left
+   the user believing their edit persisted when it silently hadn't, and
+   a failed archive toggle was an unhandled promise rejection with zero
+   feedback. Added a `saveError` banner and disabled the archive button
+   while in flight, matching the page's own audit/outreach/follow-up
+   buttons which already did this correctly.
+5. **Same silent-swallow pattern** in `dashboard/settings/page.tsx`
+   (`.catch(() => {})` on the initial `me()`/`listUsers()` load, and no
+   try/catch at all on `handleRoleChange`) — wired into the page's
+   existing `error` banner instead.
+6. **Duplicate-submission risk** (no disabled-while-in-flight state):
+   the Attendee/Reminder "Add" forms on `dashboard/calendar/page.tsx`,
+   `PreviewLinksPanel`'s "Revoke" button, and `WebsiteFeedbackPanel`'s
+   Acknowledge/Resolve/Dismiss buttons could all fire a second request
+   on a fast double-click, up to and including creating a duplicate
+   attendee/reminder record. Added busy-state tracking and `disabled`
+   to each, matching the pattern already used elsewhere on the same
+   pages (e.g. the calendar page's own meeting-busy handling).
+
+**Investigated and found clean (no fix needed):** two parallel
+read-only subagent audits — frontend (broken links/API calls, missing
+loading/error states, permissions, duplicate-submission, dark mode,
+mobile, UI consistency) and backend (auth/workspace-scoping on every
+M5–M6 module, the public preview link's approval-gate boundary, race
+conditions in the job queue/deployment-execute/lead-conversion paths,
+discovery dedup, bad-LLM-output handling in the generation agents,
+cascade-delete blast radius) — found no broken links, no broken API
+calls, no missing auth, no IDOR, no race conditions, and no
+unhandled-bad-AI-output paths anywhere in the newer modules. Full
+findings folded into the fixes above; nothing else warranted a change.
+
+**Known limitations, documented rather than built (all "Do not add
+new major features" per the operator's brief):**
+- **No dark mode anywhere** — zero `dark:` classes, no theme provider;
+  a vestigial dead `prefers-color-scheme` media query in `globals.css`
+  has no effect since every component hardcodes light-mode colors
+  directly. A real feature addition, not a bug fix — left as a known
+  gap for a future, explicitly-scoped session.
+- **No mobile nav collapse** — the 224px sidebar (`dashboard/
+  layout.tsx`) has no hamburger/breakpoint, so a phone-width viewport
+  gets a permanently narrow reading column plus horizontal scroll
+  (tables themselves are fine, wrapped in `overflow-x-auto`). This is a
+  small internal ops tool per [[00_VISION]]; a responsive nav redesign
+  is feature-scale work, not a QA fix — documented, not built.
+- **`website_revisions`' rollback/approve API has zero frontend
+  wiring** — the backend feature exists and is tested, but nothing in
+  `lib/api.ts` calls it. Not a broken call (nothing calls it
+  incorrectly); just an unused backend feature. Left alone — wiring it
+  up is a feature addition.
+- Reconfirmed from task 1: this machine's native Homebrew Postgres
+  silently serves all of this app's real `localhost:5432` traffic
+  instead of the Docker container the launcher manages (see that
+  entry). Not touched here either — same reasoning.
+- This machine is genuinely running several *other* concurrent Claude
+  Code worktree sessions against the same shared local Postgres and
+  git remote (observed directly: two separate concurrent full pytest
+  runs from a `phase8-security-reliability-perf` job, an unmerged
+  `phase7-part2-action-engine` notifications branch already applied to
+  the shared dev database, and `origin/main` advancing mid-session).
+  Every test/verification step in this session and the previous one
+  was designed to tolerate that rather than mistake it for an app bug
+  — worth knowing for whoever reads this later and sees a stray
+  collision in a log.
+
+**Final verification:** one more full `stop-mac.sh` → `start-mac.sh`
+cycle with every fix above (plus the task-1 launcher fix) applied,
+verified against the real, currently-running app: clean stop, clean
+cold start, `/health` OK, `/login` 200, and the real business data
+(3 users, 2 workspaces, 4 leads, 4 clients, 9 projects) unchanged
+throughout. Main checkout restored byte-for-byte to its pre-session
+state afterward (diffed against `origin/main`) — every change here
+lives only in this worktree's commit.
+
+**Blockers / follow-ups:** None blocking. Dark mode and mobile-nav
+collapse are real, scoped candidates for a future session if the
+operator wants them; not needed for this app to be used for real work
+today.
+
+---
+
 ## 2026-08-27 — Phase 8 part 3, task 1: cross-platform + deployment QA
 **Mode:** worktree (`phase8-part3-qa-audit`)
 **Merge to main after:** yes

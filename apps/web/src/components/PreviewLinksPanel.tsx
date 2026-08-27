@@ -10,6 +10,7 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [justCreatedUrl, setJustCreatedUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   function load() {
     api.listPreviewLinks(projectId).then(setLinks).catch(() => {});
@@ -44,11 +45,15 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
   }
 
   async function handleRevoke(id: string) {
+    if (revokingId) return;
+    setRevokingId(id);
     try {
       await api.revokePreviewLink(id);
       load();
     } catch {
       setError("Couldn't revoke that link.");
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -122,7 +127,8 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
               {link.active && (
                 <button
                   onClick={() => handleRevoke(link.id)}
-                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+                  disabled={revokingId === link.id}
+                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
                 >
                   Revoke
                 </button>

@@ -131,6 +131,10 @@ export default function DiscoveredBusinessDetailPage() {
   const latestAudit = audits && audits.length > 0 ? audits[0] : null;
   const latestScore = scores && scores.length > 0 ? scores[0] : null;
 
+  if (!business && !error) {
+    return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  }
+
   return (
     <div className="p-6">
       {business && (

@@ -76,6 +76,8 @@ export default function LeadDetailPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [pipelineEvents, setPipelineEvents] = useState<PipelineEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
   const [salesAudits, setSalesAudits] = useState<SalesAuditReport[] | null>(null);
   const [generatingAudit, setGeneratingAudit] = useState(false);
   const [generateAuditError, setGenerateAuditError] = useState<string | null>(null);
@@ -143,22 +145,40 @@ export default function LeadDetailPage() {
   useEffect(load, [leadId]);
 
   async function saveLead(data: Parameters<typeof api.updateLead>[1]) {
-    const updated = await api.updateLead(leadId, data);
-    setLead(updated);
-    refreshActivity();
+    try {
+      const updated = await api.updateLead(leadId, data);
+      setLead(updated);
+      setSaveError(null);
+      refreshActivity();
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Couldn't save that change.");
+    }
   }
 
   async function saveBusiness(data: Parameters<typeof api.updateBusiness>[1]) {
     if (!business) return;
-    const updated = await api.updateBusiness(business.id, data);
-    setBusiness(updated);
+    try {
+      const updated = await api.updateBusiness(business.id, data);
+      setBusiness(updated);
+      setSaveError(null);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Couldn't save that change.");
+    }
   }
 
   async function handleArchiveToggle() {
     if (!lead) return;
-    const updated = lead.archived_at ? await api.unarchiveLead(lead.id) : await api.archiveLead(lead.id);
-    setLead(updated);
-    refreshActivity();
+    setArchiving(true);
+    try {
+      const updated = lead.archived_at ? await api.unarchiveLead(lead.id) : await api.archiveLead(lead.id);
+      setLead(updated);
+      setSaveError(null);
+      refreshActivity();
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Couldn't update this lead's archived status.");
+    } finally {
+      setArchiving(false);
+    }
   }
 
   async function handleGenerateSalesAudit() {
@@ -320,11 +340,13 @@ export default function LeadDetailPage() {
         <h1 className="text-lg font-semibold text-neutral-900">{business.name}</h1>
         <button
           onClick={handleArchiveToggle}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+          disabled={archiving}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
         >
           {lead.archived_at ? "Unarchive lead" : "Archive lead"}
         </button>
       </div>
+      {saveError && <p className="mt-2 text-sm text-red-600">{saveError}</p>}
       {lead.archived_at && (
         <p className="mt-1 text-sm text-amber-600">
           Archived on {new Date(lead.archived_at).toLocaleDateString()}

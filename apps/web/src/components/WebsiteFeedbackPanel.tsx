@@ -28,6 +28,7 @@ const TYPE_STYLES: Partial<Record<FeedbackType, string>> = {
 export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: string; websiteId?: string }) {
   const [items, setItems] = useState<WebsiteFeedback[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   function load() {
     api
@@ -39,11 +40,15 @@ export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: stri
   useEffect(load, [projectId, websiteId]);
 
   async function updateStatus(id: string, status: FeedbackStatus) {
+    if (updatingId) return;
+    setUpdatingId(id);
     try {
       await api.updateWebsiteFeedbackStatus(id, { status });
       load();
     } catch {
       setError("Couldn't update that feedback item.");
+    } finally {
+      setUpdatingId(null);
     }
   }
 
@@ -85,20 +90,23 @@ export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: stri
                   {item.status === "open" && (
                     <button
                       onClick={() => updateStatus(item.id, "acknowledged")}
-                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white"
+                      disabled={updatingId === item.id}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white disabled:opacity-50"
                     >
                       Acknowledge
                     </button>
                   )}
                   <button
                     onClick={() => updateStatus(item.id, "resolved")}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white"
+                    disabled={updatingId === item.id}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white disabled:opacity-50"
                   >
                     Resolve
                   </button>
                   <button
                     onClick={() => updateStatus(item.id, "dismissed")}
-                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white"
+                    disabled={updatingId === item.id}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-white disabled:opacity-50"
                   >
                     Dismiss
                   </button>

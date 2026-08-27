@@ -16,6 +16,25 @@ audits — both closed same day, see [[06_SECURITY]] and
 [[05_DECISIONS]]. One item remains genuinely open from M1 (project-side
 activity log — see that entry). M4 is next.
 
+**Phase status (2026-08-27):** M0-M7 — final pre-production audit
+("Phase 8 part 3") of the complete 28-stage workflow, treating the app
+as ready to run a real business on. 798 backend tests pass (1
+teardown-only artifact from an unrelated concurrent session, not this
+app — see [[07_SESSION_LOG]]), 53 frontend tests pass, `alembic check`
+and both apps' builds are clean. Two subagent audits (frontend UX,
+backend security/data-integrity) plus this session's own fixes found
+and closed: real migration/model index drift, 4 ESLint errors, two
+blank-until-loaded detail pages, several silent-failure save paths, and
+several duplicate-submission risks (unguarded double-click on
+add/revoke/status buttons) — see [[07_SESSION_LOG]] for the full list.
+No broken links, no broken API calls, no missing auth/workspace
+isolation, and no race conditions were found anywhere in the M4-M7
+modules. Two real, scoped gaps remain and were deliberately left
+unbuilt rather than added as scope creep: no dark mode anywhere, and no
+mobile nav collapse (small internal ops tool, per [[00_VISION]] —
+usable on desktop today). App judged genuinely usable for real
+day-to-day business use as of this date.
+
 ## M0 — Foundations
 
 Goal: an empty but real, deployed, secured app to build on.

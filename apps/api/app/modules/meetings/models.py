@@ -157,7 +157,7 @@ class MeetingAttendee(Base):
     __tablename__ = "meeting_attendees"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"))
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
     name: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
     is_organizer: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -186,7 +186,7 @@ class MeetingReminder(Base):
     __tablename__ = "meeting_reminders"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"))
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
     remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     channel: Mapped[ReminderChannel] = mapped_column(
         Enum(ReminderChannel, name="meeting_reminder_channel"), default=ReminderChannel.IN_APP

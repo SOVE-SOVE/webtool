@@ -20,6 +20,10 @@ export default function DiscoverySearchDetailPage() {
       .catch(() => setError("Couldn't load discovered businesses."));
   }, [params.id]);
 
+  if (!search && !results && !error) {
+    return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  }
+
   return (
     <div className="p-6">
       <Link href="/dashboard/discovery" className="text-sm text-neutral-500 hover:underline">

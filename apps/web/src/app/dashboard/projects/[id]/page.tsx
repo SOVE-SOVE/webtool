@@ -282,7 +282,7 @@ export default function ProjectDetailPage() {
             <h2 className="text-sm font-semibold text-neutral-900">Creative direction</h2>
             <p className="text-xs text-neutral-500">
               The creative concept, visual direction, and brand direction for this project — review and edit
-              before design/build work starts. Uses the brief above when it has answers, and flags what's
+              before design/build work starts. Uses the brief above when it has answers, and flags what&apos;s
               still missing.
             </p>
           </div>
@@ -299,7 +299,7 @@ export default function ProjectDetailPage() {
           <form onSubmit={handleGenerate} className="mt-3 space-y-3 border border-neutral-200 p-4">
             <p className="text-xs text-neutral-500">
               Optional — overrides the brief above for this generation only. Left blank, target audience and
-              business goals are pulled from the project brief when it has them; if the brief doesn't have them
+              business goals are pulled from the project brief when it has them; if the brief doesn&apos;t have them
               either, the gap is marked as an assumption to confirm later.
             </p>
             <label className="block text-sm">

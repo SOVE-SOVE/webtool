@@ -29,6 +29,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    // Deliberate: this effect synchronizes auth state with the API on
+    // mount and on manual retry (bumping retryCount) — the sanctioned
+    // "fetch on mount, track loading" case, not the derived-state
+    // recomputation this rule targets.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChecking(true);
     setLoadError(null);
     api

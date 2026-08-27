@@ -175,8 +175,10 @@ class EmailSend(Base):
     __tablename__ = "email_sends"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    outreach_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("outreach_messages.id", ondelete="CASCADE"))
-    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    outreach_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("outreach_messages.id", ondelete="CASCADE"), index=True
+    )
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
 
     to_email: Mapped[str] = mapped_column(String(255))
     from_email: Mapped[str] = mapped_column(String(255))
