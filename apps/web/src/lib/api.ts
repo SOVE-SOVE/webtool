@@ -287,8 +287,26 @@ export type Project = {
   deadline: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
+  delivered_at: string | null;
+  delivered_by_user_name: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type DeliveryChecklistItem = {
+  task_id: string;
+  title: string;
+  done: boolean;
+};
+
+export type DeliveryStatus = {
+  can_deliver: boolean;
+  already_delivered: boolean;
+  has_successful_deployment: boolean;
+  deployment_verified: boolean;
+  latest_deployment_url: string | null;
+  checklist: DeliveryChecklistItem[];
+  missing: string[];
 };
 
 export type ProjectCreate = {
@@ -766,6 +784,75 @@ export type SitemapPageOrderItem = {
   parent_page_id?: string | null;
 };
 
+export const WEBSITE_BRIEF_STATUSES = ["draft", "approved"] as const;
+export type WebsiteBriefStatus = (typeof WEBSITE_BRIEF_STATUSES)[number];
+
+// The AI-assisted Website Brief: a client-facing rollup of everything
+// already known/decided about a project (client intake brief, reviewed
+// creative direction, reviewed sitemap, wherever any of those exist)
+// into one document. `confirmed_requirements` is pulled verbatim from
+// the client's own intake answers; `ai_suggestions` explicitly names
+// which sections are the AI's synthesis rather than a client-confirmed
+// or already-approved-upstream fact — every other field is inherently a
+// suggestion unless confirmed_requirements says otherwise.
+export type WebsiteBrief = {
+  id: string;
+  project_id: string;
+  status: WebsiteBriefStatus;
+  creative_direction_id: string | null;
+  sitemap_id: string | null;
+  project_summary: string;
+  goals: string[];
+  target_audience: string;
+  positioning: string;
+  sitemap_summary: string[];
+  page_purposes: string[];
+  content_requirements: string[];
+  cta_strategy: string;
+  visual_direction: string;
+  functionality: string[];
+  seo_considerations: string[];
+  technical_requirements: string[];
+  confirmed_requirements: string[];
+  ai_suggestions: string[];
+  sources_note: string | null;
+  flagged_for_review: boolean;
+  review_notes: string | null;
+  model_used: string;
+  generated_by_user_id: string | null;
+  generated_by_user_name: string | null;
+  generated_at: string;
+  edited_by_user_name: string | null;
+  edited_at: string | null;
+  approved_by_user_name: string | null;
+  approved_at: string | null;
+};
+
+export type GenerateWebsiteBriefRequest = {
+  target_audience?: string;
+  business_goals?: string;
+  creative_direction_id?: string;
+  sitemap_id?: string;
+  additional_notes?: string;
+};
+
+export type WebsiteBriefUpdate = {
+  project_summary?: string;
+  goals?: string[];
+  target_audience?: string;
+  positioning?: string;
+  sitemap_summary?: string[];
+  page_purposes?: string[];
+  content_requirements?: string[];
+  cta_strategy?: string;
+  visual_direction?: string;
+  functionality?: string[];
+  seo_considerations?: string[];
+  technical_requirements?: string[];
+  confirmed_requirements?: string[];
+  ai_suggestions?: string[];
+};
+
 export const WEBSITE_STATUSES = ["draft", "live"] as const;
 export type WebsiteStatus = (typeof WEBSITE_STATUSES)[number];
 
@@ -1011,12 +1098,15 @@ export type Deployment = {
   environment: string;
   target: string;
   url: string | null;
+  provider_ref: string | null;
   status: DeploymentStatus;
   result: Record<string, unknown> | null;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
   deployed_at: string | null;
+  verified_at: string | null;
+  verified_by_user_name: string | null;
   rollback_of_deployment_id: string | null;
   approved_by_user_name: string | null;
   notes: string | null;
@@ -1635,6 +1725,18 @@ export const api = {
       body: JSON.stringify({ items }),
     }),
 
+  generateWebsiteBrief: (projectId: string, data?: GenerateWebsiteBriefRequest) =>
+    request<WebsiteBrief>(`/api/v1/projects/${projectId}/website-briefs`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  listWebsiteBriefs: (projectId: string) => request<WebsiteBrief[]>(`/api/v1/projects/${projectId}/website-briefs`),
+  getWebsiteBrief: (id: string) => request<WebsiteBrief>(`/api/v1/website-briefs/${id}`),
+  updateWebsiteBrief: (id: string, data: WebsiteBriefUpdate) =>
+    request<WebsiteBrief>(`/api/v1/website-briefs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  approveWebsiteBrief: (id: string) =>
+    request<WebsiteBrief>(`/api/v1/website-briefs/${id}/approve`, { method: "POST" }),
+
   generateWebsite: (projectId: string, data?: GenerateWebsiteRequest) =>
     request<Website>(`/api/v1/projects/${projectId}/websites`, {
       method: "POST",
@@ -1684,6 +1786,10 @@ export const api = {
   listDeployments: (projectId: string) => request<Deployment[]>(`/api/v1/projects/${projectId}/deployments`),
   getDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}`),
   executeDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/execute`, { method: "POST" }),
+  checkDeploymentStatus: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/check-status`, { method: "POST" }),
+  verifyDeployment: (id: string) => request<Deployment>(`/api/v1/deployments/${id}/verify`, { method: "POST" }),
+  getDeliveryStatus: (projectId: string) => request<DeliveryStatus>(`/api/v1/projects/${projectId}/delivery-status`),
+  deliverProject: (projectId: string) => request<Project>(`/api/v1/projects/${projectId}/deliver`, { method: "POST" }),
   rollbackDeployment: (projectId: string, data: RollbackDeploymentRequest) =>
     request<Deployment>(`/api/v1/projects/${projectId}/deployments/rollback`, {
       method: "POST",

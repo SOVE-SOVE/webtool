@@ -12,7 +12,7 @@ class GenerateQaReportRequest(BaseModel):
 
 
 class QaCheckRead(BaseModel):
-    category: Literal["performance", "responsiveness", "accessibility", "seo", "functionality", "security"]
+    category: Literal["performance", "responsiveness", "accessibility", "seo", "functionality", "security", "markup"]
     name: str
     status: Literal["pass", "fail", "warning", "skipped"]
     severity: Literal["critical", "high", "medium", "low", "info"]

@@ -64,7 +64,7 @@ class TestGenerateQaReport:
         assert isinstance(body["passed"], bool)
         assert len(body["checks"]) > 0
         categories = {c["category"] for c in body["checks"]}
-        assert categories == {"performance", "responsiveness", "accessibility", "seo", "functionality", "security"}
+        assert categories == {"performance", "responsiveness", "accessibility", "seo", "functionality", "security", "markup"}
         assert body["passed_count"] + body["failed_count"] + body["warning_count"] + body["skipped_count"] == len(body["checks"])
 
     def test_never_hides_failures_every_check_is_present_in_the_response(self, authed_client, monkeypatch):

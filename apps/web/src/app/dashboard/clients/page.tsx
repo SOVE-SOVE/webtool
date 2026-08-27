@@ -41,6 +41,17 @@ export default function ClientsPage() {
     try {
       if (mode === "convert") {
         if (!leadId) return;
+        const selectedLead = openLeads.find((l) => l.id === leadId);
+        if (
+          !confirm(
+            `Convert ${selectedLead?.business_name ?? "this lead"} to a client? This marks the lead WON and ` +
+              "creates a new client and an INTAKE-stage project. The lead's history stays attached to it. " +
+              "This can't be undone.",
+          )
+        ) {
+          setSaving(false);
+          return;
+        }
         const price = wonPrice === "" ? undefined : Math.round(Number(wonPrice) * 100);
         await api.createClient({
           from_lead_id: leadId,

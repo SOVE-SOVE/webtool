@@ -6,10 +6,10 @@ import { toneClasses } from "@/primitives/tone";
 
 /** A single, focused call to action — the section exists to drive one
  * decision, so it takes exactly one primary + optional secondary CTA. */
-export function Cta({ heading, body, primaryCta, secondaryCta, tone = "dark" }: CtaSectionConfig) {
+export function Cta({ heading, body, primaryCta, secondaryCta, tone = "dark", spacing }: CtaSectionConfig) {
   const { muted } = toneClasses(tone);
   return (
-    <Section tone={tone} ariaLabel="Call to action">
+    <Section tone={tone} spacing={spacing} ariaLabel="Call to action">
       <div className="text-center">
         <Heading title={heading} subtitle={body} align="center" muted={muted} />
         <div className="mt-8 flex flex-wrap justify-center gap-4">

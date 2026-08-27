@@ -223,6 +223,29 @@ def _split_faq_line(line: str) -> tuple[str, str]:
     return line.strip(), ""
 
 
+# Separators checked in order — only ones a client would plausibly type
+# themselves ("Hot water systems — gas, electric, solar, heat pump"),
+# never split on plain spaces/commas, which would guess at structure
+# that isn't really there.
+_SERVICE_LINE_SEPARATORS = (" — ", " – ", ": ")
+
+
+def _split_service_line(line: str) -> tuple[str, str]:
+    """A service/product list item is used verbatim as a card's title —
+    unless the client's own line already contains one of the separators
+    above, in which case what follows it is real, supplied detail, not
+    an invented description."""
+    for sep in _SERVICE_LINE_SEPARATORS:
+        if sep in line:
+            title, _, description = line.partition(sep)
+            return title.strip(), description.strip()
+    return line.strip(), ""
+
+
+def _service_cards(items: list[str]) -> list[dict]:
+    return [{"title": title, "description": description} for title, description in map(_split_service_line, items)]
+
+
 _NO_SOURCE_SECTION_HINTS = {
     "pricing": "pricing",
     "team": "team",
@@ -270,14 +293,23 @@ def _build_page_sections(
     brief: BriefContent,
     business_name: str,
     contact_href: str | None,
+    has_dedicated_faq_page: bool,
+    has_dedicated_testimonials_page: bool,
+    has_dedicated_services_page: bool,
+    has_dedicated_products_page: bool,
 ) -> tuple[list[GeneratedSection], list[str]]:
     sections: list[GeneratedSection] = [_build_hero(page, brief, business_name, contact_href)]
     missing: list[str] = []
 
-    if page.page_type in ("home", "services"):
+    # Same "don't duplicate a dedicated page's content on home" rule as
+    # testimonials/FAQ below — a services grid on home that's identical
+    # to the Services page's own grid is the same visible/flagged
+    # duplication, not a distinct "at a glance" summary.
+    show_services = page.page_type == "services" or (page.page_type == "home" and not has_dedicated_services_page)
+    if show_services:
         items = _looks_like_list(brief.services_content) or _looks_like_list(brief.services_products)
         if items:
-            config: dict = {"services": [{"title": item, "description": ""} for item in items]}
+            config: dict = {"services": _service_cards(items)}
             if page.page_type == "home":
                 config["heading"] = "What we offer"
             sections.append(_section("serviceCards", config))
@@ -287,15 +319,22 @@ def _build_page_sections(
                 f"services — add them as separate items in the client brief to build a proper services grid."
             )
 
-    if page.page_type in ("home", "products"):
+    show_products = page.page_type == "products" or (page.page_type == "home" and not has_dedicated_products_page)
+    if show_products:
         items = _looks_like_list(brief.products_content)
         if items:
-            config = {"services": [{"title": item, "description": ""} for item in items]}
+            config = {"services": _service_cards(items)}
             if page.page_type == "home":
                 config["heading"] = "Our products"
             sections.append(_section("serviceCards", config))
 
-    if page.page_type in ("home", "testimonials") and brief.testimonials:
+    # On the homepage specifically, skip a section that would just
+    # repeat a dedicated page's content verbatim — the generator has no
+    # way to write a distinct "teaser" version of the same real content,
+    # and duplicating it outright reads as sloppy (anti_slop's own
+    # duplicate_copy rule flags exactly this).
+    show_testimonials = page.page_type == "testimonials" or (page.page_type == "home" and not has_dedicated_testimonials_page)
+    if show_testimonials and brief.testimonials:
         sections.append(
             _section("testimonials", {"testimonials": [{"quote": q, "authorName": ""} for q in brief.testimonials]})
         )
@@ -304,7 +343,8 @@ def _build_page_sections(
             f"attribution left blank rather than invented."
         )
 
-    if page.page_type in ("home", "faq") and brief.faqs:
+    show_faq = page.page_type == "faq" or (page.page_type == "home" and not has_dedicated_faq_page)
+    if show_faq and brief.faqs:
         items = []
         for line in brief.faqs:
             question, answer = _split_faq_line(line)
@@ -388,6 +428,10 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
     pages: list[GeneratedPage] = []
     missing_information: list[str] = []
     anti_slop_pages: list[AntiSlopPageInput] = []
+    has_dedicated_faq_page = _find_page_by_type(input.pages, "faq") is not None
+    has_dedicated_testimonials_page = _find_page_by_type(input.pages, "testimonials") is not None
+    has_dedicated_services_page = _find_page_by_type(input.pages, "services") is not None
+    has_dedicated_products_page = _find_page_by_type(input.pages, "products") is not None
 
     # Reported once for the whole site rather than per-CTA: the fix is a
     # single sitemap change, not one edit per button.
@@ -400,7 +444,11 @@ def run(input: WebsiteGeneratorInput) -> AgentResult[WebsiteGeneratorOutput]:
         )
 
     for sitemap_page in input.pages:
-        sections, missing = _build_page_sections(sitemap_page, input.brief, input.business_name, contact_href)
+        sections, missing = _build_page_sections(
+            sitemap_page, input.brief, input.business_name, contact_href,
+            has_dedicated_faq_page, has_dedicated_testimonials_page,
+            has_dedicated_services_page, has_dedicated_products_page,
+        )
         missing_information.extend(missing)
         seo = _build_seo(sitemap_page, input.business_name, input.brief)
         if not seo.meta_description:

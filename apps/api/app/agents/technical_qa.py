@@ -32,7 +32,7 @@ from app.integrations.browser import QaPageSignals, fetch_qa_signals
 
 CheckStatus = Literal["pass", "fail", "warning", "skipped"]
 Severity = Literal["critical", "high", "medium", "low", "info"]
-Category = Literal["performance", "responsiveness", "accessibility", "seo", "functionality", "security"]
+Category = Literal["performance", "responsiveness", "accessibility", "seo", "functionality", "security", "markup"]
 
 # ---------------------------------------------------------------------
 # Input
@@ -431,8 +431,37 @@ def _seo_checks(input: TechnicalQaInput) -> list[QaCheck]:
 # ---------------------------------------------------------------------
 
 
+# Section types that themselves constitute a call to action — a
+# dedicated CTA block, a contact section, or a standalone form all give
+# a visitor an obvious next step even without a hero button.
+_CTA_BEARING_SECTION_TYPES = {"cta", "contact", "form"}
+
+
+def _page_has_cta(page: PageInput) -> bool:
+    for section in page.sections:
+        if section.type == "hero" and section.config.get("primaryCta"):
+            return True
+        if section.type in _CTA_BEARING_SECTION_TYPES:
+            return True
+    return False
+
+
 def _functionality_checks(input: TechnicalQaInput) -> list[QaCheck]:
     checks: list[QaCheck] = []
+
+    pages_without_cta = [p for p in input.pages if p.sections and not _page_has_cta(p)]
+    if pages_without_cta:
+        checks.append(
+            _check(
+                "functionality", "Calls to action present", "fail", "high",
+                f"{len(pages_without_cta)} page(s) have no clear call to action: "
+                f"{', '.join(p.name for p in pages_without_cta)}",
+                "Add a hero button, a CTA section, a contact section, or a form so visitors have an obvious next step.",
+                location=pages_without_cta[0].name,
+            )
+        )
+    else:
+        checks.append(_check("functionality", "Calls to action present", "pass", "info", "Every page has a clear call to action."))
 
     known_slugs = {p.slug for p in input.pages}
     broken = []
@@ -603,6 +632,90 @@ def _https_check_from_signals(signals: QaPageSignals) -> QaCheck:
 
 
 # ---------------------------------------------------------------------
+# MARKUP
+# ---------------------------------------------------------------------
+
+# Matches an opening/closing HTML tag literally typed into plain-text
+# content (e.g. a heading string containing "<b>Save</b>"). Since every
+# component in packages/site-templates renders config strings as escaped
+# text, this never becomes real markup — it prints as literal, broken-
+# looking text on the page, which is the actual defect being caught.
+_TAG_LIKE_PATTERN = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?>")
+
+
+def _markup_checks(input: TechnicalQaInput) -> list[QaCheck]:
+    checks: list[QaCheck] = []
+
+    all_strings = [(loc, s) for loc, _, cfg in _all_section_configs(input) for s in _iter_strings(cfg)]
+    tag_like = [(loc, s) for loc, s in all_strings if _TAG_LIKE_PATTERN.search(s)]
+    if tag_like:
+        checks.append(
+            _check(
+                "markup", "No raw HTML tags in content", "fail", "medium",
+                f"Content contains what looks like raw HTML markup, which renders as literal text rather than "
+                f"real markup: {tag_like[0][1][:80]!r}",
+                "Remove the tag-like text from the source content — write plain text, not HTML.",
+                location=tag_like[0][0],
+            )
+        )
+    else:
+        checks.append(_check("markup", "No raw HTML tags in content", "pass", "info", "No raw HTML-looking tags found in generated content."))
+
+    # Superseded by _markup_checks_from_signals' real result when a
+    # preview URL is given — same pattern as Colour contrast/Console errors.
+    if not input.preview_url:
+        checks.append(
+            _check(
+                "markup", "Duplicate element IDs", "skipped", "info",
+                "Needs a rendered page to inspect the actual DOM for duplicate ids.",
+                "Provide a preview_url once a build/hosting step exists (roadmap M6).",
+            )
+        )
+        checks.append(
+            _check(
+                "markup", "<html lang> attribute", "skipped", "info",
+                "Needs a rendered page to inspect the <html> element.",
+                "Provide a preview_url once a build/hosting step exists (roadmap M6).",
+            )
+        )
+
+    return checks
+
+
+def _markup_checks_from_signals(signals: QaPageSignals) -> list[QaCheck]:
+    checks: list[QaCheck] = []
+
+    if signals.duplicate_ids is None:
+        checks.append(_check("markup", "Duplicate element IDs", "skipped", "info", "Could not inspect element ids on the live page."))
+    elif signals.duplicate_ids:
+        checks.append(
+            _check(
+                "markup", "Duplicate element IDs", "fail", "medium",
+                f"{len(signals.duplicate_ids)} id value(s) are used on more than one element: "
+                f"{', '.join(signals.duplicate_ids[:5])}",
+                "Give every element a unique id — duplicate ids are invalid HTML and break label/anchor targeting.",
+            )
+        )
+    else:
+        checks.append(_check("markup", "Duplicate element IDs", "pass", "info", "No duplicate element ids found."))
+
+    if signals.html_lang_present is None:
+        checks.append(_check("markup", "<html lang> attribute", "skipped", "info", "Could not inspect the live page's <html> element."))
+    elif not signals.html_lang_present:
+        checks.append(
+            _check(
+                "markup", "<html lang> attribute", "fail", "medium",
+                "The page's <html> element has no lang attribute.",
+                'Set a lang attribute (e.g. lang="en") on <html>.',
+            )
+        )
+    else:
+        checks.append(_check("markup", "<html lang> attribute", "pass", "info", "<html> has a lang attribute."))
+
+    return checks
+
+
+# ---------------------------------------------------------------------
 # Live checks (preview_url only)
 # ---------------------------------------------------------------------
 
@@ -628,11 +741,14 @@ async def _run_live_checks(input: TechnicalQaInput) -> list[QaCheck]:
         checks.append(_check("accessibility", "Colour contrast", "skipped", "info", "Preview page failed to load."))
         checks.append(_check("functionality", "Console errors", "skipped", "info", "Preview page failed to load."))
         checks.append(_check("security", "Served over HTTPS", "skipped", "info", "Preview page failed to load."))
+        checks.append(_check("markup", "Duplicate element IDs", "skipped", "info", "Preview page failed to load."))
+        checks.append(_check("markup", "<html lang> attribute", "skipped", "info", "Preview page failed to load."))
         return checks
 
     checks.extend(_responsiveness_checks_from_signals(signals))
     checks.append(_accessibility_contrast_check_from_signals(signals))
     checks.append(_https_check_from_signals(signals))
+    checks.extend(_markup_checks_from_signals(signals))
 
     if signals.console_errors:
         checks.append(
@@ -685,6 +801,7 @@ def run(input: TechnicalQaInput) -> AgentResult[TechnicalQaOutput]:
     checks += _seo_checks(input)
     checks += _functionality_checks(input)
     checks += _security_checks(input)
+    checks += _markup_checks(input)
 
     if input.preview_url:
         checks += asyncio.run(_run_live_checks(input))

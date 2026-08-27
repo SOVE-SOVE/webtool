@@ -47,6 +47,18 @@ describe("Hero", () => {
     const html = renderToStaticMarkup(<Hero {...base} />);
     expect(html).not.toContain("<a ");
   });
+
+  it("uses the default section padding when no spacing is set", () => {
+    const html = renderToStaticMarkup(<Hero {...base} />);
+    expect(html).toContain("sm:py-20");
+    expect(html).not.toContain("sm:py-12");
+  });
+
+  it("tightens padding when spacing is 'compact' — the revision workflow's 'tighter mobile spacing' knob", () => {
+    const html = renderToStaticMarkup(<Hero {...base} spacing="compact" />);
+    expect(html).toContain("sm:py-12");
+    expect(html).not.toContain("sm:py-20");
+  });
 });
 
 describe("Navigation", () => {

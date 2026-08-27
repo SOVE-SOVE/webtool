@@ -102,6 +102,83 @@ the other added scheduling infrastructure of its own).
 
 ---
 
+## 2026-08-26 — Phase 6 part 2: deployment adapter architecture + delivery workflow
+**Mode:** worktree (`phase6-part2-deployment-delivery`)
+**Merge to main after:** yes
+**Scope touched:** apps/api/app/integrations/deployment/ (new package,
+replaces integrations/deployment.py), apps/api/app/core/settings.py,
+apps/api/.env.example, apps/api/app/modules/deployments/{models,schemas,
+service,routes}.py, apps/api/app/modules/projects/{models,schemas,
+service,routes}.py, two alembic migrations, apps/web/src/lib/api.ts,
+apps/web/src/components/{DeploymentPanel,DeliveryPanel}.tsx,
+apps/web/src/app/dashboard/projects/[id]/page.tsx, docs.
+
+**What happened:** Two-task session, two commits per the operator's
+explicit split.
+
+Task 1 — turned the single-file `MockDeploymentProvider` into a real
+adapter architecture: `integrations/deployment/` package with a
+`DeploymentProvider` interface (`validate_config`/`build`/`deploy`/
+`get_status`/`rollback`), a shared `build_static_site` step (site config
+-> real, minimal, deployable HTML/CSS), and real adapters for Vercel
+(inline-file deploy API), Netlify (zip deploy + real restore-based
+rollback), Cloudflare Pages (direct-upload API), and traditional hosting
+(stdlib `ftplib`, FTPS by default) — every credential read only from
+`app.core.settings`/`.env`, every real provider's factory fails loudly
+(`DeploymentProviderError`) if unconfigured rather than silently
+deploying through mock. `DEPLOY_PROVIDER` still defaults to `mock`.
+`Deployment` gained `provider_ref` for status polling/native rollback.
+18 new provider tests (mocked httpx/ftplib, same pattern as the existing
+`ResendEmailProvider` tests) plus the existing deployment suite updated
+for the new `build()`+`deploy(bundle, artifact)` two-phase call. Full
+backend suite (684 tests) green before committing
+(`d47c88b feat: build deployment architecture`).
+
+Task 2 — completed the delivery workflow: `check-status` (re-poll a
+provider's status — a no-op today since no provider here has an async
+build yet, but the real extension point for one that does) and `verify`
+(reuses the existing SSRF-guarded `fetch_page_signals` to confirm a
+deployment's URL is genuinely live; a `mock` deployment is recorded as a
+simulated pass, never a real fetch against its fake `.mock-deploy.internal`
+URL) endpoints on `Deployment`. `Project` gained `delivered_at`/
+`delivered_by_user_id`, set only by the new `mark_delivered`
+(`POST /projects/{id}/deliver`), gated on the latest deployment being
+successful *and* verified plus every item on the existing post-launch
+handover checklist (`DEFAULT_LAUNCH_TASK_TITLES`, already seeded on
+first deploy — reused as the "final delivery checklist" rather than
+inventing a second one) checked off; `GET /projects/{id}/delivery-status`
+reports every missing reason at once, same shape as the approvals
+endpoint. Frontend: `DeploymentPanel` gained "Check status"/"Verify"
+actions and a verified badge; a new `DeliveryPanel` shows the checklist
+(checkable inline) and a "Mark project delivered" button; the project
+page header shows a "Delivered" badge once set.
+
+Verified for real, not just by test suite: stood up isolated scratch
+Postgres DBs + API/web dev servers on non-default ports (8091/3091 —
+another concurrent worktree session already had 8000/3000 and, it
+turned out, 8010/3010 too), monkeypatched the two LLM-backed generation
+agents the way the test suite does so a full brief -> creative direction
+-> sitemap -> website -> QA -> client-approval chain could be built
+without a real Claude API key, then drove the actual browser via
+Playwright through prepare -> execute -> verify -> check off all five
+checklist items -> mark delivered, confirming the UI state (verified
+badge, checklist gating the delivered button, "Delivered" badge,
+project stage flipping to `complete`) at every step. Full backend suite
+green again (704 tests, including the new delivery tests), frontend
+`next build`/`tsc`/`vitest` all clean. Second commit:
+`feat: complete website delivery workflow`.
+
+**Blockers / follow-ups:** None outstanding for this scope. The build
+step is a deliberately minimal static-HTML exporter, not a port of
+`packages/site-templates` — a pixel-accurate static export is separate,
+later work (see 05_DECISIONS). Real provider adapters (Vercel/Netlify/
+Cloudflare/traditional) have never been exercised against a live
+account — no real hosting credentials exist for this project yet, same
+"nothing here is a live, publicly reachable site" caveat the mock
+provider has always carried.
+
+---
+
 ## 2026-08-26 — Phase 6: secure website previews, client feedback, approval workflow
 **Mode:** worktree (`phase6-preview-feedback-approval`)
 **Merge to main after:** yes
@@ -152,6 +229,127 @@ points out of the filesystem root") and the main checkout's Python
 `.venv`). All smoke-test data (a throwaway business/client/project/
 website/user) was deleted from the shared local dev Postgres afterward.
 
+---
+
+## 2026-08-26 — Phase 4 "lead to client conversion": audit + hardening, not a rebuild
+
+**Mode:** worktree (`lead-to-client-conversion`, background job)
+**Merge to main after:** yes, pending review
+**Scope touched:** `apps/api/tests/test_clients.py`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/clients/page.tsx`, this file,
+`docs/05_DECISIONS.md`
+**What happened:** Asked to "build the lead-to-client conversion
+workflow" for Phase 4 (mark a lead WON → convert to client, preserving
+business/contact/research/lead/sales history/notes, preventing
+duplicates, with a confirmation step and tests). Checked
+`docs/04_ROADMAP.md`/`docs/05_DECISIONS.md` first per
+[[03_AGENT_RULES]] and found this already built and marked `[x]`
+(2026-08-19): `POST /api/v1/clients` with `from_lead_id` already does
+the whole thing atomically — reuses the lead's `Business` row, marks
+the lead WON, creates the `Client` + an INTAKE `Project` + starter
+tasks + a WON `SalesOpportunity`, records `source_lead_id`, and 409s on
+a repeat conversion. See the new 2026-08-26 entry in
+`docs/05_DECISIONS.md` for the full audit and reasoning. Closed the two
+real gaps found against the request: extended
+`test_convert_lead_preserves_original_lead_and_its_history` to also
+cover `Contact`, `SalesAuditReport`, and `OutreachMessage` rows (and
+`Business.notes`/other fields) surviving conversion — previously only
+`Interaction`/`WebsiteAudit` were checked — and added an explicit
+`confirm()` dialog before the actual conversion call on both entry
+points (the lead detail page's "Convert to client" form and the
+Clients page's "Add client → Convert a won/open lead" form), matching
+the `window.confirm` pattern `clients/[id]/page.tsx` already uses for
+its own irreversible action.
+**Blockers/issues:** None. The worktree had no `node_modules`/`.next`
+of its own (expected for a fresh worktree — see the 2026-08-24
+follow-up-automation entry's note on this) — symlinked the main
+checkout's `node_modules` and ran `next typegen` to get `tsc --noEmit`
+working. Full backend suite: 664/664 passed (Postgres test DB was
+quiet, single-session run, no contention). Frontend: `tsc --noEmit`
+clean, `eslint` clean on the two changed files, `vitest run` 53/53. Did
+not verify in a real browser — no UI shape changed, only a native
+`confirm()` gate added in front of an already-manually-verified flow
+(the 2026-08-19 entry records that walkthrough).
+**Next up:** Nothing blocking. If a real modal/toast system is ever
+built for this app, `window.confirm` here (and at
+`clients/[id]/page.tsx`'s "Start another project") would be the two
+call sites to migrate together, but neither is worth introducing new
+UI infrastructure for on its own.
+
+---
+
+## 2026-08-26 — Phase 5 Part 3: QA checks, revision workflow, checkpoint
+**Mode:** new session (worktree `phase5-part3-qa-revisions`)
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/api/app/agents/technical_qa.py,
+apps/api/app/integrations/browser.py,
+apps/api/app/modules/qa_reports/schemas.py (Task 1); new
+apps/api/app/agents/website_revision.py +
+apps/api/app/modules/website_revisions/ + migration
+c7f3a9d21b04, apps/api/app/main.py, apps/api/app/db/all_models.py,
+packages/site-templates (Section.tsx/Hero.tsx/Cta.tsx/types.ts —
+new "compact" spacing knob) (Task 2); apps/api/app/agents/
+website_generator.py (Task 3 fixes); tests for all three; docs.
+**What happened:** Task 1 — added the two QA checks the operator's
+checklist named that weren't covered yet: "Calls to action present"
+(functionality) and a new `markup` category (raw-HTML-tag-in-content,
+duplicate element ids, `<html lang>` — the latter two live-preview-only,
+honestly `skipped` without one). Task 2 — built a full revision-request
+workflow: operator feedback on a generated website ("make the hero less
+generic", "change the CTA", "make mobile spacing tighter") becomes a
+targeted edit to just the section it names, tracked as a
+`website_revisions` row (sequential number, requested/generated change,
+pending/approved/reverted status), with rollback that restores the
+prior version as a new one rather than rewriting history, and never
+touches unrelated approved sections. Spacing feedback is deterministic
+(new `spacing: "compact"` field on hero/cta sections); anything else
+goes through a new LLM agent (`agents/website_revision.py`) that edits
+only fields the section already has. Task 3 — the Phase 5 checkpoint:
+ran the real deterministic generator/anti-slop/QA pipeline against a
+from-scratch fake client (Gold Coast plumber, modern/premium). No
+Anthropic API credit was available (operator supplied a real key, but
+the account had none — confirmed via the actual 400 response), so
+creative-direction/sitemap were hand-authored to the same bar a strong
+LLM call should hit; everything downstream ran for real, unmodified.
+Found and fixed two real generator bugs — see the Task 3 entry under
+[[04_ROADMAP]]'s "Site generation" bullet for the full detail: a
+service-line separator ("Title — description") was being discarded
+instead of used, and the homepage unconditionally duplicated a
+dedicated FAQ/Testimonials/Services page's content verbatim (anti_slop
+flagged it as duplicate copy, real score 79/100). Fixing both took the
+same fixture to anti_slop 100/100 and QA `ready_for_client_review: true`
+(0 critical/failed checks). Verdict: not slop by this system's own
+definition — everything on the generated site is real, specific,
+non-fabricated content — but not yet "premium, ready to sell" either:
+every non-home hero heading is still just the bare page title (no
+tagline field exists in `DesignBrief` for the generator to draw one
+from), and there's no real-photo pipeline at all (`image_assets` is
+free-text notes, not structured `Media`). Did not stop the phase over
+this, since neither gap is a generation-quality defect — both are
+already-scoped, not-yet-built intake/asset capability, called out as
+the concrete next priority instead. Full backend suite: 702/702 passing
+on a clean, uncontended run of the shared `webdesignos_test` database
+(this environment reproduces the same "concurrent runs corrupt the
+shared DB" issue prior sessions logged — every full-suite run in this
+session was run solo, one at a time, to get a clean result).
+**Blockers/issues:** No frontend UI for the new QA checks or the
+revision workflow — backend + tests only, matching the operator's
+stated Phase 5 Part 3 scope for Tasks 1–2. No Anthropic API credit in
+this environment (see Task 3 above) — the real creative-direction/
+sitemap LLM calls have never actually been exercised against this exact
+fake-client brief; only the deterministic downstream steps have.
+**Next up:** Top up the Anthropic account and re-run Task 3's fake
+client through the *real* creative-direction/sitemap calls (script
+already written, just needs `LLM_API_KEY` with credit) to check the
+LLM's own writing quality on top of what's now verified for the
+generator itself. Add a per-page/site tagline field to `DesignBrief` +
+thread it into `website_generator.py`'s hero-heading logic — the
+single highest-impact fix left for "premium-feeling" hero copy. Wire
+the revision workflow into the `/dashboard/projects/[id]/website`
+frontend (a "Revise" action per section, approve/rollback UI, revision
+history). Consider real asset/image upload (needs blob storage) before
+calling a generated site "sellable" on visuals as well as copy.
 ---
 
 ## 2026-08-26 — Backend suite sanity check + overdue-follow-up timezone fix
@@ -360,6 +558,69 @@ reminders into the dashboard Overview's "needs your attention" list
 (kept out of scope here — that module wasn't touched), and a real
 second calendar provider (Outlook/CalDAV) now has a clean place to land
 via `integrations/calendar/registry.py`.
+
+---
+
+## 2026-08-26 — AI-assisted website brief generator (roadmap M4)
+**Mode:** worktree (background job)
+**Merge to main after:** yes, once reviewed — branch `worktree-website-brief-generator`, not yet merged/pushed by this session
+**Scope touched:** apps/api/app/agents/website_brief.py, apps/api/app/agents/prompts/website_brief.md, apps/api/app/modules/website_briefs (new module), apps/api/app/db/all_models.py, apps/api/app/main.py, apps/api/alembic/versions/9c1f5a7e3d62_website_briefs.py, apps/api/tests/test_website_briefs.py, apps/web/src/lib/api.ts, apps/web/src/components/WebsiteBriefView.tsx, apps/web/src/app/dashboard/projects/[id]/page.tsx, docs/04_ROADMAP.md, docs/05_DECISIONS.md
+**What happened:** Built the requested website-brief generator as a
+synthesizing rollup over the existing intake (`DesignBrief`)/creative
+direction/sitemap pipeline rather than a fourth place that overlapping
+field set gets authored — see today's [[05_DECISIONS]] entry for the
+full reasoning. New `WebsiteBrief` model/table (versioned, DRAFT→APPROVED,
+same editable-in-place convention as CreativeDirectionBrief/Sitemap),
+`agents/website_brief.py` (LLM synthesis for project_summary/goals/
+target_audience/positioning/sitemap/page_purposes/content_requirements/
+cta_strategy/visual_direction/functionality/seo_considerations/
+technical_requirements), and a service layer that overrides the agent's
+draft with real data wherever a resolved Sitemap/CreativeDirectionBrief
+already exists (sitemap-derived fields assembled deterministically from
+real page rows; CTA strategy/visual direction carried over verbatim).
+Two new fields (`confirmed_requirements` built verbatim from
+`DesignBrief`, `ai_suggestions` an explicit per-section list built by
+the service) satisfy the "clearly distinguish AI suggestions from
+confirmed client requirements" / "do not invent client information"
+requirements directly. Standard CRUD routes
+(`POST/GET /projects/{id}/website-briefs`, `GET/PATCH/POST .../approve`
+on `/website-briefs/{id}`), full REST client + `WebsiteBriefView`
+component (mirrors `CreativeDirectionView`'s edit/save/approve pattern),
+wired into `/dashboard/projects/[id]` between Sitemap and Website.
+Migration `9c1f5a7e3d62` (down_revision `731a8a798e83`, confirmed sole
+head after creation).
+**Blockers/issues:** Full backend `pytest -q` showed 6 failed/833 errors,
+but every one of them was in `test_workspace_isolation.py`/other
+unrelated files with `DependentObjectsStillExist`/`UndefinedTable`/
+duplicate-key errors — the exact same concurrent-shared-test-DB
+contention pattern documented in the 2026-08-25 session log entry (other
+sessions on this machine actively resetting `webdesignos_test` mid-run).
+Confirmed not a regression: `test_website_briefs.py` alone is 9/9 green
+every run; running it together with `test_creative_directions.py`/
+`test_sitemaps.py`/`test_design_briefs.py`/`test_projects.py`/
+`test_workspace_isolation.py` gave 53 passed/14 errors, and
+`test_workspace_isolation.py` run completely alone still threw one
+`DependentObjectsStillExist` during teardown (13 passed/1 error) —
+proof the contention is external, not something this change introduced.
+Nothing in `website_briefs`' own files ever appears in any failure.
+Frontend: `tsc --noEmit` clean except one pre-existing unrelated error
+(`LayoutProps` in `layout.tsx`, a Next.js codegen artifact absent
+because `next dev`/`next build` haven't run in this worktree — not
+touched by this change); `eslint` on changed files clean except two
+pre-existing `react/no-unescaped-entities` warnings on lines this diff
+never touched (confirmed via `git diff --stat`: purely additive, 109
+insertions/0 deletions on the project page); `vitest run` 53/53 green.
+Did not start the dev server / exercise this in a real browser — no
+running Postgres instance was confirmed reachable from this session
+beyond what pytest already used, and this was scoped as a backend+
+frontend build-and-test pass, not a live UI walkthrough.
+**Next up:** A real browser pass (generate a brief on a project with/without
+upstream artifacts present, confirm the confirmed/AI-suggestion split
+renders sensibly) before calling this fully client-ready. Re-run the
+full backend suite once the shared test DB is quiet, as a final sanity
+check, same standing item as the 2026-08-25 entry. Not yet merged to
+main or pushed — this session's commit sits on
+`worktree-website-brief-generator` pending review.
 
 ---
 

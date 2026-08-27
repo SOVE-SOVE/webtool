@@ -28,6 +28,18 @@ describe("Cta", () => {
     expect(html).toContain("Request a quote");
     expect((html.match(/<a /g) ?? []).length).toBe(1);
   });
+
+  it("tightens padding when spacing is 'compact'", () => {
+    const config: CtaSectionConfig = {
+      type: "cta",
+      heading: "Ready to get your quote?",
+      primaryCta: { label: "Request a quote", href: "/contact" },
+      spacing: "compact",
+    };
+    const html = renderToStaticMarkup(<Cta {...config} />);
+    expect(html).toContain("sm:py-12");
+    expect(html).not.toContain("sm:py-20");
+  });
 });
 
 describe("Contact", () => {

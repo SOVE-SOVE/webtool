@@ -44,5 +44,27 @@ class ProjectRead(BaseModel):
     deadline: date | None
     assigned_user_id: uuid.UUID | None
     assigned_user_name: str | None
+    delivered_at: datetime | None
+    delivered_by_user_name: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class DeliveryChecklistItemRead(BaseModel):
+    task_id: uuid.UUID
+    title: str
+    done: bool
+
+
+class DeliveryStatusRead(BaseModel):
+    """What's still blocking `POST /projects/{id}/deliver` — the same
+    "show every missing thing at once" shape as
+    modules/approvals/service.py's ProjectApprovalStatus."""
+
+    can_deliver: bool
+    already_delivered: bool
+    has_successful_deployment: bool
+    deployment_verified: bool
+    latest_deployment_url: str | None
+    checklist: list[DeliveryChecklistItemRead]
+    missing: list[str]

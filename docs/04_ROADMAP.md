@@ -256,6 +256,33 @@ spec with no re-keying.
       as the structural source of truth for the (not-yet-built)
       site-generation step. Generates no website code, per the
       operator's explicit scope for this piece.
+- [x] Website Brief generator — `agents/website_brief.py` /
+      `modules/website_briefs/`: an AI-assisted rollup of everything
+      already known/decided about a project (client intake brief,
+      reviewed creative direction, reviewed sitemap, wherever any of
+      those exist) into one client-facing document: project summary,
+      goals, target audience, positioning, sitemap, page purposes,
+      content requirements, CTA strategy, visual direction,
+      functionality, SEO considerations, and technical requirements.
+      Deliberately a synthesizing rollup, not a fourth place those
+      fields are independently authored — sitemap/page-purpose/content-
+      requirement/functionality sections are assembled from a real
+      approved (or latest) `Sitemap`'s pages when one exists, and CTA
+      strategy/visual direction are carried over from an approved (or
+      latest) `CreativeDirectionBrief` verbatim, rather than a fresh
+      LLM guess replacing already-reviewed decisions. `confirmed_requirements`
+      (verbatim from the client's own intake answers) and
+      `ai_suggestions` (explicit, per-section callouts of what this
+      generation itself is suggesting) are first-class fields —
+      the feature's required "clearly distinguish AI suggestions from
+      confirmed client requirements" — never invents client information:
+      every section not traceable to intake/an approved artifact is
+      labelled as AI's own synthesis. DRAFT → APPROVED with in-place
+      editing (every section stays editable, edit reverts an approved
+      brief to draft) — same "review before continuing" gate as
+      brief/creative-direction/sitemap, surfaced on the same
+      `/dashboard/projects/[id]` page between Sitemap and Website. See
+      [[05_DECISIONS]].
 - [ ] Copy drafts generated from intake + research, for operator
       sign-off before build — the intake collection, Creative Director,
       and sitemap above are the foundation this reads from.
@@ -323,20 +350,57 @@ Goal: stages 15–18. First real reusable output.
       Verified end-to-end in a real browser (not just the 31 backend +
       existing frontend tests) — that pass caught and fixed a real bug
       where regenerating a section didn't refresh the version dropdown.
+      **Phase 5 Part 3 Task 3 checkpoint (2026-08-26):** ran the real
+      generator (creative direction/sitemap hand-simulated to a strong-
+      LLM quality bar — no Anthropic credit in this environment; the
+      generator/anti-slop/QA steps themselves ran for real, unmodified)
+      against a from-scratch fake client (Gold Coast plumber, modern/
+      premium positioning). Found and fixed two real generator bugs it
+      surfaced: (1) a services/products list item like "Hot water
+      systems — gas, electric, solar, heat pump" was discarding
+      everything after the client's own separator instead of using it as
+      the card's description — `_split_service_line`/`_service_cards`
+      now keep it, verbatim, only when the client's own text already
+      has one; (2) the homepage unconditionally repeated a dedicated
+      FAQ/Testimonials/Services page's content verbatim, which anti_slop
+      correctly flagged as duplicate copy (score 79/100) — home now
+      skips a section entirely when a dedicated page already carries
+      it, only showing it there as a fallback. Both fixes, applied
+      together, took the same fixture from anti_slop 79 (3 duplicate-
+      copy issues) to 100 (none), with QA `ready_for_client_review` true
+      throughout (0 critical/failed checks, only 2 pre-existing SEO
+      warnings for pages with no natural meta-description source). Not
+      slop by this system's own definition (no fabricated/generic
+      content — anti_slop's whole job), but not yet a premium-ready
+      *deliverable* either: every non-home hero heading is still just
+      the bare page title (no tagline/headline field exists anywhere in
+      `DesignBrief` for the generator to draw one from), and there is no
+      real-photo pipeline at all (`image_assets` is a free-text notes
+      field, not structured `Media{src, alt}` — no blob storage
+      integration exists, per its own docstring). Recommended next,
+      not started: a per-page/site tagline field on `DesignBrief` (a
+      real, scoped intake+generator change) and real asset upload
+      (bigger — needs blob storage) before calling a generated site
+      "premium, ready to sell" rather than "structurally sound, content-
+      honest, and technically clean."
 - [x] Automated QA checks (build, links, mobile) from [[tests]] —
-      `agents/technical_qa.py` / `modules/qa_reports/`: six categories
+      `agents/technical_qa.py` / `modules/qa_reports/`: seven categories
       (performance, responsiveness, accessibility, SEO, functionality,
-      security), each check reported as pass/fail/warning/skipped with
-      a severity and recommended fix — nothing is ever silently
+      security, markup), each check reported as pass/fail/warning/skipped
+      with a severity and recommended fix — nothing is ever silently
       omitted, including what can't be checked yet (see below).
       Deterministic, no LLM call. Most checks run statically against
       the generated config: real, fully-static wins here include
       broken-internal-link detection (every href checked against the
       site's actual page slugs), missing alt text, unlabeled form
-      fields, duplicate `<h1>`s, exposed-secret and injected-script
-      scanning, and (closing a real gap found while building this)
-      page titles/meta descriptions, now generated from real brief
-      fields only — see [[05_DECISIONS]]. Checks that need a rendered
+      fields, duplicate `<h1>`s, missing calls to action, raw
+      HTML-tag-looking text in content, exposed-secret and
+      injected-script scanning, and (closing a real gap found while
+      building this) page titles/meta descriptions, now generated from
+      real brief fields only — see [[05_DECISIONS]]. The markup
+      category's other two checks (duplicate element ids, a missing
+      `<html lang>` attribute) need a rendered page, same as the
+      colour-contrast/console-error checks below. Checks that need a rendered
       page (real asset weight, computed colour contrast, console
       errors, cross-viewport overflow, robots.txt/sitemap.xml) only run
       given a live `preview_url`, via a new `fetch_qa_signals` in
@@ -368,6 +432,31 @@ Goal: stages 15–18. First real reusable output.
       what's missing, and the deployment gate independently re-verifies
       all six prior checkpoints' *current* state rather than trusting
       an earlier gate already covered it. See [[05_DECISIONS]].
+- [x] Website revision workflow (Phase 5 Part 3 Task 2) —
+      `modules/website_revisions/` / `agents/website_revision.py`:
+      operator free-text feedback ("make the hero less generic",
+      "change the CTA", "make mobile spacing tighter") becomes a
+      targeted edit to just the section it names, never a full
+      regeneration — a deep copy of the current `Website` version's
+      config has only that one slot replaced, so unrelated
+      approved/edited sections are never touched. Spacing feedback
+      ("tighter", "cramped", "padding", ...) is handled deterministically
+      (no LLM call) by setting the new `spacing: "compact"` field
+      `packages/site-templates` now supports on `hero`/`cta` sections
+      (Section.tsx's padding classes); anything else needs a `section_id`
+      and goes through the LLM-backed agent, which is instructed to
+      edit only fields the section's config already has and never
+      fabricate new facts. Every revision is a row in
+      `website_revisions` — sequential `revision_number` per project,
+      the operator's `requested_change`, the agent's own
+      `generated_change` summary, PENDING/APPROVED/REVERTED status, and
+      pointers to the `Website` version immediately before/after —
+      approving one marks that section reviewed; rolling one back
+      restores the prior version's config as a *new* version (never
+      rewriting history) and is only allowed on a project's single most
+      recent revision, so an older rollback can't silently discard a
+      newer, unrelated change layered on top. No frontend surface yet —
+      backend + tests only, per the operator's Phase 5 Part 3 scope.
 - [x] A secure shareable client-preview link with feedback capture —
       built as Phase 6, three parts. **Previews** (`modules/previews/`):
       a token-based link per project (SHA-256 hash stored, raw token
@@ -420,6 +509,47 @@ Goal: stages 19–20. Close the loop to revenue.
       Rollback/version selection re-runs a prior *successful* deployment
       of an older website version, re-verifying that version's own
       approval/QA/client-review flags first. See [[05_DECISIONS]].
+- [x] Provider-agnostic deployment adapter architecture (phase 6 part 2)
+      — `integrations/deployment.py`'s single-file mock became a real
+      package (`integrations/deployment/`): a `DeploymentProvider`
+      interface (`validate_config`/`build`/`deploy`/`get_status`/
+      `rollback`), a shared static-site build step
+      (`build.py::build_static_site`, config -> real HTML/CSS files —
+      minimal but genuinely deployable, not a port of `packages/
+      site-templates`), and real adapters for Vercel, Netlify,
+      Cloudflare Pages, and traditional (FTP/FTPS) hosting alongside
+      the existing mock, selected via `DEPLOY_PROVIDER` — still
+      defaults to `mock`, and every real provider fails loudly rather
+      than silently deploying through mock when its own credentials
+      (env-var-only, never hardcoded — see `.env.example`) aren't set.
+      `Deployment` gained `provider_ref` (a real provider's own
+      deployment id) for status polling and provider-native rollback
+      (Netlify's own restore API; every other provider falls back to
+      re-running build+deploy, same as before). Deployment is still
+      never automatic — `execute_deployment` remains a separate,
+      explicit call from `create_deployment`. See [[05_DECISIONS]].
+- [x] Delivery workflow completed (phase 6 part 2) — the deploy step
+      above now has a "monitor -> receive URL -> verify -> deliver"
+      tail: `POST .../deployments/{id}/check-status` re-polls a real
+      provider's own status (a no-op refresh for every provider today,
+      since none of them have an async build to watch yet — the real
+      extension point for one that does); `POST .../deployments/{id}/
+      verify` reuses `integrations/browser.py`'s SSRF-guarded
+      `fetch_page_signals` to confirm a real deployment's URL actually
+      loads (a `mock` deployment is recorded as a simulated pass — its
+      URL was never reachable in the first place, see
+      `integrations/deployment/mock_provider.py`), setting
+      `Deployment.verified_at`. `Project` gained `delivered_at`/
+      `delivered_by_user_id`, set only by the new `POST /projects/{id}/
+      deliver`, which refuses (`GET .../delivery-status` reports every
+      reason why, all at once) unless the latest deployment succeeded
+      *and* was verified *and* every item on the final delivery
+      checklist — the existing post-launch handover tasks seeded on
+      first deploy (`DEFAULT_LAUNCH_TASK_TITLES`) — is checked off.
+      Advances the project to `COMPLETE`. Surfaced on the project page
+      as a "Verify"/"Check status" pair on each deployment row and a
+      `DeliveryPanel` (checklist + "Mark project delivered") alongside
+      the existing deployment history/rollback UI. See [[05_DECISIONS]].
 - [ ] Payment/invoicing (Stripe) tied to the deploy step.
 - [ ] Maintenance monitoring (uptime, broken links) for live client
       sites — the entry point for recurring revenue.

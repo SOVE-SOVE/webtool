@@ -87,6 +87,231 @@ orchestration layer.
 
 ---
 
+## 2026-08-26 — Website Brief generator: a synthesizing rollup over intake/creative-direction/sitemap, not a fourth place those fields are authored
+
+**Decision:** Built `agents/website_brief.py` / `modules/website_briefs/`
+for the requested "AI-assisted website brief generator" — a single
+client-facing document with project summary, goals, target audience,
+positioning, sitemap, page purposes, content requirements, CTA
+strategy, visual direction, functionality, SEO considerations, and
+technical requirements, generated from a project's onboarding
+information. The field list overlaps heavily with what already exists:
+`DesignBrief` (client intake — target_customers/business_goals/content/
+required_pages/required_functionality), `CreativeDirectionBrief`
+(visual_direction/cta_strategy), and `Sitemap` (page purpose/required
+content/required functionality, as real page rows). Rather than a
+fourth place authoring those same fields independently — which is
+exactly the duplication this codebase has previously rejected (see the
+2026-08-19 "Creative Director: separate module from `design_briefs`"
+entry, which drew the opposite conclusion for a different reason: that
+case was a genuinely *different*, richer concern than the existing stub,
+not an overlap) — `WebsiteBrief` is a synthesizing rollup: it reads
+whatever of those three already exists for the project and assembles
+its own document from them, only calling the LLM fresh for the sections
+nothing else captures (project_summary, positioning,
+seo_considerations, technical_requirements always; the rest only as a
+fallback when no upstream artifact exists yet).
+
+Concretely, `modules/website_briefs/service.py`'s `generate_website_brief`
+always calls `agents/website_brief.py` to draft all twelve sections (so
+an early-stage project with nothing else on record still gets a usable
+document), then **overrides** the agent's draft wherever a real source
+exists: `sitemap_summary`/`page_purposes`/`content_requirements`/
+`functionality` are assembled deterministically from a resolved
+`Sitemap`'s actual pages (same "compose only real fields, never
+re-invent structure that already exists" reasoning as
+`agents/website_generator.py`); `cta_strategy`/`visual_direction` are
+carried over verbatim from a resolved `CreativeDirectionBrief`;
+`target_audience` prefers the creative direction's or the intake
+brief's value verbatim. `CreativeDirectionBrief`/`Sitemap` resolution
+follows the same "explicit id override → latest approved → most recent"
+convention as `sitemaps/service.py`'s `_resolve_creative_direction`.
+
+**The AI-vs-confirmed split the feature explicitly requires** ("clearly
+distinguish AI suggestions from confirmed client requirements"; "do not
+invent client information") is two new first-class fields rather than
+reusing Creative Director's FACTS/ASSUMPTIONS shape verbatim, because
+the semantics differ: FACTS/ASSUMPTIONS is about confidence in a
+*single* generation's own claims, but a Website Brief's sections have
+three different provenances (literal client intake answers, an already
+human-reviewed upstream AI artifact, or this generation's own fresh
+synthesis) and the feature specifically asked for client-confirmed vs.
+AI-suggested, not confirmed vs. unconfirmed-but-still-AI-authored.
+`confirmed_requirements` is built directly from `DesignBrief`'s own
+non-empty fields, verbatim, labelled by source field — the *only*
+"client requirement" source anywhere in this app. `ai_suggestions` is
+an explicit per-section list built by the service (not the LLM) stating
+plainly what this generation is suggesting and why (e.g. "no creative
+direction has been generated/approved for this project yet"), so a
+section carried over from an approved upstream artifact is *not* listed
+as an AI suggestion of *this* generation, while a section this
+generation actually drafted always is — including project_summary/
+positioning/SEO/technical requirements unconditionally, since no source
+in this app ever confirms those for a client project.
+
+Same DRAFT → APPROVED lifecycle, in-place editing, and "edit reverts an
+approved brief to draft" contract as `DesignBrief`/`CreativeDirectionBrief`/
+`Sitemap` (every section must remain editable, per the feature request).
+Approval advances the project to `ProjectStage.DESIGN`, same target as
+creative-direction/sitemap approval (via `advance_stage`'s "forward
+only" guard, so approving whichever of the three finishes last is what
+actually moves the stage). Surfaced on `/dashboard/projects/[id]`
+between Sitemap and Website, matching where it sits in the generation
+chain.
+
+**Alternatives considered:** extending `CreativeDirectionBrief` with the
+new fields (positioning/SEO/technical requirements) — rejected, because
+positioning/SEO/technical requirements aren't a *creative* direction
+concern, and cramming them in would blur that module's actual job the
+same way filling `design_briefs`' stub for Creative Director was already
+rejected for the opposite reason. A single mega-document that fully
+replaces `DesignBrief`/`CreativeDirectionBrief`/`Sitemap` — rejected;
+those three have real, distinct editing surfaces (intake form fields,
+FACTS/ASSUMPTIONS creative judgement, a reorderable page tree) that a
+flat rollup document can't replace without losing capability, so the
+rollup reads from them instead of subsuming them.
+
+---
+
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
+## 2026-08-26 — Deployment adapter architecture + delivery workflow (phase 6 part 2)
+
+**Decision:** Split into two pieces, matching the operator's own task
+split. First, turned `integrations/deployment.py` (a single
+`MockDeploymentProvider` class) into a real package
+(`integrations/deployment/`) with a `DeploymentProvider` interface
+(`validate_config`/`build`/`deploy`/`get_status`/`rollback`), a shared
+static-site build step, and real adapters for Vercel, Netlify,
+Cloudflare Pages, and traditional FTP/FTPS hosting — one class per
+provider, each reading its own credentials only from `app.core.settings`
+(env-var-backed), never a literal in code, and each failing loudly
+(`DeploymentProviderError`) rather than silently falling back to mock
+if selected without its credentials configured. `DEPLOY_PROVIDER`
+still defaults to `mock`, so nothing about this changes today's
+behavior until an operator actually sets real hosting credentials.
+
+Second, closed the gap between "a deployment succeeded" and "this
+project is actually delivered": added `check-status` (re-poll a
+provider's own status — a no-op for every provider here today, since
+none of them have an async build to watch, but the real hook for one
+that does) and `verify` (an explicit confirmation step, reusing the
+existing SSRF-guarded `fetch_page_signals` browser fetch QA's live
+checks already use, rather than a second bespoke HTTP client) on top of
+the existing prepare/execute/rollback lifecycle. `Project.delivered_at`
+is now set by a new `mark_delivered`, gated on the latest deployment
+being both successful *and* verified, plus every item on the existing
+post-launch handover checklist (`DEFAULT_LAUNCH_TASK_TITLES`, already
+seeded on first deploy) checked off — that checklist *is* the "final
+delivery checklist" the task asked for; a new one wasn't invented
+since this one already covered the same handover steps.
+
+**Why:** "Do not hard-code credentials" and "do not automatically
+deploy without explicit approval" were explicit constraints — the
+adapter registry pattern (mirroring `integrations/calendar/` and
+`integrations/email.py`, the two existing multi-provider adapters in
+this codebase) satisfies both: credentials only ever come from the
+environment, and `execute_deployment`/`deploy()` stay a separate,
+explicit call from `create_deployment`/prepare, unchanged. A real
+provider's `build()` step produces genuine static HTML from the
+already-generated site config rather than a fake placeholder — real
+enough to actually publish — but is deliberately not a port of
+`packages/site-templates`' React components (that stays the operator-
+facing visual source of truth); building a pixel-accurate static
+exporter is separate, later work, not a precondition for the
+deployment architecture existing.
+
+**Alternatives considered:** A single `DeploymentProvider.deploy(bundle)`
+call (the pre-existing shape) was rejected once `get_status`/`rollback`
+needed representing — flattening "submit a build," "check on it," and
+"restore an old one" into one method would have made every real
+provider's very different capabilities (Netlify's real restore API vs.
+Vercel/Cloudflare's lack of a simple one) invisible to the service
+layer. Inventing a brand-new "final delivery checklist" task list
+alongside the existing launch-handover one was rejected as redundant —
+they're the same list of post-launch admin steps under two names.
+
+---
+
 ## 2026-08-26 — Phase 6: secure website previews, client feedback, and a formal approval workflow
 
 **Decision:** Closed roadmap M5's last open item ("a secure shareable
@@ -176,6 +401,95 @@ approval/deployment test and every workflow a project already in
 progress had been using, for no benefit the additive approach doesn't
 already provide; the new workflow's value is the *explicit gate before
 deployment*, not eliminating something that already worked.
+
+---
+
+## 2026-08-26 — Phase 4 "lead to client conversion" request: audited the existing conversion workflow against the spec, closed the one real gap (confirmation step) and a test-coverage gap, built nothing new
+
+**Decision:** A request came in framed as "build the lead-to-client
+conversion workflow," with an explicit requirement list: allow
+converting a WON lead into a client, preserve business info/contact
+info/website research/lead history/sales history/notes, prevent
+duplicate client records, a clear conversion flow with a confirmation
+step, and tests. Per [[03_AGENT_RULES]]'s "check 05_DECISIONS/
+07_SESSION_LOG before starting work," checked first — this is
+[[04_ROADMAP]] M4's "Lead-to-client conversion" item, already marked
+`[x]` and built 2026-08-19 (see that entry below): `POST
+/api/v1/clients` with `from_lead_id` already reuses the lead's existing
+`Business` row (never copies it), marks the lead `WON`, creates the
+`Client` + one `INTAKE`-stage `Project` with starter tasks + a `WON`
+`SalesOpportunity` in one transaction, records `source_lead_id` for
+traceability, and 409s on a second conversion attempt
+(`lead.business.client is not None`). Every requirement on the list
+already held *structurally* — nothing about a lead's audits, sales
+audit reports, outreach messages, interactions, or notes is ever
+touched or copied by conversion, so none of it can be lost; contact
+info lives on the same shared `Business` row a `Contact` already points
+at, likewise untouched.
+
+Audited the actual gap against each requirement rather than rebuilding:
+
+- **Business/contact/research/sales-history preservation** — real,
+  already correct, but under-tested. The existing
+  `test_convert_lead_preserves_original_lead_and_its_history` only
+  asserted `Interaction` and `WebsiteAudit` rows survived; it didn't
+  touch `Contact`, `SalesAuditReport`, or `OutreachMessage` at all, or
+  assert business fields (industry/phone/notes) actually read back
+  correctly post-conversion. Extended that one test (still one test —
+  this is one workflow, not six) to construct a `Contact`,
+  `SalesAuditReport`, and `OutreachMessage` against the lead/business
+  before converting, and assert all three, plus `Business.notes` and
+  the other business fields, are unchanged and still queryable
+  afterward — closing the gap between what the code already does and
+  what the test suite actually proves.
+- **Duplicate prevention** — already fully covered
+  (`test_convert_same_lead_twice_is_rejected`, the 409 check, and the
+  frontend hiding the convert button once `existingClient` is found).
+  Nothing to add.
+- **"A clear conversion flow and confirmation step"** — the one genuine
+  gap. The lead detail page's "Convert to client" form (and the
+  Clients page's secondary "Add client → Convert a won/open lead" form)
+  submitted immediately on click, with the reveal-the-form toggle as
+  the only friction — no distinct confirmation before an action that
+  marks a lead `WON`, creates a client and a project, and can't be
+  undone (there's no un-convert route). Added a `confirm()` dialog
+  before the actual `createClient` call in both entry points,
+  summarizing what's about to happen (client + INTAKE project created,
+  lead marked WON, full history stays attached to the lead, can't be
+  undone) — the same plain `window.confirm` pattern this codebase
+  already uses for its other irreversible/consequential action
+  (`clients/[id]/page.tsx`'s "Start another project" `force_new`
+  confirm), rather than introducing a new modal component for one
+  dialog.
+
+**Why:** Rebuilding an already-complete, already-tested feature because
+a request re-describes its acceptance criteria would have been pure
+churn — worse, it risks silently regressing the 2026-08-19/2026-08-21
+decisions (atomic transaction, forward-only status, `source_lead_id`
+traceability, the 409 duplicate guard) by re-deriving them from
+scratch instead of reading what's there. The two gaps closed here are
+both real: a confirmation step was asked for explicitly and didn't
+exist, and the test suite's actual coverage was narrower than the
+requirement list implies, even though the code being tested was
+already correct.
+
+**Alternatives considered:** Copying business/lead fields onto `Client`
+at conversion time (a `Client.notes`, a snapshot of contact/research
+data) so the client record would be self-contained — rejected; this is
+the same "reference, don't duplicate" call the 2026-08-19 entry already
+made (`Project → Client → Business → Lead` is the traceability path,
+`source_lead_id` disambiguates it), and duplicating fields onto
+`Client` would just create a second, driftable copy of data the shared
+`Business` row and the untouched `Lead` row already hold canonically.
+A custom confirmation modal component instead of `window.confirm` —
+rejected as unnecessary weight for a single yes/no gate when an
+existing, already-used pattern does the job.
+
+**Verified:** full backend suite (664 tests, same 15 test functions in
+`test_clients.py` as before — one of them, the history-preservation
+test, materially strengthened rather than split into more tests),
+`tsc --noEmit`, `eslint` on the two changed files, and `vitest run`
+(53/53) all clean.
 
 ---
 

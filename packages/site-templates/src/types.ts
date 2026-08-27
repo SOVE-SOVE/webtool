@@ -79,6 +79,12 @@ export type NavigationConfig = {
   cta?: CtaLink;
 };
 
+// "compact" tightens a section's vertical padding, most noticeably at
+// the mobile breakpoint — the knob the revision workflow (operator
+// feedback like "make mobile spacing tighter") actually has available
+// to act on for these two sections. Defaults to "default" (unchanged).
+export type SectionSpacing = "default" | "compact";
+
 export type HeroConfig = {
   type: "hero";
   eyebrow?: string;
@@ -89,6 +95,7 @@ export type HeroConfig = {
   secondaryCta?: CtaLink;
   align?: "left" | "center";
   tone?: Tone;
+  spacing?: SectionSpacing;
 };
 
 export type CtaSectionConfig = {
@@ -98,6 +105,7 @@ export type CtaSectionConfig = {
   primaryCta: CtaLink;
   secondaryCta?: CtaLink;
   tone?: Tone;
+  spacing?: SectionSpacing;
 };
 
 export type ServiceItem = {

@@ -102,6 +102,23 @@ class TestStructuredListDetection:
         page = result.output.pages[0]
         assert not any(s.type == "serviceCards" for s in page.sections)
 
+    def test_a_line_with_a_real_separator_splits_into_title_and_description(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(
+                    services_content="Hot water systems — gas, electric, solar, heat pump\nBlocked drains\nGas fitting: LPG and natural gas"
+                ),
+                pages=[_page(page_type="services", slug="services")],
+            )
+        )
+        cards = next(s for s in result.output.pages[0].sections if s.type == "serviceCards")
+        items = {item["title"]: item["description"] for item in cards.config["services"]}
+        assert items["Hot water systems"] == "gas, electric, solar, heat pump"
+        assert items["Gas fitting"] == "LPG and natural gas"
+        # No separator in this line — no description invented for it either.
+        assert items["Blocked drains"] == ""
+
 
 class TestFaqHandling:
     def test_splits_question_and_answer_on_first_question_mark(self):
@@ -234,6 +251,76 @@ class TestSeo:
         result = run(WebsiteGeneratorInput(business_name="Riverside Plumbing", pages=[_page()]))
         assert result.output.pages[0].seo.meta_description is None
         assert any("no meta description on file yet" in m for m in result.output.missing_information)
+
+
+class TestHomeDoesNotDuplicateADedicatedPage:
+    """A homepage FAQ/testimonials teaser that's byte-for-byte identical
+    to a dedicated FAQ/Testimonials page is real, visible duplicate
+    copy — flagged by anti_slop's own duplicate_copy rule — so home
+    skips the section entirely when a dedicated page already carries it,
+    and only shows it on home as a fallback when there's nowhere else
+    for it to live."""
+
+    def test_home_skips_faq_when_a_dedicated_faq_page_exists(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(faqs=["Do you charge a callout fee? No, quotes are always free."]),
+                pages=[_page(), _page(id="p2", title="FAQ", slug="faq", page_type="faq")],
+            )
+        )
+        home = next(p for p in result.output.pages if p.page_type == "home")
+        faq_page = next(p for p in result.output.pages if p.page_type == "faq")
+        assert not any(s.type == "faq" for s in home.sections)
+        assert any(s.type == "faq" for s in faq_page.sections)
+
+    def test_home_still_gets_faq_when_there_is_no_dedicated_faq_page(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(faqs=["Do you charge a callout fee? No, quotes are always free."]),
+                pages=[_page()],
+            )
+        )
+        home = next(p for p in result.output.pages if p.page_type == "home")
+        assert any(s.type == "faq" for s in home.sections)
+
+    def test_home_skips_testimonials_when_a_dedicated_testimonials_page_exists(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(testimonials=["Great service. — Jane"]),
+                pages=[_page(), _page(id="p2", title="Testimonials", slug="testimonials", page_type="testimonials")],
+            )
+        )
+        home = next(p for p in result.output.pages if p.page_type == "home")
+        testimonials_page = next(p for p in result.output.pages if p.page_type == "testimonials")
+        assert not any(s.type == "testimonials" for s in home.sections)
+        assert any(s.type == "testimonials" for s in testimonials_page.sections)
+
+    def test_home_skips_service_cards_when_a_dedicated_services_page_exists(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(services_content="Blocked drains\nHot water systems\nLeak detection"),
+                pages=[_page(), _page(id="p2", title="Services", slug="services", page_type="services")],
+            )
+        )
+        home = next(p for p in result.output.pages if p.page_type == "home")
+        services_page = next(p for p in result.output.pages if p.page_type == "services")
+        assert not any(s.type == "serviceCards" for s in home.sections)
+        assert any(s.type == "serviceCards" for s in services_page.sections)
+
+    def test_home_still_gets_service_cards_when_there_is_no_dedicated_services_page(self):
+        result = run(
+            WebsiteGeneratorInput(
+                business_name="Riverside Plumbing",
+                brief=BriefContent(services_content="Blocked drains\nHot water systems\nLeak detection"),
+                pages=[_page()],
+            )
+        )
+        home = next(p for p in result.output.pages if p.page_type == "home")
+        assert any(s.type == "serviceCards" for s in home.sections)
 
 
 class TestAntiSlopIntegration:
