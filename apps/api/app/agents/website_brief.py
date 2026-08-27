@@ -29,7 +29,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 
 PROMPT_VERSION = "website_brief-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "website_brief.md"
@@ -94,7 +94,7 @@ def run(input: WebsiteBriefInput) -> AgentResult[WebsiteBriefOutput]:
         user=_build_user_message(input),
         schema=schema,
     )
-    output = WebsiteBriefOutput.model_validate(raw)
+    output = parse_structured_output(WebsiteBriefOutput, raw)
 
     no_brief = not input.brief_notes
     no_creative_direction = not input.creative_direction_notes

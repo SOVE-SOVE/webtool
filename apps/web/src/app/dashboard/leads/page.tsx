@@ -79,34 +79,54 @@ export default function LeadsPage() {
   }
 
   async function handleStatusChange(id: string, status: LeadStatus) {
-    await api.updateLead(id, { status });
-    load();
+    try {
+      await api.updateLead(id, { status });
+      load();
+    } catch {
+      setError("Couldn't update status.");
+    }
   }
 
   async function handlePriorityChange(id: string, priority: LeadPriority) {
-    await api.updateLead(id, { priority });
-    load();
+    try {
+      await api.updateLead(id, { priority });
+      load();
+    } catch {
+      setError("Couldn't update priority.");
+    }
   }
 
   async function handleScoreChange(id: string, score: string) {
     const parsed = score === "" ? undefined : Number(score);
     if (parsed !== undefined && Number.isNaN(parsed)) return;
-    await api.updateLead(id, { score: parsed });
-    load();
+    try {
+      await api.updateLead(id, { score: parsed });
+      load();
+    } catch {
+      setError("Couldn't update score.");
+    }
   }
 
   async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateLead(id, { assigned_user_id: assigneeId || null });
-    load();
+    try {
+      await api.updateLead(id, { assigned_user_id: assigneeId || null });
+      load();
+    } catch {
+      setError("Couldn't update assignee.");
+    }
   }
 
   async function handleArchiveToggle(lead: Lead) {
-    if (lead.archived_at) {
-      await api.unarchiveLead(lead.id);
-    } else {
-      await api.archiveLead(lead.id);
+    try {
+      if (lead.archived_at) {
+        await api.unarchiveLead(lead.id);
+      } else {
+        await api.archiveLead(lead.id);
+      }
+      load();
+    } catch {
+      setError(lead.archived_at ? "Couldn't unarchive lead." : "Couldn't archive lead.");
     }
-    load();
   }
 
   function toggleSort(key: SortKey) {

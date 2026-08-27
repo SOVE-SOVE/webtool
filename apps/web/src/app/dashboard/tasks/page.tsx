@@ -55,13 +55,21 @@ export default function TasksPage() {
   }
 
   async function handleToggle(id: string, done: boolean) {
-    await api.updateTask(id, { done });
-    load();
+    try {
+      await api.updateTask(id, { done });
+      load();
+    } catch {
+      setError("Couldn't update task.");
+    }
   }
 
   async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateTask(id, { assigned_user_id: assigneeId || null });
-    load();
+    try {
+      await api.updateTask(id, { assigned_user_id: assigneeId || null });
+      load();
+    } catch {
+      setError("Couldn't update assignee.");
+    }
   }
 
   return (

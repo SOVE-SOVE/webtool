@@ -6,6 +6,11 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// A hung backend or dead network otherwise leaves this pending
+// indefinitely — worse here than the authenticated dashboard, since the
+// viewer is an external client with no way to know anything is wrong.
+const REQUEST_TIMEOUT_MS = 20_000;
+
 export class PreviewApiError extends Error {
   constructor(
     public status: number,
@@ -16,10 +21,19 @@ export class PreviewApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new PreviewApiError(0, "The request timed out — check your connection and try again.");
+    }
+    throw new PreviewApiError(0, "Couldn't reach the server — check your connection and try again.");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = typeof body.detail === "string" ? body.detail : res.statusText;

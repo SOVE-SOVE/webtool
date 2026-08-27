@@ -81,8 +81,12 @@ export default function ClientsPage() {
   }
 
   async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateClient(id, { assigned_user_id: assigneeId || null });
-    load();
+    try {
+      await api.updateClient(id, { assigned_user_id: assigneeId || null });
+      load();
+    } catch {
+      setError("Couldn't update assignee.");
+    }
   }
 
   const visibleClients = useMemo(

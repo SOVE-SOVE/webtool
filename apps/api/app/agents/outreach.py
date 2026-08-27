@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from app.agents.base import AgentResult
 from app.agents.sales_audit import SalesAuditOutput
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 
 PROMPT_VERSION = "outreach-v1"
 _PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -151,7 +151,7 @@ def run(input: OutreachInput) -> AgentResult[EmailDraft] | AgentResult[TalkingPo
         user=_build_user_message(input),
         schema=output_model.model_json_schema(),
     )
-    output = output_model.model_validate(raw)
+    output = parse_structured_output(output_model, raw)
 
     thin_evidence = input.website_audit is None and input.sales_audit is None
 

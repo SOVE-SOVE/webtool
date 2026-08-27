@@ -37,6 +37,7 @@ export default function ProjectDetailPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus | null>(null);
@@ -120,14 +121,24 @@ export default function ProjectDetailPage() {
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { stage });
-    setProject(updated);
+    try {
+      const updated = await api.updateProject(project.id, { stage });
+      setProject(updated);
+      setUpdateError(null);
+    } catch {
+      setUpdateError("Couldn't update stage.");
+    }
   }
 
   async function handleAssigneeChange(assigneeId: string) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
-    setProject(updated);
+    try {
+      const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
+      setProject(updated);
+      setUpdateError(null);
+    } catch {
+      setUpdateError("Couldn't update assignee.");
+    }
   }
 
   async function handleGenerate(e: React.FormEvent) {
@@ -220,6 +231,7 @@ export default function ProjectDetailPage() {
             )}
           </div>
           <p className="text-sm text-neutral-500">{project.client_business_name}</p>
+          {updateError && <p className="text-sm text-red-600">{updateError}</p>}
         </div>
         <div className="flex items-center gap-3">
           <select

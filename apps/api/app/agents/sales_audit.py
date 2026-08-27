@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 from app.integrations.search import SearchResult
 
 PROMPT_VERSION = "sales_audit-v1"
@@ -116,7 +116,7 @@ def run(input: SalesAuditInput) -> AgentResult[SalesAuditOutput]:
         user=_build_user_message(input),
         schema=schema,
     )
-    output = SalesAuditOutput.model_validate(raw)
+    output = parse_structured_output(SalesAuditOutput, raw)
 
     website_unusable = (
         input.website_audit is None

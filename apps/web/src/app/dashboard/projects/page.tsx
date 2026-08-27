@@ -63,13 +63,21 @@ export default function ProjectsPage() {
   }
 
   async function handleStageChange(id: string, stage: ProjectStage) {
-    await api.updateProject(id, { stage });
-    load();
+    try {
+      await api.updateProject(id, { stage });
+      load();
+    } catch {
+      setError("Couldn't update stage.");
+    }
   }
 
   async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateProject(id, { assigned_user_id: assigneeId || null });
-    load();
+    try {
+      await api.updateProject(id, { assigned_user_id: assigneeId || null });
+      load();
+    } catch {
+      setError("Couldn't update assignee.");
+    }
   }
 
   const visibleProjects = useMemo(

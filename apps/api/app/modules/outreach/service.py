@@ -14,7 +14,7 @@ from app.agents.outreach import PriorOutreachSummary as OutreachPriorOutreachSum
 from app.agents.sales_audit import SalesAuditOutput
 from app.agents.website_audit import WebsiteAuditOutput
 from app.core.settings import settings
-from app.integrations.email import EmailComposeError, compose_email, get_email_provider
+from app.integrations.email import EmailComposeError, EmailProviderError, compose_email, get_email_provider
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.contacts.models import Contact
@@ -464,7 +464,10 @@ def send_outreach_email(
     except EmailComposeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
-    provider = get_email_provider()
+    try:
+        provider = get_email_provider()
+    except EmailProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     outcome = provider.send(email)
 
     email_send = EmailSend(
