@@ -88,7 +88,7 @@ export default function DiscoverySearchesPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-2 gap-3 border border-border p-4">
+        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-3 border border-border p-4">
           <p className="col-span-2 text-xs text-fg-muted">
             e.g. industry &ldquo;Plumbing&rdquo; + location &ldquo;Gold Coast&rdquo; finds plumbing businesses on
             the Gold Coast. At least one of industry, location, business type, or keywords is required.

@@ -238,70 +238,101 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {visibleClients && clients && clients.length > 0 && (
-        <table className="mt-4 w-full border border-border text-left text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-            <tr>
-              <th className="px-3 py-2">Business</th>
-              <th className="px-3 py-2">Billing email</th>
-              <th className="px-3 py-2">Projects</th>
-              <th className="px-3 py-2">Client since</th>
-              <th className="px-3 py-2">Assigned to</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {visibleClients.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-3 py-0">
-                  <EmptyState
-                    compact
-                    title="No clients match"
-                    description="Try a different search or clear the filters above."
-                    action={
-                      <button
-                        onClick={() => {
-                          setSearch("");
-                          setAssigneeFilter("");
-                        }}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        Clear filters
-                      </button>
-                    }
-                  />
-                </td>
-              </tr>
-            )}
+      {visibleClients && clients && clients.length > 0 && visibleClients.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No clients match"
+            description="Try a different search or clear the filters above."
+            action={
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setAssigneeFilter("");
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                Clear filters
+              </button>
+            }
+          />
+        </div>
+      )}
+
+      {visibleClients && visibleClients.length > 0 && (
+        <>
+          {/* Mobile: one card per client. */}
+          <div className="mt-4 space-y-2 md:hidden">
             {visibleClients.map((client) => (
-              <tr key={client.id}>
-                <td className="px-3 py-2 font-medium text-fg">
-                  <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
-                    {client.business_name}
-                  </Link>
-                </td>
-                <td className="px-3 py-2 text-fg-muted">{client.billing_email ?? "—"}</td>
-                <td className="px-3 py-2 text-fg-muted">{client.project_count}</td>
-                <td className="px-3 py-2 text-fg-muted">
+              <div key={client.id} className="card p-3">
+                <Link href={`/dashboard/clients/${client.id}`} className="font-medium text-fg hover:underline">
+                  {client.business_name}
+                </Link>
+                <div className="mt-0.5 text-xs text-fg-muted">
+                  {client.billing_email ?? "No billing email"} · {client.project_count} project
+                  {client.project_count === 1 ? "" : "s"} · since{" "}
                   {new Date(client.created_at).toLocaleDateString()}
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    value={client.assigned_user_id ?? ""}
-                    onChange={(e) => handleAssigneeChange(client.id, e.target.value)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
+                </div>
+                <select
+                  value={client.assigned_user_id ?? ""}
+                  onChange={(e) => handleAssigneeChange(client.id, e.target.value)}
+                  className="input mt-2"
+                >
+                  <option value="">Unassigned</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Desktop/tablet: full table. */}
+          <div className="table-shell mt-4 hidden md:block">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="px-3 py-2">Business</th>
+                  <th className="px-3 py-2">Billing email</th>
+                  <th className="px-3 py-2">Projects</th>
+                  <th className="px-3 py-2">Client since</th>
+                  <th className="px-3 py-2">Assigned to</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleClients.map((client) => (
+                  <tr key={client.id}>
+                    <td className="px-3 py-2 font-medium text-fg">
+                      <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
+                        {client.business_name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-fg-muted">{client.billing_email ?? "—"}</td>
+                    <td className="px-3 py-2 text-fg-muted">{client.project_count}</td>
+                    <td className="px-3 py-2 text-fg-muted">
+                      {new Date(client.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={client.assigned_user_id ?? ""}
+                        onChange={(e) => handleAssigneeChange(client.id, e.target.value)}
+                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                      >
+                        <option value="">Unassigned</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

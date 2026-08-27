@@ -256,7 +256,7 @@ export default function SettingsPage() {
         </div>
 
         {showAddUser && isAdmin && (
-          <form onSubmit={handleAddUser} className="mt-3 grid grid-cols-2 gap-3">
+          <form onSubmit={handleAddUser} className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               required
               placeholder="Name"
@@ -299,7 +299,8 @@ export default function SettingsPage() {
         )}
 
         {users && (
-          <table className="mt-4 w-full border border-border text-left text-sm">
+          <div className="mt-4 overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-left text-sm">
             <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
               <tr>
                 <th className="px-3 py-2">Name</th>
@@ -330,6 +331,7 @@ export default function SettingsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

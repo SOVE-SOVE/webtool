@@ -160,7 +160,7 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
         return (
           <section key={section.key} className="mt-6">
             <h3 className="text-sm font-semibold text-fg">{SECTION_LABELS[section.key]}</h3>
-            <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {section.fields.map((f) => {
                 const value = data.fields[f.key as string];
                 const isMissing = data.missing.includes(f.label);

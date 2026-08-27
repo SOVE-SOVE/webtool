@@ -224,91 +224,68 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {visibleProjects && projects && projects.length > 0 && (
-        <table className="mt-4 w-full border border-border text-left text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-            <tr>
-              <th className="px-3 py-2">Project</th>
-              <th className="px-3 py-2">Client</th>
-              <th className="px-3 py-2">Current stage</th>
-              <th className="px-3 py-2">Package</th>
-              <th className="px-3 py-2">Price</th>
-              <th className="px-3 py-2">Deadline</th>
-              <th className="px-3 py-2">Assigned to</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {visibleProjects.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-0">
-                  <EmptyState
-                    compact
-                    title="No projects match"
-                    description="Try a different search or clear the filters above."
-                    action={
-                      <button
-                        onClick={() => {
-                          setSearch("");
-                          setStageFilter("");
-                          setAssigneeFilter("");
-                        }}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        Clear filters
-                      </button>
-                    }
-                  />
-                </td>
-              </tr>
-            )}
+      {visibleProjects && projects && projects.length > 0 && visibleProjects.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No projects match"
+            description="Try a different search or clear the filters above."
+            action={
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setStageFilter("");
+                  setAssigneeFilter("");
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                Clear filters
+              </button>
+            }
+          />
+        </div>
+      )}
+
+      {visibleProjects && visibleProjects.length > 0 && (
+        <>
+          {/* Mobile: one card per project. */}
+          <div className="mt-4 space-y-2 md:hidden">
             {visibleProjects.map((project) => (
-              <tr key={project.id}>
-                <td className="px-3 py-2 font-medium text-fg">
-                  <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">
-                    {project.name}
-                  </Link>
-                  {project.source_lead_id && (
-                    <Link
-                      href={`/dashboard/leads/${project.source_lead_id}`}
-                      className="ml-2 text-xs font-normal text-fg-muted hover:underline"
-                    >
-                      from lead
+              <div key={project.id} className="card p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link href={`/dashboard/projects/${project.id}`} className="font-medium text-fg hover:underline">
+                      {project.name}
                     </Link>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-fg-muted">
-                  <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
-                    {project.client_business_name}
-                  </Link>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
-                      {PROJECT_STAGE_LABELS[project.stage]}
-                    </span>
-                    <select
-                      value={project.stage}
-                      onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
-                      className="rounded-md border border-border-strong px-2 py-1 text-sm"
-                    >
-                      {PROJECT_STAGES.map((stage) => (
-                        <option key={stage} value={stage}>
-                          {PROJECT_STAGE_LABELS[stage]}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="text-xs text-fg-muted">
+                      <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                        {project.client_business_name}
+                      </Link>
+                    </div>
                   </div>
-                </td>
-                <td className="px-3 py-2 text-fg-muted">{project.package ?? "—"}</td>
-                <td className="px-3 py-2 text-fg-muted">{formatPrice(project.price_cents)}</td>
-                <td className="px-3 py-2 text-fg-muted">
-                  {project.deadline ? new Date(project.deadline).toLocaleDateString() : "—"}
-                </td>
-                <td className="px-3 py-2">
+                  <span className="shrink-0 rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
+                    {PROJECT_STAGE_LABELS[project.stage]}
+                  </span>
+                </div>
+                <div className="mt-1.5 text-xs text-fg-muted">
+                  {project.package ?? "No package"} · {formatPrice(project.price_cents)}
+                  {project.deadline ? ` · due ${new Date(project.deadline).toLocaleDateString()}` : ""}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <select
+                    value={project.stage}
+                    onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
+                    className="input"
+                  >
+                    {PROJECT_STAGES.map((stage) => (
+                      <option key={stage} value={stage}>
+                        {PROJECT_STAGE_LABELS[stage]}
+                      </option>
+                    ))}
+                  </select>
                   <select
                     value={project.assigned_user_id ?? ""}
                     onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                    className="input"
                   >
                     <option value="">Unassigned</option>
                     {users.map((user) => (
@@ -317,11 +294,89 @@ export default function ProjectsPage() {
                       </option>
                     ))}
                   </select>
-                </td>
-              </tr>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Desktop/tablet: full table. */}
+          <div className="table-shell mt-4 hidden md:block">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="px-3 py-2">Project</th>
+                  <th className="px-3 py-2">Client</th>
+                  <th className="px-3 py-2">Current stage</th>
+                  <th className="px-3 py-2">Package</th>
+                  <th className="px-3 py-2">Price</th>
+                  <th className="px-3 py-2">Deadline</th>
+                  <th className="px-3 py-2">Assigned to</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleProjects.map((project) => (
+                  <tr key={project.id}>
+                    <td className="px-3 py-2 font-medium text-fg">
+                      <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">
+                        {project.name}
+                      </Link>
+                      {project.source_lead_id && (
+                        <Link
+                          href={`/dashboard/leads/${project.source_lead_id}`}
+                          className="ml-2 text-xs font-normal text-fg-muted hover:underline"
+                        >
+                          from lead
+                        </Link>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-fg-muted">
+                      <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                        {project.client_business_name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
+                          {PROJECT_STAGE_LABELS[project.stage]}
+                        </span>
+                        <select
+                          value={project.stage}
+                          onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
+                          className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                        >
+                          {PROJECT_STAGES.map((stage) => (
+                            <option key={stage} value={stage}>
+                              {PROJECT_STAGE_LABELS[stage]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-fg-muted">{project.package ?? "—"}</td>
+                    <td className="px-3 py-2 text-fg-muted">{formatPrice(project.price_cents)}</td>
+                    <td className="px-3 py-2 text-fg-muted">
+                      {project.deadline ? new Date(project.deadline).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={project.assigned_user_id ?? ""}
+                        onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
+                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                      >
+                        <option value="">Unassigned</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

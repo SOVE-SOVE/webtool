@@ -112,7 +112,7 @@ export function PreviewFeedbackForm({
                 placeholder={pageSlug !== null ? "What would you like to say about this page?" : "Your feedback"}
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-fg-muted">Your name</label>
                 <input

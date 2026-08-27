@@ -113,7 +113,7 @@ function PageForm({
 }) {
   return (
     <div className="space-y-2 rounded-md border border-border bg-surface-subtle p-3">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Title</span>
           <input
@@ -134,7 +134,7 @@ function PageForm({
           />
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Page type</span>
           <select
@@ -173,7 +173,7 @@ function PageForm({
           className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
         />
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Primary CTA</span>
           <input

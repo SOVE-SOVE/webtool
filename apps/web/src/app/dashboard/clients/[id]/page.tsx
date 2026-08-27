@@ -129,10 +129,10 @@ export default function ClientDetailPage() {
 
       <h1 className="mt-2 text-lg font-semibold text-fg">{business.name}</h1>
 
-      <div className="mt-6 grid grid-cols-2 gap-8">
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8">
         <section>
           <h2 className="text-sm font-semibold text-fg">Business</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Name",
               <input
@@ -206,7 +206,7 @@ export default function ClientDetailPage() {
 
         <section>
           <h2 className="text-sm font-semibold text-fg">Client</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Billing email",
               <input

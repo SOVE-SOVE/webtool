@@ -196,7 +196,7 @@ export default function LeadsPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-2 gap-3 border border-border p-4">
+        <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-3 border border-border p-4">
           <input
             required
             placeholder="Business name"
@@ -342,64 +342,58 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {visibleLeads && leads && leads.length > 0 && (
-        <table className="mt-4 w-full border border-border text-left text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-            <tr>
-              {sortableHeader("business_name", "Business")}
-              <th className="px-3 py-2">Location</th>
-              {sortableHeader("status", "Status")}
-              {sortableHeader("score", "Score")}
-              {sortableHeader("priority", "Priority")}
-              <th className="px-3 py-2">Source</th>
-              <th className="px-3 py-2">Assigned to</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {visibleLeads.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-0">
-                  <EmptyState
-                    compact
-                    title="No leads match"
-                    description="Try a different search or clear the filters above."
-                    action={
-                      <button
-                        onClick={() => {
-                          setSearch("");
-                          setStatusFilter("");
-                          setPriorityFilter("");
-                          setAssigneeFilter("");
-                        }}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        Clear filters
-                      </button>
-                    }
-                  />
-                </td>
-              </tr>
-            )}
+      {visibleLeads && leads && leads.length > 0 && visibleLeads.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No leads match"
+            description="Try a different search or clear the filters above."
+            action={
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("");
+                  setPriorityFilter("");
+                  setAssigneeFilter("");
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                Clear filters
+              </button>
+            }
+          />
+        </div>
+      )}
+
+      {visibleLeads && visibleLeads.length > 0 && (
+        <>
+          {/* Mobile: one card per lead, same actions as the table. */}
+          <div className="mt-4 space-y-2 md:hidden">
             {visibleLeads.map((lead) => (
-              <tr key={lead.id} className={lead.archived_at ? "opacity-50" : undefined}>
-                <td className="px-3 py-2">
-                  <Link
-                    href={`/dashboard/leads/${lead.id}`}
-                    className="font-medium text-fg hover:underline"
+              <div
+                key={lead.id}
+                className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link href={`/dashboard/leads/${lead.id}`} className="font-medium text-fg hover:underline">
+                      {lead.business_name}
+                    </Link>
+                    <div className="text-xs text-fg-muted">
+                      {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "—"}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleArchiveToggle(lead)}
+                    className="shrink-0 text-xs text-fg-muted hover:text-fg hover:underline"
                   >
-                    {lead.business_name}
-                  </Link>
-                  {lead.industry && <div className="text-xs text-fg-muted">{lead.industry}</div>}
-                </td>
-                <td className="px-3 py-2 text-fg-muted">
-                  {[lead.suburb, lead.state].filter(Boolean).join(", ") || "—"}
-                </td>
-                <td className="px-3 py-2">
+                    {lead.archived_at ? "Unarchive" : "Archive"}
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <select
                     value={lead.status}
                     onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                    className="input"
                   >
                     {LEAD_STATUSES.map((status) => (
                       <option key={status} value={status}>
@@ -407,34 +401,21 @@ export default function LeadsPage() {
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    defaultValue={lead.score ?? ""}
-                    onBlur={(e) => handleScoreChange(lead.id, e.target.value)}
-                    className="w-16 rounded-md border border-border-strong px-2 py-1 text-sm"
-                  />
-                </td>
-                <td className="px-3 py-2">
                   <select
                     value={lead.priority}
                     onChange={(e) => handlePriorityChange(lead.id, e.target.value as LeadPriority)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                    className="input"
                   >
                     {LEAD_PRIORITIES.map((p) => (
                       <option key={p} value={p}>
-                        {p}
+                        {p} priority
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-3 py-2 text-fg-muted">{lead.source ?? "—"}</td>
-                <td className="px-3 py-2">
                   <select
                     value={lead.assigned_user_id ?? ""}
                     onChange={(e) => handleAssigneeChange(lead.id, e.target.value)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                    className="input col-span-2"
                   >
                     <option value="">Unassigned</option>
                     {users.map((user) => (
@@ -443,19 +424,104 @@ export default function LeadsPage() {
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-3 py-2">
-                  <button
-                    onClick={() => handleArchiveToggle(lead)}
-                    className="text-xs text-fg-muted hover:text-fg hover:underline"
-                  >
-                    {lead.archived_at ? "Unarchive" : "Archive"}
-                  </button>
-                </td>
-              </tr>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Desktop/tablet: full sortable table. */}
+          <div className="table-shell mt-4 hidden md:block">
+            <table className="table">
+              <thead>
+                <tr>
+                  {sortableHeader("business_name", "Business")}
+                  <th className="px-3 py-2">Location</th>
+                  {sortableHeader("status", "Status")}
+                  {sortableHeader("score", "Score")}
+                  {sortableHeader("priority", "Priority")}
+                  <th className="px-3 py-2">Source</th>
+                  <th className="px-3 py-2">Assigned to</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleLeads.map((lead) => (
+                  <tr key={lead.id} className={lead.archived_at ? "opacity-50" : undefined}>
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/dashboard/leads/${lead.id}`}
+                        className="font-medium text-fg hover:underline"
+                      >
+                        {lead.business_name}
+                      </Link>
+                      {lead.industry && <div className="text-xs text-fg-muted">{lead.industry}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-fg-muted">
+                      {[lead.suburb, lead.state].filter(Boolean).join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={lead.status}
+                        onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
+                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                      >
+                        {LEAD_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status.replace("_", " ")}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        defaultValue={lead.score ?? ""}
+                        onBlur={(e) => handleScoreChange(lead.id, e.target.value)}
+                        className="w-16 rounded-md border border-border-strong px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={lead.priority}
+                        onChange={(e) => handlePriorityChange(lead.id, e.target.value as LeadPriority)}
+                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                      >
+                        {LEAD_PRIORITIES.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-fg-muted">{lead.source ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={lead.assigned_user_id ?? ""}
+                        onChange={(e) => handleAssigneeChange(lead.id, e.target.value)}
+                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
+                      >
+                        <option value="">Unassigned</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        onClick={() => handleArchiveToggle(lead)}
+                        className="text-xs text-fg-muted hover:text-fg hover:underline"
+                      >
+                        {lead.archived_at ? "Unarchive" : "Archive"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

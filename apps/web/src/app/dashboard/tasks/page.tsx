@@ -169,7 +169,8 @@ export default function TasksPage() {
       )}
 
       {tasks && (
-        <table className="mt-6 w-full border border-border text-left text-sm">
+        <div className="mt-6 overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-left text-sm">
           <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
             <tr>
               <th className="w-8 px-3 py-2"></th>
@@ -221,6 +222,7 @@ export default function TasksPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

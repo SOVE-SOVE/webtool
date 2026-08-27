@@ -343,10 +343,10 @@ export default function LeadDetailPage() {
         </p>
       )}
 
-      <div className="mt-6 grid grid-cols-2 gap-8">
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8">
         <section>
           <h2 className="text-sm font-semibold text-fg">Business</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Name",
               <input
@@ -430,7 +430,7 @@ export default function LeadDetailPage() {
 
         <section>
           <h2 className="text-sm font-semibold text-fg">Lead</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Status",
               <select

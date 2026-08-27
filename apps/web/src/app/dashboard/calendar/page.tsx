@@ -511,7 +511,7 @@ export default function CalendarPage() {
           </p>
           {meetingError && <p className="mt-2 text-error">{meetingError}</p>}
 
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Notes",
               <textarea
