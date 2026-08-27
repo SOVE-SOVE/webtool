@@ -78,7 +78,10 @@ def create_deployment(
     website = _latest_website(db, workspace_id, project_id)
     assert website is not None  # can_deploy implies a website exists and is approved
 
-    provider = get_deployment_provider()
+    try:
+        provider = get_deployment_provider()
+    except DeploymentProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     brief = _get_brief(db, project_id)
     latest_qa = _latest_qa_report(db, website.id)
     issues = run_predeploy_checks(website, brief, latest_qa, request.environment, provider.name)
@@ -256,7 +259,10 @@ def execute_deployment(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID
             detail=f"Cannot execute — this version's workflow status is now '{deployment.website.workflow_status.value}', no longer 'ready_to_deploy'.",
         )
 
-    provider = get_deployment_provider()
+    try:
+        provider = get_deployment_provider()
+    except DeploymentProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     _run_provider(deployment, provider)
 
     project = deployment.website.project
@@ -328,7 +334,10 @@ def rollback_deployment(
             detail=f"Cannot roll back to this version — its own approvals are no longer intact: {', '.join(missing)}.",
         )
 
-    provider = get_deployment_provider()
+    try:
+        provider = get_deployment_provider()
+    except DeploymentProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     deployment = Deployment(
         website_id=website.id,
         environment=target.environment,

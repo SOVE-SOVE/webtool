@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 
 PROMPT_VERSION = "follow_up-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "follow_up.md"
@@ -96,7 +96,7 @@ def run(input: FollowUpInput) -> AgentResult[FollowUpOutput]:
         user=_build_user_message(input),
         schema=_RawFollowUpOutput.model_json_schema(),
     )
-    parsed = _RawFollowUpOutput.model_validate(raw)
+    parsed = parse_structured_output(_RawFollowUpOutput, raw)
 
     clamped = max(MIN_DUE_IN_DAYS, min(MAX_DUE_IN_DAYS, parsed.due_in_days))
     was_clamped = clamped != parsed.due_in_days

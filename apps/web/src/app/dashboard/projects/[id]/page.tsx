@@ -37,6 +37,7 @@ export default function ProjectDetailPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<ProjectApprovalStatus | null>(null);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus | null>(null);
@@ -113,21 +114,39 @@ export default function ProjectDetailPage() {
     api.getProjectApprovals(projectId).then(setApprovalStatus).catch(() => {});
     api.listDeployments(projectId).then(setDeployments).catch(() => {});
     api.getDeliveryStatus(projectId).then(setDeliveryStatus).catch(() => {});
-    api.getProject(projectId).then(setProject).catch(() => {});
+  }
+
+  // Approving/deploying can change project.stage, so these actions need
+  // to refresh it too — separate from load()'s own getProject call
+  // (which also owns the initial "couldn't load this project" state),
+  // so mount doesn't fire two identical GET /projects/{id} requests.
+  function handleApprovalOrDeploymentChanged() {
+    loadApprovalsAndDeployments();
+    api.getProject(projectId).then(setProject).catch(() => setUpdateError("Couldn't refresh project."));
   }
 
   useEffect(load, [projectId]);
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { stage });
-    setProject(updated);
+    try {
+      const updated = await api.updateProject(project.id, { stage });
+      setProject(updated);
+      setUpdateError(null);
+    } catch {
+      setUpdateError("Couldn't update stage.");
+    }
   }
 
   async function handleAssigneeChange(assigneeId: string) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
-    setProject(updated);
+    try {
+      const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
+      setProject(updated);
+      setUpdateError(null);
+    } catch {
+      setUpdateError("Couldn't update assignee.");
+    }
   }
 
   async function handleGenerate(e: React.FormEvent) {
@@ -220,6 +239,7 @@ export default function ProjectDetailPage() {
             )}
           </div>
           <p className="text-sm text-neutral-500">{project.client_business_name}</p>
+          {updateError && <p className="text-sm text-red-600">{updateError}</p>}
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -255,10 +275,10 @@ export default function ProjectDetailPage() {
             projectId={projectId}
             approvalStatus={approvalStatus}
             deployments={deployments}
-            onChanged={loadApprovalsAndDeployments}
+            onChanged={handleApprovalOrDeploymentChanged}
           />
           {deliveryStatus && (
-            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={loadApprovalsAndDeployments} />
+            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={handleApprovalOrDeploymentChanged} />
           )}
         </section>
       )}

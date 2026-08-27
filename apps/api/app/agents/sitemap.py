@@ -17,7 +17,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 
 PROMPT_VERSION = "sitemap-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "sitemap.md"
@@ -108,7 +108,7 @@ def run(input: SitemapInput) -> AgentResult[SitemapOutput]:
         user=_build_user_message(input),
         schema=schema,
     )
-    output = SitemapOutput.model_validate(raw)
+    output = parse_structured_output(SitemapOutput, raw)
 
     # A parent_slug that doesn't match any page in the same output is a
     # malformed generation — flag rather than silently drop the

@@ -62,8 +62,15 @@ def _page_path(slug: str) -> str:
     (empty slug) is the root `index.html`; every other page gets its
     own directory with an `index.html` so provider hosts that only
     serve directory-index files (every one targeted here) resolve
-    clean paths without a `.html` extension."""
-    clean = slug.strip("/")
+    clean paths without a `.html` extension.
+
+    Runs every slug through `_slugify` (not just `.strip("/")`) — a page
+    slug can originate from an operator-editable field or raw LLM
+    output (see modules/sitemaps/schemas.py), so without this a slug
+    like `../../../etc` would produce a build-artifact path that escapes
+    the intended output directory, which the traditional (FTP) provider
+    would then `cwd`/`mkd` into on the customer's real hosting account."""
+    clean = _slugify(slug.strip("/")) if slug.strip("/") else ""
     return "index.html" if not clean else f"{clean}/index.html"
 
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import enforce_public_preview_rate_limit
 from app.db.session import get_db
 from app.modules.users.models import User
 from app.modules.website_feedback import service
@@ -14,7 +15,12 @@ router = APIRouter(tags=["website-feedback"])
 
 # Public — the token in the URL is the credential, same as
 # modules/previews/routes.py's GET endpoints.
-@router.post("/api/v1/preview/{token}/websites/{website_id}/feedback", response_model=FeedbackRead, status_code=201)
+@router.post(
+    "/api/v1/preview/{token}/websites/{website_id}/feedback",
+    response_model=FeedbackRead,
+    status_code=201,
+    dependencies=[Depends(enforce_public_preview_rate_limit)],
+)
 def submit_feedback(token: str, website_id: uuid.UUID, body: FeedbackCreate, db: Session = Depends(get_db)) -> FeedbackRead:
     return service.submit_feedback(db, token, website_id, body)
 

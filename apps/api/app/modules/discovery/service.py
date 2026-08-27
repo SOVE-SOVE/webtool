@@ -8,6 +8,7 @@ from app.integrations.discovery import registry
 from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
+from app.modules.business_research.models import BusinessResearchResult
 from app.modules.businesses.models import Business
 from app.modules.discovery import dedup
 from app.modules.discovery.models import (
@@ -248,14 +249,39 @@ def _latest_score(db: Session, business_id: uuid.UUID) -> OpportunityScoreResult
     )
 
 
+def _latest_per(db: Session, model, group_column, order_column, keys: list[uuid.UUID]) -> dict:
+    """
+    One row per group — the newest. Postgres DISTINCT ON, so this stays a
+    single query for every business on the page instead of one per-row
+    lookup each — same pattern as modules/dashboard/service.py's helper
+    of the same name.
+    """
+    if not keys:
+        return {}
+    rows = db.scalars(
+        select(model).where(group_column.in_(keys)).distinct(group_column).order_by(group_column, order_column.desc())
+    ).unique()
+    return {getattr(row, group_column.key): row for row in rows}
+
+
 def list_review_items(
-    db: Session, workspace_id: uuid.UUID, include_archived: bool = False
+    db: Session, workspace_id: uuid.UUID, include_archived: bool = False, limit: int = 100
 ) -> list[DiscoveredBusinessReviewRead]:
     """
     The dedicated review interface's backing list — every discovered
     business across every search in the workspace, with the latest
     research/quality/score context folded in so the operator can decide
     approve/reject/archive/import without opening each one individually.
+    Defaults to the newest 100 (same "cap an unbounded, ever-growing
+    list" precedent as modules/activity_log/service.py's list_activity)
+    since this spans every search ever run in the workspace, not one
+    search's results.
+
+    Every business's latest research/quality/score is fetched as 3
+    batched DISTINCT ON queries (`_latest_per`) rather than 3 queries per
+    business — this list spans every search ever run in the workspace,
+    so a per-row lookup would scale with the workspace's total discovery
+    history, not the page size.
     """
     query = (
         select(DiscoveredBusiness)
@@ -265,13 +291,24 @@ def list_review_items(
     )
     if not include_archived:
         query = query.where(DiscoveredBusiness.status != DiscoveredBusinessStatus.ARCHIVED)
-    businesses = list(db.scalars(query.order_by(DiscoveredBusiness.discovered_at.desc())))
+    businesses = list(db.scalars(query.order_by(DiscoveredBusiness.discovered_at.desc()).limit(limit)))
+
+    business_ids = [b.id for b in businesses]
+    researches = _latest_per(
+        db, BusinessResearchResult, BusinessResearchResult.discovered_business_id, BusinessResearchResult.researched_at, business_ids
+    )
+    quality_audits = _latest_per(
+        db, WebsiteQualityAudit, WebsiteQualityAudit.discovered_business_id, WebsiteQualityAudit.audited_at, business_ids
+    )
+    scores = _latest_per(
+        db, OpportunityScoreResult, OpportunityScoreResult.discovered_business_id, OpportunityScoreResult.scored_at, business_ids
+    )
 
     items: list[DiscoveredBusinessReviewRead] = []
     for business in businesses:
-        research = business_research_service.get_latest_research_result(db, business.id)
-        quality_audit = _latest_quality_audit(db, business.id)
-        score = _latest_score(db, business.id)
+        research = researches.get(business.id)
+        quality_audit = quality_audits.get(business.id)
+        score = scores.get(business.id)
         key_problems = [f["message"] for f in (quality_audit.findings if quality_audit else [])][:3]
 
         items.append(

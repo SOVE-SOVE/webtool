@@ -14,8 +14,8 @@ class FeedbackCreate(BaseModel):
     # not one spot on one page.
     page_slug: str | None = None
     section_id: str | None = None
-    client_name: str | None = None
-    client_email: str | None = None
+    client_name: str | None = Field(default=None, max_length=200)
+    client_email: str | None = Field(default=None, max_length=320)
 
 
 class FeedbackRead(BaseModel):

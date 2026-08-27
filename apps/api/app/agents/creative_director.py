@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.llm import generate_structured, parse_structured_output
 
 PROMPT_VERSION = "creative_director-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "creative_director.md"
@@ -138,7 +138,7 @@ def run(input: CreativeDirectorInput) -> AgentResult[CreativeDirectorOutput]:
         user=_build_user_message(input),
         schema=schema,
     )
-    output = CreativeDirectorOutput.model_validate(raw)
+    output = parse_structured_output(CreativeDirectorOutput, raw)
 
     # The two inputs that matter most for a *client-specific* (not
     # generic) direction are target audience and business goals — client

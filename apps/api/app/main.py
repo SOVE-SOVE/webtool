@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.core.logging import configure_logging, logger
 from app.core.settings import settings
@@ -56,6 +57,26 @@ async def llm_unavailable_handler(request: Request, exc: LlmUnavailableError) ->
     """
     logger.warning("LLM unavailable on %s %s: %s", request.method, request.url.path, exc)
     return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+    """
+    Every module pre-checks FK references and uniqueness in application
+    code before writing (see e.g. modules/clients/service.py's
+    create_client), so this is normally unreachable — it only fires on a
+    genuine race between two concurrent requests, which a pre-check
+    can't fully close. Still deserves a clean 409 rather than falling
+    through to the generic 500 below.
+    """
+    logger.warning("Integrity error on %s %s: %s", request.method, request.url.path, exc)
+    return _with_cors(
+        request,
+        JSONResponse(
+            status_code=409,
+            content={"detail": "This conflicts with existing data — it may already exist or have just changed. Please retry."},
+        ),
+    )
 
 
 def _with_cors(request: Request, response: JSONResponse) -> JSONResponse:

@@ -5,6 +5,7 @@ a lead's existing website (never a guessed/estimated number) per the
 "no unsupported claims" requirement on the Sales Audit feature.
 """
 
+import asyncio
 import ipaddress
 import socket
 from dataclasses import dataclass
@@ -15,6 +16,14 @@ from playwright.async_api import async_playwright
 
 MOBILE_VIEWPORT = {"width": 375, "height": 667}
 NAVIGATION_TIMEOUT_MS = 15_000
+# Caps fetch_qa_signals' total broken-link check regardless of how many
+# pages a sitemap has — without this, a site with 15-20 pages that are
+# all slow/unreachable could stall one QA-report-generation request for
+# minutes (page count x up to NAVIGATION_TIMEOUT_MS each, checked
+# sequentially). Checking a bounded number concurrently instead keeps
+# one request's worst case fixed rather than scaling with page count.
+_LINK_CHECK_CONCURRENCY = 5
+_LINK_CHECK_TOTAL_TIMEOUT_S = 45
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
@@ -304,17 +313,29 @@ async def fetch_qa_signals(base_url: str, page_paths: list[str]) -> QaPageSignal
                     "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
                 )
 
-                broken_links: list[str] = []
-                for path in page_paths:
+                link_check_semaphore = asyncio.Semaphore(_LINK_CHECK_CONCURRENCY)
+
+                async def _check_link(path: str) -> str | None:
                     target = f"{origin}{path}"
                     if target == base_url or target == final_url:
-                        continue
-                    try:
-                        link_response = await page.request.get(target, timeout=NAVIGATION_TIMEOUT_MS)
-                        if link_response.status >= 400:
-                            broken_links.append(path)
-                    except Exception:
-                        broken_links.append(path)
+                        return None
+                    async with link_check_semaphore:
+                        try:
+                            link_response = await page.request.get(target, timeout=NAVIGATION_TIMEOUT_MS)
+                            return path if link_response.status >= 400 else None
+                        except Exception:
+                            return path
+
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*(_check_link(path) for path in page_paths)),
+                        timeout=_LINK_CHECK_TOTAL_TIMEOUT_S,
+                    )
+                    broken_links = [path for path in results if path]
+                except asyncio.TimeoutError:
+                    # Whatever didn't finish in time is reported as
+                    # unchecked, not silently dropped or falsely "ok".
+                    broken_links = ["(link check timed out before every page could be checked)"]
 
                 return QaPageSignals(
                     https=final_url.startswith("https://"),

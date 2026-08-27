@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.modules.sitemaps.models import NavPlacement, PageType, SitemapStatus
 
@@ -12,6 +12,17 @@ def _split(text: str | None) -> list[str]:
 
 def _join(items: list[str]) -> str:
     return "\n".join(items)
+
+
+def _reject_path_traversal_slug(value: str | None) -> str | None:
+    """A page's slug becomes a filesystem path segment when the site is
+    built for deployment (see integrations/deployment/build.py), which
+    itself now re-slugifies defensively — but rejecting `/`, `\\`, and
+    `..` here too means a bad slug never even reaches the DB, instead of
+    only being neutralized at build time."""
+    if value and (".." in value or "/" in value or "\\" in value):
+        raise ValueError("Slug cannot contain '/', '\\\\', or '..'")
+    return value
 
 
 class GenerateSitemapRequest(BaseModel):
@@ -45,6 +56,8 @@ class SitemapPageCreate(BaseModel):
     # Explicit position among its new siblings; omitted appends to the end.
     order_index: int | None = None
 
+    _validate_slug = field_validator("slug")(_reject_path_traversal_slug)
+
 
 class SitemapPageUpdate(BaseModel):
     """
@@ -67,6 +80,8 @@ class SitemapPageUpdate(BaseModel):
     key_sections: list[str] | None = None
     required_content: list[str] | None = None
     required_functionality: list[str] | None = None
+
+    _validate_slug = field_validator("slug")(_reject_path_traversal_slug)
 
 
 class SitemapPageOrder(BaseModel):

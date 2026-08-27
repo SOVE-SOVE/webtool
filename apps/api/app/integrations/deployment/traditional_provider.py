@@ -54,6 +54,17 @@ class TraditionalHostingProvider(DeploymentProvider):
             ftp.prot_p()
         return ftp
 
+    @staticmethod
+    def _is_safe_path(path: str) -> bool:
+        """Defense in depth: `build.py` already slugifies every page path,
+        but this provider is the one place a `..`-containing path would
+        turn into a real `ftp.cwd`/`mkd` walk on the customer's own
+        hosting account, so it's worth a second, independent check here
+        rather than trusting the caller never to regress it."""
+        if not path or path.startswith("/"):
+            return False
+        return all(part not in ("", "..", ".") for part in path.split("/"))
+
     def _ensure_dir(self, ftp: ftplib.FTP, path: str) -> None:
         parts = [p for p in path.strip("/").split("/") if p]
         current = ""
@@ -83,6 +94,13 @@ class TraditionalHostingProvider(DeploymentProvider):
         try:
             ftp.cwd(self._remote_path)
             for path, content in artifact.files.items():
+                if not self._is_safe_path(path):
+                    return DeploymentOutcome(
+                        ok=False,
+                        target=self.name,
+                        error=f"Refusing to upload unsafe build path: {path!r}",
+                        detail={"uploaded": uploaded},
+                    )
                 remote_dir = "/".join(path.split("/")[:-1])
                 if remote_dir:
                     self._ensure_dir(ftp, remote_dir)
