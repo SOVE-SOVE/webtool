@@ -114,7 +114,15 @@ export default function ProjectDetailPage() {
     api.getProjectApprovals(projectId).then(setApprovalStatus).catch(() => {});
     api.listDeployments(projectId).then(setDeployments).catch(() => {});
     api.getDeliveryStatus(projectId).then(setDeliveryStatus).catch(() => {});
-    api.getProject(projectId).then(setProject).catch(() => {});
+  }
+
+  // Approving/deploying can change project.stage, so these actions need
+  // to refresh it too — separate from load()'s own getProject call
+  // (which also owns the initial "couldn't load this project" state),
+  // so mount doesn't fire two identical GET /projects/{id} requests.
+  function handleApprovalOrDeploymentChanged() {
+    loadApprovalsAndDeployments();
+    api.getProject(projectId).then(setProject).catch(() => setUpdateError("Couldn't refresh project."));
   }
 
   useEffect(load, [projectId]);
@@ -267,10 +275,10 @@ export default function ProjectDetailPage() {
             projectId={projectId}
             approvalStatus={approvalStatus}
             deployments={deployments}
-            onChanged={loadApprovalsAndDeployments}
+            onChanged={handleApprovalOrDeploymentChanged}
           />
           {deliveryStatus && (
-            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={loadApprovalsAndDeployments} />
+            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={handleApprovalOrDeploymentChanged} />
           )}
         </section>
       )}

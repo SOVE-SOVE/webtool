@@ -65,7 +65,14 @@ def generate_structured(
         response = client.messages.create(
             model=model or settings.llm_model,
             max_tokens=max_tokens,
-            system=system,
+            # Every agent's system prompt is static per-agent text loaded
+            # verbatim from its own .md file (all per-call specifics go
+            # in `user` instead) — marking it cacheable means the
+            # (largest) part of the prompt is billed/latency-charged once
+            # per ~5 minutes of reuse instead of on every single
+            # generation call. No effect either way on prompts too small
+            # to clear Anthropic's cache-eligibility minimum.
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user}],
             tools=[
                 {

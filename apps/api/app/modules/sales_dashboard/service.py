@@ -55,7 +55,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.modules.businesses.models import Business
 from app.modules.dashboard.schemas import AttentionItem
@@ -139,7 +139,11 @@ def _active_leads(db: Session, workspace_id: uuid.UUID) -> list[Lead]:
                 Lead.archived_at.is_(None),
                 Lead.status.not_in(_NON_FUNNEL_STATUSES),
             )
-            .options(joinedload(Lead.business), joinedload(Lead.assigned_user), joinedload(Lead.interactions))
+            # selectinload for interactions (a collection), not joinedload —
+            # two joined one-to-many relations on the same query would
+            # cartesian-product the row count, per the same reasoning
+            # documented in modules/meetings/service.py.
+            .options(joinedload(Lead.business), joinedload(Lead.assigned_user), selectinload(Lead.interactions))
         ).unique()
     )
 
