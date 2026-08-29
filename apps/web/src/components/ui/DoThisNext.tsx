@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, type AttentionItem } from "@/lib/api";
+import type { AttentionItem } from "@/lib/api";
+import { loadOverview, peekOverview } from "@/lib/overview";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /**
@@ -12,11 +13,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
  * first) by the API; this component just renders it in a fixed-height,
  * internally scrolling card so a long queue never stretches the page.
  *
- * Data source: GET /api/v1/dashboard/overview → `needs_attention`
- * (the same call the Overview page makes). Cached module-side for a
- * short window so navigating between pages doesn't re-hit the (fairly
- * heavy) aggregate query on every click, but a genuine revisit after
- * doing work elsewhere still refreshes it.
+ * Data source: GET /api/v1/dashboard/overview → `needs_attention`, via
+ * the shared short-lived cache in lib/overview (so this and the Overview
+ * page's metrics share one request instead of two, and navigating
+ * between pages doesn't re-run the aggregate query every time).
  */
 
 // One place for the attention-kind → badge colour mapping that the
@@ -34,41 +34,17 @@ const BADGE_CLASS: Record<AttentionItem["kind"], string> = {
   new_lead: "bg-surface-subtle text-fg-muted",
 };
 
-const FRESH_MS = 20_000;
-let cache: { at: number; items: AttentionItem[] } | null = null;
-let inflight: Promise<AttentionItem[]> | null = null;
-
-function loadAttention(): Promise<AttentionItem[]> {
-  if (cache && Date.now() - cache.at < FRESH_MS) return Promise.resolve(cache.items);
-  if (inflight) return inflight;
-  inflight = api
-    .dashboardOverview()
-    .then((d) => {
-      cache = { at: Date.now(), items: d.needs_attention };
-      return d.needs_attention;
-    })
-    .finally(() => {
-      inflight = null;
-    });
-  return inflight;
-}
-
-/** Called after a mutation elsewhere so the next render refetches. */
-export function invalidateAttention() {
-  cache = null;
-}
-
 export function DoThisNext() {
   const pathname = usePathname();
-  const [items, setItems] = useState<AttentionItem[] | null>(cache?.items ?? null);
+  const [items, setItems] = useState<AttentionItem[] | null>(peekOverview()?.needs_attention ?? null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    loadAttention()
-      .then((next) => {
+    loadOverview()
+      .then((d) => {
         if (!alive) return;
-        setItems(next);
+        setItems(d.needs_attention);
         setFailed(false);
       })
       .catch(() => {

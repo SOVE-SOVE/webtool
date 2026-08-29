@@ -56,6 +56,14 @@ export default function LeadsPage() {
 
   useEffect(load, [showArchived]);
 
+  // Opened from an "Add lead" quick action elsewhere (?new=1). Deferred
+  // to an effect (not a lazy initializer) so the server-rendered markup
+  // — which has no `window` — matches the first client render.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (new URLSearchParams(window.location.search).has("new")) setShowForm(true);
+  }, []);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
