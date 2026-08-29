@@ -112,35 +112,35 @@ function PageForm({
   submitLabel: string;
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-      <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-2 rounded-md border border-border bg-surface-subtle p-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
-          <span className="text-neutral-600">Title</span>
+          <span className="text-fg-muted">Title</span>
           <input
             value={value.title}
             onChange={(e) => {
               const title = e.target.value;
               onChange({ ...value, title, slug: value.slug || slugify(title) });
             }}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-neutral-600">Slug</span>
+          <span className="text-fg-muted">Slug</span>
           <input
             value={value.slug}
             onChange={(e) => onChange({ ...value, slug: e.target.value })}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           />
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
-          <span className="text-neutral-600">Page type</span>
+          <span className="text-fg-muted">Page type</span>
           <select
             value={value.page_type}
             onChange={(e) => onChange({ ...value, page_type: e.target.value as PageType })}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             {PAGE_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -150,11 +150,11 @@ function PageForm({
           </select>
         </label>
         <label className="block text-sm">
-          <span className="text-neutral-600">Navigation</span>
+          <span className="text-fg-muted">Navigation</span>
           <select
             value={value.nav_placement}
             onChange={(e) => onChange({ ...value, nav_placement: e.target.value as NavPlacement })}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             {NAV_PLACEMENTS.map((p) => (
               <option key={p} value={p}>
@@ -165,71 +165,71 @@ function PageForm({
         </label>
       </div>
       <label className="block text-sm">
-        <span className="text-neutral-600">Purpose</span>
+        <span className="text-fg-muted">Purpose</span>
         <textarea
           value={value.purpose}
           onChange={(e) => onChange({ ...value, purpose: e.target.value })}
           rows={2}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
         />
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
-          <span className="text-neutral-600">Primary CTA</span>
+          <span className="text-fg-muted">Primary CTA</span>
           <input
             value={value.primary_cta}
             onChange={(e) => onChange({ ...value, primary_cta: e.target.value })}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-neutral-600">Secondary CTA</span>
+          <span className="text-fg-muted">Secondary CTA</span>
           <input
             value={value.secondary_cta}
             onChange={(e) => onChange({ ...value, secondary_cta: e.target.value })}
-            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
           />
         </label>
       </div>
       <label className="block text-sm">
-        <span className="text-neutral-600">Key sections (one per line)</span>
+        <span className="text-fg-muted">Key sections (one per line)</span>
         <textarea
           value={value.key_sections}
           onChange={(e) => onChange({ ...value, key_sections: e.target.value })}
           rows={2}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
         />
       </label>
       <label className="block text-sm">
-        <span className="text-neutral-600">Required content (one per line)</span>
+        <span className="text-fg-muted">Required content (one per line)</span>
         <textarea
           value={value.required_content}
           onChange={(e) => onChange({ ...value, required_content: e.target.value })}
           rows={2}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
         />
       </label>
       <label className="block text-sm">
-        <span className="text-neutral-600">Required functionality (one per line)</span>
+        <span className="text-fg-muted">Required functionality (one per line)</span>
         <textarea
           value={value.required_functionality}
           onChange={(e) => onChange({ ...value, required_functionality: e.target.value })}
           rows={2}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
         />
       </label>
       <div className="flex justify-end gap-2 pt-1">
         <button
           onClick={onCancel}
           disabled={saving}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-white disabled:opacity-50"
+          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-hover disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onSubmit}
           disabled={saving || !value.title || !value.slug}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {saving ? "Saving…" : submitLabel}
         </button>
@@ -374,16 +374,16 @@ function PageRow({
       <div className="flex items-start justify-between gap-2">
         <button onClick={() => setExpanded((v) => !v)} className="flex-1 text-left">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-neutral-900">
+            <span className="text-sm font-medium text-fg">
               {expanded ? "▾" : "▸"} {page.title}
             </span>
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
               /{page.slug}
             </span>
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">
+            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
               {PAGE_TYPE_LABELS[page.page_type]}
             </span>
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
               {NAV_PLACEMENT_LABELS[page.nav_placement]}
             </span>
           </div>
@@ -394,7 +394,7 @@ function PageRow({
               onClick={() => move("up")}
               disabled={!canMoveUp || saving}
               title="Move up"
-              className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs hover:bg-neutral-50 disabled:opacity-30"
+              className="rounded border border-border-strong px-1.5 py-0.5 text-xs hover:bg-surface-subtle disabled:opacity-30"
             >
               ↑
             </button>
@@ -402,28 +402,28 @@ function PageRow({
               onClick={() => move("down")}
               disabled={!canMoveDown || saving}
               title="Move down"
-              className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs hover:bg-neutral-50 disabled:opacity-30"
+              className="rounded border border-border-strong px-1.5 py-0.5 text-xs hover:bg-surface-subtle disabled:opacity-30"
             >
               ↓
             </button>
             <button
               onClick={startEdit}
               disabled={saving}
-              className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded border border-border-strong px-2 py-0.5 text-xs hover:bg-surface-subtle disabled:opacity-50"
             >
               Edit
             </button>
             <button
               onClick={() => setAddingChild((v) => !v)}
               disabled={saving}
-              className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded border border-border-strong px-2 py-0.5 text-xs hover:bg-surface-subtle disabled:opacity-50"
             >
               + Sub-page
             </button>
             <button
               onClick={removePage}
               disabled={saving}
-              className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30"
             >
               Remove
             </button>
@@ -432,33 +432,33 @@ function PageRow({
       </div>
 
       {expanded && !editing && (
-        <div className="mt-2 space-y-1.5 pl-1 text-sm text-neutral-700">
+        <div className="mt-2 space-y-1.5 pl-1 text-sm text-fg-muted">
           <p>{page.purpose}</p>
           <p>
-            <span className="text-neutral-500">Primary CTA: </span>
+            <span className="text-fg-muted">Primary CTA: </span>
             {page.primary_cta || "—"}
             {page.secondary_cta && (
               <>
-                <span className="ml-3 text-neutral-500">Secondary CTA: </span>
+                <span className="ml-3 text-fg-muted">Secondary CTA: </span>
                 {page.secondary_cta}
               </>
             )}
           </p>
           {page.key_sections.length > 0 && (
             <div>
-              <span className="text-neutral-500">Key sections:</span>
+              <span className="text-fg-muted">Key sections:</span>
               {bulletList(page.key_sections)}
             </div>
           )}
           {page.required_content.length > 0 && (
             <div>
-              <span className="text-neutral-500">Required content:</span>
+              <span className="text-fg-muted">Required content:</span>
               {bulletList(page.required_content)}
             </div>
           )}
           {page.required_functionality.length > 0 && (
             <div>
-              <span className="text-neutral-500">Required functionality:</span>
+              <span className="text-fg-muted">Required functionality:</span>
               {bulletList(page.required_functionality)}
             </div>
           )}
@@ -492,7 +492,7 @@ function PageRow({
       )}
 
       {page.children.length > 0 && (
-        <ul className="mt-1 divide-y divide-neutral-100 border-l border-neutral-200">
+        <ul className="mt-1 divide-y divide-border border-l border-border">
           {page.children.map((child) => (
             <PageRow
               key={child.id}
@@ -566,20 +566,20 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
         <div className="flex items-center gap-2">
           <span
             className={`rounded px-2 py-0.5 text-xs font-medium ${
-              approved ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-700"
+              approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
             }`}
           >
             {approved ? "Approved — structural source of truth" : "Draft — review before continuing"}
           </span>
           {sitemap.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged for review</span>
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {!approved && (
             <button
               onClick={() => setAddingTop((v) => !v)}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
             >
               {addingTop ? "Cancel" : "Add page"}
             </button>
@@ -596,13 +596,13 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
         </div>
       </div>
 
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-error">{error}</p>}
       {sitemap.review_notes && (
-        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
           {sitemap.review_notes}
         </p>
       )}
-      {sitemap.overview && <p className="mt-3 text-sm text-neutral-700">{sitemap.overview}</p>}
+      {sitemap.overview && <p className="mt-3 text-sm text-fg-muted">{sitemap.overview}</p>}
 
       {addingTop && (
         <div className="mt-3">
@@ -617,8 +617,8 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
         </div>
       )}
 
-      <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200 px-3">
-        {sitemap.pages.length === 0 && <li className="py-3 text-sm text-neutral-500">No pages yet.</li>}
+      <ul className="mt-3 divide-y divide-border border border-border px-3">
+        {sitemap.pages.length === 0 && <li className="py-3 text-sm text-fg-muted">No pages yet.</li>}
         {sitemap.pages.map((page) => (
           <PageRow
             key={page.id}
@@ -634,11 +634,11 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
       </ul>
 
       {sitemap.sources_note && (
-        <p className="mt-4 border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+        <p className="mt-4 border-t border-border pt-3 text-xs text-fg-muted">
           Sources: {sitemap.sources_note}
         </p>
       )}
-      <p className="mt-2 text-xs text-neutral-400">
+      <p className="mt-2 text-xs text-fg-subtle">
         Generated {new Date(sitemap.generated_at).toLocaleString()}
         {sitemap.generated_by_user_name ? ` by ${sitemap.generated_by_user_name}` : ""}
         {sitemap.approved_at ? ` · approved ${new Date(sitemap.approved_at).toLocaleString()}` : ""}

@@ -11,6 +11,112 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-27 — Phase 8: Production Polish (UX audit, dark mode, responsive)
+**Mode:** worktree (`phase8-production-polish`)
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/web/src/app/globals.css, apps/web/src/app/layout.tsx,
+apps/web/src/app/dashboard/layout.tsx, apps/web/src/components/ui/ (new:
+EmptyState, ErrorState, Skeleton, ConfirmProvider, ThemeProvider,
+ThemeToggle), every apps/web/src/app/dashboard/**/page.tsx, most of
+apps/web/src/components/*.tsx (excluding PreviewSiteRenderer.tsx —
+deliberately, see below).
+
+**What happened:** Three-task session, three commits per the operator's
+explicit split — first stop building features, now make the tool
+reliable enough to run client work through.
+
+Task 1 (`refactor: improve application UX`) — the app had zero design
+system: every page hand-wrote its own `bg-neutral-900`/`text-neutral-500`
+Tailwind strings, no loading states (blank render while fetching), no
+error recovery (dead-end `<p>{error}</p>` with no retry), three raw
+`window.confirm()` calls, and empty states that didn't distinguish "no
+data yet" from "no results match your filters." Built a semantic
+color/spacing token system in globals.css (surface/canvas/border/fg/
+accent/danger + shared `.btn`/`.input`/`.card`/`.table` component
+classes) and swept the whole app onto it — this was as much groundwork
+for Task 2 as it was Task 1's own deliverable. Added EmptyState,
+ErrorState (with retry), Skeleton loaders, and a promise-based
+ConfirmProvider (replaces `window.confirm()`), wired those into every
+list/detail page. Regrouped the sidebar nav by pipeline stage
+(Prospecting/Sales/Delivery/Workspace) instead of one flat list. Fixed
+several pages whose retry never cleared a prior error (stale banner
+next to freshly-loaded data).
+
+Task 2 (`feat: complete dark mode and design system`) — because Task 1's
+tokens exist, this was additive: dark values for every token under
+`[data-theme="dark"]`, `@custom-variant dark` bound to that attribute
+(not `prefers-color-scheme`, so an explicit choice always beats the OS),
+a ThemeProvider (light/dark/system, localStorage-persisted) plus a
+`beforeInteractive` inline script so there's no flash of the wrong theme
+on load — including on the very first visit before any preference is
+stored. Theme control lives in the sidebar footer (compact) and Settings
+(full, plus a font picker: Geist/System UI/Serif/Monospace — all either
+already-loaded or a system stack, so switching never depends on a
+network fetch). Swept every status/priority/severity pastel badge
+(`bg-amber-100 text-amber-800` etc.) onto matching `dark:` variants.
+Deliberately left `PreviewSiteRenderer.tsx` (renders a client's actual
+website content, with its own per-section light/dark/brand tone system)
+and the device-frame `bg-white` in `/preview/[token]` untouched — that's
+website content, not app chrome, and must stay independent of the
+operator's own theme preference.
+
+Task 3 (`fix: complete responsive UI`) — audited every dashboard route
+at 375/768/1280/1920px with a scripted Playwright check (`<main>` /
+`document.documentElement` scrollWidth vs. viewport width) rather than
+eyeballing a resize. Gave Leads/Clients/Projects — the three core CRM
+tables — a real mobile layout (stacked cards below `md`, full table
+with its own contained scroll region at `md`+) instead of letting a
+wide table push the whole page sideways. Smaller/secondary tables
+(Tasks, Settings People) got a lighter `overflow-x-auto` wrapper.
+Un-stacked `grid-cols-2` forms/detail grids to `grid-cols-1 sm:grid-cols-2`.
+Left the Pipeline kanban board and the calendar's 7-column month grid
+alone — horizontal scroll and a fluid grid are the *correct* native-
+responsive pattern for those, not something to fix.
+
+**Blockers/issues:** A scripted find-and-replace during Task 3 (adding
+`sm:` breakpoints to bare `grid-cols-2`) blindly matched the string
+`grid-cols-2` wherever it appeared, including inside already-responsive
+multi-breakpoint grids (e.g. `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5`
+on the Overview/Sales metric tiles), producing conflicting duplicate
+breakpoint rules. Caught it by re-grepping for the corruption pattern
+and by a script counting `grid-cols-\d+` tokens per class string;
+fixed the ~4 affected spots and re-ran the check clean. Lesson for next
+time a scripted sweep touches Tailwind responsive classes: grep for
+existing `sm:`/`md:`/`lg:` prefixes on the *target* pattern first, not
+just exclude files that already contain them elsewhere.
+
+Screenshots (`page.screenshot()`) hang indefinitely in this sandbox's
+Playwright browser ("waiting for fonts to load..." never resolves) —
+unrelated to any change here, reproduced on a blank page too. Fell back
+to computed-style assertions (`getComputedStyle`, bounding rects,
+`scrollWidth`/`clientWidth`) via `browser_run_code_unsafe`, which fully
+covered dark-mode color verification and responsive-overflow auditing
+without needing pixels. Worth a standing fix if this sandbox is used for
+visual QA again.
+
+Verified with `tsc`, `eslint`, `vitest` (53 tests, unchanged), and
+`next build` after every commit, plus a real logged-in browser session
+against a throwaway local Postgres + FastAPI + Next.js stack (own
+`webdesignos_phase8polish` DB, dropped afterward; API/web dev servers on
+8100/3100 to avoid colliding with another session already on 8000/3000):
+created a lead, converted it to a client (confirm dialog), checked the
+resulting client/project records, toggled dark mode and verified
+computed colors, switched fonts, opened/closed the mobile nav drawer,
+and re-ran the full overflow audit clean across all four breakpoints —
+zero console errors across the whole session.
+
+**Next up:** None — closes out the explicit three-part Phase 8 ask. Not
+done in this session (out of scope as given, but worth flagging):
+`/preview/[token]`'s own responsiveness wasn't checked against a real
+preview token (none available locally); the People/Tasks tables still
+fall back to horizontal scroll rather than a card view, acceptable for
+now given their lower column count but worth revisiting if they grow;
+theme/font preference is per-browser (localStorage) only, not synced to
+the user's account — fine for a single-operator tool today, would need
+backend persistence if multi-device sync ever matters.
+
+---
+
 ## 2026-08-27 — Phase 7 Part 3 (PHASE 7 CHECKPOINT): connect the major automation systems end to end
 **Mode:** worktree (`phase7-part3-connect-automation`, background job)
 **Merge to main after:** yes

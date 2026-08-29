@@ -25,6 +25,8 @@ import {
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -58,16 +60,17 @@ const OUTREACH_STATUS_LABELS: Record<OutreachMessage["status"], string> = {
 function field(label: string, value: React.ReactNode) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
       <div className="mt-1">{value}</div>
     </div>
   );
 }
 
-const inputClass = "w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm";
+const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();
+  const confirm = useConfirm();
   const leadId = params.id;
 
   const [lead, setLead] = useState<Lead | null>(null);
@@ -121,7 +124,10 @@ export default function LeadDetailPage() {
         setLead(l);
         return api.getBusiness(l.business_id);
       })
-      .then(setBusiness)
+      .then((b) => {
+        setError(null);
+        setBusiness(b);
+      })
       .catch(() => setError("Couldn't load this lead."));
     api.listUsers().then(setUsers).catch(() => {});
     api
@@ -270,16 +276,16 @@ export default function LeadDetailPage() {
   async function handleConvert(e: React.FormEvent) {
     e.preventDefault();
     if (!business) return;
-    const summary = [
-      `Convert ${business.name} to a client?`,
-      "",
-      "This marks the lead WON and creates a new client and an INTAKE-stage project" +
+    const ok = await confirm({
+      title: `Convert ${business.name} to a client?`,
+      description:
+        "This marks the lead WON and creates a new client and an INTAKE-stage project" +
         (convertPackage ? ` (${convertPackage})` : "") +
-        ".",
-      "The lead's history — audits, outreach, sales opportunities, and notes — stays exactly where it is, attached to the lead.",
-      "This can't be undone.",
-    ].join("\n");
-    if (!confirm(summary)) return;
+        ". The lead's history — audits, outreach, sales opportunities, and notes — stays exactly where it is, attached to the lead. This can't be undone.",
+      confirmLabel: "Convert to client",
+      danger: true,
+    });
+    if (!ok) return;
 
     setConverting(true);
     setConvertError(null);
@@ -307,34 +313,40 @@ export default function LeadDetailPage() {
     }
   }
 
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
-  if (!lead || !business) return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  if (error) {
+    return (
+      <div className="p-6">
+        <ErrorState message={error} onRetry={load} />
+      </div>
+    );
+  }
+  if (!lead || !business) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/leads" className="text-sm text-neutral-500 hover:underline">
+      <Link href="/dashboard/leads" className="text-sm text-fg-muted hover:underline">
         ← All leads
       </Link>
 
       <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">{business.name}</h1>
+        <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
         <button
           onClick={handleArchiveToggle}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
         >
           {lead.archived_at ? "Unarchive lead" : "Archive lead"}
         </button>
       </div>
       {lead.archived_at && (
-        <p className="mt-1 text-sm text-amber-600">
+        <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
           Archived on {new Date(lead.archived_at).toLocaleDateString()}
         </p>
       )}
 
-      <div className="mt-6 grid grid-cols-2 gap-8">
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8">
         <section>
-          <h2 className="text-sm font-semibold text-neutral-900">Business</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <h2 className="text-sm font-semibold text-fg">Business</h2>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Name",
               <input
@@ -417,8 +429,8 @@ export default function LeadDetailPage() {
         </section>
 
         <section>
-          <h2 className="text-sm font-semibold text-neutral-900">Lead</h2>
-          <div className="mt-3 grid grid-cols-2 gap-4">
+          <h2 className="text-sm font-semibold text-fg">Lead</h2>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Status",
               <select
@@ -474,10 +486,10 @@ export default function LeadDetailPage() {
                 ))}
               </select>,
             )}
-            {field("Source", <span className="text-sm text-neutral-700">{lead.source ?? "—"}</span>)}
+            {field("Source", <span className="text-sm text-fg-muted">{lead.source ?? "—"}</span>)}
             {field(
               "Created",
-              <span className="text-sm text-neutral-700">
+              <span className="text-sm text-fg-muted">
                 {new Date(lead.created_at).toLocaleDateString()}
               </span>,
             )}
@@ -498,21 +510,21 @@ export default function LeadDetailPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">Pipeline stage history</h2>
-          <Link href="/dashboard/pipeline" className="text-xs text-neutral-500 hover:underline">
+          <h2 className="text-sm font-semibold text-fg">Pipeline stage history</h2>
+          <Link href="/dashboard/pipeline" className="text-xs text-fg-muted hover:underline">
             View pipeline board →
           </Link>
         </div>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {pipelineEvents && pipelineEvents.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">
+            <li className="px-3 py-3 text-sm text-fg-muted">
               No stage changes yet — this lead has been {lead.status.replace("_", " ")} since it was created.
             </li>
           )}
           {pipelineEvents?.map((event) => (
             <li key={event.id} className="px-3 py-2 text-sm">
-              <span className="text-neutral-900">{event.summary ?? event.kind}</span>
-              <span className="ml-2 text-xs text-neutral-500">{new Date(event.created_at).toLocaleString()}</span>
+              <span className="text-fg">{event.summary ?? event.kind}</span>
+              <span className="ml-2 text-xs text-fg-muted">{new Date(event.created_at).toLocaleString()}</span>
             </li>
           ))}
         </ul>
@@ -524,11 +536,11 @@ export default function LeadDetailPage() {
         return (
           <section className="mt-8">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-900">Convert to client</h2>
+              <h2 className="text-sm font-semibold text-fg">Convert to client</h2>
               {!existingClient && (
                 <button
                   onClick={() => setShowConvertForm((v) => !v)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
                 >
                   {showConvertForm ? "Cancel" : "Mark WON — convert"}
                 </button>
@@ -536,7 +548,7 @@ export default function LeadDetailPage() {
             </div>
 
             {existingClient ? (
-              <p className="mt-2 text-sm text-neutral-600">
+              <p className="mt-2 text-sm text-fg-muted">
                 This lead was won and converted.{" "}
                 <Link href={`/dashboard/clients/${existingClient.id}`} className="hover:underline">
                   View client
@@ -544,7 +556,7 @@ export default function LeadDetailPage() {
                 .
               </p>
             ) : (
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-sm text-fg-muted">
                 Creates the client record and an INTAKE-stage project (with starter tasks) in one step, and
                 preserves this lead&apos;s full history — audits, outreach, and notes stay attached to it.
               </p>
@@ -553,7 +565,7 @@ export default function LeadDetailPage() {
             {showConvertForm && !existingClient && (
               <form
                 onSubmit={handleConvert}
-                className="mt-3 max-w-2xl space-y-3 border border-neutral-200 p-4"
+                className="mt-3 max-w-2xl space-y-3 border border-border p-4"
               >
                 <input
                   placeholder="Project name (defaults to “{business} Website”)"
@@ -580,7 +592,7 @@ export default function LeadDetailPage() {
                 </div>
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <label className="text-xs uppercase tracking-wide text-neutral-500">
+                    <label className="text-xs uppercase tracking-wide text-fg-muted">
                       Agreed deadline
                     </label>
                     <input
@@ -609,11 +621,11 @@ export default function LeadDetailPage() {
                     </option>
                   ))}
                 </select>
-                {convertError && <p className="text-sm text-red-600">{convertError}</p>}
+                {convertError && <p className="text-error">{convertError}</p>}
                 <button
                   type="submit"
                   disabled={converting}
-                  className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                  className="btn btn-primary"
                 >
                   {converting ? "Converting…" : "Convert to client"}
                 </button>
@@ -626,26 +638,26 @@ export default function LeadDetailPage() {
       {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
         <section className="mt-8">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-900">Sales audit</h2>
+            <h2 className="text-sm font-semibold text-fg">Sales audit</h2>
             <button
               onClick={handleGenerateSalesAudit}
               disabled={generatingAudit}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
             >
               {generatingAudit ? "Generating…" : "Generate sales audit"}
             </button>
           </div>
           {generatingAudit && (
-            <p className="mt-2 text-sm text-neutral-500">
+            <p className="mt-2 text-sm text-fg-muted">
               Auditing the website, checking public info, and writing the report — this can take up to a
               minute.
             </p>
           )}
-          {generateAuditError && <p className="mt-2 text-sm text-red-600">{generateAuditError}</p>}
+          {generateAuditError && <p className="mt-2 text-error">{generateAuditError}</p>}
 
-          <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          <ul className="mt-3 divide-y divide-border border border-border">
             {salesAudits && salesAudits.length === 0 && !generatingAudit && (
-              <li className="px-3 py-3 text-sm text-neutral-500">No sales audits generated yet.</li>
+              <li className="px-3 py-3 text-sm text-fg-muted">No sales audits generated yet.</li>
             )}
             {salesAudits?.map((report) => {
               const expanded = expandedAuditId === report.id;
@@ -654,19 +666,19 @@ export default function LeadDetailPage() {
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => setExpandedAuditId(expanded ? null : report.id)}
-                      className="text-left text-neutral-900 hover:underline"
+                      className="text-left text-fg hover:underline"
                     >
                       {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
                     </button>
                     <div className="flex items-center gap-3">
                       {report.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                           Flagged for review
                         </span>
                       )}
                       <Link
                         href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
-                        className="text-xs text-neutral-500 hover:underline"
+                        className="text-xs text-fg-muted hover:underline"
                       >
                         Open full view
                       </Link>
@@ -687,14 +699,14 @@ export default function LeadDetailPage() {
       {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
         <section className="mt-8">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-neutral-900">Outreach</h2>
+            <h2 className="text-sm font-semibold text-fg">Outreach</h2>
             <div className="flex gap-2">
               {OUTREACH_CHANNELS.map((channel) => (
                 <button
                   key={channel}
                   onClick={() => handleGenerateOutreach(channel)}
                   disabled={generatingChannel !== null}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
                 >
                   {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
                 </button>
@@ -703,7 +715,7 @@ export default function LeadDetailPage() {
                 <button
                   onClick={() => handleGenerateOutreach("follow_up")}
                   disabled={generatingChannel !== null}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
                   title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
                 >
                   {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
@@ -711,11 +723,11 @@ export default function LeadDetailPage() {
               )}
             </div>
           </div>
-          {outreachError && <p className="mt-2 text-sm text-red-600">{outreachError}</p>}
+          {outreachError && <p className="mt-2 text-error">{outreachError}</p>}
 
-          <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+          <ul className="mt-3 divide-y divide-border border border-border">
             {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
-              <li className="px-3 py-3 text-sm text-neutral-500">No outreach drafted yet.</li>
+              <li className="px-3 py-3 text-sm text-fg-muted">No outreach drafted yet.</li>
             )}
             {outreachMessages?.map((message) => {
               const expanded = expandedOutreachId === message.id;
@@ -725,16 +737,16 @@ export default function LeadDetailPage() {
                   <div className="flex items-center justify-between">
                     <button
                       onClick={() => setExpandedOutreachId(expanded ? null : message.id)}
-                      className="text-left text-neutral-900 hover:underline"
+                      className="text-left text-fg hover:underline"
                     >
                       {expanded ? "▾" : "▸"} {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
                       {new Date(message.generated_at).toLocaleString()}
                     </button>
                     <div className="flex items-center gap-2">
                       {message.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Flagged</span>
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
                       )}
-                      <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                      <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
                         {OUTREACH_STATUS_LABELS[message.status]}
                       </span>
                     </div>
@@ -791,14 +803,14 @@ export default function LeadDetailPage() {
                         <button
                           onClick={() => handleSaveOutreachEdit(message)}
                           disabled={savingOutreachEdit}
-                          className="rounded-md border border-neutral-900 bg-neutral-900 px-2.5 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+                          className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
                         >
                           {savingOutreachEdit ? "Saving…" : "Save"}
                         </button>
                         <button
                           onClick={cancelEditOutreach}
                           disabled={savingOutreachEdit}
-                          className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                          className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                         >
                           Cancel
                         </button>
@@ -812,7 +824,7 @@ export default function LeadDetailPage() {
                         {(message.status === "drafted" || message.status === "approved") && (
                           <button
                             onClick={() => startEditOutreach(message)}
-                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50"
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
                           >
                             Edit
                           </button>
@@ -821,7 +833,7 @@ export default function LeadDetailPage() {
                           <button
                             onClick={() => handleOutreachAction(message.id, "approve")}
                             disabled={busy}
-                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                           >
                             Approve
                           </button>
@@ -830,7 +842,7 @@ export default function LeadDetailPage() {
                           <button
                             onClick={() => handleOutreachAction(message.id, "mark-sent")}
                             disabled={busy}
-                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                           >
                             Mark sent
                           </button>
@@ -839,7 +851,7 @@ export default function LeadDetailPage() {
                           <button
                             onClick={() => handleOutreachAction(message.id, "mark-replied")}
                             disabled={busy}
-                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                           >
                             Mark replied
                           </button>
@@ -848,7 +860,7 @@ export default function LeadDetailPage() {
                           <button
                             onClick={() => handleOutreachAction(message.id, "close")}
                             disabled={busy}
-                            className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
                           >
                             Close
                           </button>
@@ -865,22 +877,22 @@ export default function LeadDetailPage() {
             <button
               onClick={handleGenerateFollowUp}
               disabled={generatingFollowUp}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
             >
               {generatingFollowUp ? "Generating…" : "Generate follow-up"}
             </button>
-            <Link href="/dashboard/follow-ups" className="text-xs text-neutral-500 hover:underline">
+            <Link href="/dashboard/follow-ups" className="text-xs text-fg-muted hover:underline">
               View all follow-ups
             </Link>
           </div>
-          {followUpError && <p className="mt-2 text-sm text-red-600">{followUpError}</p>}
+          {followUpError && <p className="mt-2 text-error">{followUpError}</p>}
           {latestFollowUp && (
-            <div className="mt-3 rounded-md border border-neutral-200 px-3 py-2 text-sm">
-              <p className="text-neutral-900">
+            <div className="mt-3 rounded-md border border-border px-3 py-2 text-sm">
+              <p className="text-fg">
                 Follow up via {latestFollowUp.channel.replace("_", " ")} by{" "}
                 {new Date(latestFollowUp.due_date).toLocaleDateString()}
               </p>
-              <p className="mt-1 text-neutral-600">{latestFollowUp.suggested_next_action}</p>
+              <p className="mt-1 text-fg-muted">{latestFollowUp.suggested_next_action}</p>
             </div>
           )}
         </section>
@@ -888,40 +900,40 @@ export default function LeadDetailPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">Meetings</h2>
-          <Link href="/dashboard/calendar" className="text-xs text-neutral-500 hover:underline">
+          <h2 className="text-sm font-semibold text-fg">Meetings</h2>
+          <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
             Schedule on calendar →
           </Link>
         </div>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <ul className="mt-3 divide-y divide-border border border-border">
           {meetings && meetings.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No meetings scheduled yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
           )}
           {meetings?.map((m) => (
             <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="text-neutral-900">
+              <span className="text-fg">
                 {m.title}
-                <span className="ml-2 text-xs text-neutral-500">
+                <span className="ml-2 text-xs text-fg-muted">
                   {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
                   {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
                 </span>
               </span>
-              {m.outcome && <span className="shrink-0 text-xs text-neutral-500">{m.outcome}</span>}
+              {m.outcome && <span className="shrink-0 text-xs text-fg-muted">{m.outcome}</span>}
             </li>
           ))}
         </ul>
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-neutral-900">Activity history</h2>
-        <ul className="mt-3 divide-y divide-neutral-200 border border-neutral-200">
+        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
+        <ul className="mt-3 divide-y divide-border border border-border">
           {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-neutral-500">No activity yet.</li>
+            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
           )}
           {activity?.map((item) => (
             <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-neutral-900">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-neutral-500">
+              <span className="text-fg">{item.summary ?? item.action}</span>
+              <span className="ml-2 text-xs text-fg-muted">
                 {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
               </span>
             </li>

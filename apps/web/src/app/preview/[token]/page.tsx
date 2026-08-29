@@ -40,23 +40,23 @@ export default function PublicPreviewPage() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6">
-        <p className="max-w-sm text-center text-sm text-neutral-600">{error}</p>
+      <div className="flex min-h-screen items-center justify-center bg-surface-subtle p-6">
+        <p className="max-w-sm text-center text-sm text-fg-muted">{error}</p>
       </div>
     );
   }
   if (!preview) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">Loading preview…</div>;
+    return <div className="flex min-h-screen items-center justify-center text-sm text-fg-muted">Loading preview…</div>;
   }
 
   const activePage = preview.pages.find((p) => p.slug === activePageSlug) ?? preview.pages[0];
 
   return (
-    <div className="min-h-screen bg-neutral-100">
-      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-3">
+    <div className="min-h-screen bg-surface-subtle">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
         <div>
-          <p className="text-sm font-semibold text-neutral-900">{preview.project_name}</p>
-          <p className="text-xs text-neutral-500">{preview.audience === "internal" ? "Internal preview" : "Client preview"}</p>
+          <p className="text-sm font-semibold text-fg">{preview.project_name}</p>
+          <p className="text-xs text-fg-muted">{preview.audience === "internal" ? "Internal preview" : "Client preview"}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -64,7 +64,7 @@ export default function PublicPreviewPage() {
             <select
               value={activePage?.slug ?? ""}
               onChange={(e) => setActivePageSlug(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded-md border border-border-strong px-2 py-1 text-sm"
             >
               {preview.pages.map((p) => (
                 <option key={p.slug} value={p.slug}>
@@ -78,7 +78,7 @@ export default function PublicPreviewPage() {
             <select
               value={preview.website_id}
               onChange={(e) => load(e.target.value)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="rounded-md border border-border-strong px-2 py-1 text-sm"
             >
               {preview.versions.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -88,12 +88,12 @@ export default function PublicPreviewPage() {
             </select>
           )}
 
-          <div className="flex rounded-md border border-neutral-300 p-0.5 text-xs">
+          <div className="flex rounded-md border border-border-strong p-0.5 text-xs">
             {(Object.keys(DEVICE_WIDTHS) as Device[]).map((d) => (
               <button
                 key={d}
                 onClick={() => setDevice(d)}
-                className={`rounded px-2.5 py-1 capitalize ${device === d ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-50"}`}
+                className={`rounded px-2.5 py-1 capitalize ${device === d ? "bg-accent text-accent-fg" : "text-fg-muted hover:bg-surface-subtle"}`}
               >
                 {d}
               </button>
@@ -103,11 +103,11 @@ export default function PublicPreviewPage() {
       </header>
 
       <div className="flex justify-center px-4 py-6">
-        <div className={`mx-auto w-full ${DEVICE_WIDTHS[device]} overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm transition-[max-width]`}>
+        <div className={`mx-auto w-full ${DEVICE_WIDTHS[device]} overflow-hidden rounded-lg border border-border bg-white shadow-sm transition-[max-width]`}>
           {activePage ? (
             <PreviewSiteRenderer navigation={preview.navigation} sections={activePage.sections} footer={preview.footer} />
           ) : (
-            <p className="p-8 text-center text-sm text-neutral-500">This version has no pages yet.</p>
+            <p className="p-8 text-center text-sm text-fg-muted">This version has no pages yet.</p>
           )}
         </div>
       </div>
