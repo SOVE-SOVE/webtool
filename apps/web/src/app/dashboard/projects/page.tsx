@@ -9,23 +9,78 @@ import {
   type Client,
   type Project,
   type ProjectStage,
+  type Task,
   type User,
 } from "@/lib/api";
 import { filterProjects, UNASSIGNED } from "@/lib/filters";
+import { deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { TableSkeleton } from "@/components/ui/Skeleton";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 
-function formatPrice(cents: number | null): string {
-  return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
+function formatPrice(cents: number | null): string | null {
+  return cents === null ? null : `$${(cents / 100).toLocaleString()}`;
+}
+
+const DEADLINE_CLASS = {
+  overdue: "text-red-700 dark:text-red-400",
+  soon: "text-amber-700 dark:text-amber-400",
+  ok: "text-fg-muted",
+  none: "text-fg-subtle",
+} as const;
+
+function ProjectCard({ project, nextTask }: { project: Project; nextTask: Task | null }) {
+  const dl = deadlineStatus(project.deadline);
+  const price = formatPrice(project.price_cents);
+  return (
+    <Link
+      href={`/dashboard/projects/${project.id}`}
+      className="flex flex-col rounded-md border border-border bg-surface p-4 transition-colors hover:border-border-strong"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <ProjectStatusBadge project={project} />
+        <span className={`text-xs ${DEADLINE_CLASS[dl]}`}>
+          {project.deadline
+            ? `${dl === "overdue" ? "Overdue " : "Due "}${new Date(project.deadline).toLocaleDateString()}`
+            : "No deadline"}
+        </span>
+      </div>
+
+      <p className="mt-2 truncate font-medium text-fg">{project.name}</p>
+      <p className="truncate text-xs text-fg-muted">{project.client_business_name}</p>
+
+      <div className="mt-3">
+        <ProgressBar
+          value={stageProgress(project.stage)}
+          label={`${stageProgress(project.stage)}% · ${PROJECT_STAGE_LABELS[project.stage]}`}
+        />
+      </div>
+
+      <p className="mt-2 min-w-0 truncate text-xs text-fg-muted">
+        <span className="text-fg-subtle">Next: </span>
+        {nextTask ? nextTask.title : "No open tasks"}
+      </p>
+
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-2 text-xs text-fg-muted">
+        <span className="truncate">
+          {[project.package, price].filter(Boolean).join(" · ") || "No package"}
+        </span>
+        <span className="shrink-0 text-fg-subtle">{project.assigned_user_name ?? "Unassigned"}</span>
+      </div>
+    </Link>
+  );
 }
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
+
   const [showForm, setShowForm] = useState(false);
   const [clientId, setClientId] = useState("");
   const [name, setName] = useState("");
@@ -47,13 +102,11 @@ export default function ProjectsPage() {
       .catch(() => setError("Couldn't load projects."));
     api.listClients().then(setClients).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
+    api.listTasks().then(setTasks).catch(() => {});
   }
 
   useEffect(load, []);
 
-  // Opened from a "Create project" quick action elsewhere (?new=1).
-  // Deferred to an effect so the server render (no `window`) matches the
-  // first client render.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (new URLSearchParams(window.location.search).has("new")) setShowForm(true);
@@ -77,48 +130,33 @@ export default function ProjectsPage() {
     }
   }
 
-  async function handleStageChange(id: string, stage: ProjectStage) {
-    await api.updateProject(id, { stage });
-    load();
-  }
-
-  async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateProject(id, { assigned_user_id: assigneeId || null });
-    load();
-  }
-
   const visibleProjects = useMemo(
     () =>
       projects === null
         ? null
-        : filterProjects(projects, {
-            search,
-            stage: stageFilter,
-            assignee: assigneeFilter,
-            showFinished,
-          }),
+        : filterProjects(projects, { search, stage: stageFilter, assignee: assigneeFilter, showFinished }),
     [projects, search, stageFilter, assigneeFilter, showFinished],
   );
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Projects"
-        description="Delivery work for signed clients — from intake through to a live, handed-over site."
+        description="Websites in production for signed clients — where each one is, and what needs to happen next."
         actions={
           <button
             onClick={() => setShowForm((v) => !v)}
             disabled={clients.length === 0}
             className="btn btn-primary"
-            title={clients.length === 0 ? "Add a client first" : undefined}
+            title={clients.length === 0 ? "Convert a lead to a client first" : undefined}
           >
-            {showForm ? "Cancel" : "Add project"}
+            {showForm ? "Cancel" : "New project"}
           </button>
         }
       />
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
+        <form onSubmit={handleCreate} className="mt-4 max-w-xl space-y-3 rounded-md border border-border p-4">
           <select
             required
             value={clientId}
@@ -134,7 +172,7 @@ export default function ProjectsPage() {
           </select>
           <input
             required
-            placeholder="Project name"
+            placeholder="Project name (e.g. “Riverside Plumbing Website”)"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
@@ -151,12 +189,8 @@ export default function ProjectsPage() {
               </option>
             ))}
           </select>
-          <button
-            type="submit"
-            disabled={saving}
-            className="btn btn-primary"
-          >
-            {saving ? "Saving…" : "Save project"}
+          <button type="submit" disabled={saving} className="btn btn-primary">
+            {saving ? "Saving…" : "Create project"}
           </button>
         </form>
       )}
@@ -166,7 +200,7 @@ export default function ProjectsPage() {
           placeholder="Search project, client, package…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-72 rounded-md border border-border-strong px-3 py-1.5 text-sm"
+          className="w-60 rounded-md border border-border-strong px-3 py-1.5 text-sm"
         />
         <select
           value={stageFilter}
@@ -211,8 +245,14 @@ export default function ProjectsPage() {
       )}
 
       {!projects && !error && (
-        <div className="mt-4">
-          <TableSkeleton rows={6} cols={7} />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-md border border-border bg-surface p-4">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="mt-3 h-4 w-2/3" />
+              <Skeleton className="mt-3 h-1.5 w-full" />
+            </div>
+          ))}
         </div>
       )}
 
@@ -222,15 +262,19 @@ export default function ProjectsPage() {
             title="No projects yet"
             description={
               clients.length === 0
-                ? "Add a client first, then start a project for them."
-                : "Start a project for an existing client, or convert a won lead from the Clients page."
+                ? "Projects are for signed clients. Convert a won lead first (Leads → Won)."
+                : "Start a project for a client, or it's created automatically when you convert a won lead."
             }
             action={
               clients.length > 0 ? (
                 <button onClick={() => setShowForm(true)} className="btn btn-primary">
-                  Add project
+                  New project
                 </button>
-              ) : undefined
+              ) : (
+                <Link href="/dashboard/leads?tab=won" className="btn btn-primary">
+                  Go to Leads
+                </Link>
+              )
             }
           />
         </div>
@@ -258,137 +302,11 @@ export default function ProjectsPage() {
       )}
 
       {visibleProjects && visibleProjects.length > 0 && (
-        <>
-          {/* Mobile: one card per project. */}
-          <div className="mt-4 space-y-2 md:hidden">
-            {visibleProjects.map((project) => (
-              <div key={project.id} className="card p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <Link href={`/dashboard/projects/${project.id}`} className="font-medium text-fg hover:underline">
-                      {project.name}
-                    </Link>
-                    <div className="text-xs text-fg-muted">
-                      <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
-                        {project.client_business_name}
-                      </Link>
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
-                    {PROJECT_STAGE_LABELS[project.stage]}
-                  </span>
-                </div>
-                <div className="mt-1.5 text-xs text-fg-muted">
-                  {project.package ?? "No package"} · {formatPrice(project.price_cents)}
-                  {project.deadline ? ` · due ${new Date(project.deadline).toLocaleDateString()}` : ""}
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <select
-                    value={project.stage}
-                    onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
-                    className="input"
-                  >
-                    {PROJECT_STAGES.map((stage) => (
-                      <option key={stage} value={stage}>
-                        {PROJECT_STAGE_LABELS[stage]}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={project.assigned_user_id ?? ""}
-                    onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
-                    className="input"
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop/tablet: full table. */}
-          <div className="table-shell mt-4 hidden md:block">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="px-3 py-2">Project</th>
-                  <th className="px-3 py-2">Client</th>
-                  <th className="px-3 py-2">Current stage</th>
-                  <th className="px-3 py-2">Package</th>
-                  <th className="px-3 py-2">Price</th>
-                  <th className="px-3 py-2">Deadline</th>
-                  <th className="px-3 py-2">Assigned to</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleProjects.map((project) => (
-                  <tr key={project.id}>
-                    <td className="px-3 py-2 font-medium text-fg">
-                      <Link href={`/dashboard/projects/${project.id}`} className="hover:underline">
-                        {project.name}
-                      </Link>
-                      {project.source_lead_id && (
-                        <Link
-                          href={`/dashboard/leads/${project.source_lead_id}`}
-                          className="ml-2 text-xs font-normal text-fg-muted hover:underline"
-                        >
-                          from lead
-                        </Link>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-fg-muted">
-                      <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
-                        {project.client_business_name}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">
-                          {PROJECT_STAGE_LABELS[project.stage]}
-                        </span>
-                        <select
-                          value={project.stage}
-                          onChange={(e) => handleStageChange(project.id, e.target.value as ProjectStage)}
-                          className="rounded-md border border-border-strong px-2 py-1 text-sm"
-                        >
-                          {PROJECT_STAGES.map((stage) => (
-                            <option key={stage} value={stage}>
-                              {PROJECT_STAGE_LABELS[stage]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-fg-muted">{project.package ?? "—"}</td>
-                    <td className="px-3 py-2 text-fg-muted">{formatPrice(project.price_cents)}</td>
-                    <td className="px-3 py-2 text-fg-muted">
-                      {project.deadline ? new Date(project.deadline).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={project.assigned_user_id ?? ""}
-                        onChange={(e) => handleAssigneeChange(project.id, e.target.value)}
-                        className="rounded-md border border-border-strong px-2 py-1 text-sm"
-                      >
-                        <option value="">Unassigned</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {visibleProjects.map((project) => (
+            <ProjectCard key={project.id} project={project} nextTask={nextOpenTask(tasks, project.id)} />
+          ))}
+        </div>
       )}
     </div>
   );

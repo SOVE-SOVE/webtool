@@ -11,6 +11,69 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Projects redesign (PT1): card list + decluttered workspace
+**Mode:** worktree (`pt1-projects-redesign`), off `main` after the Sales
+PR (#19) merged.
+**Merge to main after:** yes. First of a second queued trio (Projects
+redesign → website-production workspace → app-wide dark mode); each
+merges before the next starts.
+**Scope touched:** apps/web/src/app/dashboard/projects/page.tsx and
+projects/[id]/page.tsx (both rewritten). New: apps/web/src/lib/
+projects.ts (+ test), components/ProjectStatusBadge.tsx,
+components/ui/ProgressBar.tsx, components/ui/Disclosure.tsx. **No
+backend changes.**
+
+**What happened:** The Projects area went from a wide edit-in-place
+table + a ~650-line always-expanded detail scroll to something that
+answers "what websites am I building and what's next?".
+
+- **List → card grid.** Each card: status badge (5 coarse tones via
+  `projectTone`, not 12 stage colours), deadline (overdue/soon
+  highlighted), project + client, a **progress bar** (derived — see
+  below), the next open task for that project (from `GET /tasks`), and
+  package · price · assignee. Inline stage/assignee editing dropped from
+  the list — that moves to the detail page; the list is for scanning.
+  Kept: search, stage/assignee filters, show-finished, the create form,
+  `?new=1`.
+- **Progress is derived, never fabricated.** On the list it's the
+  project's position in the fixed 12-stage sequence
+  (`stageProgress`). On the detail page, where the approval checkpoints
+  are already fetched, it's how many of the 7 real approval gates have
+  been approved (`checkpointProgress`) — e.g. "43% · 3 of 7 approval
+  stages done".
+- **Detail → a workspace, not a scroll.** Header (name + status badge +
+  client link + stage/assignee controls) → a **snapshot card**
+  (progress bar + current phase / next action / deadline / package) →
+  **Build & delivery** card (the existing `ApprovalPipelineView` +
+  `DeploymentPanel` + `DeliveryPanel`, plus a prominent "Open website
+  workspace →" button) → a **Tasks card** (the project's tasks with
+  add + tick — this page previously showed no tasks at all) → **Build
+  artifacts** as four `Disclosure`s (Project brief, Creative direction,
+  Sitemap, Website brief) **collapsed by default**, each showing an
+  Approved/Draft/Not-started chip; the existing `BriefEditor` /
+  `CreativeDirectionView` / `SitemapView` / `WebsiteBriefView` render
+  unchanged inside → Meetings + Activity collapsed at the bottom.
+  `Disclosure` only mounts its children while open, so the four heavy
+  editors aren't all rendered at once.
+
+**No duplicate project/client data**, no schema/route/relationship
+changes. The `/dashboard/projects/[id]/website` route is untouched (PT2
+builds it out); this pass just makes it a clear destination.
+
+**Checks:** `npm run test` 88/88 (8 files incl. new `projects.test.ts`);
+`next build` + tsc clean; `npm run lint` **2 errors / 3 warnings —
+down from the 4/3 baseline** (the detail-page rewrite removed two
+pre-existing unescaped-entity errors; no new problems). Live-rendered
+against mocked API data (desktop 1360px + mobile 390px): card grid with
+real progress/deadline/status, the decluttered detail with a working
+snapshot, approval pipeline, deploy/deliver panels, add/tick tasks, and
+the collapsed artifact disclosures — verified, zero console errors,
+screenshots captured. **Not verified:** a pass against the real seeded
+DB (no seed password in this environment).
+
+**Next up:** PT2 — the website-production workspace inside
+`/dashboard/projects/[id]/website`.
+
 ## 2026-08-29 — T3: Sales page rebuilt as a focused command centre
 **Mode:** worktree (`t3-sales-command-centre`), off `main` after T2 (#18) merged.
 **Merge to main after:** yes — pending review. Last of the queued series
