@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   api,
   ApiError,
   PROJECT_STAGES,
+  PROJECT_STAGE_LABELS,
   type ActivityItem,
   type Brief,
   type CreativeDirectionBrief,
@@ -17,6 +18,7 @@ import {
   type ProjectApprovalStatus,
   type ProjectStage,
   type Sitemap,
+  type Task,
   type User,
   type WebsiteBrief,
 } from "@/lib/api";
@@ -25,9 +27,40 @@ import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { checkpointProgress, deadlineStatus, stageProgress } from "@/lib/projects";
+
+function money(cents: number | null): string {
+  return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
+}
+
+function StatusChip({ status }: { status: "approved" | "draft" | undefined }) {
+  if (status === "approved") {
+    return (
+      <span className="rounded px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/15">
+        Approved
+      </span>
+    );
+  }
+  if (status === "draft") {
+    return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">Draft</span>;
+  }
+  return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-subtle">Not started</span>;
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide text-fg-subtle">{label}</p>
+      <div className="mt-0.5 text-sm text-fg">{children}</div>
+    </div>
+  );
+}
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -42,6 +75,10 @@ export default function ProjectDetailPage() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [newTask, setNewTask] = useState("");
+  const [addingTask, setAddingTask] = useState(false);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -95,6 +132,13 @@ export default function ProjectDetailPage() {
       .catch(() => {});
   }
 
+  function loadTasks() {
+    api
+      .listTasks()
+      .then((all) => setTasks(all.filter((t) => t.project_id === projectId)))
+      .catch(() => {});
+  }
+
   function load() {
     api
       .getProject(projectId)
@@ -105,14 +149,12 @@ export default function ProjectDetailPage() {
       .catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
-    api
-      .listActivity({ entity_type: "project", entity_id: projectId })
-      .then(setActivity)
-      .catch(() => {});
+    api.listActivity({ entity_type: "project", entity_id: projectId }).then(setActivity).catch(() => {});
     loadCreativeDirections();
     loadSitemaps();
     loadWebsiteBriefs();
     loadApprovalsAndDeployments();
+    loadTasks();
     api.listMeetings({ projectId }).then(setMeetings).catch(() => {});
   }
 
@@ -127,14 +169,31 @@ export default function ProjectDetailPage() {
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { stage });
-    setProject(updated);
+    setProject(await api.updateProject(project.id, { stage }));
+    loadApprovalsAndDeployments();
   }
 
   async function handleAssigneeChange(assigneeId: string) {
     if (!project) return;
-    const updated = await api.updateProject(project.id, { assigned_user_id: assigneeId || null });
-    setProject(updated);
+    setProject(await api.updateProject(project.id, { assigned_user_id: assigneeId || null }));
+  }
+
+  async function handleAddTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newTask.trim()) return;
+    setAddingTask(true);
+    try {
+      await api.createTask({ title: newTask.trim(), project_id: projectId });
+      setNewTask("");
+      loadTasks();
+    } finally {
+      setAddingTask(false);
+    }
+  }
+
+  async function handleToggleTask(id: string, done: boolean) {
+    await api.updateTask(id, { done });
+    loadTasks();
   }
 
   async function handleGenerate(e: React.FormEvent) {
@@ -162,6 +221,7 @@ export default function ProjectDetailPage() {
 
   function handleCreativeDirectionUpdated(updated: CreativeDirectionBrief) {
     setBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
+    loadApprovalsAndDeployments();
   }
 
   async function handleGenerateSitemap(e: React.FormEvent) {
@@ -187,6 +247,7 @@ export default function ProjectDetailPage() {
 
   function handleSitemapUpdated(updated: Sitemap) {
     setSitemaps((prev) => (prev ? prev.map((s) => (s.id === updated.id ? updated : s)) : prev));
+    loadApprovalsAndDeployments();
   }
 
   async function handleGenerateWebsiteBrief() {
@@ -207,440 +268,464 @@ export default function ProjectDetailPage() {
     setWebsiteBriefs((prev) => (prev ? prev.map((b) => (b.id === updated.id ? updated : b)) : prev));
   }
 
+  const openTasks = useMemo(() => (tasks ?? []).filter((t) => !t.done), [tasks]);
+  const doneTasks = useMemo(() => (tasks ?? []).filter((t) => t.done), [tasks]);
+
+  const progress = approvalStatus
+    ? checkpointProgress(approvalStatus.checkpoints)
+    : project
+      ? stageProgress(project.stage)
+      : 0;
+  const nextCheckpoint = approvalStatus?.checkpoints.find((c) => !c.approved) ?? null;
+  const nextAction =
+    project?.delivered_at
+      ? "Delivered — nothing outstanding"
+      : approvalStatus?.missing_for_deployment[0] ??
+        nextCheckpoint?.blocked_reason ??
+        openTasks[0]?.title ??
+        "On track";
+
+  const cdStatus = briefs?.[0]?.status;
+  const sitemapStatus = sitemaps?.[0]?.status;
+  const wbStatus = websiteBriefs?.[0]?.status;
+  const briefStatus = brief?.status;
+
   if (error) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <ErrorState message={error} onRetry={load} />
       </div>
     );
   }
   if (!project) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
-  return (
-    <div className="p-6">
-      <Link href="/dashboard/projects" className="text-sm text-fg-muted hover:underline">
-        ← All projects
-      </Link>
+  const dl = deadlineStatus(project.deadline);
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-fg">{project.name}</h1>
-            {project.delivered_at && (
-              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-                Delivered
-              </span>
-            )}
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div>
+        <Link href="/dashboard/projects" className="text-sm text-fg-muted hover:underline">
+          ← All projects
+        </Link>
+
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="page-title">{project.name}</h1>
+              <ProjectStatusBadge project={project} />
+            </div>
+            <p className="text-sm text-fg-muted">
+              <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                {project.client_business_name}
+              </Link>
+              {project.source_lead_id && (
+                <>
+                  {" · "}
+                  <Link href={`/dashboard/leads/${project.source_lead_id}`} className="hover:underline">
+                    from lead
+                  </Link>
+                </>
+              )}
+            </p>
           </div>
-          <p className="text-sm text-fg-muted">{project.client_business_name}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={project.stage}
-            onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
-            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
-          >
-            {PROJECT_STAGES.map((stage) => (
-              <option key={stage} value={stage}>
-                {stage.replace("_", " ")}
-              </option>
-            ))}
-          </select>
-          <select
-            value={project.assigned_user_id ?? ""}
-            onChange={(e) => handleAssigneeChange(e.target.value)}
-            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
-          >
-            <option value="">Unassigned</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={project.stage}
+              onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
+              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            >
+              {PROJECT_STAGES.map((stage) => (
+                <option key={stage} value={stage}>
+                  {PROJECT_STAGE_LABELS[stage]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={project.assigned_user_id ?? ""}
+              onChange={(e) => handleAssigneeChange(e.target.value)}
+              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {approvalStatus && (
-        <section className="mt-6 rounded-md border border-border p-4">
-          <ApprovalPipelineView status={approvalStatus} />
-          <DeploymentPanel
-            projectId={projectId}
-            approvalStatus={approvalStatus}
-            deployments={deployments}
-            onChanged={loadApprovalsAndDeployments}
-          />
-          {deliveryStatus && (
-            <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={loadApprovalsAndDeployments} />
-          )}
-        </section>
-      )}
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-fg">Project brief</h2>
-        <p className="mt-1 text-sm text-fg-muted">
-          The structured client intake — this becomes the source of truth for the build. Every field
-          saves as you leave it; missing fields are flagged, never guessed at.
-        </p>
-        <div className="mt-3">
-          {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : (
-            <p className="text-sm text-fg-muted">Loading brief…</p>
-          )}
+      {/* Snapshot */}
+      <section className="rounded-md border border-border bg-surface p-4">
+        <ProgressBar
+          value={progress}
+          label={
+            approvalStatus
+              ? `${progress}% · ${approvalStatus.checkpoints.filter((c) => c.approved).length} of ${approvalStatus.checkpoints.length} approval stages done`
+              : `${progress}% · ${PROJECT_STAGE_LABELS[project.stage]}`
+          }
+        />
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Field label="Current phase">{nextCheckpoint?.label ?? PROJECT_STAGE_LABELS[project.stage]}</Field>
+          <Field label="Next action">
+            <span className="line-clamp-2">{nextAction}</span>
+          </Field>
+          <Field label="Deadline">
+            {project.deadline ? (
+              <span
+                className={
+                  dl === "overdue"
+                    ? "text-red-700 dark:text-red-400"
+                    : dl === "soon"
+                      ? "text-amber-700 dark:text-amber-400"
+                      : undefined
+                }
+              >
+                {new Date(project.deadline).toLocaleDateString()}
+              </span>
+            ) : (
+              <span className="text-fg-subtle">Not set</span>
+            )}
+          </Field>
+          <Field label="Package">
+            {[project.package, money(project.price_cents)].filter((v) => v && v !== "—").join(" · ") || (
+              <span className="text-fg-subtle">Not set</span>
+            )}
+          </Field>
         </div>
       </section>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">Creative direction</h2>
-            <p className="text-xs text-fg-muted">
-              The creative concept, visual direction, and brand direction for this project — review and edit
-              before design/build work starts. Uses the brief above when it has answers, and flags what's
-              still missing.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowGenerateForm((v) => !v)}
-            disabled={generating}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+      {/* Build & delivery */}
+      <section className="rounded-md border border-border bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="section-title">Build &amp; delivery</h2>
+          <Link
+            href={`/dashboard/projects/${projectId}/website`}
+            className="btn btn-primary btn-sm"
           >
-            {showGenerateForm ? "Cancel" : briefs && briefs.length > 0 ? "Regenerate" : "Generate creative direction"}
-          </button>
+            Open website workspace →
+          </Link>
         </div>
+        {approvalStatus ? (
+          <div className="mt-3 space-y-4">
+            <ApprovalPipelineView status={approvalStatus} />
+            <DeploymentPanel
+              projectId={projectId}
+              approvalStatus={approvalStatus}
+              deployments={deployments}
+              onChanged={loadApprovalsAndDeployments}
+            />
+            {deliveryStatus && (
+              <DeliveryPanel projectId={projectId} deliveryStatus={deliveryStatus} onChanged={loadApprovalsAndDeployments} />
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">Loading build status…</p>
+        )}
+      </section>
 
-        {showGenerateForm && (
-          <form onSubmit={handleGenerate} className="mt-3 space-y-3 border border-border p-4">
-            <p className="text-xs text-fg-muted">
-              Optional — overrides the brief above for this generation only. Left blank, target audience and
-              business goals are pulled from the project brief when it has them; if the brief doesn't have them
-              either, the gap is marked as an assumption to confirm later.
-            </p>
-            <label className="block text-sm">
-              <span className="text-fg-muted">Target audience</span>
+      {/* Tasks */}
+      <section className="rounded-md border border-border bg-surface p-4">
+        <h2 className="section-title">Tasks</h2>
+        <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
+          <input
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            placeholder="Add a task for this project…"
+            className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+          />
+          <button type="submit" disabled={addingTask || !newTask.trim()} className="btn btn-secondary btn-sm">
+            {addingTask ? "Adding…" : "Add"}
+          </button>
+        </form>
+        <ul className="mt-3 space-y-1.5">
+          {tasks === null && <li className="text-sm text-fg-muted">Loading…</li>}
+          {tasks !== null && openTasks.length === 0 && doneTasks.length === 0 && (
+            <li className="text-sm text-fg-muted">No tasks yet.</li>
+          )}
+          {openTasks.map((t) => (
+            <li key={t.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={false}
+                onChange={() => handleToggleTask(t.id, true)}
+                aria-label={`Mark "${t.title}" done`}
+              />
+              <span className="text-fg">{t.title}</span>
+              {t.due_at && (
+                <span className="text-xs text-fg-subtle">· {new Date(t.due_at).toLocaleDateString()}</span>
+              )}
+            </li>
+          ))}
+          {doneTasks.length > 0 && (
+            <li className="pt-1 text-xs text-fg-subtle">
+              {doneTasks.length} done
+            </li>
+          )}
+          {doneTasks.slice(0, 5).map((t) => (
+            <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
+              <input
+                type="checkbox"
+                checked
+                onChange={() => handleToggleTask(t.id, false)}
+                aria-label={`Reopen "${t.title}"`}
+              />
+              <span className="line-through">{t.title}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Build artifacts — collapsed by default */}
+      <section className="space-y-2">
+        <h2 className="section-title">Build artifacts</h2>
+
+        <Disclosure
+          title="Project brief"
+          hint="The structured client intake — the source of truth for the build."
+          badge={<StatusChip status={briefStatus} />}
+        >
+          {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : <p className="text-sm text-fg-muted">Loading brief…</p>}
+        </Disclosure>
+
+        <Disclosure
+          title="Creative direction"
+          hint="Creative concept, visual and brand direction — review before design/build starts."
+          badge={<StatusChip status={cdStatus} />}
+        >
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setShowGenerateForm((v) => !v)}
+              disabled={generating}
+              className="btn btn-secondary btn-sm"
+            >
+              {showGenerateForm ? "Cancel" : briefs && briefs.length > 0 ? "Regenerate" : "Generate"}
+            </button>
+          </div>
+          {showGenerateForm && (
+            <form onSubmit={handleGenerate} className="mt-3 space-y-3 rounded-md border border-border p-3">
+              <p className="text-xs text-fg-muted">
+                Optional — left blank, target audience and business goals come from the brief; gaps are flagged
+                as assumptions to confirm.
+              </p>
               <textarea
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
-                placeholder="e.g. Homeowners aged 30-60 needing urgent or planned trade work"
+                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                placeholder="Target audience"
               />
-            </label>
-            <label className="block text-sm">
-              <span className="text-fg-muted">Business goals for the new site</span>
               <textarea
                 value={businessGoals}
                 onChange={(e) => setBusinessGoals(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
-                placeholder="e.g. More phone enquiries from mobile visitors"
+                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                placeholder="Business goals for the new site"
               />
-            </label>
-            <label className="block text-sm">
-              <span className="text-fg-muted">Additional notes</span>
               <textarea
                 value={additionalNotes}
                 onChange={(e) => setAdditionalNotes(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                placeholder="Additional notes"
               />
-            </label>
-            <button
-              type="submit"
-              disabled={generating}
-              className="btn btn-primary"
-            >
-              {generating ? "Generating…" : "Generate"}
-            </button>
-          </form>
-        )}
-        {generating && (
-          <p className="mt-2 text-sm text-fg-muted">
-            Pulling together the business record, brief, website audit, and prior research — this can take up
-            to a minute.
-          </p>
-        )}
-        {generateError && <p className="mt-2 text-error">{generateError}</p>}
-
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {briefs && briefs.length === 0 && !generating && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No creative direction generated yet.</li>
+              <button type="submit" disabled={generating} className="btn btn-primary btn-sm">
+                {generating ? "Generating…" : "Generate"}
+              </button>
+            </form>
           )}
-          {briefs?.map((cd) => {
-            const expanded = expandedId === cd.id;
-            return (
-              <li key={cd.id} className="px-3 py-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setExpandedId(expanded ? null : cd.id)}
-                    className="text-left text-fg hover:underline"
-                  >
-                    {expanded ? "▾" : "▸"} Creative direction — {new Date(cd.generated_at).toLocaleString()}
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        cd.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-                      }`}
-                    >
-                      {cd.status}
-                    </span>
-                    {cd.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                        Flagged for review
-                      </span>
-                    )}
+          {generating && <p className="mt-2 text-sm text-fg-muted">Generating — this can take up to a minute.</p>}
+          {generateError && <p className="mt-2 text-error">{generateError}</p>}
+          <ul className="mt-3 divide-y divide-border rounded-md border border-border">
+            {briefs && briefs.length === 0 && !generating && (
+              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+            )}
+            {briefs?.map((cd) => {
+              const expanded = expandedId === cd.id;
+              return (
+                <li key={cd.id} className="px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <button onClick={() => setExpandedId(expanded ? null : cd.id)} className="text-left text-fg hover:underline">
+                      {expanded ? "▾" : "▸"} {new Date(cd.generated_at).toLocaleString()}
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <StatusChip status={cd.status} />
+                      {cd.flagged_for_review && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                          Flagged
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {expanded && (
-                  <div className="mt-3">
-                    <CreativeDirectionView brief={cd} onChange={handleCreativeDirectionUpdated} />
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                  {expanded && (
+                    <div className="mt-3">
+                      <CreativeDirectionView brief={cd} onChange={handleCreativeDirectionUpdated} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Disclosure>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">Sitemap</h2>
-            <p className="text-xs text-fg-muted">
-              The recommended page structure for this site — review, edit, add/remove/reorder pages, then
-              approve. The approved sitemap becomes the structural source of truth for website generation.
-            </p>
+        <Disclosure
+          title="Sitemap"
+          hint="The page structure — review, edit, then approve. Becomes the source of truth for generation."
+          badge={<StatusChip status={sitemapStatus} />}
+        >
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setShowGenerateSitemapForm((v) => !v)}
+              disabled={generatingSitemap}
+              className="btn btn-secondary btn-sm"
+            >
+              {showGenerateSitemapForm ? "Cancel" : sitemaps && sitemaps.length > 0 ? "Regenerate" : "Generate"}
+            </button>
           </div>
-          <button
-            onClick={() => setShowGenerateSitemapForm((v) => !v)}
-            disabled={generatingSitemap}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-          >
-            {showGenerateSitemapForm ? "Cancel" : sitemaps && sitemaps.length > 0 ? "Regenerate" : "Generate sitemap"}
-          </button>
-        </div>
-
-        {showGenerateSitemapForm && (
-          <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 border border-border p-4">
-            <p className="text-xs text-fg-muted">
-              Uses the project brief and the latest approved creative direction above by default.
-            </p>
-            <label className="block text-sm">
-              <span className="text-fg-muted">Creative direction to use</span>
+          {showGenerateSitemapForm && (
+            <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 rounded-md border border-border p-3">
               <select
                 value={sitemapCreativeDirectionId}
                 onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
-                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
               >
-                <option value="">Auto (latest approved, or most recent)</option>
+                <option value="">Creative direction: auto (latest approved)</option>
                 {briefs?.map((cd) => (
                   <option key={cd.id} value={cd.id}>
                     {new Date(cd.generated_at).toLocaleString()} — {cd.status}
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-fg-muted">Additional notes</span>
               <textarea
                 value={sitemapAdditionalNotes}
                 onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                placeholder="Additional notes"
               />
-            </label>
+              <button type="submit" disabled={generatingSitemap} className="btn btn-primary btn-sm">
+                {generatingSitemap ? "Generating…" : "Generate"}
+              </button>
+            </form>
+          )}
+          {generatingSitemap && <p className="mt-2 text-sm text-fg-muted">Generating — this can take up to a minute.</p>}
+          {generateSitemapError && <p className="mt-2 text-error">{generateSitemapError}</p>}
+          <ul className="mt-3 divide-y divide-border rounded-md border border-border">
+            {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
+              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+            )}
+            {sitemaps?.map((s) => {
+              const expanded = sitemapExpandedId === s.id;
+              return (
+                <li key={s.id} className="px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => setSitemapExpandedId(expanded ? null : s.id)}
+                      className="text-left text-fg hover:underline"
+                    >
+                      {expanded ? "▾" : "▸"} {new Date(s.generated_at).toLocaleString()} ({s.pages.length} pages)
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <StatusChip status={s.status} />
+                      {s.flagged_for_review && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                          Flagged
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {expanded && (
+                    <div className="mt-3">
+                      <SitemapView sitemap={s} onChange={handleSitemapUpdated} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Disclosure>
+
+        <Disclosure
+          title="Website brief"
+          hint="The client-facing rollup — brief + creative direction + sitemap in one editable document."
+          badge={<StatusChip status={wbStatus} />}
+        >
+          <div className="flex items-center justify-end">
             <button
-              type="submit"
-              disabled={generatingSitemap}
-              className="btn btn-primary"
+              onClick={handleGenerateWebsiteBrief}
+              disabled={generatingWebsiteBrief}
+              className="btn btn-secondary btn-sm"
             >
-              {generatingSitemap ? "Generating…" : "Generate"}
+              {generatingWebsiteBrief ? "Generating…" : websiteBriefs && websiteBriefs.length > 0 ? "Regenerate" : "Generate"}
             </button>
-          </form>
-        )}
-        {generatingSitemap && (
-          <p className="mt-2 text-sm text-fg-muted">
-            Pulling together the brief and creative direction to recommend a page structure — this can take up
-            to a minute.
-          </p>
-        )}
-        {generateSitemapError && <p className="mt-2 text-error">{generateSitemapError}</p>}
-
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No sitemap generated yet.</li>
-          )}
-          {sitemaps?.map((s) => {
-            const expanded = sitemapExpandedId === s.id;
-            return (
-              <li key={s.id} className="px-3 py-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setSitemapExpandedId(expanded ? null : s.id)}
-                    className="text-left text-fg hover:underline"
-                  >
-                    {expanded ? "▾" : "▸"} Sitemap — {new Date(s.generated_at).toLocaleString()} ({s.pages.length}{" "}
-                    top-level pages)
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        s.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-                      }`}
-                    >
-                      {s.status}
-                    </span>
-                    {s.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                        Flagged for review
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {expanded && (
-                  <div className="mt-3">
-                    <SitemapView sitemap={s} onChange={handleSitemapUpdated} />
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">Website brief</h2>
-            <p className="text-xs text-fg-muted">
-              The AI-assisted client-facing brief — project summary, goals, audience, positioning, sitemap,
-              page purposes, content requirements, CTA strategy, visual direction, functionality, SEO, and
-              technical requirements in one document. Rolls up the brief/creative direction/sitemap above where
-              they exist; every section stays editable, and AI suggestions are always shown separately from
-              what the client actually confirmed.
-            </p>
           </div>
-          <button
-            onClick={handleGenerateWebsiteBrief}
-            disabled={generatingWebsiteBrief}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-          >
-            {generatingWebsiteBrief
-              ? "Generating…"
-              : websiteBriefs && websiteBriefs.length > 0
-                ? "Regenerate"
-                : "Generate website brief"}
-          </button>
-        </div>
-
-        {generatingWebsiteBrief && (
-          <p className="mt-2 text-sm text-fg-muted">
-            Pulling together the brief, creative direction, and sitemap above — this can take up to a minute.
-          </p>
-        )}
-        {generateWebsiteBriefError && <p className="mt-2 text-error">{generateWebsiteBriefError}</p>}
-
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No website brief generated yet.</li>
-          )}
-          {websiteBriefs?.map((b) => {
-            const expanded = websiteBriefExpandedId === b.id;
-            return (
-              <li key={b.id} className="px-3 py-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setWebsiteBriefExpandedId(expanded ? null : b.id)}
-                    className="text-left text-fg hover:underline"
-                  >
-                    {expanded ? "▾" : "▸"} Website brief — {new Date(b.generated_at).toLocaleString()}
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        b.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-                      }`}
+          {generatingWebsiteBrief && <p className="mt-2 text-sm text-fg-muted">Generating — this can take up to a minute.</p>}
+          {generateWebsiteBriefError && <p className="mt-2 text-error">{generateWebsiteBriefError}</p>}
+          <ul className="mt-3 divide-y divide-border rounded-md border border-border">
+            {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
+              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+            )}
+            {websiteBriefs?.map((b) => {
+              const expanded = websiteBriefExpandedId === b.id;
+              return (
+                <li key={b.id} className="px-3 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => setWebsiteBriefExpandedId(expanded ? null : b.id)}
+                      className="text-left text-fg hover:underline"
                     >
-                      {b.status}
-                    </span>
-                    {b.flagged_for_review && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                        Flagged for review
-                      </span>
-                    )}
+                      {expanded ? "▾" : "▸"} {new Date(b.generated_at).toLocaleString()}
+                    </button>
+                    <StatusChip status={b.status} />
                   </div>
-                </div>
-                {expanded && (
-                  <div className="mt-3">
-                    <WebsiteBriefView brief={b} onChange={handleWebsiteBriefUpdated} />
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  {expanded && (
+                    <div className="mt-3">
+                      <WebsiteBriefView brief={b} onChange={handleWebsiteBriefUpdated} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Disclosure>
       </section>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-fg">Website</h2>
-            <p className="text-xs text-fg-muted">
-              Generated from the approved sitemap, brief, and creative direction above — every section is
-              reviewable and editable, never a locked mockup.
-            </p>
-          </div>
-          <Link
-            href={`/dashboard/projects/${projectId}/website`}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-          >
-            Open website
-          </Link>
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-fg">Meetings</h2>
-          <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
-            Schedule on calendar →
-          </Link>
-        </div>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {meetings && meetings.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
-          )}
-          {meetings?.map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="text-fg">
-                {m.title}
+      {/* Meetings + activity */}
+      <div className="grid gap-2 lg:grid-cols-2">
+        <Disclosure title="Meetings" badge={<span className="text-xs text-fg-muted">{meetings?.length ?? 0}</span>}>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {meetings && meetings.length === 0 && (
+              <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled.</li>
+            )}
+            {meetings?.map((m) => (
+              <li key={m.id} className="px-3 py-2 text-sm">
+                <span className="text-fg">{m.title}</span>
                 <span className="ml-2 text-xs text-fg-muted">
                   {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
-                  {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
                 </span>
-              </span>
-              {m.outcome && <span className="shrink-0 text-xs text-fg-muted">{m.outcome}</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
+              </li>
+            ))}
+          </ul>
+          <Link href="/dashboard/calendar" className="mt-2 inline-block text-xs text-fg-muted hover:underline">
+            Schedule on calendar →
+          </Link>
+        </Disclosure>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
-          )}
-          {activity?.map((item) => (
-            <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-fg">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-fg-muted">
-                {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <Disclosure title="Activity history" badge={<span className="text-xs text-fg-muted">{activity?.length ?? 0}</span>}>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {activity && activity.length === 0 && <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>}
+            {activity?.slice(0, 20).map((item) => (
+              <li key={item.id} className="px-3 py-2 text-sm">
+                <span className="text-fg">{item.summary ?? item.action}</span>
+                <span className="ml-2 text-xs text-fg-muted">
+                  {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+      </div>
     </div>
   );
 }
