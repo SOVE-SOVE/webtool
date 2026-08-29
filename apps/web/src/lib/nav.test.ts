@@ -10,10 +10,16 @@ describe("nav config", () => {
     expect(new Set(ALL_NAV_HREFS).size).toBe(ALL_NAV_HREFS.length);
   });
 
-  it("keeps Pipeline, Review and Clients reachable (nothing deleted)", () => {
-    expect(ALL_NAV_HREFS).toContain("/dashboard/pipeline");
+  it("keeps Review in the sidebar", () => {
     expect(ALL_NAV_HREFS).toContain("/dashboard/review");
-    expect(ALL_NAV_HREFS).toContain("/dashboard/clients");
+  });
+
+  it("folds Pipeline and Clients into Leads (routes redirect, so not separate nav items)", () => {
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/pipeline");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/clients");
+    const leads = NAV_SECTIONS.flatMap((s) => s.links).find((l) => l.href === "/dashboard/leads")!;
+    expect(isNavLinkActive("/dashboard/pipeline", leads)).toBe(true);
+    expect(isNavLinkActive("/dashboard/clients/abc123", leads)).toBe(true);
   });
 
   it("every href is under /dashboard", () => {

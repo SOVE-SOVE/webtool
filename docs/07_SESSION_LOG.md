@@ -11,6 +11,81 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-29 — T2: Leads becomes the lifecycle hub (Pipeline + Clients folded in)
+**Mode:** worktree (`t2-leads-lifecycle`), off `main` after T1 (#17) merged.
+**Merge to main after:** yes — pending review. Third of the queued
+series (shell ✓ → T1 ✓ → **T2 (this)** → T3 Sales); each merges before
+the next.
+**Scope touched:** apps/api/app/modules/leads/{schemas,service}.py;
+apps/web/src/app/dashboard/leads/page.tsx (rewritten),
+leads/[id]/page.tsx, pipeline/page.tsx (→ redirect), clients/page.tsx
+(→ redirect), clients/[id]/page.tsx (back-link); apps/web/src/lib/
+{nav,api}.ts; new apps/web/src/components/LeadsBoard.tsx and
+apps/web/src/lib/leads.ts (+ tests).
+
+**What happened:** Made Leads the one place the customer lifecycle
+lives, without deleting anything.
+
+- **Lifecycle tabs** on the Leads page: All / New / Contacted /
+  Interested / Proposal / Won / Lost / Nurture, with live counts. These
+  are a plain-language *grouping over the existing `LeadStatus` enum* —
+  no new or renamed statuses (mapping in `lib/leads.ts`, unit-tested:
+  New = new+researched+qualified, Interested = replied+meeting, the rest
+  1:1). A lead's real status is still stored and still editable inline.
+- **Table | Board toggle.** Board view is the old `/dashboard/pipeline`
+  kanban, extracted into `components/LeadsBoard.tsx` (columns from
+  `PipelineStageConfig`, drag to restage — unchanged behaviour). The
+  `/dashboard/pipeline` route is kept as a redirect to
+  `/dashboard/leads?view=board`.
+- **Clients folded in as the "Won" tab.** `/dashboard/clients` (the
+  list) is now a redirect to `/dashboard/leads?tab=won`.
+  `/dashboard/clients/[id]` — the client detail page (billing, contract,
+  start-intake) — is unchanged and still linked from every won lead. The
+  "add a client with no lead" (referral) flow is preserved as an "Add
+  client without a lead" action on the Won tab. No `Client` model,
+  route, endpoint, or data touched; no duplicate client records.
+- **Richer lead rows:** business + contact (industry/location, email
+  searchable), status, score, priority, next follow-up (from
+  `/follow-ups`), assignee, and a **Client / project** cell that links a
+  converted lead straight to its client record and its project's current
+  stage. Composed client-side from `listClients` + `listProjects` +
+  `listFollowUps` — no new list endpoint.
+- **Lead detail:** the "Convert to client" section becomes "Client &
+  delivery" once converted — shows the client record, the active
+  project + its stage, and a link to the project's website. Pipeline
+  link repointed to the board view.
+- **Nav:** "Pipeline board" and "Clients" removed as sidebar entries
+  (they're now views of Leads); the Leads nav item lights up on
+  `/pipeline` and `/clients*` via `activePrefixes`.
+
+**Backend — one additive read change, no migration:** `LeadRead` gains
+`website_url`, `business_email`, `business_phone`, read straight off the
+already-joined `Business` in `_to_read` (three lines, no new query, no
+column, no model change). Everything else the richer row needs is
+composed on the frontend from existing list endpoints.
+
+**Nothing removed.** Pipeline and Clients keep their routes (redirects),
+models, endpoints, and data. `lib/filters.ts::filterClients` is now
+unused by a page but kept (still tested; client detail still exists).
+
+**Checks:** `apps/web` — `npm run test` 80/80 (7 files, incl. new
+`leads.test.ts`); `next build` + tsc clean; `npm run lint` 4 errors / 3
+warnings, unchanged from base. `apps/api` — `pytest tests/test_leads.py
+tests/test_clients.py tests/test_sales_pipeline.py
+tests/test_automation_pipeline.py` → 41 passed (the lone recurring
+`DependentObjectsStillExist` on the last test is the known shared-test-DB
+teardown flake, not this change — see the 2026-08-27 email entry).
+Live-rendered against mocked API data (desktop + mobile): tab counts,
+next-follow-up, client/project links, the Won tab, the Board view, and
+both `/pipeline` → `?view=board` and `/clients` → `?tab=won` redirects
+all verified, zero console errors. **Not verified:** a pass against the
+real seeded DB — no seed password in this environment. **Known nit:**
+on a ~1360px window the table's last column needs a small horizontal
+scroll inside its own container.
+
+**Next up:** T3 — redesign the Sales page into a focused sales command
+centre.
+
 ## 2026-08-29 — T1: Overview redesigned into the command centre
 **Mode:** worktree (`t1-overview-command-centre`), off `main` after the
 global-shell PR (#16) merged.

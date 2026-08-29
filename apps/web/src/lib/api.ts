@@ -140,6 +140,9 @@ export type Lead = {
   industry: string | null;
   suburb: string | null;
   state: string | null;
+  website_url: string | null;
+  business_email: string | null;
+  business_phone: string | null;
   status: LeadStatus;
   priority: LeadPriority;
   score: number | null;

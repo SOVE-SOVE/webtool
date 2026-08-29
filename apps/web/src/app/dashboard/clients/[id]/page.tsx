@@ -123,7 +123,7 @@ export default function ClientDetailPage() {
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/clients" className="text-sm text-fg-muted hover:underline">
+      <Link href="/dashboard/leads?tab=won" className="text-sm text-fg-muted hover:underline">
         ← All clients
       </Link>
 

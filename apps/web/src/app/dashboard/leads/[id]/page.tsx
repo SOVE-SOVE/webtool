@@ -20,6 +20,8 @@ import {
   type OutreachChannel,
   type OutreachMessage,
   type PipelineEvent,
+  type Project,
+  PROJECT_STAGE_LABELS,
   type SalesAuditReport,
   type User,
 } from "@/lib/api";
@@ -106,6 +108,7 @@ export default function LeadDetailPage() {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [showConvertForm, setShowConvertForm] = useState(false);
   const [convertBillingEmail, setConvertBillingEmail] = useState("");
   const [convertPackage, setConvertPackage] = useState("");
@@ -138,6 +141,7 @@ export default function LeadDetailPage() {
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
+    api.listProjects().then(setProjects).catch(() => {});
     api.listMeetings({ leadId }).then(setMeetings).catch(() => {});
   }
 
@@ -511,7 +515,7 @@ export default function LeadDetailPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-fg">Pipeline stage history</h2>
-          <Link href="/dashboard/pipeline" className="text-xs text-fg-muted hover:underline">
+          <Link href="/dashboard/leads?view=board" className="text-xs text-fg-muted hover:underline">
             View pipeline board →
           </Link>
         </div>
@@ -532,11 +536,20 @@ export default function LeadDetailPage() {
 
       {(() => {
         const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
+        const clientProjects = existingClient
+          ? projects.filter((p) => p.client_id === existingClient.id)
+          : [];
+        const activeProject =
+          clientProjects.find((p) => p.stage !== "maintenance" && p.stage !== "complete") ??
+          clientProjects[0] ??
+          null;
         if (lead.archived_at) return null;
         return (
           <section className="mt-8">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-fg">Convert to client</h2>
+              <h2 className="text-sm font-semibold text-fg">
+                {existingClient ? "Client & delivery" : "Convert to client"}
+              </h2>
               {!existingClient && (
                 <button
                   onClick={() => setShowConvertForm((v) => !v)}
@@ -548,13 +561,35 @@ export default function LeadDetailPage() {
             </div>
 
             {existingClient ? (
-              <p className="mt-2 text-sm text-fg-muted">
-                This lead was won and converted.{" "}
-                <Link href={`/dashboard/clients/${existingClient.id}`} className="hover:underline">
-                  View client
-                </Link>
-                .
-              </p>
+              <div className="mt-2 space-y-1.5 text-sm">
+                <p className="text-fg-muted">
+                  Won and converted.{" "}
+                  <Link href={`/dashboard/clients/${existingClient.id}`} className="text-fg hover:underline">
+                    Client record ↗
+                  </Link>
+                </p>
+                {activeProject ? (
+                  <p className="text-fg-muted">
+                    Project{" "}
+                    <Link href={`/dashboard/projects/${activeProject.id}`} className="text-fg hover:underline">
+                      {activeProject.name}
+                    </Link>{" "}
+                    · <span className="text-fg">{PROJECT_STAGE_LABELS[activeProject.stage]}</span>
+                    {" · "}
+                    <Link
+                      href={`/dashboard/projects/${activeProject.id}/website`}
+                      className="text-fg-muted hover:underline"
+                    >
+                      Website
+                    </Link>
+                    {clientProjects.length > 1 && (
+                      <span className="text-fg-subtle"> (+{clientProjects.length - 1} more)</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-fg-subtle">No project yet — start intake from the client record.</p>
+                )}
+              </div>
             ) : (
               <p className="mt-1 text-sm text-fg-muted">
                 Creates the client record and an INTAKE-stage project (with starter tasks) in one step, and
