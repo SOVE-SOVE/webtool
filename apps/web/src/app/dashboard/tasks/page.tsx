@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, type Lead, type Project, type Task, type User } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
@@ -70,15 +71,15 @@ export default function TasksPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">Tasks</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="btn btn-primary"
-        >
-          {showForm ? "Cancel" : "Add task"}
-        </button>
-      </div>
+      <PageHeader
+        title="Tasks"
+        description="Every to-do across leads and projects, in one list."
+        actions={
+          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
+            {showForm ? "Cancel" : "Add task"}
+          </button>
+        }
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">

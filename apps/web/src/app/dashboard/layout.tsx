@@ -4,63 +4,49 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
+import { HOME_LINK, NAV_SECTIONS, SETTINGS_LINK, isNavLinkActive, type NavLink as NavLinkType } from "@/lib/nav";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
+import { DoThisNext } from "@/components/ui/DoThisNext";
+import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
-type NavItem = { href: string; label: string };
-type NavGroup = { label: string; items: NavItem[] };
+function NavLink({
+  link,
+  active,
+  onNavigate,
+}: {
+  link: NavLinkType;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  if (link.secondary) {
+    return (
+      <Link
+        href={link.href}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        className={`block rounded-md py-1.5 pl-[2.375rem] pr-3 text-[13px] transition-colors ${
+          active ? "font-medium text-fg" : "text-fg-subtle hover:text-fg"
+        }`}
+      >
+        {link.label}
+      </Link>
+    );
+  }
 
-// Grouped to mirror the pipeline stages in docs/00_VISION.md: find →
-// qualify → contact → close → deliver → operate. A daily user should be
-// able to tell at a glance which stage of the business a link belongs to.
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "Prospecting",
-    items: [
-      { href: "/dashboard/discovery", label: "Discovery" },
-      { href: "/dashboard/review", label: "Review" },
-    ],
-  },
-  {
-    label: "Sales",
-    items: [
-      { href: "/dashboard/sales", label: "Command centre" },
-      { href: "/dashboard/leads", label: "Leads" },
-      { href: "/dashboard/pipeline", label: "Pipeline" },
-      { href: "/dashboard/follow-ups", label: "Follow-ups" },
-    ],
-  },
-  {
-    label: "Delivery",
-    items: [
-      { href: "/dashboard/clients", label: "Clients" },
-      { href: "/dashboard/projects", label: "Projects" },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { href: "/dashboard/tasks", label: "Tasks" },
-      { href: "/dashboard/calendar", label: "Calendar" },
-    ],
-  },
-];
-
-function isActive(pathname: string, href: string): boolean {
-  return href === "/dashboard" ? pathname === href : pathname.startsWith(href);
-}
-
-function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean; onNavigate?: () => void }) {
   return (
     <Link
-      href={item.href}
+      href={link.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`block rounded-md px-3 py-2 text-sm transition-colors ${
-        active ? "bg-accent text-accent-fg" : "text-fg-muted hover:bg-surface-hover hover:text-fg"
+      className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+        active
+          ? "bg-accent font-medium text-accent-fg"
+          : "text-fg-muted hover:bg-surface-hover hover:text-fg"
       }`}
     >
-      {item.label}
+      <NavIcon name={link.icon} className="h-[18px] w-[18px] shrink-0" />
+      <span className="truncate">{link.label}</span>
     </Link>
   );
 }
@@ -81,37 +67,44 @@ function SidebarContent({ me, pathname, onNavigate }: { me: Me; pathname: string
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">
-        <NavLink item={{ href: "/dashboard", label: "Overview" }} active={pathname === "/dashboard"} onNavigate={onNavigate} />
+        <NavLink
+          link={HOME_LINK}
+          active={isNavLinkActive(pathname, HOME_LINK)}
+          onNavigate={onNavigate}
+        />
 
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mt-4">
-            <p className="px-3 text-xs font-semibold uppercase tracking-wide text-fg-subtle">{group.label}</p>
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.id} className="mt-5">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+              {section.label}
+            </p>
             <div className="mt-1 space-y-0.5">
-              {group.items.map((item) => (
-                <NavLink key={item.href} item={item} active={isActive(pathname, item.href)} onNavigate={onNavigate} />
+              {section.links.map((link) => (
+                <NavLink
+                  key={link.href}
+                  link={link}
+                  active={isNavLinkActive(pathname, link)}
+                  onNavigate={onNavigate}
+                />
               ))}
             </div>
           </div>
         ))}
 
-        <div className="mt-4">
+        <div className="mt-5 border-t border-border pt-3">
           <NavLink
-            item={{ href: "/dashboard/settings", label: "Settings" }}
-            active={isActive(pathname, "/dashboard/settings")}
+            link={SETTINGS_LINK}
+            active={isNavLinkActive(pathname, SETTINGS_LINK)}
             onNavigate={onNavigate}
           />
         </div>
       </nav>
 
       <div className="border-t border-border px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-fg">{me.name}</p>
-            <p className="truncate text-xs text-fg-muted">
-              {me.email} · {me.role}
-            </p>
-          </div>
-        </div>
+        <p className="truncate text-xs font-medium text-fg">{me.name}</p>
+        <p className="truncate text-xs text-fg-muted">
+          {me.email} · {me.role}
+        </p>
         <div className="mt-2 flex items-center justify-between gap-2">
           <ThemeToggle />
           <button onClick={handleLogout} className="shrink-0 text-xs text-fg-muted hover:text-fg">
@@ -190,8 +183,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <ConfirmProvider>
       <div className="flex min-h-screen bg-canvas">
-        {/* Mobile top bar */}
-        <div className="fixed inset-x-0 top-0 z-30 flex h-12 items-center justify-between border-b border-border bg-surface px-3 md:hidden">
+        {/* Mobile / tablet top bar */}
+        <div className="fixed inset-x-0 top-0 z-30 flex h-12 items-center justify-between border-b border-border bg-surface px-3 lg:hidden">
           <button
             onClick={() => setMobileNavOpen(true)}
             aria-label="Open navigation"
@@ -209,10 +202,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="w-9" />
         </div>
 
-        {/* Mobile drawer */}
+        {/* Mobile / tablet drawer */}
         {mobileNavOpen && (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <div className="modal-overlay !p-0 !items-stretch !justify-start" onClick={() => setMobileNavOpen(false)}>
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <div
+              className="modal-overlay !items-stretch !justify-start !p-0"
+              onClick={() => setMobileNavOpen(false)}
+            >
               <aside
                 className="flex h-full w-64 flex-col border-r border-border bg-surface"
                 onClick={(e) => e.stopPropagation()}
@@ -224,11 +220,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
 
         {/* Desktop sidebar */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface-subtle md:flex">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface-subtle lg:flex">
           <SidebarContent me={me} pathname={pathname} />
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-x-auto pt-12 md:pt-0">{children}</main>
+        {/* `overflow-x-auto` keeps wide tables/boards scrolling inside the
+            content area rather than the whole page. DoThisNext sits after
+            the page content — pinned to the bottom of the scroll area, its
+            own list capped and internally scrollable so it never stretches
+            the page. */}
+        <main className="flex min-w-0 flex-1 flex-col overflow-x-auto pt-12 lg:pt-0">
+          <div className="min-w-0 flex-1">{children}</div>
+          <DoThisNext />
+        </main>
       </div>
     </ConfirmProvider>
   );

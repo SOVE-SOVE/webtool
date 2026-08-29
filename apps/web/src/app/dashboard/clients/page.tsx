@@ -7,6 +7,7 @@ import { filterClients, UNASSIGNED } from "@/lib/filters";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
 export default function ClientsPage() {
@@ -102,15 +103,15 @@ export default function ClientsPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">Clients</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="btn btn-primary"
-        >
-          {showForm ? "Cancel" : "Add client"}
-        </button>
-      </div>
+      <PageHeader
+        title="Clients"
+        description="Leads that have converted — the businesses you're building for."
+        actions={
+          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
+            {showForm ? "Cancel" : "Add client"}
+          </button>
+        }
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">

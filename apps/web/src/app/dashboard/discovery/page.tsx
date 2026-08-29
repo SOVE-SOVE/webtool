@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, type DiscoverySearch } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
 const STATUS_LABEL: Record<DiscoverySearch["status"], string> = {
@@ -72,20 +73,15 @@ export default function DiscoverySearchesPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Discovery</h1>
-          <p className="mt-1 text-sm text-fg-muted">
-            Find businesses that might be a good fit for a website redesign, before they enter the CRM.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="btn btn-primary"
-        >
-          {showForm ? "Cancel" : "New search"}
-        </button>
-      </div>
+      <PageHeader
+        title="Discovery"
+        description="Find businesses that might be a good fit for a website redesign, before they enter the CRM."
+        actions={
+          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
+            {showForm ? "Cancel" : "New search"}
+          </button>
+        }
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-3 border border-border p-4">

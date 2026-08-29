@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError, type Lead, type LeadPriority, type LeadStatus, type PipelineStage } from "@/lib/api";
 import { STALE_DAYS, countStale, daysSince, groupLeadsByStatus, isStale, orderStages } from "@/lib/pipeline";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 const PRIORITY_STYLE: Record<LeadPriority, string> = {
@@ -60,19 +61,17 @@ export default function PipelinePage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Pipeline</h1>
-          <p className="mt-1 text-sm text-fg-muted">
-            Every active lead by stage. Drag a card to move it, or use a lead&apos;s detail page.
-          </p>
-        </div>
-        {staleCount > 0 && (
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-            {staleCount} need{staleCount === 1 ? "s" : ""} attention — no movement in {STALE_DAYS}+ days
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Pipeline board"
+        description="Every active lead by stage. Drag a card to move it, or use a lead's detail page."
+        actions={
+          staleCount > 0 ? (
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+              {staleCount} need{staleCount === 1 ? "s" : ""} attention — no movement in {STALE_DAYS}+ days
+            </span>
+          ) : undefined
+        }
+      />
 
       {error && (
         <div className="mt-4">

@@ -11,9 +11,79 @@ is purely "what did an agent do in this coding session."
 
 ---
 
-## 2026-08-27 — Phase 8: Production Polish (UX audit, dark mode, responsive)
-**Mode:** worktree (`phase8-production-polish`)
-**Merge to main after:** yes — pending review
+## 2026-08-29 — Global shell + navigation + shared layout system
+**Mode:** worktree (`ux-global-shell`)
+**Merge to main after:** yes — pending review. First of a queued series
+(this shell pass → T1 Overview redesign → T2 Leads/Pipeline/Clients
+consolidation → T3 Sales redesign); each merges before the next starts.
+**Scope touched:** apps/web/src/app/dashboard/layout.tsx (nav rebuilt),
+apps/web/src/app/dashboard/page.tsx + sales/page.tsx (restructured to the
+canonical layout), header swap only on the other 10 top-level pages
+(calendar, clients, discovery, follow-ups, leads, pipeline, projects,
+review, settings, tasks). New: apps/web/src/lib/nav.ts (+ test),
+apps/web/src/lib/format.ts (+ test), apps/web/src/components/ui/
+PageHeader.tsx, Metric.tsx, DoThisNext.tsx, Icons.tsx.
+
+**What happened:** The approved global UX redesign, shell layer only —
+individual page bodies are deliberately untouched (that's T1–T3).
+
+- **Navigation** regrouped to five plain-language stages a first-time
+  user can follow: HOME (Overview · Tasks · Calendar), FIND (Discovery ·
+  Review queue · Leads · Pipeline board), SELL (Sales · Follow-ups),
+  BUILD (Projects · Clients), then Settings. Nothing deleted — Pipeline,
+  Review and Clients stay first-class routes, shown as `secondary`
+  (indented, quieter) links under the primary concept they belong to.
+  Config lives in `lib/nav.ts` as data (testable, reusable for
+  breadcrumbs later); `isNavLinkActive` handles subtree matching +
+  `activePrefixes` (e.g. Review lights up on `/discovered-businesses/*`).
+  Every primary link now has a line icon (`components/ui/Icons.tsx`,
+  inline SVG, no new dependency). Mobile/tablet drawer breakpoint moved
+  `md:` → `lg:` so portrait tablets get the drawer too.
+- **Shared layout system:** `<PageHeader title description actions>` (now
+  on all 12 top-level pages — replaces each page's hand-rolled
+  `<h1>`+`<p>`+button row, adopting the existing `.page-title` /
+  `.page-subtitle` classes); `<Metric>` / `<MetricGrid>` (consolidates
+  the `MetricTile` that Overview and Sales each defined separately);
+  `lib/format.ts` (`timeAgo`, `formatAud` — also each previously copied
+  per page).
+- **"Do this next"** is now one shared `<DoThisNext>` rendered by the
+  dashboard layout at the **bottom** of every page, in a card with a
+  capped height (`max-h-56 sm:max-h-72`) and its own internal scroll —
+  so a long queue never stretches the page. It reads
+  `GET /api/v1/dashboard/overview → needs_attention` (unchanged
+  endpoint), module-cached for 20s so navigating around doesn't re-hit
+  the aggregate query on every click; `invalidateAttention()` is
+  exported for pages to call after a mutation. The old in-page "Do this
+  next" blocks were removed from Overview and Sales (redundant now).
+- **Overview + Sales** restructured to the canonical order: PageHeader →
+  summary metrics at the top → main content → (global DoThisNext at the
+  bottom). Same data, same widgets, same endpoints — just reordered and
+  de-duplicated. Sales page title shortened "Sales command centre" →
+  "Sales" to match the nav.
+
+**No functionality removed.** No API, schema, or route changes — all 22
+routes still build and resolve. `dashboardOverview()` is now also called
+by the layout's DoThisNext (in addition to the Overview page), so
+Overview makes it twice; acceptable, and a shared fetch cache/React
+Query is the eventual dedupe (out of scope here).
+
+**Checks:** `npm run test` 66/66 pass (5 files incl. new
+`format.test.ts`, `nav.test.ts`). `npm run build` succeeds; TypeScript
+clean. `npm run lint` reports 4 errors / 3 warnings — **all pre-existing**
+(verified identical count against the base branch: setState-in-effect in
+the layout auth guard and the settings calendar-param effect, unescaped
+entities in `projects/[id]/page.tsx`); this pass adds zero. Live:
+dashboard layout error-state and `/login` render clean in a browser.
+**Not verified:** a logged-in visual click-through — no seed password
+was available in this environment (`SEED_ADMIN_PASSWORD_HASH` only, and
+the API's CORS is locked to `:3000`). Recommend a quick manual pass of
+the sidebar + the bottom "Do this next" on desktop and mobile widths.
+
+**Next up:** T1 — redesign the Overview page into the primary command
+centre (summary cards, quick actions, activity, bottom DoThisNext).
+
+---
+
 **Scope touched:** apps/web/src/app/globals.css, apps/web/src/app/layout.tsx,
 apps/web/src/app/dashboard/layout.tsx, apps/web/src/components/ui/ (new:
 EmptyState, ErrorState, Skeleton, ConfirmProvider, ThemeProvider,
