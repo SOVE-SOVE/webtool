@@ -24,6 +24,13 @@ from app.modules.discovery.schemas import (
     DiscoverySearchCreate,
     DiscoverySearchRead,
 )
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import (
+    DEFAULT_DISCOVERY_INTERVAL_HOURS,
+    JOB_BUSINESS_RESEARCH,
+    JOB_DISCOVERY_SEARCH,
+)
+from app.modules.jobs.models import Job, JobStatus
 from app.modules.leads.models import Lead, LeadPriority
 from app.modules.opportunity_scoring.models import OpportunityScoreResult
 from app.modules.website_audits.models import WebsiteAudit
@@ -122,6 +129,7 @@ def create_and_run_search(
 
     query_sent = " ".join(p for p in (data.industry, data.business_type, data.keywords, data.location) if p)
 
+    created: list[DiscoveredBusiness] = []
     for result in raw_results:
         dedup_key = dedup.compute_dedup_key(result.name, result.suburb, result.state)
         duplicate_of_business = dedup.find_existing_business_match(db, workspace_id, result)
@@ -131,28 +139,28 @@ def create_and_run_search(
             else dedup.find_duplicate_discovered_business(db, workspace_id, result, dedup_key)
         )
 
-        db.add(
-            DiscoveredBusiness(
-                discovery_search_id=search.id,
-                name=result.name,
-                industry=result.industry,
-                website_url=result.website_url,
-                phone=result.phone,
-                email=result.email,
-                address=result.address,
-                suburb=result.suburb,
-                state=result.state,
-                postcode=result.postcode,
-                social_links="\n".join(result.social_links) or None,
-                source_provider=provider_name,
-                source_query=query_sent,
-                source_external_id=result.source_external_id,
-                dedup_key=dedup_key,
-                duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
-                duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
-                status=DiscoveredBusinessStatus.NEW,
-            )
+        business = DiscoveredBusiness(
+            discovery_search_id=search.id,
+            name=result.name,
+            industry=result.industry,
+            website_url=result.website_url,
+            phone=result.phone,
+            email=result.email,
+            address=result.address,
+            suburb=result.suburb,
+            state=result.state,
+            postcode=result.postcode,
+            social_links="\n".join(result.social_links) or None,
+            source_provider=provider_name,
+            source_query=query_sent,
+            source_external_id=result.source_external_id,
+            dedup_key=dedup_key,
+            duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
+            duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
+            status=DiscoveredBusinessStatus.NEW,
         )
+        db.add(business)
+        created.append(business)
 
     search.status = DiscoverySearchStatus.COMPLETED
     search.result_count = len(raw_results)
@@ -170,7 +178,83 @@ def create_and_run_search(
 
     db.commit()
     db.refresh(search)
+
+    # Automation hand-off: research -> analysis -> scoring runs on its own
+    # from here (docs/03_AGENT_RULES.md "can proceed autonomously") — each
+    # stage's own service function enqueues the next. Skipped for an exact
+    # duplicate of a business already discovered in this workspace, since
+    # that business is (or will be) researched via its own row already —
+    # researching the same website twice adds nothing. Not skipped for a
+    # duplicate-of-CRM-business match: the discovery-side record still
+    # benefits from its own research/audit/score for the review queue.
+    for business in created:
+        if business.duplicate_of_discovered_business_id is not None:
+            continue
+        jobs_service.enqueue(
+            db,
+            workspace_id=workspace_id,
+            job_type=JOB_BUSINESS_RESEARCH,
+            payload={"discovered_business_id": str(business.id)},
+            actor_id=actor_id,
+        )
+
     return DiscoverySearchRead.model_validate(search)
+
+
+def schedule_recurring_search(
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    data: DiscoverySearchCreate,
+    interval_hours: int = DEFAULT_DISCOVERY_INTERVAL_HOURS,
+) -> Job:
+    """
+    Enqueues the "scheduled discovery" requirement (docs/04_ROADMAP.md M7)
+    as a self-rescheduling job rather than running anything synchronously
+    — the first run happens whenever a poller next claims it (immediately,
+    if one is running), and `app/jobs/handlers.py::handle_discovery_search`
+    re-enqueues itself `interval_hours` later each time it completes, per
+    the design note on `Job.run_after`. Validates the same "at least one
+    criterion" rule `create_and_run_search` does, so a bad schedule fails
+    at creation time instead of quietly producing job after job that
+    matches nothing.
+    """
+    if not any([data.location, data.industry, data.business_type, data.keywords]):
+        raise InvalidSearchError(
+            "A discovery search needs at least one of location, industry, business_type, or keywords"
+        )
+    if interval_hours < 1:
+        raise InvalidSearchError("interval_hours must be at least 1")
+
+    payload = {
+        "query_label": data.query_label,
+        "location": data.location,
+        "industry": data.industry,
+        "business_type": data.business_type,
+        "keywords": data.keywords,
+        "min_score": data.min_score,
+        "max_score": data.max_score,
+        "has_website": data.has_website,
+        "website_outdated": data.website_outdated,
+        "provider": data.provider,
+        "recurring": True,
+        "interval_hours": interval_hours,
+    }
+    return jobs_service.enqueue(
+        db, workspace_id=workspace_id, job_type=JOB_DISCOVERY_SEARCH, payload=payload, actor_id=actor_id
+    )
+
+
+def list_scheduled_searches(db: Session, workspace_id: uuid.UUID) -> list[Job]:
+    """Every not-yet-run recurring-discovery job — i.e. the next
+    scheduled run of each recurring search, since `handle_discovery_search`
+    replaces each one with its own successor rather than leaving
+    completed rows around to filter out."""
+    return [
+        job
+        for job in jobs_service.list_jobs(db, workspace_id, job_type=JOB_DISCOVERY_SEARCH)
+        if job.payload.get("recurring") and job.status == JobStatus.PENDING
+    ]
 
 
 def list_discovery_searches(db: Session, workspace_id: uuid.UUID) -> list[DiscoverySearchRead]:

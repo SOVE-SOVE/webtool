@@ -23,6 +23,25 @@ class DiscoverySearchCreate(BaseModel):
     provider: str | None = None
 
 
+class ScheduleRecurringSearchRequest(DiscoverySearchCreate):
+    """Same criteria as a one-off search, plus how often to re-run it."""
+
+    interval_hours: int = 24
+
+
+class ScheduledSearchRead(BaseModel):
+    """The job row backing a scheduled/recurring discovery search — not
+    a DiscoverySearch itself, since nothing has run yet."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    job_type: str
+    payload: dict
+    run_after: datetime
+    created_at: datetime
+
+
 class DiscoverySearchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

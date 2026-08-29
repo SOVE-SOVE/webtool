@@ -8,6 +8,8 @@ from app.agents.website_quality import WebsiteQualityInput
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research.models import BusinessResearchResult
 from app.modules.discovery.models import DiscoveredBusiness, DiscoveredBusinessStatus, DiscoverySearch
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_OPPORTUNITY_SCORE
 from app.modules.website_quality.models import WebsiteQualityAudit
 from app.modules.website_quality.schemas import WebsiteQualityAuditRead
 
@@ -100,6 +102,16 @@ def run_quality_audit(
 
     db.commit()
     db.refresh(audit)
+
+    # Automation hand-off: scoring runs next on its own.
+    jobs_service.enqueue(
+        db,
+        workspace_id=workspace_id,
+        job_type=JOB_OPPORTUNITY_SCORE,
+        payload={"discovered_business_id": str(business.id)},
+        actor_id=actor_id,
+    )
+
     return WebsiteQualityAuditRead.model_validate(audit)
 
 

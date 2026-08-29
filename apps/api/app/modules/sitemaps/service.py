@@ -14,6 +14,8 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import DesignBrief
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_WEBSITE_GENERATE
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
@@ -509,5 +511,16 @@ def approve_sitemap(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, s
                 db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DESIGN
             )
         db.commit()
+
+        # Automation hand-off: website generation runs next on its own —
+        # drafting a new version is reversible/local (docs/03_AGENT_RULES.md
+        # "can proceed autonomously"); nothing here approves or ships it.
+        jobs_service.enqueue(
+            db,
+            workspace_id=workspace_id,
+            job_type=JOB_WEBSITE_GENERATE,
+            payload={"project_id": str(sitemap.project_id)},
+            actor_id=actor_id,
+        )
 
     return get_sitemap(db, workspace_id, sitemap_id)

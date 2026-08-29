@@ -589,13 +589,73 @@ until a human explicitly imports one.
       docs/02_ARCHITECTURE.md §4 had described since 2026-08-16 but no
       prior milestone had implemented. Exists so scheduled discovery has
       somewhere to run; nothing schedules discovery through it yet.
-- [ ] Scheduled/recurring discovery runs (the poller doesn't drive
-      discovery yet — sources are run on demand only).
+- [x] Scheduled/recurring discovery runs — closed by M8 below:
+      `POST /api/v1/discovery-searches/schedule` enqueues a
+      self-rescheduling `discovery_search` job (the poller now drives
+      it, per the design note this item pointed at).
 - [ ] A second real provider behind `DiscoveryProvider` (Google Places,
       ABN lookup, ...) — only Brave Search exists today.
 
 See [[05_DECISIONS]]'s 2026-08-22 entry for the full per-stage
 reasoning and commit-by-commit breakdown.
+
+## M8 — Automation: connect the pipeline end to end
+
+Goal: every stage in [[00_VISION]] that can safely run without a human
+now does, on its own, the moment the stage before it finishes — closing
+the gap M7 left ("nothing schedules discovery... yet") and doing the
+same for the sales/delivery side. Human approval stays required exactly
+where it always was: importing a discovered business, sending outreach,
+winning/closing a deal, approving website content, and deploying.
+
+- [x] Job queue finally has handlers — `apps/api/app/jobs/handlers.py`
+      registers one per automatable stage and `runner.py`'s
+      `poll_forever` now actually uses them (previously called with
+      `handlers={}`, per the M7 note). Each handler calls the exact same
+      service function its manual route does, so a job-triggered run and
+      an operator clicking "Generate" produce identical rows.
+- [x] Discovery -> research -> analysis -> scoring chains automatically:
+      `create_and_run_search` enqueues a `business_research` job per
+      newly discovered business (skipping an exact duplicate of one
+      already being processed), which enqueues `website_quality_audit`
+      on completion, which enqueues `opportunity_score`. Review + CRM
+      import stay 100% manual for every discovered business — not just
+      "questionable" ones — matching the existing `DiscoveredBusiness`
+      design note against ever auto-importing.
+- [x] Scheduled discovery: `POST /api/v1/discovery-searches/schedule`
+      (`interval_hours`) enqueues a `discovery_search` job that
+      re-enqueues its own next run on completion — even after a provider
+      failure, so one bad cycle doesn't silently end the recurrence — via
+      the job queue's own `run_after`, no new scheduler process or table.
+- [x] Outreach assistance drafts itself: generating a lead's sales audit
+      (existing manual action) now also enqueues an `outreach_draft` job
+      — drafting only, per docs/03_AGENT_RULES.md ("draft it, don't send
+      it"). Skips drafting again if the lead already has outreach.
+- [x] Follow-up drafts itself: marking outreach sent (by either
+      `mark_outreach_sent` or the email-send path) now enqueues a
+      `follow_up_draft` job if none is already pending for the lead —
+      suggestion only, resolved/snoozed only by an explicit operator
+      action, unchanged.
+- [x] Website generation and QA chain automatically once a project's
+      sitemap is approved: `approve_sitemap` enqueues `website_generate`,
+      which enqueues `qa_report` on completion. Nothing here approves
+      content or bypasses Phase 6 Task 3's own workflow-transition gate —
+      both stay explicit operator actions.
+- [x] A QA run that comes back `ready_for_client_review` auto-creates an
+      internal "Request client review" task for the operator (deduped
+      while one is already open) — never a message to the client itself;
+      sharing the preview link stays a human call per
+      docs/03_AGENT_RULES.md's "client approval communication".
+- [x] `scripts/start-mac.sh` / `stop-mac.sh` now start/stop the job
+      runner alongside the API and web app, so the automation above
+      actually runs during local development instead of needing a
+      separately-started process.
+- [x] End-to-end coverage: `tests/test_automation_pipeline.py` walks
+      discovery through deployment relying on the job chain firing for
+      every automated stage, and asserts each required approval gate
+      still blocks without an explicit operator action;
+      `tests/test_job_runner.py` covers the handler-dispatch mechanism
+      itself (unregistered job_type, a raising handler, retry-then-fail).
 
 ## Explicitly not roadmapped
 

@@ -2,10 +2,12 @@
 In-process job poller, per docs/02_ARCHITECTURE.md §4. Not wired to
 auto-start anywhere — a deployment that needs jobs actually processed
 runs this as its own process (`python -m app.jobs.runner`), same
-pattern as `python -m app.core.seed`. Nothing calls this yet; it exists
-so `app.modules.jobs` is a real, runnable queue and not just a table,
-ready for the first job type (e.g. a scheduled `discovery_search`
-re-run) to register a handler.
+pattern as `python -m app.core.seed` (`scripts/start-mac.sh` starts it
+alongside the API/web app for local development). `handlers.py` is
+where every job_type the automation pipeline uses (discovery/research/
+audit/score, outreach/follow-up drafting, website generation, QA) gets
+registered — see that module for what each one does and why it's safe
+to run unattended.
 """
 
 import time
@@ -59,7 +61,6 @@ def poll_forever(handlers: dict[str, JobHandler], interval_seconds: float = POLL
 
 
 if __name__ == "__main__":
-    # No job types registered yet — the first real handler (e.g.
-    # discovery_search) is added by the capability that needs
-    # asynchronous/scheduled execution, per docs/04_ROADMAP.md.
-    poll_forever(handlers={})
+    from app.jobs.handlers import HANDLERS
+
+    poll_forever(handlers=HANDLERS)

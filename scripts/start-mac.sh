@@ -32,8 +32,10 @@ WEB_URL="http://localhost:$WEB_PORT"
 
 API_PID_FILE="$RUN_DIR/api.pid"
 WEB_PID_FILE="$RUN_DIR/web.pid"
+JOBS_PID_FILE="$RUN_DIR/jobs.pid"
 API_LOG="$LOG_DIR/api.log"
 WEB_LOG="$LOG_DIR/web.log"
+JOBS_LOG="$LOG_DIR/jobs.log"
 
 info() { echo "-> $1"; }
 ok()   { echo "[OK] $1"; }
@@ -110,6 +112,28 @@ else
   ok "API is ready at $API_URL"
 fi
 
+# --- 2b. Job runner ---------------------------------------------------------
+# The automation pipeline (discovery -> research -> analysis -> scoring,
+# outreach/follow-up drafting, website generation, QA — see
+# apps/api/app/jobs/handlers.py) only actually runs while this poller
+# process is alive; the API enqueues jobs either way, but nothing claims
+# them without it. No health endpoint (it's not a server) — presence of
+# a live process is all there is to check.
+if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
+  ok "Job runner already running - leaving it as is"
+else
+  rm -f "$JOBS_PID_FILE"
+  info "Starting the job runner..."
+  ( cd "$API_DIR" && nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 & echo $! >"$JOBS_PID_FILE" )
+  sleep 1
+  if kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
+    ok "Job runner is running (log: $JOBS_LOG)"
+  else
+    echo "[WARN] Job runner didn't stay running - check $JOBS_LOG. The app still works; scheduled/background automation won't."
+    rm -f "$JOBS_PID_FILE"
+  fi
+fi
+
 # --- 3. Web app -----------------------------------------------------------
 if url_up "$WEB_URL"; then
   ok "Web app already running at $WEB_URL - leaving it as is"
@@ -140,5 +164,6 @@ echo ""
 ok "Web Design OS is running."
 echo "   API: $API_URL   (log: $API_LOG)"
 echo "   Web: $WEB_URL   (log: $WEB_LOG)"
+echo "   Job runner: background automation (log: $JOBS_LOG)"
 echo "   Run scripts/stop-mac.sh to shut everything down."
 echo ""

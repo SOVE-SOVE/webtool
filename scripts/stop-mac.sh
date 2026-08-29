@@ -67,6 +67,27 @@ stop_port() {
 stop_port "API" 8000 "app.main:app" "$RUN_DIR/api.pid"
 stop_port "Web app" 3000 "next" "$RUN_DIR/web.pid"
 
+# The job runner doesn't listen on a port, so it's stopped by pid rather
+# than stop_port's socket-ownership check.
+JOBS_PID_FILE="$RUN_DIR/jobs.pid"
+if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
+  kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
+  waited=0
+  while kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "$waited" -ge 10 ]; then
+      kill -9 "$(cat "$JOBS_PID_FILE")" 2>/dev/null
+      break
+    fi
+  done
+  rm -f "$JOBS_PID_FILE"
+  echo "[OK] Job runner stopped"
+else
+  echo "-> Job runner: not running"
+  rm -f "$JOBS_PID_FILE"
+fi
+
 echo "-> Stopping Postgres..."
 if ( cd "$REPO_ROOT" && docker compose stop postgres ) >/dev/null 2>&1; then
   echo "[OK] Postgres stopped"

@@ -13,6 +13,8 @@ from app.core.settings import settings
 from app.integrations import search as search_integration
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_OUTREACH_DRAFT
 from app.modules.leads import service as leads_service
 from app.modules.leads.models import Lead
 from app.modules.sales_audits.models import SalesAuditReport
@@ -158,6 +160,21 @@ def generate_sales_audit(
 
     db.commit()
     db.refresh(report)
+
+    # Automation hand-off: "outreach assistance" drafts on its own once a
+    # lead has a sales audit to ground it in — drafting only, per
+    # docs/03_AGENT_RULES.md ("draft it, don't send it"). The handler
+    # skips drafting again if the lead already has outreach, so
+    # re-generating the sales audit for the same lead doesn't pile up
+    # duplicate drafts.
+    jobs_service.enqueue(
+        db,
+        workspace_id=workspace_id,
+        job_type=JOB_OUTREACH_DRAFT,
+        payload={"lead_id": str(lead.id), "channel": "email"},
+        actor_id=actor_id,
+    )
+
     return SalesAuditRead.from_model(report)
 
 
