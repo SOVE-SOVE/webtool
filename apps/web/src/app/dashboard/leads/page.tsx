@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
 type SortKey = "business_name" | "status" | "score" | "priority" | "updated_at";
@@ -185,15 +186,15 @@ export default function LeadsPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">Leads</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="btn btn-primary"
-        >
-          {showForm ? "Cancel" : "Add lead"}
-        </button>
-      </div>
+      <PageHeader
+        title="Leads"
+        description="Every business you're pursuing, from first contact to a signed client."
+        actions={
+          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
+            {showForm ? "Cancel" : "Add lead"}
+          </button>
+        }
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-3 border border-border p-4">

@@ -12,6 +12,7 @@ import {
   type LeadStatus,
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 const SNOOZE_OPTIONS: { label: string; days: number }[] = [
   { label: "+1 day", days: 1 },
@@ -212,10 +213,10 @@ export default function FollowUpsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-lg font-semibold text-fg">Follow-ups</h1>
-      <p className="mt-1 text-sm text-fg-muted">
-        Your daily action queue — leads that need a touch, snoozed reminders, and nothing gets contacted without you.
-      </p>
+      <PageHeader
+        title="Follow-ups"
+        description="Your daily action queue — leads that need a touch, snoozed reminders, and nothing gets contacted without you."
+      />
 
       <div className="mt-4 flex items-center gap-2">
         <select

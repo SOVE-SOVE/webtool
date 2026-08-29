@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type CalendarConnection, type Me, type Role, type User } from "@/lib/api";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
@@ -109,7 +110,7 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-lg font-semibold text-fg">Settings</h1>
+      <PageHeader title="Settings" description="Your account, workspace, teammates, and integrations." />
 
       <div className="mt-6 max-w-md space-y-4 border border-border p-4">
         <div>

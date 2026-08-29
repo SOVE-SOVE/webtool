@@ -16,6 +16,7 @@ import {
   type User,
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -261,15 +262,15 @@ export default function CalendarPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">Calendar</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="btn btn-primary"
-        >
-          {showForm ? "Cancel" : "Schedule meeting"}
-        </button>
-      </div>
+      <PageHeader
+        title="Calendar"
+        description="Sales calls and client check-ins, plus tasks with a due date."
+        actions={
+          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
+            {showForm ? "Cancel" : "Schedule meeting"}
+          </button>
+        }
+      />
 
       {dueReminders.length > 0 && (
         <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">

@@ -10,6 +10,7 @@ import {
   type OpportunityScoreCategory,
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
 const STATUS_LABEL: Record<DiscoveredBusinessStatus, string> = {
@@ -115,22 +116,19 @@ export default function ReviewPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Review</h1>
-          <p className="mt-1 text-sm text-fg-muted">
-            Every discovered prospect, with research and scoring context, ready to approve, reject, or bring into
-            the CRM.
-          </p>
-        </div>
-        <button
-          onClick={handleBulkApprove}
-          disabled={selected.size === 0 || bulkApproving}
-          className="btn btn-primary"
-        >
-          {bulkApproving ? "Approving…" : `Bulk approve (${selected.size})`}
-        </button>
-      </div>
+      <PageHeader
+        title="Review queue"
+        description="Every discovered prospect, with research and scoring context, ready to approve, reject, or bring into the CRM."
+        actions={
+          <button
+            onClick={handleBulkApprove}
+            disabled={selected.size === 0 || bulkApproving}
+            className="btn btn-primary"
+          >
+            {bulkApproving ? "Approving…" : `Bulk approve (${selected.size})`}
+          </button>
+        }
+      />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <select

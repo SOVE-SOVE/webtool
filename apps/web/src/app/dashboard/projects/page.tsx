@@ -14,6 +14,7 @@ import {
 import { filterProjects, UNASSIGNED } from "@/lib/filters";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
 function formatPrice(cents: number | null): string {
@@ -93,17 +94,20 @@ export default function ProjectsPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">Projects</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          disabled={clients.length === 0}
-          className="btn btn-primary"
-          title={clients.length === 0 ? "Add a client first" : undefined}
-        >
-          {showForm ? "Cancel" : "Add project"}
-        </button>
-      </div>
+      <PageHeader
+        title="Projects"
+        description="Delivery work for signed clients — from intake through to a live, handed-over site."
+        actions={
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            disabled={clients.length === 0}
+            className="btn btn-primary"
+            title={clients.length === 0 ? "Add a client first" : undefined}
+          >
+            {showForm ? "Cancel" : "Add project"}
+          </button>
+        }
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
