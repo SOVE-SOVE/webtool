@@ -71,8 +71,15 @@ export const NAV_SECTIONS: NavSection[] = [
         secondary: true,
         activePrefixes: ["/dashboard/discovered-businesses"],
       },
-      { href: "/dashboard/leads", label: "Leads", icon: "leads" },
-      { href: "/dashboard/pipeline", label: "Pipeline board", icon: "pipeline", secondary: true },
+      {
+        href: "/dashboard/leads",
+        label: "Leads",
+        icon: "leads",
+        // The Pipeline board and the Clients list are now the "Board"
+        // view and the "Won" tab of this page — their routes still work
+        // (they redirect here), they're just not separate nav items.
+        activePrefixes: ["/dashboard/pipeline", "/dashboard/clients"],
+      },
     ],
   },
   {
@@ -86,10 +93,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "build",
     label: "Build",
-    links: [
-      { href: "/dashboard/projects", label: "Projects", icon: "projects" },
-      { href: "/dashboard/clients", label: "Clients", icon: "clients", secondary: true },
-    ],
+    links: [{ href: "/dashboard/projects", label: "Projects", icon: "projects" }],
   },
 ];
 

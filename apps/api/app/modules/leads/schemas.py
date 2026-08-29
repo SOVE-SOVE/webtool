@@ -42,6 +42,12 @@ class LeadRead(BaseModel):
     industry: str | None
     suburb: str | None
     state: str | None
+    # Contact/site details carried through from the business so the Leads
+    # list can show "who/where/what site" without a per-row fetch. Read
+    # straight off the already-joined Business — no extra query.
+    website_url: str | None
+    business_email: str | None
+    business_phone: str | None
     status: LeadStatus
     priority: LeadPriority
     score: int | None
