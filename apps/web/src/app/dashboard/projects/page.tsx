@@ -51,6 +51,14 @@ export default function ProjectsPage() {
 
   useEffect(load, []);
 
+  // Opened from a "Create project" quick action elsewhere (?new=1).
+  // Deferred to an effect so the server render (no `window`) matches the
+  // first client render.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (new URLSearchParams(window.location.search).has("new")) setShowForm(true);
+  }, []);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!clientId) return;

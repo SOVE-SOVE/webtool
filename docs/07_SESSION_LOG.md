@@ -11,6 +11,79 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-29 — T1: Overview redesigned into the command centre
+**Mode:** worktree (`t1-overview-command-centre`), off `main` after the
+global-shell PR (#16) merged.
+**Merge to main after:** yes — pending review. Second of the queued
+series (shell ✓ → **T1 (this)** → T2 Leads/Pipeline/Clients → T3 Sales);
+each merges before the next.
+**Scope touched:** apps/web/src/app/dashboard/page.tsx (rewritten),
+apps/web/src/app/dashboard/leads/page.tsx +
+apps/web/src/app/dashboard/projects/page.tsx (`?new=1` support only),
+apps/web/src/components/ui/DoThisNext.tsx (use shared cache),
+apps/web/src/components/ui/Metric.tsx (padding). New:
+apps/web/src/lib/overview.ts (+ test).
+
+**What happened:** The Overview page went from a flat "metrics + one
+activity list" screen to a scannable command centre answering "what do I
+need to know and do right now?":
+
+1. **Page header** — title, one-line description, primary actions ("Add
+   lead", "Find leads").
+2. **Summary metrics at the top** — 10 tiles, every one from an existing
+   endpoint: Active leads / Qualified / Contacted / Follow-ups due /
+   Upcoming meetings / Active projects / Won deals / Revenue won (all
+   `GET /dashboard/overview`), plus Hot leads and Pipeline value
+   (`GET /dashboard/sales` — `hot_leads_count`, `estimated_revenue_cents`).
+   Each tile links to the screen it drills into. Nothing fabricated;
+   "tasks needing attention" was dropped as a tile because it is exactly
+   the Do-this-next count shown right below.
+3. **Quick actions** — Add lead · Find leads · Run website audit ·
+   Create project · View follow-ups, all existing routes. "Add lead" and
+   "Create project" pass `?new=1`, which the Leads and Projects pages now
+   read to open their create form (small effect on each, guarded so SSR
+   markup matches first client render).
+4. **What's happening** — Hot leads and Recent wins side by side (from
+   `/dashboard/sales`'s `hot_leads` / `recent_won`), then a Recent
+   activity feed. Each is a bordered list capped at `max-h-72` with its
+   own scroll so the page stays short.
+5. **Do this next** stays the global bottom module from the shell pass —
+   removed from the page body.
+
+**Shared/infra:** added `lib/overview.ts` — a 20s module cache for
+`GET /dashboard/overview`. The Overview page and the layout's
+`<DoThisNext>` both read it, so the page load makes that (heavy)
+aggregate call once instead of twice, and moving between pages doesn't
+re-run it every time. `invalidateOverview()` is exported for later use
+after mutations. `<DoThisNext>` rewired onto it; its old private cache
+removed. `<Metric>` padding tightened `p-4` → `px-4 py-3` (also affects
+the Sales page's tiles — a deliberate densification, fine for both).
+
+**No backend changes.** `DashboardOverview` and `SalesDashboard`
+schemas, routes, and every other endpoint untouched. No migrations. All
+22 routes still build.
+
+**Bug found + fixed during QA:** the Overview read `sales.hot_leads`
+/`sales.recent_won` directly; a payload missing either array would throw
+and blank the whole page via the error boundary. Now falls back to `[]`
+when `sales` is loaded. (The real API always includes them — pydantic
+required fields — but a command-centre page shouldn't be that brittle.)
+
+**Checks:** `npm run test` 71/71 (6 files, incl. new `overview.test.ts`
+— cache hit/miss, in-flight dedupe, force, invalidate). `npm run build`
++ TypeScript clean. `npm run lint` 4 errors / 3 warnings — unchanged
+from base (the two new `?new=1` effects carry the same
+`react-hooks/set-state-in-effect` eslint-disable the ThemeProvider
+already uses). Rendered live in a browser against mocked API data at
+1360px and 390px: all sections present and correct, zero console/page
+errors, mobile header stacks and the metric grid drops to two columns,
+the sidebar drawer opens. **Not verified:** a pass against the real
+seeded database — no seed password available in this environment.
+
+**Next up:** T2 — make Leads the central lifecycle page and fold in
+Pipeline (as a board view) and Clients (as a won/converted filter),
+without deleting the Clients route/model or any backend.
+
 ## 2026-08-29 — Global shell + navigation + shared layout system
 **Mode:** worktree (`ux-global-shell`)
 **Merge to main after:** yes — pending review. First of a queued series

@@ -21,12 +21,12 @@ export function Metric({
   const body = (
     <>
       <p className="text-xs text-fg-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-fg">{value}</p>
+      <p className="mt-0.5 text-2xl font-semibold tabular-nums text-fg">{value}</p>
       {hint && <p className="mt-0.5 text-xs text-fg-subtle">{hint}</p>}
     </>
   );
 
-  const className = "block rounded-md border border-border bg-surface p-4";
+  const className = "block rounded-md border border-border bg-surface px-4 py-3";
 
   return href ? (
     <Link href={href} className={`${className} transition-colors hover:bg-surface-hover`}>
