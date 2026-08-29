@@ -11,6 +11,56 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-29 — T3: Sales page rebuilt as a focused command centre
+**Mode:** worktree (`t3-sales-command-centre`), off `main` after T2 (#18) merged.
+**Merge to main after:** yes — pending review. Last of the queued series
+(shell ✓ → T1 ✓ → T2 ✓ → **T3 (this)**).
+**Scope touched:** apps/web/src/app/dashboard/sales/page.tsx only.
+
+**What happened:** The Sales page went from a flat scroll of a 10-tile
+metric grid + six equal `<Section>` lists + an outreach block (too long,
+hard to scan) to a compact command centre that answers "who do I contact
+and what do I do next to make a sale":
+
+1. Header — "Sales" + one line + "Add lead" / "Find leads" actions.
+2. A 6-tile metric strip (single row on ≥lg): Hot leads · Follow-ups due
+   · Proposals out · Potential value (open-proposal revenue) · Won deals
+   (+ win-rate hint) · Revenue won. Every value is a real
+   `salesDashboard()` field — none fabricated. Fewer tiles than before;
+   nothing removed from the API.
+3. Two side-by-side modules — **Hot leads** and **Needs follow-up** —
+   each a bordered card with a header and a `max-h-80`, internally
+   scrolling body. Hot-lead rows flag "Follow up" when that lead also
+   has an overdue/today follow-up. Needs-follow-up is grouped Overdue →
+   Due today → Upcoming (Upcoming comes from `listFollowUps()`, which the
+   sales dashboard's own `needs_follow_up` doesn't include).
+4. One **Recent sales activity** module with tabs — Outreach ·
+   Proposals · Closed (won+lost merged, W/L badge) · Meetings — so five
+   old sections collapse into one compact, internally-scrolling widget.
+5. The global "Do this next" stays at the bottom (from the shell).
+
+Every row still links to the lead detail (or the calendar for meetings)
+— same navigation targets as before. The page is still read-only; no
+sales action was removed.
+
+**No backend changes.** `SalesDashboard` schema/route and every other
+endpoint untouched. Also fetches `GET /follow-ups` now (for the Upcoming
+bucket). No migration.
+
+**Checks:** `npm run test` 80/80 (unchanged — this page has no pure-logic
+module of its own); `next build` + tsc clean; `npm run lint` 4 errors / 3
+warnings, unchanged from base. Live-rendered against mocked API data
+(desktop 1360px + mobile 390px): metric strip, both modules, the
+grouped follow-ups, all four activity tabs, and the responsive stack —
+verified, zero console errors, screenshots captured. **Not verified:** a
+pass against the real seeded DB (no seed password in this environment).
+
+**Series done.** Shell + Overview + Leads/Pipeline/Clients + Sales are
+all reworked. Not yet touched by this pass: the Discovery/Review,
+Projects, Calendar, Tasks, Follow-ups and Settings page bodies (they got
+the shared `PageHeader` in the shell pass but no redesign), and the
+Projects "website production workspace" from the original audit.
+
 ## 2026-08-29 — T2: Leads becomes the lifecycle hub (Pipeline + Clients folded in)
 **Mode:** worktree (`t2-leads-lifecycle`), off `main` after T1 (#17) merged.
 **Merge to main after:** yes — pending review. Third of the queued
