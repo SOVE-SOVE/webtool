@@ -190,7 +190,7 @@ export default function ClientDetailPage() {
                 />
               </div>,
             )}
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               {field(
                 "Business notes",
                 <textarea

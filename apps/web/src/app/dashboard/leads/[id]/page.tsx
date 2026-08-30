@@ -418,7 +418,7 @@ export default function LeadDetailPage() {
                 className={inputClass}
               />,
             )}
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               {field(
                 "Business notes",
                 <textarea
@@ -497,7 +497,7 @@ export default function LeadDetailPage() {
                 {new Date(lead.created_at).toLocaleDateString()}
               </span>,
             )}
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               {field(
                 "Lead notes",
                 <textarea
