@@ -21,8 +21,8 @@ const STATUS_STYLES: Record<FeedbackStatus, string> = {
 // Feedback that carries a decision on the whole version — surfaced
 // distinctly since it's read differently from a comment/change request.
 const TYPE_STYLES: Partial<Record<FeedbackType, string>> = {
-  approval: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30",
-  rejection: "border-red-200 bg-red-50 dark:border-red-500/30",
+  approval: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
+  rejection: "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
 };
 
 export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: string; websiteId?: string }) {

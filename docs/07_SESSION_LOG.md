@@ -11,6 +11,70 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Application-wide dark mode sweep (PT3)
+**Mode:** worktree (`pt3-dark-mode`), off `main` after PT2 (#21) merged.
+**Merge to main after:** yes. Last of the Projects trio (PT1 ✓ → PT2 ✓ →
+**PT3 (this)**).
+**Scope touched:** `apps/web/src/app/globals.css` (+ base rule for form
+controls), 6 component/page files for the last hardcoded-colour gaps.
+
+**Starting point:** the theme *architecture* was already complete from
+the Phase-8 design-system pass — semantic tokens in `globals.css`,
+`@custom-variant dark` driven off `data-theme`, `[data-theme="dark"]`
+palette + `prefers-color-scheme` fallback, `THEME_INIT_SCRIPT` applied
+`beforeInteractive` so there's no flash, `ThemeProvider` +
+`localStorage` persistence, and a Settings → Appearance control
+(Light / Dark / Match system + font). Component classes (`.btn`,
+`.input`, `.card`, `.table`, `.modal-*`, `.skeleton`) already use
+tokens, and every status badge already carried `dark:` variants. So
+PT3 was a **sweep for the remaining gaps**, not an architecture change.
+
+**What happened:**
+1. **`globals.css` — new `@layer base` rule** pinning bare `input` /
+   `textarea` / `select` (and `::placeholder` / `option`) to
+   `--color-surface` / `--color-fg` / `--color-border-strong`. Tailwind
+   preflight makes controls `color: inherit` on a transparent
+   background — under the dark palette that was light text on a light
+   UA field. ~40 form controls across ~17 files that used raw
+   `border border-border-strong …` without `bg-surface text-fg` are now
+   correct in both themes in one place. Utilities and `.input` still
+   win (it's `base`). This supersedes the never-merged PR #15, which
+   targeted the pre-token `globals.css`.
+2. **5 tinted callout panels** (`bg-amber-50` / `bg-emerald-50` /
+   `bg-red-50` with a `dark:border-…` but no `dark:bg-…`) — added the
+   missing `dark:bg-*-500/10` so they don't glare in dark mode.
+   `calendar`, `WebsiteView`, `PreviewLinksPanel` (×2),
+   `WebsiteFeedbackPanel`.
+3. **Client-site preview frames pinned to `data-theme="light"`** —
+   `projects/[id]/website` and public `/preview/[token]`. The rendered
+   client website is a preview of *their* real site, not app chrome, so
+   it must stay light regardless of the operator's theme; pinning the
+   attribute makes the tokens (and the new base rule) resolve light
+   inside `PreviewSiteRenderer`.
+4. **Login page** inputs moved onto the `.input` class.
+5. **`PreviewFeedbackForm`** modal backdrop `bg-black/20` → `bg-overlay`.
+
+**Verification (Playwright, mocked API, dev server):**
+- Dark: `/dashboard`, `/leads`, `/projects`, `/sales`, `/settings`,
+  `/login` all render `data-theme="dark"`, body `#0a0a0a` / `#f5f5f5`,
+  cards `#171717`, inputs `#171717` bg / `#f5f5f5` text / `#404040`
+  border. No flash — `THEME_INIT_SCRIPT` sets the attribute before
+  paint on every page.
+- Light: body `#fafafa`, inputs `#fff` / `#171717`, cards `#fff`.
+- Settings → Dark toggles live and writes `localStorage`; reload keeps
+  it.
+- **Zero hydration warnings, zero console errors.**
+- `npm run build` + tsc clean · `vitest` 93/93 · `lint` 2 errors /
+  2 warnings (unchanged branch baseline — both pre-existing in
+  `settings/page.tsx`; no new problems).
+
+**Not fixed (out of scope, pre-existing):** `sales/page.tsx` `pct()`
+does `value.toFixed()` and throws if the API omits the field entirely
+(surfaced only by an empty test mock; the real endpoint always
+populates it). Latent robustness gap from T3, unrelated to theming.
+
+---
+
 ## 2026-08-30 — Website-production workspace (PT2)
 **Mode:** worktree (`pt2-website-workspace`), off `main` after PT1 (#20) merged.
 **Merge to main after:** yes. Second of the Projects trio (PT1 ✓ → **PT2

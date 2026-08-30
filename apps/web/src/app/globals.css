@@ -134,6 +134,31 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Baseline for every text form control, so a field is legible in both
+   themes even where a page hasn't put it on the `.input` component
+   class. Tailwind's preflight makes controls `color: inherit` with a
+   transparent background — under the dark palette that lands as light
+   text on a light UA field. Pin them to the surface tokens instead.
+   Utilities and `.input` still win (this is `base`). Checkbox / radio /
+   range / color / file keep their native rendering. */
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  textarea,
+  select {
+    background-color: var(--color-surface);
+    color: var(--color-fg);
+    border-color: var(--color-border-strong);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-fg-subtle);
+  }
+  option {
+    background-color: var(--color-surface);
+    color: var(--color-fg);
+  }
+}
+
 /* ---------------------------------------------------------------------
  * Reusable component classes
  *
