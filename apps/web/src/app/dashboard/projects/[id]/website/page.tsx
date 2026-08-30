@@ -414,7 +414,10 @@ export default function ProjectWebsiteWorkspace() {
                       <span className="h-2 w-2 rounded-full bg-border-strong" />
                       <span className="ml-2 truncate">/{activePreview.slug}</span>
                     </div>
-                    <div className="max-h-[70vh] overflow-y-auto bg-white">
+                    {/* The client's site always renders light — it's a preview of
+                        their real website, not app chrome. Pin the theme so tokens
+                        (and the global form-control base rule) resolve to light here. */}
+                    <div data-theme="light" className="max-h-[70vh] overflow-y-auto bg-white text-fg">
                       <PreviewSiteRenderer
                         navigation={website.navigation}
                         sections={activePreview.sections}

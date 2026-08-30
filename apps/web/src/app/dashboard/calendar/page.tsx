@@ -273,7 +273,7 @@ export default function CalendarPage() {
       />
 
       {dueReminders.length > 0 && (
-        <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">
+        <div className="mt-4 max-w-2xl space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-400">
             Reminders due ({dueReminders.length})
           </p>

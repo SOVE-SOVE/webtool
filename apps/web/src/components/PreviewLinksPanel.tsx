@@ -78,11 +78,11 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
       {error && <p className="mt-2 text-error">{error}</p>}
 
       {justCreatedUrl && (
-        <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-500/30">
+        <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <code className="flex-1 truncate text-emerald-900 dark:text-emerald-400">{justCreatedUrl}</code>
           <button
             onClick={() => handleCopy(justCreatedUrl)}
-            className="shrink-0 rounded-md border border-emerald-300 bg-surface px-2 py-1 text-xs hover:bg-emerald-50 dark:border-emerald-500/30"
+            className="shrink-0 rounded-md border border-emerald-300 bg-surface px-2 py-1 text-xs hover:bg-emerald-50 dark:border-emerald-500/30 dark:hover:bg-emerald-500/10"
           >
             {copied ? "Copied" : "Copy"}
           </button>

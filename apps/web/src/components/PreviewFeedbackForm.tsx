@@ -66,7 +66,7 @@ export function PreviewFeedbackForm({
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-end justify-end bg-black/20 p-4 sm:items-center sm:justify-center">
+    <div className="fixed inset-0 z-20 flex items-end justify-end bg-overlay p-4 sm:items-center sm:justify-center">
       <div className="w-full max-w-sm rounded-lg bg-surface p-5 shadow-xl">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-fg">Leave feedback</h2>

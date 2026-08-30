@@ -103,7 +103,7 @@ export default function PublicPreviewPage() {
       </header>
 
       <div className="flex justify-center px-4 py-6">
-        <div className={`mx-auto w-full ${DEVICE_WIDTHS[device]} overflow-hidden rounded-lg border border-border bg-white shadow-sm transition-[max-width]`}>
+        <div data-theme="light" className={`mx-auto w-full ${DEVICE_WIDTHS[device]} overflow-hidden rounded-lg border border-border bg-white text-fg shadow-sm transition-[max-width]`}>
           {activePage ? (
             <PreviewSiteRenderer navigation={preview.navigation} sections={activePage.sections} footer={preview.footer} />
           ) : (

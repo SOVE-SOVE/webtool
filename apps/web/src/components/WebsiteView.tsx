@@ -155,7 +155,7 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
       {website.sources_note && <p className="mt-2 text-xs text-fg-muted">{website.sources_note}</p>}
 
       {website.missing_information.length > 0 && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30">
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
           <p className="text-sm font-medium text-amber-900 dark:text-amber-400">Missing information — not invented, needs real content</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800 dark:text-amber-400">
             {website.missing_information.map((m, i) => (
