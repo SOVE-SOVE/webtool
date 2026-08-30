@@ -11,6 +11,70 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Website-production workspace (PT2)
+**Mode:** worktree (`pt2-website-workspace`), off `main` after PT1 (#20) merged.
+**Merge to main after:** yes. Second of the Projects trio (PT1 ✓ → **PT2
+(this)** → PT3 dark mode).
+**Scope touched:** apps/web/src/app/dashboard/projects/[id]/website/page.tsx
+(rewritten). New: apps/web/src/lib/websiteChecklist.ts (+ test). **No
+backend changes; every component and endpoint already existed.**
+
+**What happened:** `/dashboard/projects/[id]/website` went from a linear
+scroll (generate buttons → version select → approve chips → workflow
+panel → the section editor → QA → preview links → feedback) to a
+production workspace with a fixed top and a tabbed body:
+
+1. **Overview** — website (project) name, client link, workflow-status
+   label, a **build-progress bar** (checklist done/total), a **Preview
+   URL** row (jumps to the in-app preview) and a **Production URL** row
+   (the verified successful deployment's `url`, or "Not deployed"),
+   version selector, Generate / Regenerate-all.
+2. **Build checklist** — 13 rows (Discovery & brief · Branding · Content
+   & structure · Website generated · Homepage · Services · About ·
+   Contact · Mobile optimisation · SEO · Technical QA sign-off · Client
+   approval · Deployment), each **derived from real backend state** —
+   an approval checkpoint, a generated page with all sections approved,
+   a QA check category, a verified deployment. Nothing is hard-coded
+   done; a stage with no data is "todo", and the first not-done row is
+   marked "active". Each row jumps to the tab that actions it. Logic +
+   `checklistProgress` in `lib/websiteChecklist.ts`, unit-tested.
+3. **Tabs — Pages & content · Preview · QA · Approval · Deployment.**
+   Every panel is an existing component, unchanged:
+   - Content → `WebsiteView` (the per-section editor), or a clear
+     "generate first" state when no website exists.
+   - Preview → a real **in-app render** of the generated site
+     (`PreviewSiteRenderer`, the same component the public
+     `/preview/[token]` page uses) in a browser-frame, per page, plus
+     `PreviewLinksPanel` for shareable client/internal links. This is
+     the actual generated structure — not a screenshot or a fake.
+   - QA → `QaReportView` + run/sign-off.
+   - Approval → internal + client approval chips, `WebsiteWorkflowPanel`,
+     `WebsiteFeedbackPanel`.
+   - Deployment → `DeploymentPanel` + `DeliveryPanel`.
+
+**Genuinely functional vs. placeholder:** website generation, the
+section editor, QA, approvals, the workflow state machine, preview links,
+client feedback, and deployment/delivery are all **real, existing
+backend features** — this pass only reorganises how they're surfaced.
+The in-app preview renders real generated content. There is **no fake
+data and no fake deployment behaviour** anywhere; when a stage's data
+doesn't exist the UI says so ("Not generated yet", "No QA run yet", "Not
+deployed").
+
+**Checks:** `npm run test` 93/93 (9 files incl. new
+`websiteChecklist.test.ts` — 5 tests covering checkpoint/page/QA/deploy
+derivation); `next build` + tsc clean; `npm run lint` **2 errors / 2
+warnings** (baseline for this branch was 2/3 — one exhaustive-deps
+warning removed; no new problems). Live-rendered against mocked API
+data: the overview, the 13-item derived checklist with correct ✓/●/○
+states, all five tabs, and the in-app site preview — verified, zero
+console errors, screenshots captured. **Not verified:** a real seeded-DB
+pass (no seed password) and the live generate/QA/deploy round-trips
+(these hit the LLM and hosting providers).
+
+**Next up:** PT3 — complete, application-wide dark mode + a theme
+control in Settings.
+
 ## 2026-08-30 — Projects redesign (PT1): card list + decluttered workspace
 **Mode:** worktree (`pt1-projects-redesign`), off `main` after the Sales
 PR (#19) merged.
