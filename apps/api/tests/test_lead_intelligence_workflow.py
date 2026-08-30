@@ -92,6 +92,37 @@ def test_full_workflow_discover_research_score_approve_import(authed_client, mon
     assert row["recommended_sales_angle"]
 
 
+def test_contact_details_from_the_site_reach_the_imported_lead(authed_client, monkeypatch):
+    """Discover -> research reads the site's tel:/mailto: -> import: the
+    CRM lead's business has a real phone and email, not blanks the
+    operator has to go and fill in by hand."""
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query: [
+            SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="Local plumbers")
+        ],
+    )
+
+    async def fake_fetch(url):
+        return ResearchPageSignals(
+            final_url=url, https=True, http_status=200, title="Gold Coast Plumbing Co",
+            viewport_meta_present=True, mobile_overflow=False, contact_cta_present=True,
+            contact_phone="0411 871 875", contact_email="hello@gcplumbing.example",
+            social_links=[], body_text="Copyright 2024 Gold Coast Plumbing Co", load_time_ms=800,
+        )
+
+    monkeypatch.setattr("app.agents.business_research.fetch_research_signals", fake_fetch)
+
+    business = _run_discovery(authed_client)
+    authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/research")
+    imported = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/import")
+    lead = authed_client.get(f"/api/v1/leads/{imported.json()['imported_lead_id']}").json()
+
+    assert lead["business_phone"] == "0411 871 875"
+    assert lead["business_email"] == "hello@gcplumbing.example"
+
+
 def test_import_preserves_research_as_website_audit(authed_client, db_session, monkeypatch):
     _patch_discovery_and_research(monkeypatch)
     business = _run_discovery(authed_client)

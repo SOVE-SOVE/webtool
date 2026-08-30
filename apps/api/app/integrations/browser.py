@@ -356,6 +356,12 @@ class ResearchPageSignals:
     mobile_overflow: bool | None = None
     generator_meta: str | None = None
     contact_cta_present: bool | None = None
+    # The actual phone/email a visitor would use, read straight off the
+    # first tel:/mailto: link on the page — a directly-observed value, not
+    # a guess. None when the page has no such link (a bare contact form
+    # still sets contact_cta_present but gives nothing to dial/email).
+    contact_phone: str | None = None
+    contact_email: str | None = None
     social_links: list[str] | None = None
     body_text: str | None = None
     load_time_ms: int | None = None
@@ -397,6 +403,18 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                 contact_cta_present = await page.evaluate(
                     "() => !!document.querySelector('a[href^=\"mailto:\"], a[href^=\"tel:\"], form')"
                 )
+                # A malformed href must never take down the whole research
+                # fetch — fall back to the raw value, or null, on any error.
+                contact_phone = await page.evaluate(
+                    "() => { const a = document.querySelector('a[href^=\"tel:\"]'); if (!a) return null; "
+                    "const raw = a.getAttribute('href').slice(4); "
+                    "try { return decodeURIComponent(raw).trim(); } catch { return raw.trim(); } }"
+                )
+                contact_email = await page.evaluate(
+                    "() => { const a = document.querySelector('a[href^=\"mailto:\"]'); if (!a) return null; "
+                    "const raw = a.getAttribute('href').slice(7).split('?')[0]; "
+                    "try { return decodeURIComponent(raw).trim(); } catch { return raw.trim(); } }"
+                )
                 social_links = await page.evaluate(
                     "() => Array.from(document.querySelectorAll('a[href]'))"
                     ".map(a => a.href)"
@@ -419,6 +437,8 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     mobile_overflow=mobile_overflow,
                     generator_meta=generator_meta,
                     contact_cta_present=contact_cta_present,
+                    contact_phone=contact_phone or None,
+                    contact_email=contact_email or None,
                     social_links=sorted(set(social_links)) if social_links else [],
                     body_text=body_text,
                     load_time_ms=load_time_ms,

@@ -51,6 +51,25 @@ def test_convert_lead_records_won_opportunity_for_dashboard(authed_client):
     assert overview["revenue_cents"] == 89900
 
 
+def test_convert_lead_closes_an_existing_open_proposal_instead_of_duplicating_it(authed_client):
+    """A lead with a logged proposal that is then won should end with one
+    WON opportunity, not a stray OPEN one beside a new WON one — the
+    dashboard would otherwise count the same deal as both pipeline value
+    and won revenue."""
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"}).json()["id"]
+    authed_client.post(f"/api/v1/leads/{lead_id}/opportunities", json={"tier": "Core", "proposed_price_cents": 120000})
+
+    authed_client.post("/api/v1/clients", json={"from_lead_id": lead_id, "won_price_cents": 120000})
+
+    opportunities = authed_client.get(f"/api/v1/leads/{lead_id}/opportunities").json()
+    assert len(opportunities) == 1
+    assert opportunities[0]["status"] == "won"
+
+    dashboard = authed_client.get("/api/v1/dashboard/sales").json()
+    assert dashboard["estimated_revenue_cents"] == 0  # nothing still open
+    assert dashboard["actual_revenue_cents"] == 120000
+
+
 def test_convert_lead_without_price_still_counts_as_won(authed_client):
     lead_res = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"})
     lead_id = lead_res.json()["id"]

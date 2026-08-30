@@ -11,6 +11,65 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Sales workflow test: capture contact details + log a proposal
+**Mode:** worktree (`sales-workflow-contact-capture`), off `main` after #25.
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api/app/integrations/browser.py`,
+`apps/api/app/agents/business_research.py`,
+`apps/api/app/modules/business_research/service.py`,
+`apps/api/app/modules/clients/service.py`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/api/tests/{test_website_research,test_lead_intelligence_workflow,test_clients}.py`,
+this file.
+
+Walked the full LEAD → DISCOVERY → CONTACT → FOLLOW-UP → PROPOSAL → WON →
+CLIENT → PROJECT flow through the real UI as a first-time user (real
+Brave searches for landscapers / barbers / mechanics). Three genuine
+gaps fixed:
+
+1. **No contact details after import.** `fetch_research_signals` already
+   ran `querySelector('a[href^="tel:"], a[href^="mailto:"]')` to set a
+   bool; now it also returns the first `tel:`/`mailto:` value.
+   `business_research` surfaces them as confirmed facts;
+   `business_research/service.run_research` stamps `DiscoveredBusiness`
+   `.phone` / `.email` / `.social_links` when blank (never overwrites).
+   `import_to_lead` already copied those onto the CRM business, so the
+   lead page's Phone/Email fields are now pre-filled. Verified live:
+   `certifiedautomotive.com.au` → lead `business_phone` = `1300457599`.
+
+2. **Nowhere to record the quote at the PROPOSAL step.** `createOpportunity`
+   / `listOpportunities` / `markOpportunityLost` existed in `api.ts` and
+   the sales dashboard already tried to display the figure, but no UI
+   ever called them — so "Potential value" always read $0. Added a
+   compact **Proposal / quote** section to the lead page (gated to the
+   active-selling statuses): lists opportunities, a package+price form
+   that calls `createOpportunity` (which advances the lead to PROPOSAL
+   server-side), and "Mark lost". Verified: logging $1,200 → dashboard
+   `estimated_revenue_cents` 0 → 120000.
+
+3. **Convert-to-client duplicated the opportunity.** With #2 in place a
+   lead could carry an OPEN proposal; `clients/service` always `db.add`ed
+   a fresh WON `SalesOpportunity` on convert, leaving the OPEN one
+   dangling → the same deal counted as both pipeline value and won
+   revenue. Now it closes an existing OPEN opportunity as WON (taking the
+   convert form's price/tier) instead of adding a second row.
+
+**Verified:** `pytest` → 812 passed (806 baseline + 6 new/changed), 1
+pre-existing `job_schedules` teardown error (see RT2 entry). `apps/web`:
+`npm run lint` clean on the changed file (2 pre-existing errors in
+`settings/page.tsx`), `npm run test` 93 passed, `npm run build` ✓
+TypeScript. Live click-through of the new section on a worktree
+`next dev`.
+
+**Not fixed (reported, not code):** discovery imports directory/
+aggregator pages (Houzz, localsearch, Yelp) as if they were businesses;
+business name comes from the search-result page title; review-queue
+"Approve" vs "Add to CRM" is two positive-sounding actions; a mis-aimed
+click in the cramped action column can Reject a lead; the convert form
+re-asks for package/price it could pre-fill from the open opportunity.
+
+---
+
 ## 2026-08-30 — Fix: job runner missing all_models import
 **Mode:** worktree (`fix-job-runner-models-import`), off `main` after RT2 (#24).
 **Merge to main after:** yes. One-line fix, unrelated to the redesign —

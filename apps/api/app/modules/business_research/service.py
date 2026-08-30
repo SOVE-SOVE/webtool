@@ -78,6 +78,18 @@ def run_research(
     db.add(row)
     db.flush()
 
+    # Carry the contact details research actually read off the site onto
+    # the discovered business, so import_to_lead() has a real phone/email
+    # to put on the CRM record instead of leaving the operator to go dig
+    # them out of the website by hand. Only fills a blank — never
+    # overwrites a value already on the row.
+    if output.contact_phone and not business.phone:
+        business.phone = output.contact_phone[:50]
+    if output.contact_email and not business.email:
+        business.email = output.contact_email[:255]
+    if output.social_presence and not business.social_links:
+        business.social_links = "\n".join(output.social_presence)
+
     if business.status == DiscoveredBusinessStatus.NEW:
         business.status = DiscoveredBusinessStatus.RESEARCHED
 
