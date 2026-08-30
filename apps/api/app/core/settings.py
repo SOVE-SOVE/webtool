@@ -41,14 +41,17 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    # llm — Claude API, the one adapter per docs/02_ARCHITECTURE.md §6.
-    # Blank is fine for tests (integrations.llm is mocked there); a real
-    # sales-audit generation call fails fast without it.
+    # llm — Claude API, the one adapter per docs/02_ARCHITECTURE.md §6,
+    # shared by every AI agent (sales audit, outreach, follow-up, meeting
+    # brief, sitemap, creative direction, website brief/revision). Blank
+    # is fine for tests (integrations.llm is mocked there); a real
+    # generation call fails fast with a 503 without it. See .env.example.
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
 
-    # brave search — optional. When unset, the sales-audit search step is
-    # skipped (not faked) rather than the app failing to start.
+    # brave search — required for Lead Intelligence discovery (the only
+    # provider); optional for Sales Audit, where the public-search step is
+    # skipped (not faked) when unset. Never blocks app start. See .env.example.
     brave_search_api_key: str | None = None
 
     # Cap on paid-API-triggering generations (sales audit, outreach
