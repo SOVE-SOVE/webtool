@@ -11,6 +11,66 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Regression & QA pass after redesign (RT2)
+**Mode:** worktree (`rt2-regression-qa`), off `main` after RT1 (#23) merged.
+**Merge to main after:** yes (docs only). Second of the two-part QA sweep
+(RT1 responsive → **RT2 (this)**). No features, no fixes needed — the
+redesign did not break the app.
+**Scope touched:** `docs/07_SESSION_LOG.md` only. **Zero code changes.**
+
+**Frontend — all green:**
+- `next build` + `tsc --noEmit`: clean.
+- `vitest`: 93/93 (9 files).
+- `eslint`: 2 errors / 2 warnings — the **unchanged pre-existing
+  baseline** (every PR since the shell redesign has reported the same).
+  Both errors are `react-hooks/set-state-in-effect` on deliberate
+  mount-time URL/param reads: `layout.tsx:137` (`setChecking(true)` at
+  the top of the auth effect) and `settings/page.tsx:32` (reading the
+  `?calendar=` OAuth-return param — see the comment there explaining
+  why it's an effect and not `useSearchParams`). Lint opinions, not
+  runtime bugs; left as-is.
+- Playwright walk of the **full 17-step workflow** (Overview → Discovery
+  → Review queue → Leads list/board/Won → Lead detail → Pipeline &
+  Clients redirects → Client detail → Sales → Follow-ups → Calendar →
+  Tasks → Projects list → Project detail → Website workspace →
+  Settings), **in both light and dark**, against realistic mock data:
+  every route renders, **zero error boundaries, zero console errors,
+  zero hydration warnings, zero horizontal overflow**, correct page
+  headings. `/dashboard/pipeline` → `/dashboard/leads?view=board` and
+  `/dashboard/clients` → `/dashboard/leads?tab=won` redirects confirmed.
+- Interactions: create-lead `POST /leads` fires; **logout** → `/login`;
+  hitting a protected route while logged out → bounces to `/login`;
+  **login** → `/dashboard`; **theme switch** in Settings persists
+  across reload; **API-500** on the dashboard shows the "Can't load
+  your workspace / Try again" error state (not a blank page).
+
+**Backend — `pytest` full suite: 806 passed, 1 error.**
+- The 1 error is **not a regression and not caused by the redesign** —
+  it is the session-scoped `_schema` teardown (`Base.metadata.drop_all`)
+  failing on `DROP TABLE jobs`, blocked by
+  `job_schedules_last_job_id_fkey`. `job_schedules` **is not in the
+  current codebase** (`grep` of `app/` and `alembic/` → nothing; it was
+  removed from the code in history — last seen around `27c0569`). It
+  survives in the shared `webdesignos_test` DB because the test harness
+  uses `create_all`/`drop_all`, not migrations, and `drop_all` can't
+  drop `jobs` while that orphan FK exists — so both tables persist
+  across runs and every run's teardown trips on them. Reproduced in
+  isolation (`test_workspace_isolation.py` alone: 13 passed, 1 teardown
+  error). **All 806 real test bodies pass**, including
+  `test_end_to_end_workflow`, `test_lead_intelligence_workflow`,
+  `test_automation_pipeline`, `test_auth`, `test_workspace_isolation`,
+  `test_dashboard`, `test_sales_dashboard`.
+- **Remedy (environment, not code):** on the test DB, run
+  `DROP TABLE IF EXISTS job_schedules CASCADE;` (or drop and recreate
+  `webdesignos_test`). Not done here — a destructive write to a DB
+  shared with other worktrees.
+
+**Verdict: the complete workflow works end-to-end; the redesign
+(shell → Overview → Leads/Pipeline/Clients → Sales → Projects → website
+workspace → dark mode → responsive) introduced no regressions.**
+
+---
+
 ## 2026-08-30 — Responsive & usability refinement pass (RT1)
 **Mode:** worktree (`rt1-responsive-pass`), off `main` after PT3 (#22) merged.
 **Merge to main after:** yes. First of a two-part QA sweep (RT1 responsive →
