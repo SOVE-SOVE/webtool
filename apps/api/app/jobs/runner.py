@@ -16,6 +16,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session
 
 from app.core.logging import logger
+from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.db.session import SessionLocal
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.models import Job

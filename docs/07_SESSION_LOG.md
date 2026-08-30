@@ -11,6 +11,39 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Fix: job runner missing all_models import
+**Mode:** worktree (`fix-job-runner-models-import`), off `main` after RT2 (#24).
+**Merge to main after:** yes. One-line fix, unrelated to the redesign —
+surfaced when `scripts/start-mac.sh` was run after pulling.
+**Scope touched:** `apps/api/app/jobs/runner.py` (one import line).
+
+**Bug:** `python -m app.jobs.runner` crashed on the first poll with
+`InvalidRequestError: When initializing mapper Mapper[Job(jobs)],
+expression 'Workspace' failed to locate a name ('Workspace')`. The
+runner imported only `app.modules.jobs.models.Job`; `Job.workspace =
+relationship("Workspace")` is a string forward-ref, and nothing had
+imported `Workspace` into the registry, so mapper configuration failed
+the moment a query ran. The API server never hit this because
+`app/main.py` imports `app.db.all_models`; the standalone runner (and
+`scripts/start-mac.sh`, which launches it) did.
+
+Pre-existing — last real change to `app/jobs/` was `58f6377`; none of
+the redesign work (T1–T3, PT1–PT3, RT1–RT2) touched the API job system.
+
+**Fix:** added `from app.db import all_models  # noqa: F401` to
+`runner.py`, exactly as `app/main.py:7` and `tests/conftest.py:31`
+already do.
+
+**Verified:** `configure_mappers()` succeeds when driven from
+`import app.jobs.runner` (`Job` relationships resolve to
+`['workspace', 'created_by_user']`); `python -m app.jobs.runner` stays
+alive against the dev DB (previously died immediately); `pytest
+tests/test_job_runner.py tests/test_jobs.py tests/test_automation_pipeline.py`
+→ 17 passed (+ the known pre-existing `job_schedules` orphan-table
+teardown error, see the RT2 entry).
+
+---
+
 ## 2026-08-30 — Regression & QA pass after redesign (RT2)
 **Mode:** worktree (`rt2-regression-qa`), off `main` after RT1 (#23) merged.
 **Merge to main after:** yes (docs only). Second of the two-part QA sweep
