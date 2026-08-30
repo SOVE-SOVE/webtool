@@ -85,7 +85,7 @@ export default function DiscoverySearchesPage() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 grid max-w-2xl grid-cols-1 sm:grid-cols-2 gap-3 border border-border p-4">
-          <p className="col-span-2 text-xs text-fg-muted">
+          <p className="text-xs text-fg-muted sm:col-span-2">
             e.g. industry &ldquo;Plumbing&rdquo; + location &ldquo;Gold Coast&rdquo; finds plumbing businesses on
             the Gold Coast. At least one of industry, location, business type, or keywords is required.
           </p>
@@ -116,17 +116,17 @@ export default function DiscoverySearchesPage() {
           <select
             value={hasWebsite}
             onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className="col-span-2 rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            className="rounded-md border border-border-strong px-3 py-1.5 text-sm sm:col-span-2"
           >
             <option value="">Website: don&apos;t care</option>
             <option value="true">Only businesses with a website</option>
             <option value="false">Only businesses without a website</option>
           </select>
-          {formError && <p className="col-span-2 text-error">{formError}</p>}
+          {formError && <p className="text-error sm:col-span-2">{formError}</p>}
           <button
             type="submit"
             disabled={saving}
-            className="col-span-2 btn btn-primary"
+            className="btn btn-primary sm:col-span-2"
           >
             {saving ? "Searching…" : "Run search"}
           </button>

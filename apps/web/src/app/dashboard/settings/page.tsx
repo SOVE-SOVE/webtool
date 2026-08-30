@@ -9,7 +9,7 @@ import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/compon
 const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
   { mode: "light", label: "Light" },
   { mode: "dark", label: "Dark" },
-  { mode: "system", label: "Match system" },
+  { mode: "system", label: "System" },
 ];
 
 const FONT_OPTIONS = Object.keys(FONT_LABELS) as FontChoice[];
@@ -142,7 +142,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setTheme(opt.mode)}
                 aria-pressed={theme === opt.mode}
-                className={`flex-1 rounded-md border px-3 py-1.5 text-sm ${
+                className={`flex-1 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm ${
                   theme === opt.mode
                     ? "border-accent bg-accent text-accent-fg"
                     : "border-border-strong text-fg hover:bg-surface-hover"
@@ -292,7 +292,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={savingUser}
-              className="col-span-2 btn btn-primary"
+              className="btn btn-primary sm:col-span-2"
             >
               {savingUser ? "Adding…" : "Add teammate"}
             </button>

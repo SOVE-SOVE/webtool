@@ -11,6 +11,57 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-30 — Responsive & usability refinement pass (RT1)
+**Mode:** worktree (`rt1-responsive-pass`), off `main` after PT3 (#22) merged.
+**Merge to main after:** yes. First of a two-part QA sweep (RT1 responsive →
+RT2 regression). Refinement only — no redesign, no new features.
+**Scope touched:** 5 page files, class-only changes (no logic, no API,
+no components).
+
+**Method:** Playwright audit of 15 routes × 4 viewports (1440 / 1280 /
+768 / 375) against fully-populated mock data incl. a 76-char business
+name — automated checks for page-level horizontal overflow (walking the
+DOM, skipping legitimately-scrollable containers), sub-11px text, and
+console errors; plus a manual screenshot review of every major route at
+mobile + desktop, and a DoThisNext height measurement.
+
+**Result of the audit:** the redesign's responsive layout is sound.
+Zero horizontal page overflow, zero tiny text, zero console errors on
+any route/viewport. Sidebar → mobile-drawer nav, the metric grids
+(2-col mobile → 5-col desktop), the table→stacked-card switch, and the
+DoThisNext module (capped `max-h-56 sm:max-h-72`, internal scroll,
+measured at 222px list height on a short page — page stays at viewport
+height) all behave correctly.
+
+**One real bug found and fixed — phantom grid column on mobile:**
+five `col-span-2` utilities sat inside `grid grid-cols-1 sm:grid-cols-2`
+grids with no responsive prefix. On mobile the single-column grid has
+no second column, so `grid-column: span 2` *created an implicit one* —
+collapsing the whole form into an overlapping two-column mess (worst on
+the lead-detail Business form: labels colliding, inputs ~30px wide).
+Fixed by making them `sm:col-span-2` (span only when the 2nd column
+exists):
+- `leads/[id]/page.tsx` — Business notes, Lead notes (×2)
+- `clients/[id]/page.tsx` — Business notes
+- `settings/page.tsx` — Add-teammate submit button
+- `discovery/page.tsx` — helper text, website filter, error, submit (×4)
+
+**Minor polish:**
+- `settings/page.tsx` — the leads mobile card's status/priority selects
+  were a hard `grid-cols-2`, truncating "medium priority" at 375px.
+  Now `grid-cols-1 min-[420px]:grid-cols-2` so they stack full-width on
+  the narrowest phones.
+- `settings/page.tsx` — Theme control: "Match system" wrapped to two
+  lines on mobile, making that button taller. Relabelled "System",
+  added `whitespace-nowrap`.
+
+**Checks:** `next build` + tsc clean · `vitest` 93/93 · `lint` 2 errors
+/ 2 warnings (unchanged pre-existing baseline in `settings/page.tsx` —
+the calendar-param effect; no new problems). Re-verified no overflow at
+320px and 375px after the fixes.
+
+---
+
 ## 2026-08-30 — Application-wide dark mode sweep (PT3)
 **Mode:** worktree (`pt3-dark-mode`), off `main` after PT2 (#21) merged.
 **Merge to main after:** yes. Last of the Projects trio (PT1 ✓ → PT2 ✓ →

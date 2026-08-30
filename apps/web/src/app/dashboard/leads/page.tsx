@@ -519,7 +519,7 @@ export default function LeadsPage() {
                     {lead.archived_at ? "Unarchive" : "Archive"}
                   </button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                   <select value={lead.status} onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)} className="input">
                     {LEAD_STATUSES.map((s) => (
                       <option key={s} value={s}>{s.replace("_", " ")}</option>
@@ -533,7 +533,7 @@ export default function LeadsPage() {
                   <select
                     value={lead.assigned_user_id ?? ""}
                     onChange={(e) => handleAssigneeChange(lead.id, e.target.value)}
-                    className="input col-span-2"
+                    className="input min-[420px]:col-span-2"
                   >
                     <option value="">Unassigned</option>
                     {users.map((u) => (
