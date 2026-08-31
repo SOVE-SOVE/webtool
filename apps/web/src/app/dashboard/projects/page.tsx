@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -75,6 +76,7 @@ function ProjectCard({ project, nextTask }: { project: Project; nextTask: Task |
 }
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -117,15 +119,17 @@ export default function ProjectsPage() {
     if (!clientId) return;
     setSaving(true);
     try {
-      await api.createProject({ client_id: clientId, name, assigned_user_id: assignedUserId || undefined });
-      setName("");
-      setClientId("");
-      setAssignedUserId("");
-      setShowForm(false);
-      load();
+      const created = await api.createProject({
+        client_id: clientId,
+        name,
+        assigned_user_id: assignedUserId || undefined,
+      });
+      // Land the user inside the new project rather than back on the list —
+      // the detailed brief is an optional enrichment step from here, not a
+      // barrier that had to be cleared before the project could exist.
+      router.push(`/dashboard/projects/${created.id}?created=1`);
     } catch {
       setError("Couldn't create project.");
-    } finally {
       setSaving(false);
     }
   }

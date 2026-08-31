@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -64,9 +64,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const projectId = params.id;
 
   const [project, setProject] = useState<Project | null>(null);
+  // justCreated is sticky (drives auto-opening the brief once); showCreatedBanner
+  // is independently dismissible so closing the banner doesn't also collapse a
+  // brief the user is actively filling in.
+  const [justCreated, setJustCreated] = useState(false);
+  const [showCreatedBanner, setShowCreatedBanner] = useState(false);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
@@ -166,6 +172,16 @@ export default function ProjectDetailPage() {
   }
 
   useEffect(load, [projectId]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("created")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setJustCreated(true);
+      setShowCreatedBanner(true);
+      router.replace(`/dashboard/projects/${projectId}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
@@ -356,6 +372,21 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {showCreatedBanner && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <p className="text-sm text-emerald-900 dark:text-emerald-300">
+            <span className="font-semibold">Project created.</span> Add the project brief and other
+            details below whenever you&apos;re ready — nothing else is required right now.
+          </p>
+          <button
+            onClick={() => setShowCreatedBanner(false)}
+            className="shrink-0 rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Snapshot */}
       <section className="rounded-md border border-border bg-surface p-4">
         <ProgressBar
@@ -482,9 +513,11 @@ export default function ProjectDetailPage() {
         <h2 className="section-title">Build artifacts</h2>
 
         <Disclosure
+          key={justCreated ? "brief-auto-open" : "brief-default"}
           title="Project brief"
           hint="The structured client intake — the source of truth for the build."
           badge={<StatusChip status={briefStatus} />}
+          defaultOpen={justCreated}
         >
           {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : <p className="text-sm text-fg-muted">Loading brief…</p>}
         </Disclosure>
