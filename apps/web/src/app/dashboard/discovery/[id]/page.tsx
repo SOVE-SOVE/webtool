@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -13,12 +14,16 @@ import {
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
+// Leaflet touches `window` on import — client-only, no SSR.
+const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
+
 export default function DiscoverySearchDetailPage() {
   const params = useParams<{ id: string }>();
   const [search, setSearch] = useState<DiscoverySearch | null>(null);
   const [results, setResults] = useState<DiscoveredBusiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   function load() {
     if (!params.id) return;
@@ -88,6 +93,10 @@ export default function DiscoverySearchDetailPage() {
       )}
 
       {results && results.length > 0 && (
+        <DiscoveryMap businesses={results} selectedId={selectedId} onSelect={setSelectedId} />
+      )}
+
+      {results && results.length > 0 && (
         <table className="mt-4 w-full border border-border text-left text-sm">
           <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
             <tr>
@@ -99,8 +108,18 @@ export default function DiscoverySearchDetailPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {results.map((business) => (
-              <tr key={business.id}>
+            {results.map((business) => {
+              const hasCoords =
+                typeof business.latitude === "number" && typeof business.longitude === "number";
+              return (
+              <tr
+                key={business.id}
+                onClick={hasCoords ? () => setSelectedId(business.id) : undefined}
+                className={
+                  (business.id === selectedId ? "bg-surface-subtle " : "") +
+                  (hasCoords ? "cursor-pointer" : "")
+                }
+              >
                 <td className="px-3 py-2">
                   <Link
                     href={`/dashboard/discovered-businesses/${business.id}`}
@@ -111,7 +130,9 @@ export default function DiscoverySearchDetailPage() {
                   {business.industry && <div className="text-xs text-fg-muted">{business.industry}</div>}
                 </td>
                 <td className="px-3 py-2 text-fg-muted">
-                  {[business.suburb, business.state].filter(Boolean).join(", ") || "—"}
+                  {business.address ||
+                    [business.suburb, business.state].filter(Boolean).join(", ") ||
+                    "—"}
                 </td>
                 <td className="px-3 py-2 text-fg-muted">
                   {business.website_url ? (
@@ -125,7 +146,8 @@ export default function DiscoverySearchDetailPage() {
                 <td className="px-3 py-2 text-fg-muted">{business.status}</td>
                 <td className="px-3 py-2 text-fg-muted">{business.opportunity_score ?? "—"}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}

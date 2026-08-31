@@ -89,6 +89,19 @@ def run_research(
         business.email = output.contact_email[:255]
     if output.social_presence and not business.social_links:
         business.social_links = "\n".join(output.social_presence)
+    if output.postal_address and not business.address:
+        business.address = output.postal_address[:500]
+    # Coordinates only from a real source (here: the site's own
+    # schema.org GeoCoordinates) — fill only when we don't already have
+    # a pair, and only when both are present.
+    if (
+        output.latitude is not None
+        and output.longitude is not None
+        and business.latitude is None
+        and business.longitude is None
+    ):
+        business.latitude = output.latitude
+        business.longitude = output.longitude
 
     if business.status == DiscoveredBusinessStatus.NEW:
         business.status = DiscoveredBusinessStatus.RESEARCHED

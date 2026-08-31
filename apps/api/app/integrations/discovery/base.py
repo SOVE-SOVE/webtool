@@ -76,6 +76,11 @@ class NormalizedBusinessResult:
     suburb: str | None = None
     state: str | None = None
     postcode: str | None = None
+    # Only set when a provider genuinely has coordinates for this
+    # business (a places API, or GeoCoordinates in the site's own
+    # schema.org markup) — never geocoded from a name/city.
+    latitude: float | None = None
+    longitude: float | None = None
     industry: str | None = None
     social_links: list[str] = field(default_factory=list)
     # The provider's own id/url for this result, for source tracking and
