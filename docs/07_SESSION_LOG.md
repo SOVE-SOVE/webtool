@@ -11,6 +11,70 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T1: Simplify project creation workflow
+**Mode:** worktree (`send-email-button`), branched from `main-sync`.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/projects/page.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`; this file.
+
+**What happened:** Investigated the whole project-creation surface
+first (backend `Project`/`ProjectCreate` model+schema, the three code
+paths that create a project — plain "New project" form, lead→client
+convert, client "Start intake" — and every downstream consumer of
+project/brief fields) before changing anything, per the task's own
+"inspect before implementing" instruction. Finding: the backend and the
+creation forms were **already minimal** — `ProjectCreate` only requires
+`client_id` + `name`; the 35-field `DesignBrief` was already a separate,
+optional, `Disclosure`-collapsed post-creation step, never a gate. The
+one real gap against the task's "land inside the project" requirement:
+after a successful `POST /api/v1/projects`, the list-page form discarded
+the created project and stayed on `/dashboard/projects` — no
+confirmation, no navigation into the new project.
+
+Fixed that specific gap only: `projects/page.tsx`'s `handleCreate` now
+`router.push`es to `/dashboard/projects/{id}?created=1`. The project
+detail page reads that flag once (stripped from the URL via
+`router.replace`), shows a dismissible "Project created." banner, and
+auto-expands the "Project brief" `Disclosure` for that one visit (a
+`key` swap on mount, not a live prop, so dismissing the banner later
+never collapses a brief the user is mid-edit on). No backend changes,
+no field removed or added, no other page touched.
+
+**Verified:** `eslint`, `tsc --noEmit`, `vitest run` (102 passed),
+`next build` all clean; full `apps/api` pytest suite (882 passed) run
+against a real Postgres to confirm zero backend regression. Then a full
+browser pass against a throwaway instance (API :8011, web :3011, fresh
+`webdesignos_t1smoke` DB on the actual local Postgres — see Blockers
+below — migrated to head, seeded admin): created a lead → converted to
+a client (unaffected, still minimal) → used "New project" with just
+client + name → landed directly on the new project's page with the
+banner and an auto-expanded, empty 35-missing-field brief → dismissed
+the banner (brief stayed open) → changed the stage inline → confirmed
+both the new and the lead-conversion-created project still list and
+behave correctly on `/dashboard/projects`. Zero console errors
+throughout. Instance torn down, throwaway DB dropped after.
+
+**Blockers/issues:** This machine runs **two** Postgres servers on
+`localhost:5432` — a native Homebrew `postgresql@16` service (which
+actually wins the port and is what `apps/api` and the test suite
+connect to) and a separate `docker-compose` Postgres container that
+`docker ps`/`docker exec` show but which `localhost:5432` never
+reaches. Cost real time (a `CREATE DATABASE` on the docker container
+that the app then couldn't see). Worth a note in `README.md`'s Local
+development section so the next session doesn't repeat it. Separately,
+`alembic check` against the shared dev `webdesignos` database (not
+`_test`) reports significant pre-existing drift (`notification_preferences`,
+`daily_action_runs`, `notifications`, `action_queue_items` and several
+indexes) — not caused by this session (no models/migrations touched),
+not investigated further, and no migration was run against that shared
+database.
+
+**Next up:** T2 (consolidate Lead Discovery into one primary
+experience) and T3 (post-change UX review) are queued next in the same
+session.
+
+---
+
 ## 2026-08-31 — Google Places: live verification + key-restriction docs
 **Mode:** operator supplied a Google Places API key mid-session to
 verify T11 (#35) against the real API. **No app code changed.**
