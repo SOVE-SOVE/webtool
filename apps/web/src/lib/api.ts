@@ -1507,6 +1507,8 @@ export type DiscoveredBusiness = {
   suburb: string | null;
   state: string | null;
   postcode: string | null;
+  latitude: number | null;
+  longitude: number | null;
   social_links: string | null;
   source_provider: string;
   source_query: string | null;

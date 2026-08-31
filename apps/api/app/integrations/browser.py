@@ -6,6 +6,7 @@ a lead's existing website (never a guessed/estimated number) per the
 """
 
 import ipaddress
+import json
 import socket
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -365,7 +366,79 @@ class ResearchPageSignals:
     social_links: list[str] | None = None
     body_text: str | None = None
     load_time_ms: int | None = None
+    # A postal address and/or map coordinates the site publishes about
+    # itself in schema.org (JSON-LD) markup — a directly-observed value,
+    # not geocoded or guessed. lat/lng come only from an explicit
+    # GeoCoordinates node; both are set together or both stay None.
+    postal_address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     error: str | None = None
+
+
+def _coerce_coord(value, lo: float, hi: float) -> float | None:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if num == 0.0 or not lo <= num <= hi:
+        return None
+    return num
+
+
+def _format_postal_address(node) -> str | None:
+    if isinstance(node, str):
+        return node.strip() or None
+    if not isinstance(node, dict):
+        return None
+    parts = [
+        node.get("streetAddress"),
+        node.get("addressLocality"),
+        node.get("addressRegion"),
+        node.get("postalCode"),
+        node.get("addressCountry") if isinstance(node.get("addressCountry"), str) else None,
+    ]
+    joined = ", ".join(str(p).strip() for p in parts if p and str(p).strip())
+    return joined or None
+
+
+def _walk_jsonld(node, found: dict) -> None:
+    """Depth-first scan of one parsed JSON-LD document for the first
+    address / GeoCoordinates it carries. Handles a bare object, a list,
+    and the common `@graph` wrapper."""
+    if isinstance(node, list):
+        for item in node:
+            _walk_jsonld(item, found)
+        return
+    if not isinstance(node, dict):
+        return
+
+    if "address" in node and not found.get("address"):
+        found["address"] = _format_postal_address(node["address"])
+
+    geo = node.get("geo")
+    if isinstance(geo, dict) and found.get("lat") is None:
+        lat = _coerce_coord(geo.get("latitude"), -90.0, 90.0)
+        lng = _coerce_coord(geo.get("longitude"), -180.0, 180.0)
+        if lat is not None and lng is not None:
+            found["lat"], found["lng"] = lat, lng
+
+    for key in ("@graph", "hasPart", "subOrganization", "location", "makesOffer"):
+        if key in node:
+            _walk_jsonld(node[key], found)
+
+
+def _extract_location_from_jsonld(blocks: list[str]) -> tuple[str | None, float | None, float | None]:
+    found: dict = {}
+    for raw in blocks or []:
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        _walk_jsonld(parsed, found)
+        if found.get("address") and found.get("lat") is not None:
+            break
+    return found.get("address"), found.get("lat"), found.get("lng")
 
 
 async def fetch_research_signals(url: str) -> ResearchPageSignals:
@@ -425,6 +498,11 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     "() => { const nav = performance.getEntriesByType('navigation')[0]; "
                     "return nav ? Math.round(nav.duration) : null; }"
                 )
+                jsonld_blocks = await page.evaluate(
+                    "() => Array.from(document.querySelectorAll('script[type=\"application/ld+json\"]'))"
+                    ".map(s => s.textContent).filter(Boolean)"
+                )
+                postal_address, latitude, longitude = _extract_location_from_jsonld(jsonld_blocks)
 
                 final_url = page.url
                 return ResearchPageSignals(
@@ -442,6 +520,9 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     social_links=sorted(set(social_links)) if social_links else [],
                     body_text=body_text,
                     load_time_ms=load_time_ms,
+                    postal_address=postal_address,
+                    latitude=latitude,
+                    longitude=longitude,
                 )
             finally:
                 await browser.close()

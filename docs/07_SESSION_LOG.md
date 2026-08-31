@@ -11,6 +11,58 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: add a locations map (T4)
+**Mode:** worktree (`t4-discovery-map`), branched from `main` after T3
+(#30).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api` browser integration + research
+agent/service + discovery model/schemas + migration; `apps/web` new
+`DiscoveryMap` component + discovery detail page + `lib/api.ts` +
+`package.json` (leaflet); this file.
+
+**What happened:** Fourth of the five-task set. The audit found zero
+coordinate data anywhere and no map library. Rather than add a paid
+places API, T4 harvests coordinates that already exist: many small
+businesses publish `GeoCoordinates` (and a `PostalAddress`) in their
+site's schema.org (JSON-LD) markup, and the research stage already
+loads that page.
+
+- `integrations/browser.py`: `fetch_research_signals` now also reads
+  every `<script type="application/ld+json">` block and pulls the first
+  `PostalAddress` / `GeoCoordinates` it finds (handles a bare object, a
+  list, and the `@graph` wrapper; rejects out-of-range and 0,0). New
+  `ResearchPageSignals.postal_address / latitude / longitude`.
+- Research agent + service carry those onto the `DiscoveredBusiness`
+  (`address` fills a blank; `latitude`/`longitude` only when both
+  present and not already set). New nullable `latitude`/`longitude`
+  columns (migration `c4d8f2a6e0b1`, round-tripped) + matching
+  `NormalizedBusinessResult` fields so a future places provider can
+  supply them directly at discovery time.
+- `apps/web`: **Leaflet 1.9** + OpenStreetMap raster tiles — keyless,
+  no signup, fits the stack. New `components/DiscoveryMap.tsx`
+  (`"use client"`, loaded via `next/dynamic` `ssr:false`; inline-SVG
+  divIcon pins so no marker-image requests). Rendered above the results
+  table on `discovery/[id]`. Markers for businesses with coordinates;
+  the rest stay in the table unpinned. Marker click ↔ row highlight,
+  row click focuses the marker (basic — T5 deepens this).
+
+**Map provider:** Leaflet + OSM tiles. **No API key, no env vars.**
+Coordinates are server-side only (from the research fetch); nothing
+external is called from the browser except the OSM tile CDN.
+
+**Verified:** `apps/api` full `pytest` (see below); new
+`test_discovery_map.py` (JSON-LD extraction shapes) +
+`test_website_research.py` (coords land on the business) +
+`test_business_discovery.py` (provider coords flow through). `apps/web`
+— `vitest` 93, `tsc --noEmit` clean, `eslint` clean on new files,
+`next build` clean. Not click-tested in a real browser (needs a
+discovery result whose site publishes JSON-LD geo).
+
+**Limitation:** only businesses whose own site publishes schema.org
+coordinates get a pin today; a places provider would populate the rest.
+
+**Next up:** T5 — tighten the results ↔ map interaction.
+
 ## 2026-08-31 — Lead Discovery: pagination / drop the 5-result cap (T3)
 **Mode:** worktree (`t3-discovery-pagination`), branched from `main`
 after T2 (#29).

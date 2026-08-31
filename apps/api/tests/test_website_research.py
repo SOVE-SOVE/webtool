@@ -200,6 +200,29 @@ def test_run_research_persists_result_and_advances_status(authed_client, db_sess
     assert business.status == DiscoveredBusinessStatus.RESEARCHED
 
 
+def test_run_research_stamps_address_and_coordinates_from_schema_markup(
+    authed_client, db_session, workspace, monkeypatch
+):
+    """schema.org GeoCoordinates / PostalAddress published on the site land
+    on the discovered business so the Lead Discovery map can pin it (T4)."""
+
+    async def fake_fetch(url):
+        return ResearchPageSignals(
+            final_url=url, https=True, http_status=200, title="Bean There",
+            postal_address="12 Marine Pde, Southport QLD", latitude=-27.967, longitude=153.412,
+        )
+
+    monkeypatch.setattr("app.agents.business_research.fetch_research_signals", fake_fetch)
+    search = _make_search(db_session, workspace)
+    business = _make_discovered_business(db_session, search)
+
+    authed_client.post(f"/api/v1/discovered-businesses/{business.id}/research")
+
+    db_session.refresh(business)
+    assert business.address == "12 Marine Pde, Southport QLD"
+    assert (round(business.latitude, 3), round(business.longitude, 3)) == (-27.967, 153.412)
+
+
 def test_run_research_stamps_contact_details_read_off_the_site(authed_client, db_session, workspace, monkeypatch):
     """The phone/email a visitor would use are read straight off the page
     and land on the discovered business, so import_to_lead carries them

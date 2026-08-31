@@ -48,6 +48,11 @@ class BusinessResearchAgentOutput(BaseModel):
     load_time_ms: int | None = None
     estimated_site_age: str | None = None
     appears_template_or_placeholder: bool | None = None
+    # A postal address / map coordinates the site publishes about itself
+    # in schema.org markup — directly observed, never geocoded or guessed.
+    postal_address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     technical_issues: list[str] = []
     social_presence: list[str] = []
     confirmed_facts: list[str] = []
@@ -166,6 +171,13 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
     if signals.contact_email:
         confirmed.append(f"Email on the website: {signals.contact_email}")
 
+    if signals.postal_address:
+        confirmed.append(f"Address in the site's schema.org markup: {signals.postal_address}")
+    if signals.latitude is not None and signals.longitude is not None:
+        confirmed.append(
+            f"Map coordinates published on the site: {signals.latitude:.5f}, {signals.longitude:.5f}"
+        )
+
     social_links = signals.social_links or []
     if social_links:
         confirmed.append(f"{len(social_links)} social media link(s) found on the page")
@@ -218,6 +230,9 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
         load_time_ms=signals.load_time_ms,
         estimated_site_age=estimated_site_age,
         appears_template_or_placeholder=appears_template_or_placeholder,
+        postal_address=signals.postal_address,
+        latitude=signals.latitude,
+        longitude=signals.longitude,
         technical_issues=technical_issues,
         social_presence=social_links,
         confirmed_facts=confirmed,

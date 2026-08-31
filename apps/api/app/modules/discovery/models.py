@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -145,6 +145,13 @@ class DiscoveredBusiness(Base):
     suburb: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str | None] = mapped_column(String(10))
     postcode: Mapped[str | None] = mapped_column(String(10))
+    # Map location — only ever a value a source actually gave us (a
+    # places provider's coordinates, or GeoCoordinates published in a
+    # site's own schema.org markup). Never inferred/geocoded from a name
+    # or a city, so a business with no reliable location simply has no
+    # pin. Both set together or both null.
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
     # Newline-separated, same convention as businesses.social_links.
     social_links: Mapped[str | None] = mapped_column(Text)
 
