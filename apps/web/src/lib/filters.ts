@@ -5,7 +5,7 @@
  * unassigned) is unit-testable without a DOM.
  */
 
-import type { Client, Project, ProjectStage } from "@/lib/api";
+import type { Client, DiscoveredBusiness, Project, ProjectStage } from "@/lib/api";
 
 export const UNASSIGNED = "__unassigned__";
 
@@ -54,5 +54,34 @@ export function filterClients(clients: Client[], filters: ClientFilters): Client
   return clients.filter((client) => {
     if (!matchesAssignee(client.assigned_user_id, filters.assignee)) return false;
     return matchesSearch([client.business_name, client.billing_email], filters.search);
+  });
+}
+
+// Results filtering for the Lead Discovery search page — the same list
+// the map draws its markers from, so filtering the table filters the map.
+export type DiscoveredBusinessFilters = {
+  search: string;
+  website: "" | "has" | "no";
+  mappedOnly: boolean;
+};
+
+export type LocatedBusiness = DiscoveredBusiness & { latitude: number; longitude: number };
+
+export function hasCoordinates(business: DiscoveredBusiness): business is LocatedBusiness {
+  return typeof business.latitude === "number" && typeof business.longitude === "number";
+}
+
+export function filterDiscoveredBusinesses(
+  businesses: DiscoveredBusiness[],
+  filters: DiscoveredBusinessFilters,
+): DiscoveredBusiness[] {
+  return businesses.filter((business) => {
+    if (filters.website === "has" && business.website_status !== "found") return false;
+    if (filters.website === "no" && business.website_status !== "none") return false;
+    if (filters.mappedOnly && !hasCoordinates(business)) return false;
+    return matchesSearch(
+      [business.name, business.industry, business.address, business.suburb, business.website_url],
+      filters.search,
+    );
   });
 }

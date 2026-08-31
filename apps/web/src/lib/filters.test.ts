@@ -1,6 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { filterClients, filterProjects, UNASSIGNED, type ProjectFilters } from "./filters";
-import type { Client, Project, ProjectStage } from "./api";
+import {
+  filterClients,
+  filterDiscoveredBusinesses,
+  filterProjects,
+  hasCoordinates,
+  UNASSIGNED,
+  type ProjectFilters,
+} from "./filters";
+import type { Client, DiscoveredBusiness, Project, ProjectStage } from "./api";
+
+function discovered(overrides: Partial<DiscoveredBusiness> = {}): DiscoveredBusiness {
+  return {
+    id: "d1",
+    discovery_search_id: "s1",
+    name: "Riverside Dental",
+    industry: "Dentist",
+    business_type: null,
+    website_url: "https://riverside-dental.example",
+    website_status: "found",
+    phone: null,
+    email: null,
+    address: "5 River St, Southport QLD",
+    suburb: "Southport",
+    state: "QLD",
+    postcode: null,
+    latitude: -27.96,
+    longitude: 153.41,
+    social_links: null,
+    source_provider: "brave_search",
+    source_query: null,
+    source_external_id: null,
+    duplicate_of_business_id: null,
+    duplicate_of_discovered_business_id: null,
+    status: "new",
+    opportunity_score: null,
+    score_category: null,
+    reviewed_by_user_id: null,
+    reviewed_at: null,
+    review_notes: null,
+    imported_lead_id: null,
+    discovered_at: "2026-08-01T00:00:00Z",
+    updated_at: "2026-08-01T00:00:00Z",
+    ...overrides,
+  } as DiscoveredBusiness;
+}
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -151,5 +194,47 @@ describe("filterClients", () => {
     ];
 
     expect(filterClients(rows, { search: "", assignee: UNASSIGNED }).map((c) => c.id)).toEqual(["b"]);
+  });
+});
+
+describe("filterDiscoveredBusinesses", () => {
+  const NONE = { search: "", website: "" as const, mappedOnly: false };
+
+  it("returns everything with no filters", () => {
+    const rows = [discovered({ id: "a" }), discovered({ id: "b" })];
+    expect(filterDiscoveredBusinesses(rows, NONE)).toHaveLength(2);
+  });
+
+  it("filters by website status", () => {
+    const rows = [
+      discovered({ id: "has", website_status: "found" }),
+      discovered({ id: "no", website_status: "none" }),
+      discovered({ id: "unk", website_status: "unknown" }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, website: "has" }).map((b) => b.id)).toEqual(["has"]);
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, website: "no" }).map((b) => b.id)).toEqual(["no"]);
+  });
+
+  it("filters to mapped businesses only", () => {
+    const rows = [
+      discovered({ id: "pin", latitude: -27.9, longitude: 153.4 }),
+      discovered({ id: "nopin", latitude: null, longitude: null }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, mappedOnly: true }).map((b) => b.id)).toEqual(["pin"]);
+  });
+
+  it("searches name, industry, address and website", () => {
+    const rows = [
+      discovered({ id: "a", name: "Bean There Cafe", industry: "Cafe", address: "1 High St", website_url: "https://beanthere.example" }),
+      discovered({ id: "b", name: "Riverside Dental", industry: "Dentist", address: "5 River St", website_url: "https://rsd.example" }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, search: "river" }).map((b) => b.id)).toEqual(["b"]);
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, search: "cafe" }).map((b) => b.id)).toEqual(["a"]);
+  });
+
+  it("hasCoordinates only when both are numbers", () => {
+    expect(hasCoordinates(discovered({ latitude: 1, longitude: 2 }))).toBe(true);
+    expect(hasCoordinates(discovered({ latitude: 1, longitude: null }))).toBe(false);
+    expect(hasCoordinates(discovered({ latitude: null, longitude: null }))).toBe(false);
   });
 });
