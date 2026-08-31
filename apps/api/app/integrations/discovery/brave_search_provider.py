@@ -27,6 +27,7 @@ import re
 
 from app.integrations import search as search_integration
 from app.integrations.discovery import result_classifier
+from app.integrations.discovery.result_classifier import ResultCategory
 from app.integrations.discovery.base import (
     DiscoveryCriteria,
     DiscoveryPage,
@@ -86,14 +87,33 @@ class BraveSearchDiscoveryProvider:
         for result in results:
             if not result.title or not result.url:
                 continue
-            if not result_classifier.classify_result(result).is_business:
+            classification = result_classifier.classify_result(result)
+            if not classification.is_business:
                 continue
+
+            if classification.category is ResultCategory.SOCIAL:
+                # A social-media profile can be a real business's only web
+                # presence — keep it as a candidate, but its URL is a
+                # social link, never the "official website".
+                normalized.append(
+                    NormalizedBusinessResult(
+                        name=_extract_name(result.title, result.profile_name),
+                        website_url=None,
+                        website_status=WebsiteStatus.UNKNOWN,
+                        industry=criteria.industry,
+                        social_links=[result.url],
+                        source_external_id=result.url,
+                        raw_snippet=result.description or None,
+                    )
+                )
+                continue
+
             normalized.append(
                 NormalizedBusinessResult(
                     name=_extract_name(result.title, result.profile_name),
                     website_url=result.url,
-                    # A web-search hit is, by definition, a page on the
-                    # business's own site — a real website.
+                    # A web-search hit on the business's own domain is a
+                    # real website.
                     website_status=WebsiteStatus.FOUND,
                     industry=criteria.industry,
                     source_external_id=result.url,

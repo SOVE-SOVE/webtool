@@ -145,6 +145,10 @@ class DiscoveredBusiness(Base):
     suburb: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str | None] = mapped_column(String(10))
     postcode: Mapped[str | None] = mapped_column(String(10))
+    country: Mapped[str | None] = mapped_column(String(80))
+    # A specific provider-assigned category (places API taxonomy, or a
+    # schema.org LocalBusiness subtype) — finer than `industry`.
+    business_category: Mapped[str | None] = mapped_column(String(120))
     # Map location — only ever a value a source actually gave us (a
     # places provider's coordinates, or GeoCoordinates published in a
     # site's own schema.org markup). Never inferred/geocoded from a name

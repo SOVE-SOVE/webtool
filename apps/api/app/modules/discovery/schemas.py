@@ -84,6 +84,8 @@ class DiscoveredBusinessRead(BaseModel):
     suburb: str | None
     state: str | None
     postcode: str | None
+    country: str | None
+    business_category: str | None
     latitude: float | None
     longitude: float | None
     social_links: str | None
