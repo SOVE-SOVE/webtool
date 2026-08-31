@@ -41,7 +41,7 @@ def test_brave_provider_normalizes_results(monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Gold Coast Plumbing Co | Home", url="https://gcplumbing.example", description="Local plumbers"),
             SearchResult(title="Southport Plumbers - Fast Service", url="https://southportplumbers.example", description="24/7"),
         ],
@@ -62,7 +62,7 @@ def test_brave_provider_skips_results_missing_title_or_url(monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="", url="https://example.com", description=""),
             SearchResult(title="No URL Co", url="", description=""),
             SearchResult(title="Valid Co", url="https://valid.example", description=""),
@@ -75,8 +75,49 @@ def test_brave_provider_skips_results_missing_title_or_url(monkeypatch):
     assert [r.name for r in results] == ["Valid Co"]
 
 
+def test_brave_provider_filters_out_non_business_results(monkeypatch):
+    """Reddit threads, listicles, news pieces and directory pages a plain
+    web search returns are dropped; real business pages are kept (T1)."""
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None: [
+            SearchResult(title="Gold Coast Plumbing Co | Home", url="https://gcplumbing.com.au/", description=""),
+            SearchResult(title="Best plumber on the GC?", url="https://www.reddit.com/r/goldcoast/comments/x", description=""),
+            SearchResult(title="The 10 Best Plumbers in Queensland", url="https://someblog.example/list", description=""),
+            SearchResult(title="Plumbing - Wikipedia", url="https://en.wikipedia.org/wiki/Plumbing", description=""),
+            SearchResult(title="Southport Plumbers - 24/7", url="https://southportplumbers.com.au/", description=""),
+        ],
+    )
+
+    provider = BraveSearchDiscoveryProvider()
+    results = provider.discover(DiscoveryCriteria(industry="Plumbing", location="Gold Coast"))
+
+    assert [r.name for r in results] == ["Gold Coast Plumbing Co", "Southport Plumbers"]
+
+
+def test_brave_provider_prefers_profile_name(monkeypatch):
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None: [
+            SearchResult(
+                title="Home - Your Trusted Local Plumber Since 1998",
+                url="https://gcplumbing.com.au/",
+                description="",
+                profile_name="Gold Coast Plumbing Co",
+            ),
+        ],
+    )
+
+    provider = BraveSearchDiscoveryProvider()
+    results = provider.discover(DiscoveryCriteria(industry="Plumbing"))
+
+    assert results[0].name == "Gold Coast Plumbing Co"
+
+
 def test_brave_provider_raises_when_search_unavailable(monkeypatch):
-    monkeypatch.setattr(search_integration, "search_business", lambda query: None)
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None: None)
 
     provider = BraveSearchDiscoveryProvider()
     with pytest.raises(ProviderUnavailableError):
@@ -87,7 +128,7 @@ def test_brave_provider_respects_limit(monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title=f"Co {i}", url=f"https://co{i}.example", description="") for i in range(10)
         ],
     )
@@ -199,7 +240,7 @@ def test_create_search_rejects_unknown_provider(authed_client):
 
 
 def test_create_search_empty_results_completes_cleanly(authed_client, monkeypatch):
-    monkeypatch.setattr(search_integration, "search_business", lambda query: [])
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None: [])
 
     res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Underwater Basket Weaving"})
 
@@ -211,7 +252,7 @@ def test_create_search_empty_results_completes_cleanly(authed_client, monkeypatc
 
 
 def test_create_search_provider_unavailable_marks_failed(authed_client, monkeypatch):
-    monkeypatch.setattr(search_integration, "search_business", lambda query: None)
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None: None)
 
     res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing", "location": "Gold Coast"})
 
@@ -226,7 +267,7 @@ def test_create_search_successful_discovery(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Gold Coast Plumbing Co | Home", url="https://gcplumbing.example", description="Local plumbers"),
             SearchResult(title="Southport Plumbers", url="https://southportplumbers.example", description="24/7"),
         ],
@@ -255,7 +296,7 @@ def test_create_search_has_website_filter(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Has Site Co", url="https://hassite.example", description=""),
         ],
     )
@@ -273,7 +314,7 @@ def test_second_search_flags_duplicate_of_earlier_discovered_business(authed_cli
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="")],
+        lambda query, count=None: [SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="")],
     )
 
     first = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"}).json()
@@ -292,7 +333,7 @@ def test_search_flags_duplicate_of_existing_crm_business(authed_client, db_sessi
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="")],
+        lambda query, count=None: [SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="")],
     )
 
     res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"})
@@ -302,7 +343,7 @@ def test_search_flags_duplicate_of_existing_crm_business(authed_client, db_sessi
 
 
 def test_discovery_search_creation_is_rate_limited(authed_client, monkeypatch):
-    monkeypatch.setattr(search_integration, "search_business", lambda query: [])
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None: [])
     monkeypatch.setattr("app.core.settings.settings.llm_rate_limit_per_minute", 2)
 
     for _ in range(2):

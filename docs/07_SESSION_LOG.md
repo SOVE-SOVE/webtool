@@ -11,6 +11,51 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery result quality: drop non-business pages (T1)
+**Mode:** worktree (`t1-lead-discovery-result-quality`), branched from
+`main` after #27.
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api/app/integrations/search.py`,
+`apps/api/app/integrations/discovery/brave_search_provider.py`, new
+`apps/api/app/integrations/discovery/result_classifier.py`, discovery
+test files, this file.
+
+**What happened:** First of a five-task Lead Discovery improvement set.
+Discovery ran a plain Brave *web* search and turned every hit into a
+candidate business — Reddit threads, "top 10" listicles, news/blog
+articles, Wikipedia, and directory pages (Yelp/Yellow Pages/TripAdvisor)
+all became "leads" with the article headline mis-parsed as a name.
+
+- `integrations/search.py`: `SearchResult` now also carries the signals
+  Brave already returns per result (`hostname`, `profile_name`,
+  `page_age`, `is_article`, `result_subtype`); `search_business(query,
+  count=…)` is parametrised (Brave caps `count` at 20) so discovery can
+  ask for a full page while Sales Audit keeps its default of 5.
+- New `result_classifier.py`: deterministic, explainable, and
+  deliberately conservative — an ambiguous result is kept. Rejects on a
+  non-business domain denylist (forums, publishers, directories,
+  aggregators, major news), a provider "article" flag, article/forum
+  URL paths, and listicle/guide/Q&A/multi-business headline shapes.
+  **Website presence is never a factor** (T2 handles no-website leads).
+- `brave_search_provider.py`: fetches 20, drops non-business results,
+  keeps up to `criteria.limit`; prefers Brave's `profile.name` for the
+  business name when present.
+
+No frontend change — the results table renders the same shape, just
+fewer junk rows.
+
+**Verified:** `apps/api` — full `pytest` suite (see below);
+`test_discovery_result_classifier.py` (new) + `test_business_discovery.py`
+green. `apps/web` — `vitest` 93 passed, `tsc --noEmit` clean, `next
+build` clean (untouched, sanity only). No live Brave key locally, so
+not exercised against the real API. Local `webdesignos_test` DB had
+stale tables from other branches (`notifications*`, `daily_action_runs`,
+`action_queue_items`) breaking the session-teardown `drop_all` — reset
+the schema; not a repo issue.
+
+**Next up:** T2 — support leads without websites (fix the `has_website`
+filter, add the website-status filter + indicator).
+
 ## 2026-08-31 — Wire the "Send email" button into the lead page
 **Mode:** worktree (`send-email-button`), stacked on
 `sales-workflow-contact-capture` (#26), which is stacked on `main` after
