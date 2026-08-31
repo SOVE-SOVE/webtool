@@ -78,6 +78,8 @@ def test_research_full_signals_classification(monkeypatch):
             mobile_overflow=False,
             generator_meta="WordPress 6.4",
             contact_cta_present=True,
+            contact_phone="0411 871 875",
+            contact_email="hello@gcplumbing.example",
             social_links=["https://facebook.com/gcplumbing"],
             body_text="Copyright © 2019 Gold Coast Plumbing Co. All rights reserved.",
             load_time_ms=900,
@@ -92,6 +94,10 @@ def test_research_full_signals_classification(monkeypatch):
     assert output.https is True
     assert output.mobile_viewport_present is True
     assert output.contact_cta_present is True
+    assert output.contact_phone == "0411 871 875"
+    assert output.contact_email == "hello@gcplumbing.example"
+    assert any("0411 871 875" in fact for fact in output.confirmed_facts)
+    assert any("hello@gcplumbing.example" in fact for fact in output.confirmed_facts)
     assert output.load_time_ms == 900
     assert output.social_presence == ["https://facebook.com/gcplumbing"]
     assert output.estimated_site_age is not None
@@ -169,7 +175,8 @@ def _patch_full_signals(monkeypatch):
         return ResearchPageSignals(
             final_url=url, https=True, http_status=200, title="Gold Coast Plumbing Co",
             meta_description="Local plumbers", viewport_meta_present=True, mobile_overflow=False,
-            contact_cta_present=True, social_links=["https://facebook.com/gcplumbing"],
+            contact_cta_present=True, contact_phone="07 5555 1234", contact_email="info@gcplumbing.example",
+            social_links=["https://facebook.com/gcplumbing"],
             body_text="Copyright 2022 Gold Coast Plumbing Co",
         )
 
@@ -191,6 +198,38 @@ def test_run_research_persists_result_and_advances_status(authed_client, db_sess
 
     db_session.refresh(business)
     assert business.status == DiscoveredBusinessStatus.RESEARCHED
+
+
+def test_run_research_stamps_contact_details_read_off_the_site(authed_client, db_session, workspace, monkeypatch):
+    """The phone/email a visitor would use are read straight off the page
+    and land on the discovered business, so import_to_lead carries them
+    onto the CRM record instead of leaving the operator to dig."""
+    _patch_full_signals(monkeypatch)
+    search = _make_search(db_session, workspace)
+    business = _make_discovered_business(db_session, search, phone=None, email=None, social_links=None)
+
+    authed_client.post(f"/api/v1/discovered-businesses/{business.id}/research")
+
+    db_session.refresh(business)
+    assert business.phone == "07 5555 1234"
+    assert business.email == "info@gcplumbing.example"
+    assert business.social_links == "https://facebook.com/gcplumbing"
+
+
+def test_run_research_never_overwrites_an_existing_contact_value(authed_client, db_session, workspace, monkeypatch):
+    _patch_full_signals(monkeypatch)
+    search = _make_search(db_session, workspace)
+    business = _make_discovered_business(
+        db_session, search, phone="EXISTING", email="kept@example.com", social_links=None
+    )
+
+    authed_client.post(f"/api/v1/discovered-businesses/{business.id}/research")
+
+    db_session.refresh(business)
+    assert business.phone == "EXISTING"
+    assert business.email == "kept@example.com"
+    # social_links was blank, so it still gets filled
+    assert business.social_links == "https://facebook.com/gcplumbing"
 
 
 def test_run_research_returns_404_for_missing_business(authed_client):

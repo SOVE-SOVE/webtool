@@ -12,6 +12,7 @@ import {
   type ActivityItem,
   type Business,
   type Client,
+  type EmailSend,
   type FollowUp,
   type Lead,
   type LeadPriority,
@@ -23,6 +24,7 @@ import {
   type Project,
   PROJECT_STAGE_LABELS,
   type SalesAuditReport,
+  type SalesOpportunity,
   type User,
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
@@ -91,6 +93,8 @@ export default function LeadDetailPage() {
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [expandedOutreachId, setExpandedOutreachId] = useState<string | null>(null);
   const [outreachActionId, setOutreachActionId] = useState<string | null>(null);
+  const [emailSends, setEmailSends] = useState<EmailSend[] | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   const [editingOutreachId, setEditingOutreachId] = useState<string | null>(null);
   const [editSubject, setEditSubject] = useState("");
@@ -104,6 +108,13 @@ export default function LeadDetailPage() {
   const [generatingFollowUp, setGeneratingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [latestFollowUp, setLatestFollowUp] = useState<FollowUp | null>(null);
+
+  const [opportunities, setOpportunities] = useState<SalesOpportunity[] | null>(null);
+  const [proposalTier, setProposalTier] = useState("");
+  const [proposalPrice, setProposalPrice] = useState("");
+  const [loggingProposal, setLoggingProposal] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [opportunityActionId, setOpportunityActionId] = useState<string | null>(null);
 
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
 
@@ -140,9 +151,11 @@ export default function LeadDetailPage() {
     api.listLeadPipelineEvents(leadId).then(setPipelineEvents).catch(() => {});
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
+    api.listLeadEmails(leadId).then(setEmailSends).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
     api.listMeetings({ leadId }).then(setMeetings).catch(() => {});
+    api.listOpportunities(leadId).then(setOpportunities).catch(() => {});
   }
 
   function refreshActivity() {
@@ -186,6 +199,43 @@ export default function LeadDetailPage() {
     }
   }
 
+  async function handleLogProposal(e: React.FormEvent) {
+    e.preventDefault();
+    setLoggingProposal(true);
+    setProposalError(null);
+    try {
+      const priceInput = proposalPrice.trim();
+      const opportunity = await api.createOpportunity(leadId, {
+        tier: proposalTier.trim() || undefined,
+        proposed_price_cents: priceInput === "" ? undefined : Math.round(Number(priceInput) * 100),
+      });
+      setOpportunities((prev) => [opportunity, ...(prev ?? [])]);
+      setProposalTier("");
+      setProposalPrice("");
+      // Logging a proposal advances the lead to PROPOSAL server-side.
+      setLead((prev) => (prev ? { ...prev, status: "proposal" } : prev));
+      refreshActivity();
+    } catch (err) {
+      setProposalError(err instanceof ApiError ? err.message : "Couldn't log the proposal.");
+    } finally {
+      setLoggingProposal(false);
+    }
+  }
+
+  async function handleMarkOpportunityLost(opportunityId: string) {
+    setOpportunityActionId(opportunityId);
+    setProposalError(null);
+    try {
+      const updated = await api.markOpportunityLost(opportunityId);
+      setOpportunities((prev) => (prev ?? []).map((o) => (o.id === updated.id ? updated : o)));
+      refreshActivity();
+    } catch (err) {
+      setProposalError(err instanceof ApiError ? err.message : "Couldn't update the proposal.");
+    } finally {
+      setOpportunityActionId(null);
+    }
+  }
+
   async function handleGenerateOutreach(channel: OutreachChannel) {
     setGeneratingChannel(channel);
     setOutreachError(null);
@@ -220,6 +270,30 @@ export default function LeadDetailPage() {
       setOutreachError(err instanceof ApiError ? err.message : "That action didn't go through.");
     } finally {
       setOutreachActionId(null);
+    }
+  }
+
+  async function handleSendEmail(id: string) {
+    setSendingEmailId(id);
+    setOutreachError(null);
+    try {
+      const send = await api.sendOutreachEmail(id);
+      setEmailSends((prev) => [send, ...(prev ?? [])]);
+      if (send.status === "sent") {
+        // A successful send flips the message to SENT server-side.
+        await api.listOutreach(leadId).then(setOutreachMessages);
+      } else {
+        setOutreachError(
+          send.error_message
+            ? `Send failed: ${send.error_message}`
+            : "Send failed. The message is still approved — you can retry.",
+        );
+      }
+      refreshActivity();
+    } catch (err) {
+      setOutreachError(err instanceof ApiError ? err.message : "Couldn't send the email.");
+    } finally {
+      setSendingEmailId(null);
     }
   }
 
@@ -534,6 +608,71 @@ export default function LeadDetailPage() {
         </ul>
       </section>
 
+      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold text-fg">Proposal / quote</h2>
+          <p className="mt-1 text-xs text-fg-muted">
+            Log the quote you sent so it shows up as pipeline value on the Sales page. Logging one moves this lead to
+            Proposal.
+          </p>
+
+          <ul className="mt-3 divide-y divide-border border border-border">
+            {opportunities && opportunities.length === 0 && (
+              <li className="px-3 py-3 text-sm text-fg-muted">No proposal logged yet.</li>
+            )}
+            {opportunities?.map((op) => (
+              <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
+                <span className="text-fg">
+                  {op.proposed_price_cents != null
+                    ? `$${(op.proposed_price_cents / 100).toLocaleString()}`
+                    : "No price recorded"}
+                  {op.tier ? ` · ${op.tier}` : ""}
+                  <span className="ml-2 text-xs text-fg-muted">
+                    {op.status === "open" ? "Open" : op.status === "won" ? "Won" : "Lost"} ·{" "}
+                    {new Date(op.created_at).toLocaleDateString()}
+                  </span>
+                </span>
+                {op.status === "open" && (
+                  <button
+                    onClick={() => handleMarkOpportunityLost(op.id)}
+                    disabled={opportunityActionId === op.id}
+                    className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
+                  >
+                    Mark lost
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {!opportunities?.some((o) => o.status === "open") && lead.status !== "won" && lead.status !== "lost" && (
+            <form onSubmit={handleLogProposal} className="mt-3 flex flex-wrap items-end gap-2">
+              <input
+                value={proposalTier}
+                onChange={(e) => setProposalTier(e.target.value)}
+                placeholder="Package (e.g. Core)"
+                className="input w-40"
+              />
+              <input
+                value={proposalPrice}
+                onChange={(e) => setProposalPrice(e.target.value)}
+                inputMode="decimal"
+                placeholder="Quoted price, AUD"
+                className="input w-40"
+              />
+              <button
+                type="submit"
+                disabled={loggingProposal}
+                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+              >
+                {loggingProposal ? "Logging…" : "Log proposal"}
+              </button>
+            </form>
+          )}
+          {proposalError && <p className="mt-2 text-error">{proposalError}</p>}
+        </section>
+      )}
+
       {(() => {
         const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
         const clientProjects = existingClient
@@ -767,6 +906,7 @@ export default function LeadDetailPage() {
             {outreachMessages?.map((message) => {
               const expanded = expandedOutreachId === message.id;
               const busy = outreachActionId === message.id;
+              const messageSends = (emailSends ?? []).filter((s) => s.outreach_message_id === message.id);
               return (
                 <li key={message.id} className="px-3 py-3 text-sm">
                   <div className="flex items-center justify-between">
@@ -873,11 +1013,30 @@ export default function LeadDetailPage() {
                             Approve
                           </button>
                         )}
+                        {message.channel === "email" && message.status === "approved" && (
+                          <button
+                            onClick={() => handleSendEmail(message.id)}
+                            disabled={sendingEmailId === message.id}
+                            className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                            title="Dispatches this approved email through the configured provider and records the attempt."
+                          >
+                            {sendingEmailId === message.id
+                              ? "Sending…"
+                              : messageSends.some((s) => s.status === "failed")
+                                ? "Retry send"
+                                : "Send email"}
+                          </button>
+                        )}
                         {(message.status === "drafted" || message.status === "approved") && (
                           <button
                             onClick={() => handleOutreachAction(message.id, "mark-sent")}
                             disabled={busy}
                             className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                            title={
+                              message.channel === "email"
+                                ? "Records that this went out by hand, without dispatching it from the app."
+                                : undefined
+                            }
                           >
                             Mark sent
                           </button>
@@ -901,6 +1060,30 @@ export default function LeadDetailPage() {
                           </button>
                         )}
                       </div>
+                      {messageSends.length > 0 && (
+                        <ul className="mt-3 space-y-1 border-t border-border pt-2 text-xs">
+                          {messageSends.map((send) => (
+                            <li key={send.id} className="flex flex-wrap items-baseline gap-x-2">
+                              <span
+                                className={
+                                  send.status === "sent"
+                                    ? "font-medium text-emerald-800 dark:text-emerald-300"
+                                    : "font-medium text-error"
+                                }
+                              >
+                                {send.status === "sent" ? "Sent" : "Failed"}
+                              </span>
+                              <span className="text-fg-muted">
+                                {new Date(send.created_at).toLocaleString()} · to {send.to_email}
+                                {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
+                              </span>
+                              {send.error_message && (
+                                <span className="w-full text-error">{send.error_message}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
                 </li>

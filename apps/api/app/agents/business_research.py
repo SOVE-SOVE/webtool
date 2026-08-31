@@ -43,6 +43,8 @@ class BusinessResearchAgentOutput(BaseModel):
     meta_description: str | None = None
     mobile_viewport_present: bool | None = None
     contact_cta_present: bool | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
     load_time_ms: int | None = None
     estimated_site_age: str | None = None
     appears_template_or_placeholder: bool | None = None
@@ -159,6 +161,11 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
     else:
         unavailable.append("Contact/CTA presence")
 
+    if signals.contact_phone:
+        confirmed.append(f"Phone on the website: {signals.contact_phone}")
+    if signals.contact_email:
+        confirmed.append(f"Email on the website: {signals.contact_email}")
+
     social_links = signals.social_links or []
     if social_links:
         confirmed.append(f"{len(social_links)} social media link(s) found on the page")
@@ -206,6 +213,8 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
         meta_description=signals.meta_description,
         mobile_viewport_present=signals.viewport_meta_present,
         contact_cta_present=signals.contact_cta_present,
+        contact_phone=signals.contact_phone,
+        contact_email=signals.contact_email,
         load_time_ms=signals.load_time_ms,
         estimated_site_age=estimated_site_age,
         appears_template_or_placeholder=appears_template_or_placeholder,

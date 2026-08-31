@@ -1243,6 +1243,23 @@ export type OutreachMessageUpdate = {
   suggested_close?: string;
 };
 
+export type EmailSendStatus = "sent" | "failed";
+
+export type EmailSend = {
+  id: string;
+  outreach_message_id: string;
+  lead_id: string;
+  to_email: string;
+  from_email: string;
+  subject: string;
+  provider: string;
+  status: EmailSendStatus;
+  provider_message_id: string | null;
+  error_message: string | null;
+  sent_by_user_name: string | null;
+  created_at: string;
+};
+
 export type PreviousOutreachSummary = {
   id: string;
   channel: OutreachChannel;
@@ -1827,6 +1844,9 @@ export const api = {
   markOutreachReplied: (id: string) =>
     request<OutreachMessage>(`/api/v1/outreach/${id}/mark-replied`, { method: "POST" }),
   closeOutreach: (id: string) => request<OutreachMessage>(`/api/v1/outreach/${id}/close`, { method: "POST" }),
+  sendOutreachEmail: (id: string) =>
+    request<EmailSend>(`/api/v1/outreach/${id}/send-email`, { method: "POST" }),
+  listLeadEmails: (leadId: string) => request<EmailSend[]>(`/api/v1/leads/${leadId}/emails`),
 
   generateFollowUp: (leadId: string) => request<FollowUp>(`/api/v1/leads/${leadId}/follow-ups`, { method: "POST" }),
   listFollowUps: () => request<FollowUpBuckets>("/api/v1/follow-ups"),

@@ -103,16 +103,34 @@ def create_client(
         )
         # Converting a lead is the "deal closed" event — record it as a
         # won opportunity so it counts toward the dashboard's won-projects
-        # and revenue metrics, whether or not a price was captured.
-        db.add(
-            SalesOpportunity(
-                lead_id=lead.id,
-                tier=data.package,
-                status=OpportunityStatus.WON,
-                proposed_price_cents=data.won_price_cents,
-                closed_at=datetime.now(timezone.utc),
+        # and revenue metrics, whether or not a price was captured. If the
+        # operator already logged a proposal/quote, close that same row as
+        # WON rather than adding a second one — a stray OPEN opportunity
+        # left beside the WON one would double-count on the dashboard
+        # (open feeds "potential value", won feeds "revenue won").
+        open_opportunity = db.scalar(
+            select(SalesOpportunity).where(
+                SalesOpportunity.lead_id == lead.id,
+                SalesOpportunity.status == OpportunityStatus.OPEN,
             )
         )
+        if open_opportunity is not None:
+            open_opportunity.status = OpportunityStatus.WON
+            open_opportunity.closed_at = datetime.now(timezone.utc)
+            if data.package:
+                open_opportunity.tier = data.package
+            if data.won_price_cents is not None:
+                open_opportunity.proposed_price_cents = data.won_price_cents
+        else:
+            db.add(
+                SalesOpportunity(
+                    lead_id=lead.id,
+                    tier=data.package,
+                    status=OpportunityStatus.WON,
+                    proposed_price_cents=data.won_price_cents,
+                    closed_at=datetime.now(timezone.utc),
+                )
+            )
     else:
         business = Business(
             workspace_id=workspace_id,
