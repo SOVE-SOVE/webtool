@@ -11,6 +11,47 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: connect the results list and the map (T5)
+**Mode:** worktree (`t5-connect-results-map`), branched from `main`
+after T4 (#31).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/web` only — discovery detail page,
+`DiscoveryMap`, `lib/filters.ts` (+test); this file. No backend change.
+
+**What happened:** Last of the five-task set — makes the map and the
+results list behave as one tool.
+
+- `lib/filters.ts`: `filterDiscoveredBusinesses()` + a `hasCoordinates`
+  type guard (`LocatedBusiness`), pure and unit-tested like the
+  existing project/client filters.
+- `discovery/[id]` page: a filter bar (text search + Has/No website +
+  "On map only") drives one `visible` list that feeds **both** the
+  table and the map — filtering the results filters the markers. Count
+  reads "Showing X of Y results · N on the map".
+- **Result → map:** clicking a row (that has coordinates) selects it —
+  the marker enlarges/colours and the map zooms to it, popup open.
+  Clicking again clears.
+- **Map → result:** clicking a marker selects the business; the page
+  scrolls its row into view and highlights it. Marker popup gained a
+  "View details →" link to the existing discovered-business page.
+- **Selection is derived** (`activeId`), not stored — if a filter hides
+  the selected row, nothing is selected, no effect/setState churn.
+- `DiscoveryMap`: markers diff against the visible set (stale ones
+  removed on filter/search change); the view only re-frames when the
+  marker set actually changes and nothing is selected, so load-more and
+  plain re-renders don't yank the viewport. Container always mounted
+  (an empty filtered map shows an inline caption) so Leaflet never
+  attaches to a detached node.
+- **Add Lead** is untouched — still the existing import action on the
+  review queue / discovered-business page; the map's popup links there
+  rather than duplicating it.
+
+**Verified:** `apps/web` — `vitest` 98 (5 new filter tests), `tsc
+--noEmit` clean, `eslint` clean, `next build` clean. `apps/api` full
+`pytest` (unaffected) green. **Not click-tested in a real browser** —
+recommend a quick visual pass of the map once a discovery search has a
+result whose site publishes JSON-LD coordinates.
+
 ## 2026-08-31 — Lead Discovery: add a locations map (T4)
 **Mode:** worktree (`t4-discovery-map`), branched from `main` after T3
 (#30).
