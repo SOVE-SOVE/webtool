@@ -633,3 +633,100 @@ def test_load_more_provider_outage_keeps_existing_results(authed_client, monkeyp
     assert more.json()["result_count"] == 1
     assert more.json()["has_more"] is False
     assert len(authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()) == 1
+
+
+# --- Google Places provider, end to end (T11) -------------------------------
+
+
+def _place_payload(*places_):
+    return {"places": list(places_)}
+
+
+def _place(pid, name, *, website=None, suburb="Burleigh Heads", state="QLD", postcode="4220",
+           phone="(07) 5535 1234", lat=-28.09, lng=153.45, category="Cafe"):
+    p = {
+        "id": pid,
+        "displayName": {"text": name},
+        "formattedAddress": f"1 Test St, {suburb} {state} {postcode}, Australia",
+        "addressComponents": [
+            {"types": ["locality"], "longText": suburb},
+            {"types": ["administrative_area_level_1"], "shortText": state, "longText": state},
+            {"types": ["postal_code"], "longText": postcode},
+            {"types": ["country"], "longText": "Australia"},
+        ],
+        "location": {"latitude": lat, "longitude": lng},
+        "nationalPhoneNumber": phone,
+        "primaryTypeDisplayName": {"text": category},
+        "types": ["cafe"],
+    }
+    if website:
+        p["websiteUri"] = website
+    return p
+
+
+def _use_places(monkeypatch, payload):
+    import httpx
+    from app.integrations import places
+
+    monkeypatch.setattr("app.core.settings.settings.google_places_api_key", "test-key")
+    monkeypatch.setattr(
+        places.httpx,
+        "post",
+        lambda url, json, headers, timeout: httpx.Response(200, json=payload, request=httpx.Request("POST", url)),
+    )
+
+
+def test_places_search_end_to_end_keeps_no_website_businesses(authed_client, monkeypatch):
+    _use_places(
+        monkeypatch,
+        _place_payload(
+            _place("ChIJ_a", "Koffee Shack", website="https://koffeeshack.com/"),
+            _place("ChIJ_b", "No Site Bakery"),  # no websiteUri
+        ),
+    )
+
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Cafes", "location": "Burleigh Heads", "provider": "google_places"},
+    )
+    assert res.status_code == 201
+    body = res.json()
+    assert body["provider"] == "google_places"
+    assert body["result_count"] == 2
+
+    rows = {r["name"]: r for r in authed_client.get(f"/api/v1/discovery-searches/{body['id']}/results").json()}
+    k = rows["Koffee Shack"]
+    assert k["website_status"] == "found" and k["website_url"] == "https://koffeeshack.com/"
+    assert k["suburb"] == "Burleigh Heads" and k["state"] == "QLD" and k["postcode"] == "4220"
+    assert k["business_category"] == "Cafe" and k["phone"] == "(07) 5535 1234"
+    assert k["latitude"] is not None and k["longitude"] is not None
+
+    nb = rows["No Site Bakery"]
+    assert nb["website_status"] == "none" and nb["website_url"] is None
+    assert nb["suburb"] == "Burleigh Heads"
+
+
+def test_places_search_no_website_filter_returns_the_no_website_ones(authed_client, monkeypatch):
+    _use_places(
+        monkeypatch,
+        _place_payload(
+            _place("ChIJ_has", "Has Site", website="https://has.example/"),
+            _place("ChIJ_none", "No Site"),
+        ),
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"keywords": "cafe", "provider": "google_places", "has_website": False},
+    )
+    rows = authed_client.get(f"/api/v1/discovery-searches/{res.json()['id']}/results").json()
+    assert [r["name"] for r in rows] == ["No Site"]
+
+
+def test_places_results_dedupe_across_searches_on_place_id(authed_client, monkeypatch):
+    _use_places(monkeypatch, _place_payload(_place("ChIJ_same", "Corner Cafe")))
+    first = authed_client.post("/api/v1/discovery-searches", json={"keywords": "cafe", "provider": "google_places"}).json()
+    second = authed_client.post("/api/v1/discovery-searches", json={"keywords": "coffee", "provider": "google_places"}).json()
+
+    first_id = authed_client.get(f"/api/v1/discovery-searches/{first['id']}/results").json()[0]["id"]
+    second_row = authed_client.get(f"/api/v1/discovery-searches/{second['id']}/results").json()[0]
+    assert second_row["duplicate_of_discovered_business_id"] == first_id

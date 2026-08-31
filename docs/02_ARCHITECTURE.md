@@ -463,10 +463,35 @@ single app. No milestone content changes here beyond that — see
 - Containerizing local dev for both apps — native processes are
   faster to iterate on solo; containerize only for the prod target.
 
+## Lead Discovery providers
+
+Discovery runs behind the `DiscoveryProvider` adapter
+(`app/integrations/discovery/`); the service layer never names a
+concrete one (`registry.py`). Two are registered:
+
+- **`brave_search`** — Brave Web Search. No extra credential beyond the
+  `BRAVE_SEARCH_API_KEY` the Sales Audit feature already uses. Returns
+  web *pages*, so it can't reliably surface a business that has no
+  website, and needs a result classifier to drop articles / forums /
+  listicles / directory pages.
+- **`google_places`** — Google Places API (New) Text Search. A real
+  business/places source: structured name / address / suburb / state /
+  postcode / phone / category / coordinates, and it correctly reports
+  businesses with **no website** (`website_status = NONE`). Needs
+  `GOOGLE_PLACES_API_KEY` (server-side only — never sent to the
+  browser). When set it becomes the default provider; Brave stays
+  available and selectable per search (`DiscoverySearchCreate.provider`).
+
+Configure Google Places: enable **Places API (New)** on a Google Cloud
+project, create an API key (restrict it to that API), and set
+`GOOGLE_PLACES_API_KEY` in `apps/api/.env`. Text Search returns up to 20
+results/page, 3 pages max (~60). Billing is per-request and per
+field-tier — the provider requests only the fields it maps.
+
 ## To be decided
 
-- Exact AU lead-sourcing data source(s) for stage 1 (Google Places API,
-  ABN Lookup, directories).
+- Additional AU lead-sourcing sources beyond Google Places (ABN Lookup,
+  industry directories) if Places coverage proves thin for a vertical.
 - Whether client sites are plain static exports or per-client Next.js
   apps — depends on how much interactivity the $1,299+ tier needs.
 - Production hosting target for `apps/api` (needs a Python-friendly
