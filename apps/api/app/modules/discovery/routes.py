@@ -94,6 +94,25 @@ def get_discovery_search(
     return search
 
 
+@router.post("/{search_id}/load-more", response_model=DiscoverySearchRead)
+def load_more_results(
+    search_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> DiscoverySearchRead:
+    """
+    Fetch the next page of results for an existing search and append the
+    new businesses to it — same criteria, so search/website filters
+    carry over automatically. 409 when the provider has no further pages.
+    """
+    try:
+        return service.load_more_search(db, current_user.workspace_id, current_user.id, search_id)
+    except service.SearchNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except service.NoMoreResultsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.get("/{search_id}/results", response_model=list[DiscoveredBusinessRead])
 def list_discovered_businesses(
     search_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)

@@ -92,6 +92,13 @@ class DiscoverySearch(Base):
     result_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
 
+    # Pagination bookkeeping. `next_offset` is the provider page offset a
+    # "load more" would fetch next; `has_more` is whether the last page
+    # the provider served said further results exist. One search grows in
+    # place as more pages are pulled — see modules/discovery/service.py.
+    next_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    has_more: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

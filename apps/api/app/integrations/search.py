@@ -21,6 +21,9 @@ SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 # request; callers that want more (discovery) ask for it explicitly.
 RESULT_LIMIT = 5
 BRAVE_MAX_COUNT = 20
+# Brave accepts an `offset` of 0..9 (pages of `count`), i.e. ~200
+# results deep at most — the ceiling discovery pagination pages within.
+BRAVE_MAX_OFFSET = 9
 REQUEST_TIMEOUT_S = 10.0
 
 
@@ -69,15 +72,16 @@ def _parse_result(raw: dict) -> SearchResult:
     )
 
 
-def search_business(query: str, count: int = RESULT_LIMIT) -> list[SearchResult] | None:
+def search_business(query: str, count: int = RESULT_LIMIT, offset: int = 0) -> list[SearchResult] | None:
     if not settings.brave_search_api_key:
         return None
 
     count = max(1, min(count, BRAVE_MAX_COUNT))
+    offset = max(0, min(offset, BRAVE_MAX_OFFSET))
     try:
         response = httpx.get(
             SEARCH_URL,
-            params={"q": query, "count": count},
+            params={"q": query, "count": count, "offset": offset},
             headers={
                 "Accept": "application/json",
                 "X-Subscription-Token": settings.brave_search_api_key,

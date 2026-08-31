@@ -11,6 +11,51 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: pagination / drop the 5-result cap (T3)
+**Mode:** worktree (`t3-discovery-pagination`), branched from `main`
+after T2 (#29).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api` discovery module + integrations + migration;
+`apps/web` discovery detail page + `lib/api.ts`; this file.
+
+**What happened:** Third of the five-task set. The hard 5 came from
+`RESULT_LIMIT = 5` in `integrations/search.py` (T1 already raised the
+discovery path to Brave's per-request max of 20); there was no way to
+get results 21+.
+
+- `DiscoveryCriteria` gains `offset`; `search_business()` gains an
+  `offset` arg (Brave pages 0..9, ~200 results deep — `BRAVE_MAX_OFFSET`).
+- `DiscoveryProvider.discover()` now returns a `DiscoveryPage`
+  (`results` + `has_more`) instead of a bare list — the provider's
+  honest "worth asking for another page?" answer.
+- `DiscoverySearch` grows in place: new `next_offset` / `has_more`
+  columns (migration `b3c7e1d9a2f4`, round-tripped). `_ingest_page()`
+  is the shared path for the first run and every "load more": website
+  normalise + filter, **within-search dedup** (a provider re-surfaces
+  listings on later pages — keyed on provider id / URL, plus
+  name+location only when the result actually has location context),
+  create rows, advance pagination. `MAX_PAGES_PER_SEARCH = 10` guards a
+  provider that always claims `has_more`.
+- New `POST /api/v1/discovery-searches/{id}/load-more` → appends the
+  next page to the same search (same stored criteria, so search +
+  website filters carry over for free). 409 when exhausted, 404 when
+  missing; a provider outage on load-more leaves existing results
+  intact rather than failing the whole search.
+- Frontend: the search-detail page shows "Showing N results" and a
+  **Load more results** button (`btn btn-secondary`) when `has_more`,
+  "All results loaded" otherwise. No new component.
+
+**Verified:** `apps/api` full `pytest` (see below); 9 new pagination
+tests (multi-page append, cross-page dedup, filter preservation,
+exhausted→409, missing→404, provider-outage resilience). `apps/web` —
+`vitest` 93, `tsc --noEmit` clean, `next build` clean. Migration
+upgrade/downgrade/upgrade on a scratch DB.
+
+**Provider ceiling:** Brave web search pages ~200 results deep at most;
+`has_more` goes false at that ceiling.
+
+**Next up:** T4 — add a map to Lead Discovery.
+
 ## 2026-08-31 — Lead Discovery: support leads without websites (T2)
 **Mode:** worktree (`t2-leads-without-websites`), branched from `main`
 after T1 (#28).

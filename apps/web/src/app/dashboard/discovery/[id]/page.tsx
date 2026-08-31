@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, DISCOVERED_WEBSITE_STATUS_LABEL, type DiscoveredBusiness, type DiscoverySearch } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  DISCOVERED_WEBSITE_STATUS_LABEL,
+  type DiscoveredBusiness,
+  type DiscoverySearch,
+} from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
@@ -12,6 +18,7 @@ export default function DiscoverySearchDetailPage() {
   const [search, setSearch] = useState<DiscoverySearch | null>(null);
   const [results, setResults] = useState<DiscoveredBusiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   function load() {
     if (!params.id) return;
@@ -29,6 +36,22 @@ export default function DiscoverySearchDetailPage() {
   }
 
   useEffect(load, [params.id]);
+
+  async function handleLoadMore() {
+    if (!params.id) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const updated = await api.loadMoreDiscoverySearch(params.id);
+      setSearch(updated);
+      const rows = await api.listDiscoveredBusinesses(params.id);
+      setResults(rows);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't load more results.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <div className="p-6">
@@ -105,6 +128,21 @@ export default function DiscoverySearchDetailPage() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {results && results.length > 0 && (
+        <div className="mt-3 flex items-center justify-between text-sm text-fg-muted">
+          <span>
+            Showing {results.length} {results.length === 1 ? "result" : "results"}
+          </span>
+          {search?.has_more ? (
+            <button onClick={handleLoadMore} disabled={loadingMore} className="btn btn-secondary">
+              {loadingMore ? "Loading…" : "Load more results"}
+            </button>
+          ) : (
+            <span className="text-fg-subtle">All results loaded</span>
+          )}
+        </div>
       )}
     </div>
   );

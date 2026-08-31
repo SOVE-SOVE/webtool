@@ -29,6 +29,7 @@ from app.integrations import search as search_integration
 from app.integrations.discovery import result_classifier
 from app.integrations.discovery.base import (
     DiscoveryCriteria,
+    DiscoveryPage,
     NormalizedBusinessResult,
     ProviderUnavailableError,
     WebsiteStatus,
@@ -36,11 +37,12 @@ from app.integrations.discovery.base import (
 
 _TITLE_SPLIT_RE = re.compile(r"\s+[|–—-]\s+|:\s+")
 MAX_NAME_LENGTH = 255
-# Ask Brave for a full page of results (its per-request max) rather than
-# a handful — after the classifier drops non-business pages, a small raw
-# set leaves too few real businesses. Pagination beyond one page is a
-# separate concern (see criteria.limit / the discovery service).
-_FETCH_COUNT = 20
+# Brave returns at most 20 web results per request and pages 0..9 deep.
+# One discovery page = one Brave request; "load more" advances the
+# offset. After the classifier drops non-business pages a request of 20
+# still leaves a usable page of real businesses.
+_PAGE_SIZE = search_integration.BRAVE_MAX_COUNT
+_MAX_OFFSET = search_integration.BRAVE_MAX_OFFSET
 
 
 def _extract_name(title: str, profile_name: str | None = None) -> str:
@@ -70,9 +72,11 @@ def _build_query(criteria: DiscoveryCriteria) -> str:
 class BraveSearchDiscoveryProvider:
     name = "brave_search"
 
-    def discover(self, criteria: DiscoveryCriteria) -> list[NormalizedBusinessResult]:
+    def discover(self, criteria: DiscoveryCriteria) -> DiscoveryPage:
         query = _build_query(criteria)
-        results = search_integration.search_business(query, count=_FETCH_COUNT)
+        offset = max(0, min(criteria.offset, _MAX_OFFSET))
+        count = max(1, min(criteria.limit, _PAGE_SIZE))
+        results = search_integration.search_business(query, count=count, offset=offset)
         if results is None:
             raise ProviderUnavailableError(
                 "Brave Search is unavailable — BRAVE_SEARCH_API_KEY may be unset, or the request failed"
@@ -96,6 +100,9 @@ class BraveSearchDiscoveryProvider:
                     raw_snippet=result.description or None,
                 )
             )
-            if len(normalized) >= criteria.limit:
-                break
-        return normalized
+
+        # Worth asking for another page only if this one came back full
+        # (a short page means Brave ran out of results) and we haven't
+        # hit Brave's offset ceiling.
+        has_more = offset < _MAX_OFFSET and len(results) >= count
+        return DiscoveryPage(results=normalized[: criteria.limit], has_more=has_more)

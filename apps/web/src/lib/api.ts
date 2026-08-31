@@ -1486,6 +1486,7 @@ export type DiscoverySearch = {
   provider: string;
   status: DiscoverySearchStatus;
   result_count: number;
+  has_more: boolean;
   error_message: string | null;
   created_by_user_id: string | null;
   created_at: string;
@@ -1901,6 +1902,8 @@ export const api = {
   createDiscoverySearch: (data: DiscoverySearchCreate) =>
     request<DiscoverySearch>("/api/v1/discovery-searches", { method: "POST", body: JSON.stringify(data) }),
   getDiscoverySearch: (id: string) => request<DiscoverySearch>(`/api/v1/discovery-searches/${id}`),
+  loadMoreDiscoverySearch: (id: string) =>
+    request<DiscoverySearch>(`/api/v1/discovery-searches/${id}/load-more`, { method: "POST" }),
   listDiscoveredBusinesses: (searchId: string) =>
     request<DiscoveredBusiness[]>(`/api/v1/discovery-searches/${searchId}/results`),
   getDiscoveredBusiness: (id: string) => request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}`),
