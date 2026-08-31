@@ -45,7 +45,12 @@ class DiscoveryCriteria:
     industry: str | None = None
     business_type: str | None = None
     keywords: str | None = None
+    # One page of results: `limit` businesses starting after `offset`
+    # already-seen ones. A provider clamps both to what it actually
+    # supports (a plain web search only pages so deep) and reports back
+    # via DiscoveryPage.has_more.
     limit: int = 20
+    offset: int = 0
 
 
 @dataclass
@@ -81,13 +86,25 @@ class NormalizedBusinessResult:
     raw_snippet: str | None = None
 
 
+@dataclass
+class DiscoveryPage:
+    """One page of a discovery run. `has_more` is the provider's honest
+    answer to "is it worth asking for the next page" — False once it has
+    paged as deep as it can, or the last page came back short."""
+
+    results: list[NormalizedBusinessResult]
+    has_more: bool = False
+
+
 class DiscoveryProvider(Protocol):
     name: str
 
-    def discover(self, criteria: DiscoveryCriteria) -> list[NormalizedBusinessResult]:
+    def discover(self, criteria: DiscoveryCriteria) -> DiscoveryPage:
         """
-        Runs one discovery query and returns normalized results (possibly
-        empty — a real query that found nothing is not an error). Raises
-        `ProviderUnavailableError` if the provider can't run at all.
+        Runs one discovery query for the page described by `criteria`
+        (limit + offset) and returns normalized results (possibly empty —
+        a real query that found nothing is not an error) plus whether a
+        further page is available. Raises `ProviderUnavailableError` if
+        the provider can't run at all.
         """
         ...

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.integrations.discovery import registry
 from app.integrations.discovery.base import (
     DiscoveryCriteria,
+    DiscoveryPage,
     NormalizedBusinessResult,
     ProviderUnavailableError,
     WebsiteStatus,
@@ -42,6 +43,12 @@ from app.modules.website_audits.models import WebsiteAudit
 from app.modules.website_quality.models import WebsiteQualityAudit
 
 MAX_RESULTS_PER_SEARCH = 20
+
+# A search that has pulled this many provider pages stops offering "load
+# more" regardless of what the provider reports — a guard against a
+# provider that always claims has_more. Ten pages of ~20 is well past
+# what an operator reviews by hand.
+MAX_PAGES_PER_SEARCH = 10
 
 # Terminal states a business shouldn't move out of via approve/reject/
 # archive — a decision already made stands until import (or a future
@@ -82,6 +89,167 @@ class InvalidSearchError(ValueError):
     """No usable criteria on the request — see create_and_run_search."""
 
 
+class SearchNotFoundError(ValueError):
+    """load_more_search: the search id isn't in this workspace."""
+
+
+class NoMoreResultsError(ValueError):
+    """load_more_search: the provider has no further pages for this search."""
+
+
+def _criteria_for(search: DiscoverySearch, offset: int) -> DiscoveryCriteria:
+    return DiscoveryCriteria(
+        location=search.location,
+        industry=search.industry,
+        business_type=search.business_type,
+        keywords=search.keywords,
+        limit=MAX_RESULTS_PER_SEARCH,
+        offset=offset,
+    )
+
+
+def _apply_website_status(results: list[NormalizedBusinessResult]) -> None:
+    """A usable URL means FOUND; a provider that positively reports "no
+    website" keeps its NONE; anything else is UNKNOWN (a business with no
+    website we've merely not seen — still a valid lead, never discarded)."""
+    for result in results:
+        if result.website_url:
+            result.website_status = WebsiteStatus.FOUND
+        elif result.website_status == WebsiteStatus.FOUND:
+            result.website_status = WebsiteStatus.UNKNOWN
+
+
+def _filter_by_website(
+    results: list[NormalizedBusinessResult], has_website: bool | None
+) -> list[NormalizedBusinessResult]:
+    """The optional "website" search filter. True keeps only a confirmed
+    website; False keeps only a *confirmed* absence (never the UNKNOWNs —
+    we don't claim a business has no site without evidence, and we don't
+    hide it either: it shows under an unfiltered search). None = no filter."""
+    if has_website is True:
+        return [r for r in results if r.website_status == WebsiteStatus.FOUND]
+    if has_website is False:
+        return [r for r in results if r.website_status == WebsiteStatus.NONE]
+    return results
+
+
+def _ingest_page(
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    search: DiscoverySearch,
+    page: DiscoveryPage,
+    offset: int,
+) -> list[DiscoveredBusiness]:
+    """
+    Persist one provider page onto `search`, growing it in place:
+    normalize + website-filter the results, drop any whose URL is
+    already a row on this search (no duplicate results across pages),
+    dedup the rest against the workspace, create rows, and advance the
+    search's pagination bookkeeping. Returns the new rows (not yet
+    committed) so the caller can enqueue research after commit.
+    """
+    _apply_website_status(page.results)
+    results = _filter_by_website(page.results, search.has_website)
+
+    # No duplicate results across pages of one search: a provider can and
+    # does re-surface the same listing on a later page. Key on a stable
+    # identifier the result actually carries — the provider's own id or
+    # the website URL. A name+location key is only safe when the result
+    # has real location context (see dedup.py: a provider that never
+    # fills suburb/state collides genuinely different same-named
+    # businesses), so it's used only then.
+    existing = db.execute(
+        select(
+            DiscoveredBusiness.source_external_id,
+            DiscoveredBusiness.website_url,
+        ).where(DiscoveredBusiness.discovery_search_id == search.id)
+    ).all()
+    seen_keys: set[str] = {k for row in existing for k in row if k}
+    seen_located_keys: set[str] = {
+        b.dedup_key
+        for b in db.scalars(
+            select(DiscoveredBusiness).where(
+                DiscoveredBusiness.discovery_search_id == search.id,
+                (DiscoveredBusiness.suburb.is_not(None)) | (DiscoveredBusiness.state.is_not(None)),
+            )
+        )
+    }
+
+    def _keys_for(result: NormalizedBusinessResult) -> list[str]:
+        return [k for k in (result.source_external_id, result.website_url) if k]
+
+    query_sent = " ".join(
+        p for p in (search.industry, search.business_type, search.keywords, search.location) if p
+    )
+
+    created: list[DiscoveredBusiness] = []
+    for result in results:
+        dedup_key = dedup.compute_dedup_key(result.name, result.suburb, result.state)
+        keys = _keys_for(result)
+        has_location = bool((result.suburb or "").strip() or (result.state or "").strip())
+        if any(k in seen_keys for k in keys) or (has_location and dedup_key in seen_located_keys):
+            continue
+        seen_keys.update(keys)
+        if has_location:
+            seen_located_keys.add(dedup_key)
+
+        duplicate_of_business = dedup.find_existing_business_match(db, workspace_id, result)
+        duplicate_of_discovered = (
+            None
+            if duplicate_of_business is not None
+            else dedup.find_duplicate_discovered_business(db, workspace_id, result, dedup_key)
+        )
+
+        business = DiscoveredBusiness(
+            discovery_search_id=search.id,
+            name=result.name,
+            industry=result.industry,
+            website_url=result.website_url,
+            website_status=result.website_status,
+            phone=result.phone,
+            email=result.email,
+            address=result.address,
+            suburb=result.suburb,
+            state=result.state,
+            postcode=result.postcode,
+            social_links="\n".join(result.social_links) or None,
+            source_provider=search.provider,
+            source_query=query_sent,
+            source_external_id=result.source_external_id,
+            dedup_key=dedup_key,
+            duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
+            duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
+            status=DiscoveredBusinessStatus.NEW,
+        )
+        db.add(business)
+        created.append(business)
+
+    search.result_count += len(created)
+    search.next_offset = offset + 1
+    search.has_more = bool(page.has_more) and search.next_offset < MAX_PAGES_PER_SEARCH
+    return created
+
+
+def _enqueue_research(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, businesses: list[DiscoveredBusiness]) -> None:
+    """Automation hand-off: research -> analysis -> scoring runs on its own
+    from here — each stage's own service enqueues the next. Skipped for an
+    exact duplicate of a business already discovered in this workspace
+    (researched via its own row already); not skipped for a
+    duplicate-of-CRM-business match (the discovery record still wants its
+    own research/audit/score for the review queue)."""
+    for business in businesses:
+        if business.duplicate_of_discovered_business_id is not None:
+            continue
+        jobs_service.enqueue(
+            db,
+            workspace_id=workspace_id,
+            job_type=JOB_BUSINESS_RESEARCH,
+            payload={"discovered_business_id": str(business.id)},
+            actor_id=actor_id,
+        )
+
+
 def create_and_run_search(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: DiscoverySearchCreate
 ) -> DiscoverySearchRead:
@@ -111,16 +279,8 @@ def create_and_run_search(
     db.add(search)
     db.flush()
 
-    criteria = DiscoveryCriteria(
-        location=data.location,
-        industry=data.industry,
-        business_type=data.business_type,
-        keywords=data.keywords,
-        limit=MAX_RESULTS_PER_SEARCH,
-    )
-
     try:
-        raw_results = provider.discover(criteria)
+        page = provider.discover(_criteria_for(search, offset=0))
     except ProviderUnavailableError as exc:
         search.status = DiscoverySearchStatus.FAILED
         search.error_message = str(exc)
@@ -129,64 +289,9 @@ def create_and_run_search(
         db.refresh(search)
         return DiscoverySearchRead.model_validate(search)
 
-    # Normalize each result's website status: a usable URL means FOUND; a
-    # provider that positively reports "no website" keeps its NONE;
-    # anything else is UNKNOWN (a business with no website we've merely
-    # not seen — still a valid lead, never discarded here).
-    for result in raw_results:
-        if result.website_url:
-            result.website_status = WebsiteStatus.FOUND
-        elif result.website_status == WebsiteStatus.FOUND:
-            result.website_status = WebsiteStatus.UNKNOWN
-
-    # The optional "website" search filter. `has_website` True keeps only
-    # businesses with a confirmed website; False keeps only those with a
-    # *confirmed* absence (never the UNKNOWNs — we don't claim a business
-    # has no site without evidence, and we don't hide it either: it shows
-    # under an unfiltered search). None = no filter.
-    if data.has_website is True:
-        raw_results = [r for r in raw_results if r.website_status == WebsiteStatus.FOUND]
-    elif data.has_website is False:
-        raw_results = [r for r in raw_results if r.website_status == WebsiteStatus.NONE]
-
-    query_sent = " ".join(p for p in (data.industry, data.business_type, data.keywords, data.location) if p)
-
-    created: list[DiscoveredBusiness] = []
-    for result in raw_results:
-        dedup_key = dedup.compute_dedup_key(result.name, result.suburb, result.state)
-        duplicate_of_business = dedup.find_existing_business_match(db, workspace_id, result)
-        duplicate_of_discovered = (
-            None
-            if duplicate_of_business is not None
-            else dedup.find_duplicate_discovered_business(db, workspace_id, result, dedup_key)
-        )
-
-        business = DiscoveredBusiness(
-            discovery_search_id=search.id,
-            name=result.name,
-            industry=result.industry,
-            website_url=result.website_url,
-            website_status=result.website_status,
-            phone=result.phone,
-            email=result.email,
-            address=result.address,
-            suburb=result.suburb,
-            state=result.state,
-            postcode=result.postcode,
-            social_links="\n".join(result.social_links) or None,
-            source_provider=provider_name,
-            source_query=query_sent,
-            source_external_id=result.source_external_id,
-            dedup_key=dedup_key,
-            duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
-            duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
-            status=DiscoveredBusinessStatus.NEW,
-        )
-        db.add(business)
-        created.append(business)
+    created = _ingest_page(db, workspace_id, actor_id, search, page, offset=0)
 
     search.status = DiscoverySearchStatus.COMPLETED
-    search.result_count = len(raw_results)
     search.completed_at = datetime.now(timezone.utc)
 
     activity_service.record(
@@ -196,31 +301,63 @@ def create_and_run_search(
         entity_type="discovery_search",
         entity_id=search.id,
         action="completed",
-        summary=f"Discovery search ({provider_name}) found {len(raw_results)} result(s)",
+        summary=f"Discovery search ({provider_name}) found {len(created)} result(s)",
     )
 
     db.commit()
     db.refresh(search)
+    _enqueue_research(db, workspace_id, actor_id, created)
+    return DiscoverySearchRead.model_validate(search)
 
-    # Automation hand-off: research -> analysis -> scoring runs on its own
-    # from here (docs/03_AGENT_RULES.md "can proceed autonomously") — each
-    # stage's own service function enqueues the next. Skipped for an exact
-    # duplicate of a business already discovered in this workspace, since
-    # that business is (or will be) researched via its own row already —
-    # researching the same website twice adds nothing. Not skipped for a
-    # duplicate-of-CRM-business match: the discovery-side record still
-    # benefits from its own research/audit/score for the review queue.
-    for business in created:
-        if business.duplicate_of_discovered_business_id is not None:
-            continue
-        jobs_service.enqueue(
-            db,
-            workspace_id=workspace_id,
-            job_type=JOB_BUSINESS_RESEARCH,
-            payload={"discovered_business_id": str(business.id)},
-            actor_id=actor_id,
+
+def load_more_search(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, search_id: uuid.UUID
+) -> DiscoverySearchRead:
+    """
+    Pull the next provider page for an existing search, appending its new
+    businesses to the same search (same stored criteria — filters are
+    preserved for free). No-op-safe: raises NoMoreResultsError if the
+    provider already said there's nothing further.
+    """
+    search = db.scalar(
+        select(DiscoverySearch).where(
+            DiscoverySearch.workspace_id == workspace_id, DiscoverySearch.id == search_id
         )
+    )
+    if search is None:
+        raise SearchNotFoundError("Discovery search not found")
+    if not search.has_more:
+        raise NoMoreResultsError("No more results for this search")
 
+    provider = registry.get_provider(search.provider)
+    offset = search.next_offset
+
+    try:
+        page = provider.discover(_criteria_for(search, offset=offset))
+    except ProviderUnavailableError as exc:
+        # Leave the existing results intact; surface the failure without
+        # flipping the whole search to FAILED (it already has results).
+        search.error_message = str(exc)
+        search.has_more = False
+        db.commit()
+        db.refresh(search)
+        return DiscoverySearchRead.model_validate(search)
+
+    created = _ingest_page(db, workspace_id, actor_id, search, page, offset=offset)
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="discovery_search",
+        entity_id=search.id,
+        action="loaded_more",
+        summary=f"Loaded {len(created)} more result(s) (page {offset + 1})",
+    )
+
+    db.commit()
+    db.refresh(search)
+    _enqueue_research(db, workspace_id, actor_id, created)
     return DiscoverySearchRead.model_validate(search)
 
 

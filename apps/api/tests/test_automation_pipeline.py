@@ -122,7 +122,7 @@ def _patch_discovery_and_research(monkeypatch, *, https=False, mobile_viewport_p
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query, count=None: [
+        lambda query, count=None, offset=None: [
             SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="Local plumbers")
         ],
     )

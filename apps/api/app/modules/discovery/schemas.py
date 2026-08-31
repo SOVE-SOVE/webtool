@@ -59,6 +59,9 @@ class DiscoverySearchRead(BaseModel):
     provider: str
     status: DiscoverySearchStatus
     result_count: int
+    # Whether a "load more" would fetch further results — see the
+    # discovery service's pagination bookkeeping.
+    has_more: bool
     error_message: str | None
     created_by_user_id: uuid.UUID | None
     created_at: datetime
