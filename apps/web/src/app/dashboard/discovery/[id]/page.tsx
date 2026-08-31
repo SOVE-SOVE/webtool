@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, type DiscoveredBusiness, type DiscoverySearch } from "@/lib/api";
+import { api, DISCOVERED_WEBSITE_STATUS_LABEL, type DiscoveredBusiness, type DiscoverySearch } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
@@ -96,7 +96,7 @@ export default function DiscoverySearchDetailPage() {
                       {business.website_url}
                     </a>
                   ) : (
-                    "No website found"
+                    <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-fg-muted">{business.status}</td>

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   api,
   ApiError,
+  DISCOVERED_WEBSITE_STATUS_LABEL,
   type BusinessResearchResult,
   type DiscoveredBusiness,
   type OpportunityScoreCategory,
@@ -165,7 +166,7 @@ export default function DiscoveredBusinessDetailPage() {
                 {business.website_url}
               </a>
             ) : (
-              <p className="text-sm text-fg-subtle">No website on record</p>
+              <p className="text-sm text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}</p>
             )}
           </div>
           <div className="text-right">

@@ -10,6 +10,7 @@ for the one adapter built so far, and registry.py for how a future one
 service-layer change.
 """
 
+import enum
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -17,6 +18,25 @@ from typing import Protocol
 class ProviderUnavailableError(Exception):
     """Raised when a provider can't run at all (e.g. missing API key) —
     distinct from a provider that ran and legitimately found nothing."""
+
+
+class WebsiteStatus(str, enum.Enum):
+    """Whether a discovered business has a website — a real tri-state, not
+    a boolean. A business with no website is still a valid lead, so the
+    distinction that matters is *confirmed* absence vs. *not knowing*:
+
+    - FOUND    — the provider gave us a usable website URL.
+    - NONE     — the provider positively reports the business has no
+                 website (e.g. a places API with an empty `website`
+                 field). Never inferred from a single failed page fetch.
+    - UNKNOWN  — the data source can't say either way. The default: a
+                 plain web search can't confirm a business has *no* site,
+                 only that it didn't surface one.
+    """
+
+    FOUND = "found"
+    NONE = "none"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -41,6 +61,10 @@ class NormalizedBusinessResult:
 
     name: str
     website_url: str | None = None
+    # Confirmed presence/absence of a website — see WebsiteStatus. Left
+    # UNKNOWN unless a provider can actually say; a set `website_url`
+    # implies FOUND (normalized in modules/discovery/service.py).
+    website_status: WebsiteStatus = WebsiteStatus.UNKNOWN
     phone: str | None = None
     email: str | None = None
     address: str | None = None
