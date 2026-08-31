@@ -11,6 +11,53 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: support leads without websites (T2)
+**Mode:** worktree (`t2-leads-without-websites`), branched from `main`
+after T1 (#28).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api` discovery module + integrations +
+migration; `apps/web` discovery/review/detail pages + `lib/api.ts`;
+this file.
+
+**What happened:** Second of the five-task set. A business with no
+website is a valid lead, but the `has_website` search filter was
+`bool(r.website_url) == data.has_website` — and every Brave *web*-search
+hit has a URL, so "only businesses without a website" silently returned
+nothing, always.
+
+- New `WebsiteStatus` enum (`found` / `none` / `unknown`) in
+  `integrations/discovery/base.py`, on `NormalizedBusinessResult` and a
+  new nullable-with-default `discovered_businesses.website_status`
+  column (migration `a1b2c9d3e4f5`, round-tripped on a scratch DB). A
+  set `website_url` normalizes to `found`; `none` is only ever what a
+  provider *positively* reports (never inferred from a failed fetch);
+  everything else is `unknown`.
+- Brave provider tags its hits `found` (a web-search result is a page
+  on the business's own site).
+- `has_website` filter rewritten: `true` → only `found`; `false` → only
+  `none` (never the unknowns — we don't claim "no website" without
+  evidence, and we don't hide the business either: it shows unfiltered).
+- Frontend: website status shown wherever a business's website is
+  (`discovery/[id]`, `review`, `discovered-businesses/[id]`) using the
+  existing muted-text pattern + a `DISCOVERED_WEBSITE_STATUS_LABEL`
+  map; a **Has website / No website** filter added to the review
+  page's existing filter bar. No new components, no layout change.
+- Import already handled a null website; added a test proving a
+  no-website discovered business becomes a lead with `website_url` null.
+
+**Verified:** `apps/api` full `pytest` (see below); new T2 tests in
+`test_business_discovery.py` (stub provider for no-/unknown-website
+cases the real Brave provider can't produce). `apps/web` — `vitest` 93,
+`tsc --noEmit` clean, `next build` clean.
+
+**Known limitation:** with Brave web search as the only provider every
+lead is `found`, so the "No website" paths are wired but exercise
+nothing until a places-style provider lands. The Discovery *search*
+form's "only without a website" option is now correct but will return
+nothing for the same reason.
+
+**Next up:** T3 — pagination / remove the 5-result cap.
+
 ## 2026-08-31 — Lead Discovery result quality: drop non-business pages (T1)
 **Mode:** worktree (`t1-lead-discovery-result-quality`), branched from
 `main` after #27.

@@ -10,7 +10,12 @@ successful discovery, per the task spec.
 import pytest
 
 from app.integrations import search as search_integration
-from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
+from app.integrations.discovery.base import (
+    DiscoveryCriteria,
+    NormalizedBusinessResult,
+    ProviderUnavailableError,
+    WebsiteStatus,
+)
 from app.integrations.discovery.brave_search_provider import BraveSearchDiscoveryProvider, _extract_name
 from app.integrations.search import SearchResult
 from app.modules.businesses.models import Business
@@ -292,22 +297,98 @@ def test_create_search_successful_discovery(authed_client, monkeypatch):
     assert all(r["duplicate_of_business_id"] is None for r in results)
 
 
-def test_create_search_has_website_filter(authed_client, monkeypatch):
+class _StubProvider:
+    """A provider that returns exactly the results it's given — lets a
+    test exercise no-website / unknown-website businesses, which the real
+    Brave web-search provider (every hit is a page) can't produce."""
+
+    name = "stub"
+
+    def __init__(self, results):
+        self._results = results
+
+    def discover(self, criteria):
+        return list(self._results)
+
+
+def _use_stub_provider(monkeypatch, results):
+    from app.integrations.discovery import registry
+
+    monkeypatch.setattr(registry, "get_provider", lambda name: _StubProvider(results))
+
+
+def test_brave_results_are_marked_website_found(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query, count=None: [
-            SearchResult(title="Has Site Co", url="https://hassite.example", description=""),
+        lambda query, count=None: [SearchResult(title="Has Site Co", url="https://hassite.example", description="")],
+    )
+    res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"})
+    results = authed_client.get(f"/api/v1/discovery-searches/{res.json()['id']}/results").json()
+    assert results[0]["website_status"] == "found"
+
+
+def test_business_without_website_is_kept_and_marked(authed_client, monkeypatch):
+    """A missing website must not cause a business to be discarded (T2)."""
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(name="No Site Bakery", website_status=WebsiteStatus.NONE, suburb="Nimbin"),
+            NormalizedBusinessResult(name="Maybe Site Cafe", website_status=WebsiteStatus.UNKNOWN, suburb="Byron"),
         ],
     )
+    res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Cafe"})
+    assert res.json()["result_count"] == 2
 
-    res = authed_client.post(
-        "/api/v1/discovery-searches", json={"industry": "Plumbing", "has_website": False}
+    results = {r["name"]: r for r in authed_client.get(
+        f"/api/v1/discovery-searches/{res.json()['id']}/results"
+    ).json()}
+    assert results["No Site Bakery"]["website_status"] == "none"
+    assert results["No Site Bakery"]["website_url"] is None
+    assert results["Maybe Site Cafe"]["website_status"] == "unknown"
+
+
+def test_has_website_true_filter_keeps_only_confirmed_sites(authed_client, monkeypatch):
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(name="Has Site", website_url="https://hassite.example", website_status=WebsiteStatus.FOUND),
+            NormalizedBusinessResult(name="No Site", website_status=WebsiteStatus.NONE),
+        ],
     )
+    res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing", "has_website": True})
+    results = authed_client.get(f"/api/v1/discovery-searches/{res.json()['id']}/results").json()
+    assert [r["name"] for r in results] == ["Has Site"]
 
-    assert res.status_code == 201
-    body = res.json()
-    assert body["result_count"] == 0  # the only result has a website, filtered out
+
+def test_has_website_false_filter_keeps_only_confirmed_absence(authed_client, monkeypatch):
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(name="Has Site", website_url="https://hassite.example", website_status=WebsiteStatus.FOUND),
+            NormalizedBusinessResult(name="No Site", website_status=WebsiteStatus.NONE),
+            NormalizedBusinessResult(name="Unknown Site", website_status=WebsiteStatus.UNKNOWN),
+        ],
+    )
+    res = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing", "has_website": False})
+    results = authed_client.get(f"/api/v1/discovery-searches/{res.json()['id']}/results").json()
+    assert [r["name"] for r in results] == ["No Site"]
+
+
+def test_no_website_business_can_be_imported_as_a_lead(authed_client, monkeypatch):
+    _use_stub_provider(
+        monkeypatch,
+        [NormalizedBusinessResult(name="No Site Bakery", website_status=WebsiteStatus.NONE, suburb="Nimbin")],
+    )
+    search = authed_client.post("/api/v1/discovery-searches", json={"industry": "Bakery"}).json()
+    business_id = authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]["id"]
+
+    imported = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import")
+    assert imported.status_code == 200
+    assert imported.json()["status"] == "imported"
+    lead_id = imported.json()["imported_lead_id"]
+    lead = authed_client.get(f"/api/v1/leads/{lead_id}").json()
+    assert lead["website_url"] is None
 
 
 def test_second_search_flags_duplicate_of_earlier_discovered_business(authed_client, monkeypatch):

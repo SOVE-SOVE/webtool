@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.integrations.discovery.base import WebsiteStatus
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
 
 
@@ -73,6 +74,7 @@ class DiscoveredBusinessRead(BaseModel):
     industry: str | None
     business_type: str | None
     website_url: str | None
+    website_status: WebsiteStatus
     phone: str | None
     email: str | None
     address: str | None
@@ -115,6 +117,7 @@ class DiscoveredBusinessReviewRead(BaseModel):
     suburb: str | None
     state: str | None
     website_url: str | None
+    website_status: WebsiteStatus
     status: DiscoveredBusinessStatus
     source_provider: str
     discovered_at: datetime

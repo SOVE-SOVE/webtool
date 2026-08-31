@@ -27,7 +27,12 @@ import re
 
 from app.integrations import search as search_integration
 from app.integrations.discovery import result_classifier
-from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
+from app.integrations.discovery.base import (
+    DiscoveryCriteria,
+    NormalizedBusinessResult,
+    ProviderUnavailableError,
+    WebsiteStatus,
+)
 
 _TITLE_SPLIT_RE = re.compile(r"\s+[|–—-]\s+|:\s+")
 MAX_NAME_LENGTH = 255
@@ -83,6 +88,9 @@ class BraveSearchDiscoveryProvider:
                 NormalizedBusinessResult(
                     name=_extract_name(result.title, result.profile_name),
                     website_url=result.url,
+                    # A web-search hit is, by definition, a page on the
+                    # business's own site — a real website.
+                    website_status=WebsiteStatus.FOUND,
                     industry=criteria.industry,
                     source_external_id=result.url,
                     raw_snippet=result.description or None,

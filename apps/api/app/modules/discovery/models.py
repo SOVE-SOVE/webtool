@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.integrations.discovery.base import WebsiteStatus
 
 if TYPE_CHECKING:
     from app.modules.businesses.models import Business
@@ -122,6 +123,15 @@ class DiscoveredBusiness(Base):
     industry: Mapped[str | None] = mapped_column(String(120))
     business_type: Mapped[str | None] = mapped_column(String(120))
     website_url: Mapped[str | None] = mapped_column(String(500))
+    # Confirmed website presence/absence — a business with no website is
+    # still a valid lead, so this is a tri-state (found/none/unknown),
+    # not "is website_url null". See integrations/discovery/base.py.
+    website_status: Mapped[WebsiteStatus] = mapped_column(
+        Enum(WebsiteStatus, name="discovered_business_website_status"),
+        default=WebsiteStatus.UNKNOWN,
+        server_default=WebsiteStatus.UNKNOWN.name,
+        nullable=False,
+    )
     phone: Mapped[str | None] = mapped_column(String(50))
     email: Mapped[str | None] = mapped_column(String(255))
     address: Mapped[str | None] = mapped_column(String(500))

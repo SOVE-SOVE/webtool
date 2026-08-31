@@ -1445,6 +1445,20 @@ export type DiscoveredBusinessStatus = (typeof DISCOVERED_BUSINESS_STATUSES)[num
 export const OPPORTUNITY_SCORE_CATEGORIES = ["hot", "warm", "cold", "review"] as const;
 export type OpportunityScoreCategory = (typeof OPPORTUNITY_SCORE_CATEGORIES)[number];
 
+// Whether a *discovered* business has a website — a real tri-state, not
+// a boolean. A business with no website is still a valid lead; "found"
+// vs "none" vs "unknown" is the honest distinction (see the API's
+// integrations/discovery/base.py::WebsiteStatus). Named distinctly from
+// the website-production `WebsiteStatus` (draft/live) above.
+export const DISCOVERED_WEBSITE_STATUSES = ["found", "none", "unknown"] as const;
+export type DiscoveredWebsiteStatus = (typeof DISCOVERED_WEBSITE_STATUSES)[number];
+
+export const DISCOVERED_WEBSITE_STATUS_LABEL: Record<DiscoveredWebsiteStatus, string> = {
+  found: "Website found",
+  none: "No website found",
+  unknown: "Website status unknown",
+};
+
 export type DiscoverySearchCreate = {
   query_label?: string;
   location?: string;
@@ -1485,6 +1499,7 @@ export type DiscoveredBusiness = {
   industry: string | null;
   business_type: string | null;
   website_url: string | null;
+  website_status: DiscoveredWebsiteStatus;
   phone: string | null;
   email: string | null;
   address: string | null;
@@ -1518,6 +1533,7 @@ export type DiscoveredBusinessReviewItem = {
   suburb: string | null;
   state: string | null;
   website_url: string | null;
+  website_status: DiscoveredWebsiteStatus;
   status: DiscoveredBusinessStatus;
   source_provider: string;
   discovered_at: string;

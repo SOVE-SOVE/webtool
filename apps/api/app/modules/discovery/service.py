@@ -5,7 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.integrations.discovery import registry
-from app.integrations.discovery.base import DiscoveryCriteria, NormalizedBusinessResult, ProviderUnavailableError
+from app.integrations.discovery.base import (
+    DiscoveryCriteria,
+    NormalizedBusinessResult,
+    ProviderUnavailableError,
+    WebsiteStatus,
+)
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
 from app.modules.businesses.models import Business
@@ -124,8 +129,25 @@ def create_and_run_search(
         db.refresh(search)
         return DiscoverySearchRead.model_validate(search)
 
-    if data.has_website is not None:
-        raw_results = [r for r in raw_results if bool(r.website_url) == data.has_website]
+    # Normalize each result's website status: a usable URL means FOUND; a
+    # provider that positively reports "no website" keeps its NONE;
+    # anything else is UNKNOWN (a business with no website we've merely
+    # not seen — still a valid lead, never discarded here).
+    for result in raw_results:
+        if result.website_url:
+            result.website_status = WebsiteStatus.FOUND
+        elif result.website_status == WebsiteStatus.FOUND:
+            result.website_status = WebsiteStatus.UNKNOWN
+
+    # The optional "website" search filter. `has_website` True keeps only
+    # businesses with a confirmed website; False keeps only those with a
+    # *confirmed* absence (never the UNKNOWNs — we don't claim a business
+    # has no site without evidence, and we don't hide it either: it shows
+    # under an unfiltered search). None = no filter.
+    if data.has_website is True:
+        raw_results = [r for r in raw_results if r.website_status == WebsiteStatus.FOUND]
+    elif data.has_website is False:
+        raw_results = [r for r in raw_results if r.website_status == WebsiteStatus.NONE]
 
     query_sent = " ".join(p for p in (data.industry, data.business_type, data.keywords, data.location) if p)
 
@@ -144,6 +166,7 @@ def create_and_run_search(
             name=result.name,
             industry=result.industry,
             website_url=result.website_url,
+            website_status=result.website_status,
             phone=result.phone,
             email=result.email,
             address=result.address,
@@ -366,6 +389,7 @@ def list_review_items(
                 suburb=business.suburb,
                 state=business.state,
                 website_url=business.website_url,
+                website_status=business.website_status,
                 status=business.status,
                 source_provider=business.source_provider,
                 discovered_at=business.discovered_at,

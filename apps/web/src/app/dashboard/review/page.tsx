@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   api,
   ApiError,
+  DISCOVERED_WEBSITE_STATUS_LABEL,
   type DiscoveredBusinessReviewItem,
   type DiscoveredBusinessStatus,
   type OpportunityScoreCategory,
@@ -47,6 +48,7 @@ export default function ReviewPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [statusFilter, setStatusFilter] = useState<DiscoveredBusinessStatus | "">("");
+  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
 
   function load() {
@@ -101,8 +103,13 @@ export default function ReviewPage() {
 
   const visibleItems = useMemo(() => {
     if (!items) return null;
-    return statusFilter ? items.filter((i) => i.status === statusFilter) : items;
-  }, [items, statusFilter]);
+    return items.filter((i) => {
+      if (statusFilter && i.status !== statusFilter) return false;
+      if (websiteFilter === "has" && i.website_status !== "found") return false;
+      if (websiteFilter === "no" && i.website_status !== "none") return false;
+      return true;
+    });
+  }, [items, statusFilter, websiteFilter]);
 
   const selectableIds = useMemo(
     () => (visibleItems ?? []).filter((i) => i.status !== "imported").map((i) => i.id),
@@ -142,6 +149,16 @@ export default function ReviewPage() {
               {label}
             </option>
           ))}
+        </select>
+        <select
+          value={websiteFilter}
+          onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
+          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          aria-label="Filter by website"
+        >
+          <option value="">Any website status</option>
+          <option value="has">Has website</option>
+          <option value="no">No website</option>
         </select>
         <label className="flex items-center gap-1.5 text-sm text-fg-muted">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
@@ -226,7 +243,7 @@ export default function ReviewPage() {
                           <Truncated text={item.website_url} width="max-w-[160px]" />
                         </a>
                       ) : (
-                        <span className="text-fg-subtle">No website</span>
+                        <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}</span>
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
