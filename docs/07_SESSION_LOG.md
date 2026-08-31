@@ -11,6 +11,45 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Wire the "Send email" button into the lead page
+**Mode:** worktree (`send-email-button`), stacked on
+`sales-workflow-contact-capture` (#26), which is stacked on `main` after
+#25.
+**Merge to main after:** yes, pending review — merge **after #26**.
+**Scope touched:** `apps/web/src/lib/api.ts`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`, this file.
+
+**What happened:** Closed the loose end from the 2026-08-25 email
+integration entry — the API (`POST /api/v1/outreach/{id}/send-email`,
+`GET /api/v1/leads/{id}/emails`, `email_sends` table) shipped then but
+had no operator-facing UI, so "mark sent" was still the only button.
+Added `EmailSend`/`EmailSendStatus` types + `sendOutreachEmail` /
+`listLeadEmails` to `api.ts`, and on the lead page's outreach list:
+
+- A **Send email** button, shown only for `channel === "email"` +
+  `status === "approved"` (mirrors the server's hard APPROVED gate —
+  approve and send stay two clicks, see [[05_DECISIONS]] 2026-08-25). It
+  reads **Retry send** once a failed attempt is on file. "Mark sent"
+  stays for the "I sent it by hand" case, now with a tooltip spelling
+  out the difference.
+- Per-message **send history** under the message body when expanded:
+  each `EmailSend` attempt, newest first, green "Sent" / red "Failed"
+  with timestamp, recipient, operator, and the provider error on
+  failures. A failed send leaves the message APPROVED and surfaces the
+  error inline — no state is lost.
+
+**Verified:** `apps/web` — `npx eslint` clean on both changed files
+(the 2 pre-existing errors + 2 warnings in `settings/page.tsx` are
+untouched), `npx vitest run` 93 passed, `npx next build` ✓. No API
+changes, so no `apps/api` run. Not click-tested in a browser (mock
+email provider is the default everywhere; `RESEND_API_KEY` +
+`EMAIL_FROM_ADDRESS` still unset).
+
+**Next up:** Merge #26, then this. Configure a real Resend key when
+ready to actually send.
+
+---
+
 ## 2026-08-30 — Sales workflow test: capture contact details + log a proposal
 **Mode:** worktree (`sales-workflow-contact-capture`), off `main` after #25.
 **Merge to main after:** yes, pending review.

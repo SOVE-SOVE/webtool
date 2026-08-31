@@ -12,6 +12,7 @@ import {
   type ActivityItem,
   type Business,
   type Client,
+  type EmailSend,
   type FollowUp,
   type Lead,
   type LeadPriority,
@@ -92,6 +93,8 @@ export default function LeadDetailPage() {
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [expandedOutreachId, setExpandedOutreachId] = useState<string | null>(null);
   const [outreachActionId, setOutreachActionId] = useState<string | null>(null);
+  const [emailSends, setEmailSends] = useState<EmailSend[] | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   const [editingOutreachId, setEditingOutreachId] = useState<string | null>(null);
   const [editSubject, setEditSubject] = useState("");
@@ -148,6 +151,7 @@ export default function LeadDetailPage() {
     api.listLeadPipelineEvents(leadId).then(setPipelineEvents).catch(() => {});
     api.listSalesAudits(leadId).then(setSalesAudits).catch(() => {});
     api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
+    api.listLeadEmails(leadId).then(setEmailSends).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
     api.listMeetings({ leadId }).then(setMeetings).catch(() => {});
@@ -266,6 +270,30 @@ export default function LeadDetailPage() {
       setOutreachError(err instanceof ApiError ? err.message : "That action didn't go through.");
     } finally {
       setOutreachActionId(null);
+    }
+  }
+
+  async function handleSendEmail(id: string) {
+    setSendingEmailId(id);
+    setOutreachError(null);
+    try {
+      const send = await api.sendOutreachEmail(id);
+      setEmailSends((prev) => [send, ...(prev ?? [])]);
+      if (send.status === "sent") {
+        // A successful send flips the message to SENT server-side.
+        await api.listOutreach(leadId).then(setOutreachMessages);
+      } else {
+        setOutreachError(
+          send.error_message
+            ? `Send failed: ${send.error_message}`
+            : "Send failed. The message is still approved — you can retry.",
+        );
+      }
+      refreshActivity();
+    } catch (err) {
+      setOutreachError(err instanceof ApiError ? err.message : "Couldn't send the email.");
+    } finally {
+      setSendingEmailId(null);
     }
   }
 
@@ -878,6 +906,7 @@ export default function LeadDetailPage() {
             {outreachMessages?.map((message) => {
               const expanded = expandedOutreachId === message.id;
               const busy = outreachActionId === message.id;
+              const messageSends = (emailSends ?? []).filter((s) => s.outreach_message_id === message.id);
               return (
                 <li key={message.id} className="px-3 py-3 text-sm">
                   <div className="flex items-center justify-between">
@@ -984,11 +1013,30 @@ export default function LeadDetailPage() {
                             Approve
                           </button>
                         )}
+                        {message.channel === "email" && message.status === "approved" && (
+                          <button
+                            onClick={() => handleSendEmail(message.id)}
+                            disabled={sendingEmailId === message.id}
+                            className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                            title="Dispatches this approved email through the configured provider and records the attempt."
+                          >
+                            {sendingEmailId === message.id
+                              ? "Sending…"
+                              : messageSends.some((s) => s.status === "failed")
+                                ? "Retry send"
+                                : "Send email"}
+                          </button>
+                        )}
                         {(message.status === "drafted" || message.status === "approved") && (
                           <button
                             onClick={() => handleOutreachAction(message.id, "mark-sent")}
                             disabled={busy}
                             className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                            title={
+                              message.channel === "email"
+                                ? "Records that this went out by hand, without dispatching it from the app."
+                                : undefined
+                            }
                           >
                             Mark sent
                           </button>
@@ -1012,6 +1060,30 @@ export default function LeadDetailPage() {
                           </button>
                         )}
                       </div>
+                      {messageSends.length > 0 && (
+                        <ul className="mt-3 space-y-1 border-t border-border pt-2 text-xs">
+                          {messageSends.map((send) => (
+                            <li key={send.id} className="flex flex-wrap items-baseline gap-x-2">
+                              <span
+                                className={
+                                  send.status === "sent"
+                                    ? "font-medium text-emerald-800 dark:text-emerald-300"
+                                    : "font-medium text-error"
+                                }
+                              >
+                                {send.status === "sent" ? "Sent" : "Failed"}
+                              </span>
+                              <span className="text-fg-muted">
+                                {new Date(send.created_at).toLocaleString()} · to {send.to_email}
+                                {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
+                              </span>
+                              {send.error_message && (
+                                <span className="w-full text-error">{send.error_message}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
                 </li>
