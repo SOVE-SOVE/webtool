@@ -11,6 +11,44 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: tune for in-person prospecting (T6)
+**Mode:** worktree (`t6-discovery-in-person`), branched from `main`
+after T5 (#32).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/web` only — discovery detail page,
+`DiscoveryMap`, `lib/filters.ts` (+test), `package.json`
+(leaflet.markercluster); this file. No backend change.
+
+**What happened:** Make the Discovery results page useful for actually
+driving around and visiting businesses.
+
+- Results table reworked for a fast scan: **Business (+ category)**,
+  **Location** (address, else suburb/state), **Phone** (`tel:` link),
+  **Website** (a compact badge — Has / No / Unknown — not a long URL),
+  **Score** (the existing `opportunity_score`, not a new metric),
+  **Lead**. Wrapped in `overflow-x-auto` for narrow screens.
+- **Add lead** action per row → the existing
+  `POST /discovered-businesses/{id}/import`; shows "Adding…", then
+  "View lead →". No new workflow — same import the review queue uses.
+- **Sort** control (relevance / no-website first / best score first) —
+  `sortDiscoveredBusinesses` in `lib/filters.ts`, pure + unit-tested,
+  stable within a tier. "No website first" is the in-person default an
+  operator would reach for; "score" reuses the existing engine.
+- Map: `leaflet.markercluster` — nearby pins collapse into a counted
+  bubble so clusters of businesses are obvious at a glance. No-website
+  pins are tinted orange. Popup gained category / phone (`tel:`) / a
+  plain "No website" line.
+- Count line: "Showing X of Y · N on the map · M with no website".
+
+**Not built** (per the task): route planning, navigation, distance-
+from-me (no geolocation), any mobile app, any new CRM surface.
+
+**Verified:** `apps/web` — `vitest` 102 (4 new sort tests), `tsc
+--noEmit` clean, `eslint` clean, `next build` clean. `apps/api` full
+`pytest` green (unaffected). Not click-tested in a browser.
+
+**Next up:** T7 — Lead Discovery regression pass.
+
 ## 2026-08-31 — Lead Discovery: connect the results list and the map (T5)
 **Mode:** worktree (`t5-connect-results-map`), branched from `main`
 after T4 (#31).

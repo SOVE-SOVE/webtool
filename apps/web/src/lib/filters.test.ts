@@ -4,6 +4,7 @@ import {
   filterDiscoveredBusinesses,
   filterProjects,
   hasCoordinates,
+  sortDiscoveredBusinesses,
   UNASSIGNED,
   type ProjectFilters,
 } from "./filters";
@@ -236,5 +237,43 @@ describe("filterDiscoveredBusinesses", () => {
     expect(hasCoordinates(discovered({ latitude: 1, longitude: 2 }))).toBe(true);
     expect(hasCoordinates(discovered({ latitude: 1, longitude: null }))).toBe(false);
     expect(hasCoordinates(discovered({ latitude: null, longitude: null }))).toBe(false);
+  });
+});
+
+describe("sortDiscoveredBusinesses", () => {
+  it("leaves discovery order untouched for 'discovered'", () => {
+    const rows = [discovered({ id: "a" }), discovered({ id: "b" }), discovered({ id: "c" })];
+    expect(sortDiscoveredBusinesses(rows, "discovered").map((b) => b.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("'no-website' puts none, then unknown, then found — stable within a tier", () => {
+    const rows = [
+      discovered({ id: "found1", website_status: "found" }),
+      discovered({ id: "none1", website_status: "none" }),
+      discovered({ id: "unknown1", website_status: "unknown" }),
+      discovered({ id: "none2", website_status: "none" }),
+    ];
+    expect(sortDiscoveredBusinesses(rows, "no-website").map((b) => b.id)).toEqual([
+      "none1",
+      "none2",
+      "unknown1",
+      "found1",
+    ]);
+  });
+
+  it("'score' sorts highest score first, nulls last, stable within a tier", () => {
+    const rows = [
+      discovered({ id: "low", opportunity_score: 20 }),
+      discovered({ id: "none", opportunity_score: null }),
+      discovered({ id: "high", opportunity_score: 90 }),
+      discovered({ id: "mid", opportunity_score: 50 }),
+    ];
+    expect(sortDiscoveredBusinesses(rows, "score").map((b) => b.id)).toEqual(["high", "mid", "low", "none"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const rows = [discovered({ id: "a", website_status: "found" }), discovered({ id: "b", website_status: "none" })];
+    sortDiscoveredBusinesses(rows, "no-website");
+    expect(rows.map((b) => b.id)).toEqual(["a", "b"]);
   });
 });
