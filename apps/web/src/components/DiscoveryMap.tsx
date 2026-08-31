@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
+import "leaflet.markercluster";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import type { DiscoveredBusiness } from "@/lib/api";
 import { hasCoordinates, type LocatedBusiness } from "@/lib/filters";
 
 // Leaflet's default marker asset paths break under a bundler, so every
 // pin is an inline SVG divIcon instead — no external image requests.
-function pinIcon(selected: boolean): L.DivIcon {
-  const fill = selected ? "#2563eb" : "#94a3b8";
+function pinIcon(selected: boolean, noWebsite: boolean): L.DivIcon {
+  const fill = selected ? "#2563eb" : noWebsite ? "#ea580c" : "#94a3b8";
   const size = selected ? 30 : 24;
   return L.divIcon({
     className: "discovery-map-pin",
@@ -26,13 +29,20 @@ const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 function popupHtml(b: Located): string {
-  const addr = b.address ? `<br/>${esc(b.address)}` : "";
-  const site = b.website_url
-    ? `<br/><a href="${esc(b.website_url)}" target="_blank" rel="noreferrer">${esc(b.website_url)}</a>`
-    : "";
+  const cat = b.industry ? ` · ${esc(b.industry)}` : "";
+  const addr = b.address ? `<br/>${esc(b.address)}` : b.suburb ? `<br/>${esc(b.suburb)}` : "";
+  const phone = b.phone ? `<br/><a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : "";
+  const site =
+    b.website_status === "found" && b.website_url
+      ? `<br/><a href="${esc(b.website_url)}" target="_blank" rel="noreferrer">${esc(b.website_url)}</a>`
+      : b.website_status === "none"
+        ? "<br/><em>No website</em>"
+        : "";
   const details = `<br/><a href="/dashboard/discovered-businesses/${b.id}">View details &rarr;</a>`;
-  return `<strong>${esc(b.name)}</strong>${addr}${site}${details}`;
+  return `<strong>${esc(b.name)}</strong>${cat}${addr}${phone}${site}${details}`;
 }
+
+const noWebsite = (b: Located) => b.website_status === "none";
 
 export default function DiscoveryMap({
   businesses,
@@ -45,6 +55,7 @@ export default function DiscoveryMap({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const fittedSignatureRef = useRef<string>("");
   const onSelectRef = useRef(onSelect);
@@ -63,12 +74,18 @@ export default function DiscoveryMap({
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
     }).addTo(map);
+    // Nearby businesses collapse into a counted cluster bubble — the
+    // point of the map for in-person prospecting is spotting where the
+    // density is.
+    const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45 });
+    map.addLayer(cluster);
     mapRef.current = map;
-    // The container may get its final size a tick after mount (flex/grid).
+    clusterRef.current = cluster;
     setTimeout(() => map.invalidateSize(), 0);
     return () => {
       map.remove();
       mapRef.current = null;
+      clusterRef.current = null;
       markers.clear();
       fittedSignatureRef.current = "";
     };
@@ -76,55 +93,58 @@ export default function DiscoveryMap({
 
   // Keep the markers in step with the visible (filtered) result set.
   useEffect(() => {
+    const cluster = clusterRef.current;
     const map = mapRef.current;
-    if (!map) return;
+    if (!cluster || !map) return;
 
     const wanted = new Set(located.map((b) => b.id));
     for (const [id, marker] of markersRef.current) {
       if (!wanted.has(id)) {
-        marker.remove();
+        cluster.removeLayer(marker);
         markersRef.current.delete(id);
       }
     }
     for (const b of located) {
       let marker = markersRef.current.get(b.id);
       if (!marker) {
-        marker = L.marker([b.latitude, b.longitude], { icon: pinIcon(false) }).addTo(map);
+        marker = L.marker([b.latitude, b.longitude], { icon: pinIcon(false, noWebsite(b)) });
         marker.bindPopup(popupHtml(b));
         marker.on("click", () => onSelectRef.current(b.id));
         markersRef.current.set(b.id, marker);
+        cluster.addLayer(marker);
       } else {
         marker.setLatLng([b.latitude, b.longitude]);
         marker.setPopupContent(popupHtml(b));
+        marker.setIcon(pinIcon(b.id === selectedId, noWebsite(b)));
       }
     }
 
-    // Re-frame the view only when the set of pins actually changed and
-    // the user isn't focused on one — a selection drives its own view,
-    // and a plain re-render shouldn't yank the map.
     const signature = [...wanted].sort().join(",");
     if (signature !== fittedSignatureRef.current && !selectedId && markersRef.current.size > 0) {
-      const group = L.featureGroup([...markersRef.current.values()]);
-      map.fitBounds(group.getBounds().pad(0.2), { maxZoom: 15 });
+      map.fitBounds(cluster.getBounds().pad(0.2), { maxZoom: 15 });
       fittedSignatureRef.current = signature;
     }
   }, [located, selectedId]);
 
-  // Reflect the current selection: highlight + focus its marker.
+  // Reflect the current selection: highlight + reveal + focus its marker.
   useEffect(() => {
+    const cluster = clusterRef.current;
     const map = mapRef.current;
-    if (!map) return;
+    if (!cluster || !map) return;
     for (const [id, marker] of markersRef.current) {
-      marker.setIcon(pinIcon(id === selectedId));
+      const b = located.find((x) => x.id === id);
+      marker.setIcon(pinIcon(id === selectedId, b ? noWebsite(b) : false));
     }
     if (selectedId) {
       const marker = markersRef.current.get(selectedId);
       if (marker) {
-        map.setView(marker.getLatLng(), Math.max(map.getZoom(), 13), { animate: true });
-        marker.openPopup();
+        cluster.zoomToShowLayer(marker, () => {
+          map.setView(marker.getLatLng(), Math.max(map.getZoom(), 14), { animate: true });
+          marker.openPopup();
+        });
       }
     }
-  }, [selectedId]);
+  }, [selectedId, located]);
 
   return (
     <div className="relative mt-4">

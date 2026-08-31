@@ -85,3 +85,34 @@ export function filterDiscoveredBusinesses(
     );
   });
 }
+
+// In-person prospecting sort. "discovered" is the provider's own
+// relevance order (untouched). "no-website" surfaces the businesses most
+// likely to need a new site; "score" reuses the existing opportunity
+// score — no competing ranking of our own.
+export type DiscoverySort = "discovered" | "no-website" | "score";
+
+const WEBSITE_RANK: Record<DiscoveredBusiness["website_status"], number> = {
+  none: 0,
+  unknown: 1,
+  found: 2,
+};
+
+export function sortDiscoveredBusinesses(
+  businesses: DiscoveredBusiness[],
+  sort: DiscoverySort,
+): DiscoveredBusiness[] {
+  if (sort === "discovered") return businesses;
+  const withIndex = businesses.map((b, i) => ({ b, i }));
+  withIndex.sort((x, y) => {
+    if (sort === "no-website") {
+      const d = WEBSITE_RANK[x.b.website_status] - WEBSITE_RANK[y.b.website_status];
+      if (d !== 0) return d;
+    } else {
+      const d = (y.b.opportunity_score ?? -1) - (x.b.opportunity_score ?? -1);
+      if (d !== 0) return d;
+    }
+    return x.i - y.i; // stable: keep discovery order within a tier
+  });
+  return withIndex.map((w) => w.b);
+}
