@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     # skipped (not faked) rather than the app failing to start.
     brave_search_api_key: str | None = None
 
+    # google places — optional. Powers the "google_places" discovery
+    # provider (a real business/places source, unlike Brave web search).
+    # When unset that provider reports itself unavailable; discovery
+    # falls back to Brave. Never sent to the browser — the provider runs
+    # server-side only.
+    google_places_api_key: str | None = None
+
     # Cap on paid-API-triggering generations (sales audit, outreach
     # draft, follow-up suggestion, meeting brief) per user —
     # docs/06_SECURITY.md's "cost/rate limits on paid APIs" control. See

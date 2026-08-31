@@ -262,7 +262,7 @@ def create_and_run_search(
             "A discovery search needs at least one of location, industry, business_type, or keywords"
         )
 
-    provider_name = data.provider or registry.DEFAULT_PROVIDER
+    provider_name = data.provider or registry.default_provider()
     provider = registry.get_provider(provider_name)  # raises UnknownProviderError if invalid
 
     search = DiscoverySearch(

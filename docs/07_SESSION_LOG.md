@@ -11,6 +11,73 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: Google Places provider (T11)
+**Mode:** worktree (`t11-places-provider`), branched from `main` after
+#34. **Draft PR — NOT merged** (per the task's own instruction +
+T8–T15's established pattern).
+**Scope touched:** `apps/api` — new `integrations/places.py` + new
+`integrations/discovery/google_places_provider.py`,
+`integrations/discovery/registry.py`, `modules/discovery/service.py`
+(one line), `modules/discovery/dedup.py`, `core/settings.py`,
+`.env.example`; `docs/02_ARCHITECTURE.md`; this file. No frontend
+change, no migration.
+
+**Context:** T12/T13/T14 duplicate merged work (#31/#32/#33). T11 is the
+real gap the audit + the live run proved — Brave web search can't find
+businesses without websites. This adds a real places source.
+
+- **`integrations/places.py`** — Google Places API (New) Text Search.
+  Same "return None, don't explode" shape as `search.py`: None when
+  `GOOGLE_PLACES_API_KEY` is unset or the request fails. Parses the
+  response into `PlaceResult` (id, name, formatted address, address
+  components → suburb/state/postcode/country, phone, websiteUri,
+  primary type → category, lat/lng). Requests only the fields it maps
+  (billing tier).
+- **`google_places_provider.GooglePlacesDiscoveryProvider`** — the
+  adapter. `websiteUri` present → `website_status = FOUND`; a Places
+  record **without** one → `NONE` (a curated directory's silence is
+  meaningful — never inventing a URL, and businesses with no website
+  are kept). `source_external_id` = the Google place id. Paginates by
+  walking `nextPageToken` to `criteria.offset` (Google's 3-page / ~60
+  ceiling); `has_more` reflects the token.
+- **registry** — `google_places` registered alongside `brave_search`
+  (Brave untouched, Sales Audit untouched). New `default_provider()`:
+  Google Places when the key is set, else Brave. `create_and_run_search`
+  uses it; a search can still force either via
+  `DiscoverySearchCreate.provider`.
+- **dedup** — `find_duplicate_discovered_business` now also matches on
+  `source_external_id` (the place id) — the strongest cross-search
+  signal a places provider gives. URL/phone/name+address matching
+  unchanged.
+- **settings + `.env.example`** — `GOOGLE_PLACES_API_KEY` (optional,
+  server-side only, never sent to the browser). `docs/02_ARCHITECTURE.md`
+  gained a "Lead Discovery providers" section with the setup steps.
+
+**Criteria mapping:** industry / business_type / keywords / location →
+one `textQuery`. `has_website` handled by the service's existing
+`_filter_by_website` (True → only FOUND; False → only NONE — which now
+returns real results with Places).
+
+**Verified:** `apps/api` full `pytest` (see below); new
+`test_places_provider.py` (field mapping, no-website kept, multiple
+categories, pagination + token walking, missing key → unavailable, HTTP
+error → unavailable, empty query) + `test_business_discovery.py`
+end-to-end (`provider: "google_places"` search returns all structured
+fields; `has_website=false` returns the no-website ones; place-id dedup
+across searches). No live Google calls — every request mocked.
+`apps/web` — `vitest` 102, `tsc` clean, `next build` clean (unaffected).
+
+**`alembic check`:** fails only on the **same pre-existing, unrelated**
+index drift as #34 (`email_sends` / `meeting_*` / `website_revisions`).
+T11 adds no migration and no `discovered_businesses` drift.
+
+**Limitations:** Google Places Text Search caps at ~60 results (3
+pages); the provider paginates within that. `has_website`/`website_status`
+is `bool | None` on the search — there's no "UNKNOWN only" filter, but
+Places never emits UNKNOWN so it doesn't matter for this provider. No
+provider-picker in the search form (the smart default + the existing
+`provider` API field cover it) — could add one later.
+
 ## 2026-08-31 — Lead Discovery: result classification + data-model deltas (T9 + T10)
 **Mode:** worktree (`t9-t10-discovery-deltas`), branched from `main`
 after T6 (#33). **Draft PR — NOT merged** (per the session owner's

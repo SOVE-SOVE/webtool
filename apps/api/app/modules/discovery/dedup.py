@@ -132,8 +132,13 @@ def find_duplicate_discovered_business(
     normalized_website = normalize_website(result.website_url)
     normalized_phone = normalize_phone(result.phone)
     result_name_address_key = _name_address_key(result.name, result.address)
+    result_external_id = (result.source_external_id or "").strip() or None
 
     for business in candidates:
+        # The provider's own id for the same place — the strongest signal
+        # a places-style provider gives (a Google place id, etc.).
+        if result_external_id and (business.source_external_id or "").strip() == result_external_id:
+            return business
         if normalized_website and normalize_website(business.website_url) == normalized_website:
             return business
         if normalized_phone and normalize_phone(business.phone) == normalized_phone:
