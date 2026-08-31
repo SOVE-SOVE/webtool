@@ -482,11 +482,28 @@ concrete one (`registry.py`). Two are registered:
   browser). When set it becomes the default provider; Brave stays
   available and selectable per search (`DiscoverySearchCreate.provider`).
 
-Configure Google Places: enable **Places API (New)** on a Google Cloud
-project, create an API key (restrict it to that API), and set
-`GOOGLE_PLACES_API_KEY` in `apps/api/.env`. Text Search returns up to 20
-results/page, 3 pages max (~60). Billing is per-request and per
-field-tier — the provider requests only the fields it maps.
+Configure Google Places:
+
+1. Enable **Places API (New)** on a Google Cloud project (billing on).
+2. **APIs & Services → Credentials → Create credentials → API key.**
+3. **Restrict the key** (Console → the key → *Edit*):
+   - **API restrictions → Restrict key → Places API (New)** only.
+     Nothing else. This caps the blast radius if the key leaks — it
+     can't be used for Maps, Geocoding, billing-heavy APIs, etc.
+   - **Application restrictions** → *IP addresses*: the `apps/api`
+     server's egress IP(s). The key is only ever used server-side
+     (`integrations/places.py`), so an IP allowlist is safe and tight.
+     For local dev, *None* is acceptable — but still keep the API
+     restriction on.
+4. Set `GOOGLE_PLACES_API_KEY` in `apps/api/.env` (gitignored). **Never
+   in a committed file** — `.env.example` carries the comment, not a
+   value. If a key is ever exposed (a paste, a log, a screenshot),
+   **regenerate it in the Console** and update `.env`; the old value
+   stops working immediately.
+
+Text Search returns up to 20 results/page, 3 pages max (~60). Billing is
+per-request and per field-tier — the provider requests only the fields
+it maps.
 
 ## To be decided
 
