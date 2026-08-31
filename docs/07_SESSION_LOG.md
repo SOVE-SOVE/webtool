@@ -11,6 +11,72 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
+**Mode:** worktree (`send-email-button`), branched from `main-sync`.
+**Merge to main after:** yes — docs only, no app code changed.
+**Scope touched:** this file only.
+
+**What happened:** The task's premise was that a duplicate
+Discovery/discovered-businesses experience exists and needs
+consolidating into one primary workflow. Investigated every
+Discovery-related route before changing anything (per the task's own
+"do not delete blindly, inspect first" instruction) and found the
+premise doesn't hold against the current codebase — this was already
+done, deliberately, in the **2026-08-29 "Global shell + navigation +
+shared layout system"** session (merged to main; see that date's entry
+below and `apps/web/src/lib/nav.ts:1-14`).
+
+Concretely, each of the four routes serves a distinct, non-overlapping
+purpose in a single funnel, and none compete for attention as a second
+"primary" Discovery destination:
+- `/dashboard/discovery` — the one entry point: list of searches +
+  "New search" form. The only Discovery link with primary nav weight
+  (`apps/web/src/lib/nav.ts:62-66`).
+- `/dashboard/discovery/[id]` — one search's results: map + lightweight
+  results table. Reached only by clicking a search row, not linked from
+  nav.
+- `/dashboard/discovered-businesses/[id]` — a single business's
+  deep-dive (research facts, quality-audit findings, opportunity-score
+  breakdown, with buttons to (re)run each). Reached only by clicking a
+  business name from `discovery/[id]` or `review`; **no top-level list
+  route exists at `/dashboard/discovered-businesses`** — it was never a
+  competing entry point.
+- `/dashboard/review` — the cross-search triage queue (approve / reject
+  / archive / bulk-approve / add-to-CRM), backed by
+  `GET /api/v1/discovered-businesses` (docstring: "the dedicated review
+  interface's backing list"). In the sidebar it already renders as a
+  `secondary: true` link (`nav.ts:67-73`) — smaller text, deep-indented,
+  no icon, muted color, no active-pill highlight
+  (`apps/web/src/app/dashboard/layout.tsx:13-51`) — a visually
+  subordinate sub-item under "Discovery," exactly the same pattern
+  already applied to `Pipeline` (folded under Leads) and confirmed by
+  `nav.ts`'s own comment: *"Review is a view of Discovery."*
+
+Verified live, not just by reading code: signed into a throwaway
+instance (API :8012, web :3012, fresh `webdesignos_t2smoke` DB, migrated
+to head), clicked Discovery → active nav state correct, page loads
+clean; clicked Review queue → active nav state correct (and its own
+empty-state copy — "Nothing to review yet — run a discovery search
+first" — reinforces the exact "Review is downstream of Discovery"
+mental model the task asked for). Zero console errors either page.
+Also reran the full check suite named in the task: `eslint` (same 2
+pre-existing, unrelated errors as before — see T1's entry), `tsc
+--noEmit` clean, `vitest run` 102/102, `next build` clean, 126 targeted
+discovery/business-research/quality/scoring backend tests + the full
+`apps/api` suite (882/882) all passing. No files changed except this
+log entry.
+
+**Blockers/issues:** None. Threw away the smoke instance and DB after
+verification, same as T1.
+
+**Next up:** T3 (post-change UX review of the T1 project-creation
+change and this Discovery verification) is queued next in the same
+session. Since no Discovery code changed here, T3's Discovery half
+should mostly be re-confirming this entry rather than re-deriving it
+from scratch.
+
+---
+
 ## 2026-09-01 — T1: Simplify project creation workflow
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — pending review.
