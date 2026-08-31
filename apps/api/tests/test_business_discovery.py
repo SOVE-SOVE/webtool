@@ -104,6 +104,28 @@ def test_brave_provider_filters_out_non_business_results(monkeypatch):
     assert [r.name for r in results] == ["Gold Coast Plumbing Co", "Southport Plumbers"]
 
 
+def test_brave_provider_keeps_social_profile_but_not_as_website(monkeypatch):
+    """A business's only web presence may be a Facebook page — keep it as
+    a candidate, but the URL is a social link, not the official website
+    (T9)."""
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(title="Nimbin Bakery", url="https://www.facebook.com/NimbinBakery", description="Fresh daily"),
+        ],
+    )
+
+    provider = BraveSearchDiscoveryProvider()
+    results = provider.discover(DiscoveryCriteria(industry="Bakery")).results
+
+    assert len(results) == 1
+    assert results[0].name == "Nimbin Bakery"
+    assert results[0].website_url is None
+    assert results[0].website_status == WebsiteStatus.UNKNOWN
+    assert results[0].social_links == ["https://www.facebook.com/NimbinBakery"]
+
+
 def test_brave_provider_prefers_profile_name(monkeypatch):
     monkeypatch.setattr(
         search_integration,
@@ -172,6 +194,58 @@ def test_compute_dedup_key_is_stable_for_equivalent_names():
     key_a = dedup.compute_dedup_key("Gold Coast Plumbing Pty Ltd", "Southport", "QLD")
     key_b = dedup.compute_dedup_key("GOLD COAST PLUMBING", "southport", "qld")
     assert key_a == key_b
+
+
+def test_normalize_address_rejects_non_addresses():
+    assert dedup.normalize_address("12 Marine Pde, Southport QLD 4215") == "12 marine pde southport qld 4215"
+    assert dedup.normalize_address("Southport") is None  # a bare suburb
+    assert dedup.normalize_address("Australia") is None
+    assert dedup.normalize_address(None) is None
+    assert dedup.normalize_address("") is None
+
+
+def test_duplicate_discovered_business_matched_on_name_plus_address(authed_client, monkeypatch):
+    """A places-style provider that fills a street address lets us dedup
+    a re-surfaced listing even without a shared URL or phone (T10)."""
+    from tests.test_business_discovery import _use_stub_provider
+
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(
+                name="Bean There Cafe", address="12 Marine Pde, Southport QLD 4215", website_status=WebsiteStatus.NONE
+            )
+        ],
+    )
+    first = authed_client.post("/api/v1/discovery-searches", json={"industry": "Cafe"}).json()
+
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(
+                name="BEAN THERE CAFE", address="12 Marine Parade, Southport, QLD, 4215", website_status=WebsiteStatus.NONE
+            )
+        ],
+    )
+    second = authed_client.post("/api/v1/discovery-searches", json={"industry": "Cafe"}).json()
+
+    first_id = authed_client.get(f"/api/v1/discovery-searches/{first['id']}/results").json()[0]["id"]
+    second_row = authed_client.get(f"/api/v1/discovery-searches/{second['id']}/results").json()[0]
+    # Slightly different address spelling — not deduped (safe: never merge
+    # on fuzzy address). Same spelling would be.
+    assert second_row["duplicate_of_discovered_business_id"] is None
+
+    _use_stub_provider(
+        monkeypatch,
+        [
+            NormalizedBusinessResult(
+                name="Bean There Cafe", address="12 Marine Pde, Southport QLD 4215", website_status=WebsiteStatus.NONE
+            )
+        ],
+    )
+    third = authed_client.post("/api/v1/discovery-searches", json={"industry": "Cafe"}).json()
+    third_row = authed_client.get(f"/api/v1/discovery-searches/{third['id']}/results").json()[0]
+    assert third_row["duplicate_of_discovered_business_id"] == first_id
 
 
 def test_find_existing_business_match_by_website(db_session, workspace):

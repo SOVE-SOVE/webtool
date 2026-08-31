@@ -14,12 +14,12 @@ def _blocks(*objs):
     return [json.dumps(o) for o in objs]
 
 
-def test_extracts_address_and_geo_from_localbusiness():
-    addr, lat, lng = _extract_location_from_jsonld(
+def test_extracts_address_geo_country_category_from_localbusiness():
+    loc = _extract_location_from_jsonld(
         _blocks(
             {
                 "@context": "https://schema.org",
-                "@type": "LocalBusiness",
+                "@type": "CafeOrCoffeeShop",
                 "name": "Bean There Cafe",
                 "address": {
                     "@type": "PostalAddress",
@@ -27,17 +27,20 @@ def test_extracts_address_and_geo_from_localbusiness():
                     "addressLocality": "Southport",
                     "addressRegion": "QLD",
                     "postalCode": "4215",
+                    "addressCountry": "AU",
                 },
                 "geo": {"@type": "GeoCoordinates", "latitude": -27.967, "longitude": 153.412},
             }
         )
     )
-    assert addr == "12 Marine Pde, Southport, QLD, 4215"
-    assert (round(lat, 3), round(lng, 3)) == (-27.967, 153.412)
+    assert loc.address == "12 Marine Pde, Southport, QLD, 4215, AU"
+    assert loc.country == "AU"
+    assert loc.category == "Cafe or coffee shop"
+    assert (round(loc.latitude, 3), round(loc.longitude, 3)) == (-27.967, 153.412)
 
 
 def test_extracts_from_graph_wrapper_and_string_coords():
-    _, lat, lng = _extract_location_from_jsonld(
+    loc = _extract_location_from_jsonld(
         _blocks(
             {
                 "@graph": [
@@ -47,33 +50,34 @@ def test_extracts_from_graph_wrapper_and_string_coords():
             }
         )
     )
-    assert (round(lat, 2), round(lng, 2)) == (-33.87, 151.21)
+    assert (round(loc.latitude, 2), round(loc.longitude, 2)) == (-33.87, 151.21)
+    # "Organization" and "WebSite" are wrappers, not a business category.
+    assert loc.category is None
 
 
 def test_address_only_when_no_geo():
-    addr, lat, lng = _extract_location_from_jsonld(
-        _blocks({"@type": "LocalBusiness", "address": "5 Short St, Nimbin NSW"})
-    )
-    assert addr == "5 Short St, Nimbin NSW"
-    assert lat is None and lng is None
+    loc = _extract_location_from_jsonld(_blocks({"@type": "LocalBusiness", "address": "5 Short St, Nimbin NSW"}))
+    assert loc.address == "5 Short St, Nimbin NSW"
+    assert loc.latitude is None and loc.longitude is None
+    assert loc.category == "Local business"
 
 
 def test_ignores_malformed_json_and_out_of_range_coords():
-    addr, lat, lng = _extract_location_from_jsonld(
-        ["{ not json", json.dumps({"@type": "LocalBusiness", "geo": {"latitude": 999, "longitude": 10}})]
+    loc = _extract_location_from_jsonld(
+        ["{ not json", json.dumps({"@type": "Plumber", "geo": {"latitude": 999, "longitude": 10}})]
     )
-    assert addr is None and lat is None and lng is None
+    assert loc.address is None and loc.latitude is None and loc.longitude is None
+    assert loc.category == "Plumber"
 
 
 def test_zero_zero_is_not_a_location():
-    _, lat, lng = _extract_location_from_jsonld(
-        _blocks({"@type": "LocalBusiness", "geo": {"latitude": 0, "longitude": 0}})
-    )
-    assert lat is None and lng is None
+    loc = _extract_location_from_jsonld(_blocks({"@type": "LocalBusiness", "geo": {"latitude": 0, "longitude": 0}}))
+    assert loc.latitude is None and loc.longitude is None
 
 
 def test_no_blocks():
-    assert _extract_location_from_jsonld([]) == (None, None, None)
+    loc = _extract_location_from_jsonld([])
+    assert (loc.address, loc.country, loc.category, loc.latitude, loc.longitude) == (None, None, None, None, None)
 
 
 def test_provider_coordinates_flow_through_to_the_discovered_business(authed_client, monkeypatch):

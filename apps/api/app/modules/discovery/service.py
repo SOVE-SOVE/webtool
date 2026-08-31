@@ -213,6 +213,8 @@ def _ingest_page(
             suburb=result.suburb,
             state=result.state,
             postcode=result.postcode,
+            country=result.country,
+            business_category=result.business_category,
             latitude=result.latitude,
             longitude=result.longitude,
             social_links="\n".join(result.social_links) or None,

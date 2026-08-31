@@ -91,6 +91,10 @@ def run_research(
         business.social_links = "\n".join(output.social_presence)
     if output.postal_address and not business.address:
         business.address = output.postal_address[:500]
+    if output.country and not business.country:
+        business.country = output.country[:80]
+    if output.business_category and not business.business_category:
+        business.business_category = output.business_category[:120]
     # Coordinates only from a real source (here: the site's own
     # schema.org GeoCoordinates) — fill only when we don't already have
     # a pair, and only when both are present.

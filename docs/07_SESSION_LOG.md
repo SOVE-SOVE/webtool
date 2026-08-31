@@ -11,6 +11,70 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Lead Discovery: result classification + data-model deltas (T9 + T10)
+**Mode:** worktree (`t9-t10-discovery-deltas`), branched from `main`
+after T6 (#33). **Draft PR — NOT merged** (per the session owner's
+instruction on T8–T10).
+**Scope touched:** `apps/api` discovery classifier + provider + base +
+model + schemas + service + browser + research agent/service + dedup +
+migration; `apps/web` `lib/api.ts` + discovery detail page +
+`DiscoveryMap`; this file.
+
+**Context:** T8/T9/T10 largely duplicated T1–T5 (already merged). The
+owner asked for the *deltas* only. T8 = report against merged code
+(no change). T9 + T10 delta work is this entry.
+
+**T9 delta — explicit result classification:**
+- `result_classifier.ResultCategory` enum: `business / social /
+  directory / article / news / forum / unknown`. `classify_result`
+  returns a category + reason; `is_business` is now a property
+  (`category in {business, social, unknown}`) — backwards compatible.
+- Domain denylist split into typed sets (forum / reference / publisher
+  / directory / social / news).
+- **Social profiles are kept as candidates, not rejected** — a business
+  whose only web presence is a Facebook page is a real lead. The
+  provider stores such a result with `website_url = None`,
+  `website_status = UNKNOWN`, and the URL in `social_links` — never as
+  the "official website".
+- `/search`, `/find` URL paths → `directory` (dropped); `/forum/`,
+  `/thread/` → `forum`; blog/tag/wiki paths → `article`.
+
+**T10 delta — more structured fields:**
+- `country` + `business_category` on `NormalizedBusinessResult` and
+  `discovered_businesses` (migration `d5e9a3c7f201`, round-tripped).
+  Nullable — existing rows stay valid.
+- `browser.py` JSON-LD extraction extended: `_extract_location_from_jsonld`
+  now returns a `JsonLdLocation` (address, country, category, lat, lng).
+  Category comes from the schema.org `@type` when it's a real
+  LocalBusiness subtype (`CafeOrCoffeeShop` → "Cafe or coffee shop"),
+  skipping wrappers like `WebSite`/`Organization`. Country from
+  `addressCountry`. Carried onto the business by the research stage
+  (fills a blank only).
+- **Dedup:** new `normalize_address` (rejects a bare suburb/country —
+  needs a number + 3 tokens) and a **name + full-address** match added
+  to `find_duplicate_discovered_business`, *before* the weak
+  name+suburb+state fallback. Same-name-same-address = same business;
+  different address spelling is deliberately NOT merged (conservative,
+  per "never merge two distinct businesses"). URL/phone matching
+  unchanged. CRM `Business` has no address column, so this only helps
+  discovered-vs-discovered.
+- Frontend: `DiscoveredBusiness` type += `country`, `business_category`;
+  the results table and map popup show `business_category || industry`.
+
+**Verified:** `apps/api` full `pytest` (see below); new/updated tests in
+`test_discovery_result_classifier.py` (category per type, social kept,
+subtype mapping, limited-info business), `test_discovery_map.py`
+(country + category extraction), `test_business_discovery.py` (social
+provider handling, `normalize_address`, name+address dedup).
+Migration round-tripped. `apps/web` — `vitest` 102, `tsc` clean,
+`eslint` clean, `next build` clean.
+
+**`alembic check`:** fails, but only on **pre-existing** drift
+(`remove_index` on `email_sends` / `meeting_attendees` /
+`meeting_reminders` / `website_revisions` — FK `index=True` vs the
+migrations). Zero drift on `discovered_businesses`; this migration is
+clean. Not fixed here (unrelated).
+
 ## 2026-08-31 — Lead Discovery: tune for in-person prospecting (T6)
 **Mode:** worktree (`t6-discovery-in-person`), branched from `main`
 after T5 (#32).

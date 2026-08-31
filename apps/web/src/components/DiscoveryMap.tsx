@@ -29,7 +29,8 @@ const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 function popupHtml(b: Located): string {
-  const cat = b.industry ? ` · ${esc(b.industry)}` : "";
+  const category = b.business_category || b.industry;
+  const cat = category ? ` · ${esc(category)}` : "";
   const addr = b.address ? `<br/>${esc(b.address)}` : b.suburb ? `<br/>${esc(b.suburb)}` : "";
   const phone = b.phone ? `<br/><a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : "";
   const site =

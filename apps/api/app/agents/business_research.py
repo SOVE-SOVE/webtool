@@ -48,9 +48,11 @@ class BusinessResearchAgentOutput(BaseModel):
     load_time_ms: int | None = None
     estimated_site_age: str | None = None
     appears_template_or_placeholder: bool | None = None
-    # A postal address / map coordinates the site publishes about itself
-    # in schema.org markup — directly observed, never geocoded or guessed.
+    # Structured facts the site publishes about itself in schema.org
+    # markup — directly observed, never geocoded or guessed.
     postal_address: str | None = None
+    country: str | None = None
+    business_category: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     technical_issues: list[str] = []
@@ -173,6 +175,8 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
 
     if signals.postal_address:
         confirmed.append(f"Address in the site's schema.org markup: {signals.postal_address}")
+    if signals.business_category:
+        confirmed.append(f"Business type in the site's schema.org markup: {signals.business_category}")
     if signals.latitude is not None and signals.longitude is not None:
         confirmed.append(
             f"Map coordinates published on the site: {signals.latitude:.5f}, {signals.longitude:.5f}"
@@ -231,6 +235,8 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
         estimated_site_age=estimated_site_age,
         appears_template_or_placeholder=appears_template_or_placeholder,
         postal_address=signals.postal_address,
+        country=signals.country,
+        business_category=signals.business_category,
         latitude=signals.latitude,
         longitude=signals.longitude,
         technical_issues=technical_issues,

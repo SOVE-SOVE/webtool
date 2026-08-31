@@ -7,6 +7,7 @@ a lead's existing website (never a guessed/estimated number) per the
 
 import ipaddress
 import json
+import re
 import socket
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -366,14 +367,29 @@ class ResearchPageSignals:
     social_links: list[str] | None = None
     body_text: str | None = None
     load_time_ms: int | None = None
-    # A postal address and/or map coordinates the site publishes about
-    # itself in schema.org (JSON-LD) markup — a directly-observed value,
-    # not geocoded or guessed. lat/lng come only from an explicit
-    # GeoCoordinates node; both are set together or both stay None.
+    # Structured facts the site publishes about itself in schema.org
+    # (JSON-LD) markup — directly observed, not geocoded or guessed.
+    # lat/lng come only from an explicit GeoCoordinates node; both are
+    # set together or both stay None.
     postal_address: str | None = None
+    country: str | None = None
+    business_category: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     error: str | None = None
+
+
+@dataclass
+class JsonLdLocation:
+    address: str | None = None
+    country: str | None = None
+    category: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.address is not None and self.latitude is not None
 
 
 def _coerce_coord(value, lo: float, hi: float) -> float | None:
@@ -386,6 +402,44 @@ def _coerce_coord(value, lo: float, hi: float) -> float | None:
     return num
 
 
+# schema.org @types that are wrappers / not a business category.
+_NON_CATEGORY_TYPES = {
+    "website",
+    "webpage",
+    "website",
+    "breadcrumblist",
+    "organization",
+    "corporation",
+    "person",
+    "article",
+    "newsarticle",
+    "blogposting",
+    "itemlist",
+    "searchaction",
+    "postaladdress",
+    "geocoordinates",
+    "openinghoursspecification",
+    "imageobject",
+    "review",
+    "aggregaterating",
+}
+
+
+def _humanise_type(t: str) -> str:
+    """'CafeOrCoffeeShop' -> 'Cafe or coffee shop'."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", t).replace("_", " ").strip()
+    return spaced[:1].upper() + spaced[1:].lower() if spaced else t
+
+
+def _address_country(node) -> str | None:
+    if not isinstance(node, dict):
+        return None
+    c = node.get("addressCountry")
+    if isinstance(c, dict):
+        c = c.get("name")
+    return str(c).strip() if c and str(c).strip() else None
+
+
 def _format_postal_address(node) -> str | None:
     if isinstance(node, str):
         return node.strip() or None
@@ -396,16 +450,25 @@ def _format_postal_address(node) -> str | None:
         node.get("addressLocality"),
         node.get("addressRegion"),
         node.get("postalCode"),
-        node.get("addressCountry") if isinstance(node.get("addressCountry"), str) else None,
+        _address_country(node),
     ]
     joined = ", ".join(str(p).strip() for p in parts if p and str(p).strip())
     return joined or None
 
 
-def _walk_jsonld(node, found: dict) -> None:
+def _node_category(node: dict) -> str | None:
+    raw = node.get("@type")
+    types = raw if isinstance(raw, list) else [raw]
+    for t in types:
+        if isinstance(t, str) and t.strip().lower() not in _NON_CATEGORY_TYPES:
+            return _humanise_type(t.strip())
+    return None
+
+
+def _walk_jsonld(node, found: JsonLdLocation) -> None:
     """Depth-first scan of one parsed JSON-LD document for the first
-    address / GeoCoordinates it carries. Handles a bare object, a list,
-    and the common `@graph` wrapper."""
+    address / country / category / GeoCoordinates it carries. Handles a
+    bare object, a list, and the common `@graph` wrapper."""
     if isinstance(node, list):
         for item in node:
             _walk_jsonld(item, found)
@@ -413,32 +476,36 @@ def _walk_jsonld(node, found: dict) -> None:
     if not isinstance(node, dict):
         return
 
-    if "address" in node and not found.get("address"):
-        found["address"] = _format_postal_address(node["address"])
+    if "address" in node and found.address is None:
+        found.address = _format_postal_address(node["address"])
+        if found.country is None:
+            found.country = _address_country(node["address"])
+    if found.category is None:
+        found.category = _node_category(node)
 
     geo = node.get("geo")
-    if isinstance(geo, dict) and found.get("lat") is None:
+    if isinstance(geo, dict) and found.latitude is None:
         lat = _coerce_coord(geo.get("latitude"), -90.0, 90.0)
         lng = _coerce_coord(geo.get("longitude"), -180.0, 180.0)
         if lat is not None and lng is not None:
-            found["lat"], found["lng"] = lat, lng
+            found.latitude, found.longitude = lat, lng
 
     for key in ("@graph", "hasPart", "subOrganization", "location", "makesOffer"):
         if key in node:
             _walk_jsonld(node[key], found)
 
 
-def _extract_location_from_jsonld(blocks: list[str]) -> tuple[str | None, float | None, float | None]:
-    found: dict = {}
+def _extract_location_from_jsonld(blocks: list[str]) -> JsonLdLocation:
+    found = JsonLdLocation()
     for raw in blocks or []:
         try:
             parsed = json.loads(raw)
         except (ValueError, TypeError):
             continue
         _walk_jsonld(parsed, found)
-        if found.get("address") and found.get("lat") is not None:
+        if found.complete:
             break
-    return found.get("address"), found.get("lat"), found.get("lng")
+    return found
 
 
 async def fetch_research_signals(url: str) -> ResearchPageSignals:
@@ -502,7 +569,7 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     "() => Array.from(document.querySelectorAll('script[type=\"application/ld+json\"]'))"
                     ".map(s => s.textContent).filter(Boolean)"
                 )
-                postal_address, latitude, longitude = _extract_location_from_jsonld(jsonld_blocks)
+                loc = _extract_location_from_jsonld(jsonld_blocks)
 
                 final_url = page.url
                 return ResearchPageSignals(
@@ -520,9 +587,11 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
                     social_links=sorted(set(social_links)) if social_links else [],
                     body_text=body_text,
                     load_time_ms=load_time_ms,
-                    postal_address=postal_address,
-                    latitude=latitude,
-                    longitude=longitude,
+                    postal_address=loc.address,
+                    country=loc.country,
+                    business_category=loc.category,
+                    latitude=loc.latitude,
+                    longitude=loc.longitude,
                 )
             finally:
                 await browser.close()
