@@ -20,7 +20,7 @@ def _patch_discovery_and_research(monkeypatch, *, https=False, mobile_viewport_p
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="Local plumbers")
         ],
     )
@@ -99,7 +99,7 @@ def test_contact_details_from_the_site_reach_the_imported_lead(authed_client, mo
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="Local plumbers")
         ],
     )
@@ -144,7 +144,7 @@ def test_import_preserves_research_as_website_audit(authed_client, db_session, m
 
 
 def test_import_without_any_prior_research_still_works(authed_client, monkeypatch):
-    monkeypatch.setattr(search_integration, "search_business", lambda query: [
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None: [
         SearchResult(title="No Research Co", url="https://noresearch.example", description="")
     ])
     business = _run_discovery(authed_client)
@@ -271,7 +271,7 @@ def test_bulk_approve(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
-        lambda query: [
+        lambda query, count=None: [
             SearchResult(title="Co One", url="https://co1.example", description=""),
             SearchResult(title="Co Two", url="https://co2.example", description=""),
         ],
