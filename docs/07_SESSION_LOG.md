@@ -11,6 +11,44 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-08-31 — Google Places: live verification + key-restriction docs
+**Mode:** operator supplied a Google Places API key mid-session to
+verify T11 (#35) against the real API. **No app code changed.**
+**Scope touched:** `docs/02_ARCHITECTURE.md`, `apps/api/.env.example`
+(PR #36); this file.
+
+**Live run:** a throwaway instance (API :8001, web :3001, fresh
+`webdesignos_run` DB, migrated to head) with the real key in a
+gitignored local `.env`. Search **"Cafes in Burleigh Heads"** →
+`provider = google_places`, **20 real businesses**, one live Text
+Search request:
+
+- All 20 carried coordinates → 20 map markers (clustered) at discovery
+  time — no research step needed.
+- Structured fields populated for real: category (Cafe / Bakery /
+  Coffee shop / Restaurant / Mexican restaurant), street address,
+  suburb, QLD, 4220, phone.
+- **3 with no website** — Next Door Burleigh, Lakeview Espresso
+  Burleigh, Hidden Perk — kept, `website_status = none`, orange badge,
+  on the map. The "No website" filter → those 3, map re-fit to their
+  pins. This is the exact prospecting output Brave cannot produce.
+- "Load more results" button present (Places returned a
+  `nextPageToken`).
+
+**Cleanup:** instance torn down, `webdesignos_run` dropped, the
+key-bearing local `.env` deleted, key scrubbed from job temp files. The
+key was only ever in the gitignored `.env` — **never committed**
+(verified). It remains in the chat transcript; operator chose to keep
+using it for now rather than rotate.
+
+**#36 (merged):** documented how to restrict the key —
+API-restriction to **Places API (New)** only, an IP allowlist for the
+`apps/api` server (server-side use only, `integrations/places.py`),
+value stays in `.env`, regenerate if exposed. `.env.example` +
+`docs/02_ARCHITECTURE.md`.
+
+---
+
 ## 2026-08-31 — Lead Discovery: Google Places provider (T11)
 **Mode:** worktree (`t11-places-provider`), branched from `main` after
 #34. **Draft PR — NOT merged** (per the task's own instruction +
