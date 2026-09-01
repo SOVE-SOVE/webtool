@@ -136,9 +136,10 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
             </span>
           )}
           {missingCount > 0 ? (
-            <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
-              {missingCount} field{missingCount === 1 ? "" : "s"} still missing — nothing has been
-              filled in for you.
+            <p className="mt-1 text-sm text-fg-muted">
+              Known details carried over automatically. {missingCount} optional field
+              {missingCount === 1 ? "" : "s"} left — fill in whatever you have now, add the rest
+              anytime. The website can start before this is complete.
             </p>
           ) : (
             <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">Every field has been collected.</p>
@@ -170,8 +171,8 @@ export function BriefEditor({ brief, onChange }: { brief: Brief; onChange: (brie
                     <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
                       <span>{f.label}</span>
                       {isMissing && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Missing
+                        <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-fg-subtle">
+                          Optional
                         </span>
                       )}
                       {saving === f.key && <span className="normal-case tracking-normal">Saving…</span>}

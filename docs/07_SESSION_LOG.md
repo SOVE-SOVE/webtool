@@ -11,6 +11,78 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — Pre-fill the project brief from the lead/business (fast LEAD → PROJECT → WEBSITE)
+**Mode:** main working tree, not committed.
+**Scope touched:** `apps/api/app/modules/design_briefs/service.py`,
+`apps/api/tests/test_design_briefs.py`,
+`apps/web/src/components/BriefEditor.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`, this file.
+
+**Context / finding:** Investigated the whole creation surface first.
+Backend creation was *already* minimal (T1, #38): `ProjectCreate`
+needs only `client_id` + `name`; lead→client conversion auto-creates
+the Project; the 35-field `DesignBrief` is already a lazy, all-optional,
+`Disclosure`-collapsed step that never gates the website. The real
+remaining friction was that a converted lead's brief opened
+**completely empty** — every field, including business name / industry /
+address / phone / email / website / social / notes that the system
+already holds on the `Business` (and `Lead`), showed as an alarming
+amber "Missing", so the operator re-typed known information.
+
+**Change — pre-fill on brief creation:**
+- New `_prefill_brief_from_records(brief, project)` in
+  `design_briefs/service.py`. On the *first* creation of a brief (via
+  `_get_or_create_draft`, i.e. the first `GET /projects/{id}/brief`,
+  and in `start_intake`'s new-project branch) it fills **only
+  still-empty** fields from `project.client.business` and, when the
+  project came from a conversion, `project.source_lead`:
+  - `business_name` ← business.name
+  - `industry` ← business.industry
+  - `location` ← "suburb, state, postcode"
+  - `contact_email` ← business.email
+  - `contact_phone` ← business.phone
+  - `existing_website_url` ← business.website_url
+  - `existing_social_profiles` ← business.social_links
+  - `business_description` ← business.notes + the lead's notes (labelled)
+  Discovery/website-research already writes phone/email/social onto the
+  business, so this also carries that across. An operator answer (or an
+  intake-form value) is never overwritten — pre-fill is gap-fill only,
+  and only at creation, so re-opening never re-seeds.
+- `_get_project_in_workspace` now eager-loads `client.business` +
+  `source_lead` for that pre-fill.
+
+**Change — messaging (no redesign, no fields removed/moved):**
+- `BriefEditor`: the amber "N fields still missing — nothing has been
+  filled in for you" is now a muted "Basics carried over from the lead.
+  N optional fields left … the website can start before this is
+  complete." Per-field amber **"Missing"** pill → muted **"Optional"**.
+- Project "created" banner and the lead "Convert to client" helper text
+  now say the business/contact/address/notes carry into the brief and
+  every field is optional / later.
+
+**Fields auto-populated:** business name, industry, location
+(suburb/state/postcode), contact email, contact phone, existing website
+URL, existing social profiles, business description (business + lead
+notes). **Made optional/deferred:** nothing newly deferred — the brief
+was already fully optional; this only reframes it as such in the UI.
+
+**Tests:** `test_design_briefs.py` updated (empty-draft test → prefilled
+draft; a "shrinks" test switched to a non-prefilled field) + 2 new
+(prefill from a converted lead incl. notes + location; pre-fill never
+overwrites an operator answer). `apps/api` `test_design_briefs` +
+`test_clients` green (33); full `pytest` — **882 passed, 2 failed**.
+The 2 failures (`test_dashboard.py::test_overview_counts_meetings_and_revenue`,
+`::test_overview_counts_project_meetings_too`) are **pre-existing and
+unrelated** — confirmed failing identically on a clean `git stash`ed
+tree (date-window-sensitive revenue assertions vs. the 2026-09-01
+system date). `apps/web`:
+`tsc --noEmit` clean, `vitest` 102/102, `eslint` clean on touched files
+(1 pre-existing exhaustive-deps warning on the project page's `load`
+effect, untouched), `next build` ✓.
+
+---
+
 ## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — docs only, no app code changed.

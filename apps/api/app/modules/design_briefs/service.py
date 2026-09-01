@@ -34,6 +34,13 @@ def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: 
         .join(Client, Project.client_id == Client.id)
         .join(Business, Client.business_id == Business.id)
         .where(Project.id == project_id, Business.workspace_id == workspace_id)
+        # The client's business and (for a converted lead) the source lead
+        # are eager-loaded because _get_or_create_draft pre-fills a brand
+        # new brief from them — see _prefill_brief_from_records.
+        .options(
+            joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.source_lead),
+        )
     )
 
 
@@ -45,13 +52,64 @@ def _load_brief(db: Session, brief_id: uuid.UUID) -> DesignBrief:
     )
 
 
+def _prefill_brief_from_records(brief: DesignBrief, project: Project) -> bool:
+    """
+    Seed a brand new brief from what the system already knows, so the
+    operator never re-types information that's already on the business
+    or the originating lead. Only ever writes a field that is still
+    empty — an operator's own answer (or a value already applied from
+    the intake form) is never overwritten. Returns whether anything was
+    written.
+
+    The business record already carries whatever Lead Discovery /
+    website research turned up (phone, email, social links — see
+    modules/business_research/service.py), so pulling from it also
+    covers "carry across the discovery/research info".
+    """
+    business = project.client.business if project.client else None
+    if business is None:
+        return False
+    lead = project.source_lead
+
+    location = ", ".join(p for p in (business.suburb, business.state, business.postcode) if p)
+    notes = "\n\n".join(
+        part
+        for part in (
+            (business.notes or "").strip(),
+            (f"Lead notes: {lead.notes.strip()}" if lead and lead.notes and lead.notes.strip() else ""),
+        )
+        if part
+    )
+
+    candidates = {
+        "business_name": business.name,
+        "industry": business.industry,
+        "location": location or None,
+        "contact_email": business.email,
+        "contact_phone": business.phone,
+        "business_description": notes or None,
+        "existing_website_url": business.website_url,
+        "existing_social_profiles": business.social_links,
+    }
+
+    changed = False
+    for field, value in candidates.items():
+        current = getattr(brief, field)
+        if value and (current is None or not str(current).strip()):
+            setattr(brief, field, value)
+            changed = True
+    return changed
+
+
 def _get_or_create_draft(db: Session, project: Project) -> DesignBrief:
     """One brief per project — created lazily on first touch (get or
     update) rather than requiring a separate explicit "create" step for
-    projects that already existed before intake started."""
+    projects that already existed before intake started. A newly created
+    brief is pre-filled from the business/lead records."""
     brief = db.scalar(select(DesignBrief).where(DesignBrief.project_id == project.id))
     if brief is None:
         brief = DesignBrief(project_id=project.id)
+        _prefill_brief_from_records(brief, project)
         db.add(brief)
         db.flush()
     return brief
@@ -155,6 +213,10 @@ def start_intake(
 
     brief = DesignBrief(project_id=project.id)
     _apply_fields(brief, data)
+    # Fill any field the intake form left blank from the client's own
+    # business record — same "never re-type what we already know" as the
+    # lead-conversion path (see _get_or_create_draft).
+    _prefill_brief_from_records(brief, project)
     db.add(brief)
     db.flush()
 

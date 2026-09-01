@@ -733,6 +733,8 @@ export default function LeadDetailPage() {
               <p className="mt-1 text-sm text-fg-muted">
                 Creates the client record and an INTAKE-stage project (with starter tasks) in one step, and
                 preserves this lead&apos;s full history — audits, outreach, and notes stay attached to it.
+                The business name, contact details, address, website and notes carry straight into the
+                project brief — every field below is optional and can be filled in later.
               </p>
             )}
 

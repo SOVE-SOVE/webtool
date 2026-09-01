@@ -375,8 +375,9 @@ export default function ProjectDetailPage() {
       {showCreatedBanner && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <p className="text-sm text-emerald-900 dark:text-emerald-300">
-            <span className="font-semibold">Project created.</span> Add the project brief and other
-            details below whenever you&apos;re ready — nothing else is required right now.
+            <span className="font-semibold">Project created.</span> Everything already known about the
+            client has been carried into the brief. Add the rest whenever you&apos;re ready — you can
+            start the website now.
           </p>
           <button
             onClick={() => setShowCreatedBanner(false)}
