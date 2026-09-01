@@ -11,6 +11,57 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-02 — T4: two-user account management (verified — already built, minor Settings copy)
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T3. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/settings/page.tsx`; this file.
+
+**What happened:** The two-user model the task describes is **already
+implemented and already fully tested** (`apps/api/tests/test_users.py`,
+`test_auth.py`):
+- `workspaces` + `users` (role `admin` | `member`), business data
+  scoped by `businesses.workspace_id`.
+- `POST /api/v1/users` is `require_admin`; hashes the password
+  (`hash_password`), 12-char minimum (`UserCreate`), rejects duplicate
+  email (409). `UserRead` exposes no `password_hash`/`password`.
+- No register/sign-up route anywhere (verified 404); login page has no
+  "create account" link.
+- Settings → People already had the admin-only "Add teammate" form
+  (name / email / password / role) + inline role editing, guarded by
+  the "can't demote the only admin" rule (`update_user_role`).
+
+So T4 was verify + a small Settings copy pass, no new infrastructure,
+no migration:
+- People section now carries a one-line explanation (admin creates each
+  teammate here, no public sign-up, what a Member can/can't do), with a
+  shorter member-facing variant.
+- "Temporary password" → "Password (min 12 characters)" with
+  `minLength={12}`, plus a note that password change/reset isn't built
+  yet so pick one to keep.
+- Fixed a **pre-existing** lint error in the same file
+  (`setCalendarStatus` in an effect → a client-only lazy `useState`
+  initializer, no extra render). Three other pre-existing lint
+  errors/warnings remain in files this branch doesn't touch
+  (`layout.tsx:137`, `calendar/page.tsx:101`,
+  `projects/[id]/page.tsx:174`) — not addressed here.
+
+**Verified:** `eslint src/app/dashboard/settings/page.tsx` clean,
+`vitest` 102/102, `next build` clean. Backend `test_users.py` +
+`test_auth.py` + `test_assignment.py` = 29 passed. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): admin →
+Settings → "Add teammate" creates "Sam Teammate" (member) → sign out →
+Sam signs in → Settings shows no "Add teammate", member-facing copy,
+read-only workspace name. API spot-check as Sam: `POST /users` 403
+("Admin role required"), `PATCH /users/{id}` 403, `POST
+/auth/register` 404, wrong password 401.
+
+**Next up:** T5 — restructure the Overview dashboard (remove Quick
+Actions + Recent Activity; group real metrics into Leads / Sales /
+Projects / Websites / Follow-ups / Revenue modules; a new backend
+aggregation is needed for the Websites counts — see audit G8).
+
+---
+
 ## 2026-09-01 — T3: approving a discovered business auto-imports it to the CRM
 **Mode:** worktree (`workflow-audit-t1-t5`), stacked after T2. PR #41.
 **Merge to main after:** yes — pending review.

@@ -26,11 +26,11 @@ export default function SettingsPage() {
   // Read directly from window.location rather than next/navigation's
   // useSearchParams, which requires a Suspense boundary during static
   // generation — not worth it for reading one param from an OAuth
-  // redirect. "connected" | "error" | null.
-  const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
-  useEffect(() => {
-    setCalendarStatus(new URLSearchParams(window.location.search).get("calendar"));
-  }, []);
+  // redirect. Lazy initializer (client-only) rather than an effect, so
+  // there's no extra render. "connected" | "error" | null.
+  const [calendarStatus] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("calendar"),
+  );
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [savingWorkspace, setSavingWorkspace] = useState(false);
@@ -255,6 +255,11 @@ export default function SettingsPage() {
             </button>
           )}
         </div>
+        <p className="mt-1 text-xs text-fg-muted">
+          {isAdmin
+            ? "This is an internal tool for a small team — the admin creates each teammate's account here. There's no public sign-up. Each person signs in with their own email and password; a Member can do everything except manage people and workspace settings."
+            : "Each person signs in with their own account. Only an admin can add or change teammates."}
+        </p>
 
         {showAddUser && isAdmin && (
           <form onSubmit={handleAddUser} className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -276,7 +281,8 @@ export default function SettingsPage() {
             <input
               required
               type="password"
-              placeholder="Temporary password"
+              minLength={12}
+              placeholder="Password (min 12 characters)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
@@ -289,6 +295,10 @@ export default function SettingsPage() {
               <option value="member">Member</option>
               <option value="admin">Admin</option>
             </select>
+            <p className="text-xs text-fg-muted sm:col-span-2">
+              Share the password with them securely. Password changes and resets aren&apos;t built yet —
+              pick one you&apos;re both happy to keep.
+            </p>
             <button
               type="submit"
               disabled={savingUser}
