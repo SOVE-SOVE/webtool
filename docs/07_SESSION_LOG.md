@@ -11,6 +11,92 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — Initial ("prospect / demo") website as the primary project workflow
+**Mode:** new session
+**Merge to main after:** yes
+**Scope touched:** `apps/api/app/modules/websites/{service,routes}.py`,
+`apps/api/app/modules/discovery/service.py`,
+`apps/web/src/lib/api.ts`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/website/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/review/page.tsx`,
+`apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`
+
+**What happened:** Made "generate a convincing demo site before contacting
+the business" a real one-path workflow, reusing the existing generator
+rather than building a second one.
+
+Existing website-generation functionality found (unchanged):
+`agents/website_generator.py` is deterministic (no LLM) and already
+takes flat inputs — business name, a `BriefContent`, a
+`CreativeDirectionContent`, and a list of sitemap pages. The DB-row
+requirement ("needs an approved sitemap with pages") lived only in
+`websites/service.py::generate_website` via `_resolve_sitemap`. Full
+generation is gated behind approved brief → creative direction →
+sitemap; `approve_website` / QA / workflow-transition / deploy gates
+are all downstream of that and were left exactly as they were.
+
+Workflow changes:
+1. **`generate_initial_website()`** (new, `websites/service.py`) +
+   `POST /api/v1/projects/{id}/initial-website`. On first run it seeds a
+   starter DRAFT `Sitemap` (Home/About/Services/Contact) and pre-fills
+   the project's `DesignBrief` from real data already on file — business
+   name/industry/location/contact details, and the originating lead's
+   latest `WebsiteAudit.meta_description` (the business's own words) as
+   the draft home description. Unknown copy is a clearly-labelled
+   `[DRAFT — confirm with the business owner before sharing]` placeholder
+   or simply omitted (surfacing in `missing_information`); nothing is
+   invented. Then it calls the unchanged `generate_website()`. Both
+   seeded artifacts are ordinary editable DRAFT rows — idempotent: an
+   existing sitemap or an operator-filled brief field is never
+   overwritten. The plain `POST /websites` route and its 400 are
+   untouched.
+2. **Discovery approve → auto-CRM.** `approve_business` /
+   `bulk_approve` now chain into `import_to_lead` (best-effort: a
+   business that already has a lead stays APPROVED, not an error).
+   Matches docs/00_VISION.md's "approve → automatically add to CRM".
+3. **Frontend.** Project page "Build & delivery" leads with a
+   "Generate initial website →" button when no version exists (routes to
+   the website workspace). Website workspace: first build calls the
+   initial-website endpoint, jumps to the Preview tab, and the
+   empty-state copy no longer tells the operator to approve a
+   sitemap/brief/creative-direction first. Lead page gains a one-click
+   "Start website project →" (runs the existing convert-to-client, lands
+   on the new project). Review page: "Approve" → "Approve & add to CRM".
+
+Files changed: listed above. No migration (no schema change).
+
+**Tests performed:** `apps/api` — new `TestGenerateInitialWebsite`
+(6 cases: 404, seeds+generates, idempotent re-run, existing sitemap
+respected, operator brief fields preserved, edit survives) all green;
+updated the 3 discovery tests that asserted the old approve-then-import
+two-step; `test_lead_intelligence_workflow` + `test_automation_pipeline`
+green. Full `apps/api` suite: 887 passed, 2 failed — both pre-existing
+and unrelated (`test_dashboard.py`'s `upcoming_meetings` count, a
+known time-of-day flake: the test hardcodes `2026-09-01T10:00:00Z`
+meetings and "upcoming" turns false once UTC passes 10:00 on that
+date; confirmed identical failures on clean `main`). `apps/web` —
+`tsc --noEmit`
+clean, `eslint` clean (one pre-existing exhaustive-deps warning),
+`vitest run` 102 passed, `next build` clean.
+
+**Blockers/issues:** The local shared `webdesignos_test` Postgres is
+contended by other sessions — running a whole test file sometimes shows
+~45 setup ERRORs from cross-session `create_all`/`drop_all` races (the
+recurring issue noted in several prior entries); every file passes clean
+when run while the DB is quiet. Also: a real `GOOGLE_PLACES_API_KEY` in
+`apps/api/.env` makes 4 `test_business_discovery` provider tests hit the
+live API and fail — pre-existing, unrelated (run with the key unset).
+
+**Next up:** Optional — the initial-website generator could seed a few
+industry-typical page hints without inventing copy, and the project
+could stay at an earlier stage than DEVELOPMENT for a demo that hasn't
+been sold yet (currently `generate_website`'s existing `advance_stage`
+call moves it, unchanged this pass).
+
+---
+
 ## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — docs only, no app code changed.

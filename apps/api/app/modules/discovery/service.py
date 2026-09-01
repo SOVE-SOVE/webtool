@@ -590,7 +590,20 @@ def _set_review_status(
 def approve_business(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
 ) -> DiscoveredBusinessRead | None:
-    return _set_review_status(db, workspace_id, actor_id, business_id, DiscoveredBusinessStatus.APPROVED, "approved")
+    """Approve a discovered business and immediately bring it into the
+    CRM as a Lead — docs/00_VISION.md's workflow is "discover → review →
+    approve → automatically add to CRM". If the business already has a
+    lead (or otherwise can't be imported), it's left APPROVED and
+    returned as-is rather than failing the approval."""
+    approved = _set_review_status(
+        db, workspace_id, actor_id, business_id, DiscoveredBusinessStatus.APPROVED, "approved"
+    )
+    if approved is None:
+        return None
+    try:
+        return import_to_lead(db, workspace_id, actor_id, business_id)
+    except (CannotImportError, DuplicateLeadError):
+        return approved
 
 
 def reject_business(
@@ -639,6 +652,16 @@ def bulk_approve(
         )
 
     db.commit()
+
+    # Same "approve also brings it into the CRM" rule as approve_business,
+    # applied per row — a business that already has a lead is skipped and
+    # simply stays APPROVED.
+    for business in approvable:
+        try:
+            import_to_lead(db, workspace_id, actor_id, business.id)
+        except (CannotImportError, DuplicateLeadError):
+            continue
+
     for business in approvable:
         db.refresh(business)
     return BulkApproveResult(

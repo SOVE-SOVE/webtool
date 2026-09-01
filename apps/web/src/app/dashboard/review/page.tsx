@@ -125,7 +125,7 @@ export default function ReviewPage() {
     <div className="p-6">
       <PageHeader
         title="Review queue"
-        description="Every discovered prospect, with research and scoring context, ready to approve, reject, or bring into the CRM."
+        description="Every discovered prospect, with research and scoring context. Approving a prospect adds it to the CRM as a lead automatically."
         actions={
           <button
             onClick={handleBulkApprove}
@@ -303,7 +303,7 @@ export default function ReviewPage() {
                                   onClick={() => runAction(item.id, () => api.approveDiscoveredBusiness(item.id))}
                                   className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
                                 >
-                                  Approve
+                                  Approve &amp; add to CRM
                                 </button>
                                 <button
                                   disabled={busy}

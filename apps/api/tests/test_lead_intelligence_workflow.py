@@ -65,16 +65,17 @@ def test_full_workflow_discover_research_score_approve_import(authed_client, mon
     assert score.status_code == 201
     assert score.json()["category"] == "hot"
 
+    # Approving a reviewed prospect brings it straight into the CRM as a
+    # lead — "approve -> automatically add to CRM" (docs/00_VISION.md).
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve")
     assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    assert approved.json()["reviewed_by_user_id"] is not None
-
-    imported = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import")
-    assert imported.status_code == 200
-    body = imported.json()
+    body = approved.json()
     assert body["status"] == "imported"
+    assert body["reviewed_by_user_id"] is not None
     assert body["imported_lead_id"] is not None
+
+    # Re-importing an already-imported business is refused.
+    assert authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import").status_code == 400
 
     lead_id = body["imported_lead_id"]
     lead = authed_client.get(f"/api/v1/leads/{lead_id}").json()
@@ -168,6 +169,33 @@ def test_cannot_reimport_already_imported_business(authed_client, monkeypatch):
 
     second = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/import")
     assert second.status_code == 400
+
+
+def test_approve_leaves_business_approved_when_a_lead_already_exists(authed_client, monkeypatch, db_session):
+    """Approve auto-imports, but if the business already has a CRM lead
+    (e.g. imported directly earlier, or a duplicate) the approval still
+    lands — the business is just left APPROVED, not failed."""
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(title="Twin Pines Plumbing", url="https://twinpines.example", description="")
+        ],
+    )
+    search = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"}).json()
+    first = authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]
+
+    # A second discovery run surfaces the same business again as its own row.
+    search2 = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing", "location": "Cairns"}).json()
+    second = authed_client.get(f"/api/v1/discovery-searches/{search2['id']}/results").json()[0]
+    assert second["id"] != first["id"]
+
+    assert authed_client.post(f"/api/v1/discovered-businesses/{first['id']}/approve").json()["status"] == "imported"
+
+    approved_again = authed_client.post(f"/api/v1/discovered-businesses/{second['id']}/approve")
+    assert approved_again.status_code == 200
+    assert approved_again.json()["status"] == "approved"
+    assert approved_again.json()["imported_lead_id"] is None
 
 
 def test_cannot_import_rejected_business(authed_client, monkeypatch):
@@ -285,7 +313,9 @@ def test_bulk_approve(authed_client, monkeypatch):
     assert res.status_code == 200
     body = res.json()
     assert len(body["approved"]) == 2
-    assert all(b["status"] == "approved" for b in body["approved"])
+    # Bulk approve, like single approve, also brings each into the CRM.
+    assert all(b["status"] == "imported" for b in body["approved"])
+    assert all(b["imported_lead_id"] is not None for b in body["approved"])
     assert len(body["not_found"]) == 1
 
 

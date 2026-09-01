@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
@@ -74,6 +74,7 @@ const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 te
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const confirm = useConfirm();
   const leadId = params.id;
 
@@ -391,6 +392,42 @@ export default function LeadDetailPage() {
     }
   }
 
+  async function handleQuickConvert() {
+    if (!business) return;
+    const ok = await confirm({
+      title: `Start a website project for ${business.name}?`,
+      description:
+        "Marks the lead WON and creates the client and an INTAKE-stage project in one step, then takes you " +
+        "to the project so you can generate the initial website. The lead's history stays attached to it. " +
+        "This can't be undone.",
+      confirmLabel: "Create project",
+      danger: true,
+    });
+    if (!ok) return;
+
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const newClient = await api.createClient({ from_lead_id: leadId });
+      setConvertedClient(newClient);
+      setClients((prev) => [newClient, ...prev]);
+      const allProjects = await api.listProjects();
+      setProjects(allProjects);
+      const project = allProjects.find((p) => p.client_id === newClient.id);
+      if (project) {
+        router.push(`/dashboard/projects/${project.id}?created=1`);
+        return;
+      }
+      const updatedLead = await api.getLead(leadId);
+      setLead(updatedLead);
+      refreshActivity();
+    } catch (err) {
+      setConvertError(err instanceof ApiError ? err.message : "Couldn't create the project.");
+    } finally {
+      setConverting(false);
+    }
+  }
+
   if (error) {
     return (
       <div className="p-6">
@@ -690,12 +727,21 @@ export default function LeadDetailPage() {
                 {existingClient ? "Client & delivery" : "Convert to client"}
               </h2>
               {!existingClient && (
-                <button
-                  onClick={() => setShowConvertForm((v) => !v)}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-                >
-                  {showConvertForm ? "Cancel" : "Mark WON — convert"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleQuickConvert}
+                    disabled={converting}
+                    className="btn btn-primary btn-sm"
+                  >
+                    {converting ? "Creating…" : "Start website project →"}
+                  </button>
+                  <button
+                    onClick={() => setShowConvertForm((v) => !v)}
+                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
+                  >
+                    {showConvertForm ? "Cancel" : "Convert with details"}
+                  </button>
+                </div>
               )}
             </div>
 

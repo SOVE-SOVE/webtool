@@ -8,6 +8,55 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-01 — Initial website is the primary project workflow; approve now adds to the CRM
+
+**Decision:** Two connected changes, both on explicit operator
+direction (the point of the product is to walk into a business with a
+convincing draft site *before* contacting them — docs/00_VISION.md):
+
+**1. "Generate initial website" reuses the existing generator; it does
+not bypass or replace it.** `agents/website_generator.py` already
+accepts flat inputs and is deterministic. The only thing standing
+between "a project with just a business name" and "a generated
+`Website` row" was `websites/service.py::generate_website` refusing
+without a sitemap. So `generate_initial_website()` seeds a starter
+DRAFT `Sitemap` (Home/About/Services/Contact) and pre-fills the
+`DesignBrief` from data already on file (business fields; the
+originating lead's `WebsiteAudit.meta_description` — the business's own
+words — as the draft description), then calls the unchanged
+`generate_website()`. Unknown copy is a labelled `[DRAFT — …]`
+placeholder or omitted; **no business claim is invented** (the hard
+constraint from every prior website-generation entry below is
+untouched). Both seeded rows are ordinary editable DRAFT artifacts, and
+the seed is idempotent — an existing sitemap or an operator-entered
+brief field is never overwritten. All downstream gates (`approve_website`,
+QA, Phase-6 workflow transitions, deployment) are unchanged: an initial
+website is a normal `Website` version that still has to earn every one
+of them before it can ship.
+
+**2. Approving a discovered business now imports it to the CRM.** This
+reverses the 2026-08-27 "Review + CRM import stays manual" decision
+below — *for the approve action specifically*. The reasoning there
+(don't let a fuzzy score skip human eyes) still holds and is still
+satisfied: **approve is the human review**. An operator looking at the
+research/score context and clicking "approve" has done the reviewing;
+making them then click "import" was a second step with no second
+judgement in it. `approve_business` / `bulk_approve` chain into the
+unchanged `import_to_lead` (best-effort — a business that already has a
+lead stays APPROVED rather than erroring). Rejecting/archiving and the
+"import without approving" shortcut are unchanged.
+
+**Alternatives considered:** A dedicated `is_initial` flag / separate
+table for demo sites — rejected, it would fork every downstream
+consumer (`regenerate_section`, approvals, previews, deployments) for no
+real gain; the "initial" site *is* just the first version. Auto-seeding
+inside `generate_website` itself (so the plain route also works from
+zero) — rejected, it would have silently changed that route's
+documented 400 and the e2e refusal assertions; a separate
+`/initial-website` route keeps the concept explicit.
+
+---
+
 ## 2026-08-27 — Phase 7 Part 3: connecting the automation systems — what stayed manual and why
 
 **Decision:** Wired the previously-inert job queue (`apps/api/app/jobs/`,

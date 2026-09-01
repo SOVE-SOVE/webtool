@@ -19,10 +19,12 @@ from app.modules.creative_directions.models import CreativeDirectionBrief, Creat
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import JOB_QA_REPORT
+from app.modules.leads.models import Lead
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
-from app.modules.sitemaps.models import Sitemap, SitemapStatus
+from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
+from app.modules.website_audits.models import WebsiteAudit
 from app.modules.users.models import User
 from app.modules.websites.models import Website, WebsiteWorkflowStatus, WebsiteWorkflowTransition
 from app.modules.websites.schemas import (
@@ -358,6 +360,191 @@ def generate_website(
     )
 
     return get_website(db, workspace_id, website.id)
+
+
+# ---------------------------------------------------------------------
+# Initial ("prospect / demo") website — the primary project workflow.
+#
+# The point of Web Design OS is to walk into a business with a
+# convincing draft site already built, before the owner has done
+# anything (docs/00_VISION.md). Full generation needs an approved
+# sitemap + brief + creative direction; an *initial* website skips
+# straight from whatever is already known about the business (name,
+# industry, location, contact details, the discovery research carried
+# onto the originating lead) to a real Website version that flows
+# through the exact same pipeline afterwards.
+#
+# It does that by seeding a starter Sitemap and pre-filling the
+# project's DesignBrief from real business data the first time it runs,
+# then delegating to generate_website() unchanged. Nothing here
+# fabricates a business claim: unknown copy is left as a clearly
+# labelled draft placeholder (or omitted, surfacing as
+# missing_information), never invented. Both seeded artifacts are plain
+# DRAFT rows the operator edits or regenerates normally — this is an
+# entry point, not a separate system.
+# ---------------------------------------------------------------------
+
+_DRAFT_PREFIX = "[DRAFT — confirm with the business owner before sharing]"
+
+# A deliberately minimal starter structure — the four pages almost every
+# small local business needs. The operator adds/removes/reorders pages,
+# or regenerates the sitemap properly, from here.
+_INITIAL_SITEMAP_PAGES: list[dict] = [
+    {
+        "title": "Home",
+        "slug": "home",
+        "page_type": PageType.HOME,
+        "purpose": "Landing page — what the business does and how to get in touch.",
+        "primary_cta": "Get in touch",
+    },
+    {
+        "title": "About",
+        "slug": "about",
+        "page_type": PageType.ABOUT,
+        "purpose": "Background on the business and the people behind it.",
+    },
+    {
+        "title": "Services",
+        "slug": "services",
+        "page_type": PageType.SERVICES,
+        "purpose": "What the business offers.",
+        "primary_cta": "Get in touch",
+    },
+    {
+        "title": "Contact",
+        "slug": "contact",
+        "page_type": PageType.CONTACT,
+        "purpose": "Contact details and an enquiry form.",
+        "primary_cta": "Get in touch",
+    },
+]
+
+
+def _location_from_business(business: Business) -> str | None:
+    parts = [p for p in (business.suburb, business.state, business.postcode) if p]
+    return ", ".join(parts) if parts else None
+
+
+def _latest_lead_audit(db: Session, project: Project) -> WebsiteAudit | None:
+    """Real, already-collected content about the business's existing
+    web presence — carried onto the originating lead at discovery-import
+    time (see modules/discovery/service.py::import_to_lead). Its
+    `meta_description`/`title` are the business's own words, so reusing
+    them as draft copy is a legitimate source, not fabrication."""
+    if project.source_lead_id is None:
+        return None
+    return db.scalar(
+        select(WebsiteAudit)
+        .join(Lead, WebsiteAudit.lead_id == Lead.id)
+        .where(Lead.id == project.source_lead_id)
+        .order_by(WebsiteAudit.audited_at.desc())
+    )
+
+
+def _seed_initial_sitemap(db: Session, project: Project) -> None:
+    sitemap = Sitemap(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        overview=(
+            "Starter structure for the initial demo website — the pages a small "
+            "local business almost always needs. Edit, reorder, or regenerate a "
+            "proper sitemap once the brief is filled in."
+        ),
+        sources_note="Auto-seeded for the initial demo website from business information.",
+        flagged_for_review=True,
+        review_notes="Starter sitemap — review before sharing with the business owner.",
+    )
+    db.add(sitemap)
+    for order_index, page in enumerate(_INITIAL_SITEMAP_PAGES):
+        db.add(
+            SitemapPage(
+                id=uuid.uuid4(),
+                sitemap_id=sitemap.id,
+                title=page["title"],
+                slug=page["slug"],
+                page_type=page["page_type"],
+                nav_placement=NavPlacement.PRIMARY_NAV,
+                order_index=order_index,
+                purpose=page["purpose"],
+                primary_cta=page.get("primary_cta"),
+            )
+        )
+
+
+def _prefill_initial_brief(db: Session, project: Project, business: Business) -> DesignBrief:
+    """Fills the project's DesignBrief from real business data, touching
+    only fields that are still empty — never overwriting anything an
+    operator has already entered. Leaves status DRAFT."""
+    brief = _get_design_brief(db, project.id)
+    if brief is None:
+        brief = DesignBrief(project_id=project.id)
+        db.add(brief)
+
+    audit = _latest_lead_audit(db, project)
+    location = _location_from_business(business)
+
+    if business.industry:
+        descriptor = f"a {business.industry} business"
+    else:
+        descriptor = "a local business"
+    where = f" based in {location}" if location else ""
+    draft_description = f"{_DRAFT_PREFIX} {business.name} is {descriptor}{where}."
+
+    factual = {
+        "business_name": business.name,
+        "industry": business.industry,
+        "location": location,
+        "contact_email": business.email,
+        "contact_phone": business.phone,
+        "existing_website_url": business.website_url,
+        "existing_social_profiles": business.social_links,
+        # The existing site's own meta description is the business's own
+        # words; fall back to a clearly-labelled draft line otherwise.
+        "business_description": (audit.meta_description if audit and audit.meta_description else draft_description),
+        "about_content": (
+            f"{_DRAFT_PREFIX} Placeholder introduction for {business.name}. "
+            "Replace with real background from the owner."
+        ),
+    }
+    for field, value in factual.items():
+        if value and getattr(brief, field) in (None, ""):
+            setattr(brief, field, value)
+    return brief
+
+
+def generate_initial_website(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, project_id: uuid.UUID, request: GenerateWebsiteRequest
+) -> WebsiteRead | None:
+    """Entry point for the "Generate initial website" action. Seeds a
+    starter sitemap + brief from business data the first time (both
+    idempotent — an existing sitemap or operator-entered brief field is
+    left untouched), then runs the normal generator."""
+    project = _get_project_with_business(db, workspace_id, project_id)
+    if project is None:
+        return None
+    business = project.client.business
+
+    existing_sitemap = db.scalar(select(Sitemap).where(Sitemap.project_id == project.id).limit(1))
+    seeded_sitemap = existing_sitemap is None
+    if seeded_sitemap:
+        _seed_initial_sitemap(db, project)
+    _prefill_initial_brief(db, project, business)
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=project.id,
+        action="initial_website_seeded",
+        summary=(
+            "Seeded initial-website sources from business info"
+            + (" (starter sitemap + brief)" if seeded_sitemap else " (brief)")
+        ),
+    )
+    db.commit()
+
+    return generate_website(db, workspace_id, actor_id, project_id, request)
 
 
 def regenerate_section(

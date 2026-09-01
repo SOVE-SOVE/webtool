@@ -21,6 +21,7 @@ import {
   type Task,
   type User,
   type WebsiteBrief,
+  type WebsiteSummary,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
 import { BriefEditor } from "@/components/BriefEditor";
@@ -95,6 +96,10 @@ export default function ProjectDetailPage() {
   const [businessGoals, setBusinessGoals] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
 
+  const [websites, setWebsites] = useState<WebsiteSummary[] | null>(null);
+  const [generatingInitialWebsite, setGeneratingInitialWebsite] = useState(false);
+  const [initialWebsiteError, setInitialWebsiteError] = useState<string | null>(null);
+
   const [sitemaps, setSitemaps] = useState<Sitemap[] | null>(null);
   const [sitemapExpandedId, setSitemapExpandedId] = useState<string | null>(null);
   const [generatingSitemap, setGeneratingSitemap] = useState(false);
@@ -159,6 +164,7 @@ export default function ProjectDetailPage() {
     loadCreativeDirections();
     loadSitemaps();
     loadWebsiteBriefs();
+    api.listWebsites(projectId).then(setWebsites).catch(() => {});
     loadApprovalsAndDeployments();
     loadTasks();
     api.listMeetings({ projectId }).then(setMeetings).catch(() => {});
@@ -277,6 +283,20 @@ export default function ProjectDetailPage() {
       setGenerateWebsiteBriefError(err instanceof ApiError ? err.message : "Couldn't generate a website brief.");
     } finally {
       setGeneratingWebsiteBrief(false);
+    }
+  }
+
+  async function handleGenerateInitialWebsite() {
+    setGeneratingInitialWebsite(true);
+    setInitialWebsiteError(null);
+    try {
+      await api.generateInitialWebsite(projectId);
+      router.push(`/dashboard/projects/${projectId}/website`);
+    } catch (err) {
+      setInitialWebsiteError(
+        err instanceof ApiError ? err.message : "Couldn't generate the initial website.",
+      );
+      setGeneratingInitialWebsite(false);
     }
   }
 
@@ -431,13 +451,30 @@ export default function ProjectDetailPage() {
       <section className="rounded-md border border-border bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Build &amp; delivery</h2>
-          <Link
-            href={`/dashboard/projects/${projectId}/website`}
-            className="btn btn-primary btn-sm"
-          >
-            Open website workspace →
-          </Link>
+          {websites && websites.length === 0 ? (
+            <button
+              onClick={handleGenerateInitialWebsite}
+              disabled={generatingInitialWebsite}
+              className="btn btn-primary btn-sm"
+            >
+              {generatingInitialWebsite ? "Generating…" : "Generate initial website →"}
+            </button>
+          ) : (
+            <Link
+              href={`/dashboard/projects/${projectId}/website`}
+              className="btn btn-primary btn-sm"
+            >
+              Open website workspace →
+            </Link>
+          )}
         </div>
+        {websites && websites.length === 0 && (
+          <p className="mt-2 text-sm text-fg-muted">
+            Build a demo website from the business information on file — a starter sitemap and brief are seeded
+            automatically. It’s a working draft to preview and show the owner before you make contact.
+          </p>
+        )}
+        {initialWebsiteError && <p className="mt-2 text-error">{initialWebsiteError}</p>}
         {approvalStatus ? (
           <div className="mt-3 space-y-4">
             <ApprovalPipelineView status={approvalStatus} />
