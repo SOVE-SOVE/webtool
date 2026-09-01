@@ -11,6 +11,68 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T2: Lead Discovery unified into one workspace
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked on the T1 commit.
+**Merge to main after:** yes — pending review (same branch as T1; PR #41).
+**Scope touched:** `apps/web/src/components/DiscoveryWorkspace.tsx` (new),
+`apps/web/src/app/dashboard/discovery/page.tsx`,
+`apps/web/src/app/dashboard/discovery/[id]/page.tsx`; this file.
+
+**What happened:** Closes audit gap **G1**. Before: nav "Discovery"
+opened a search-*history table* (`discovery/page.tsx`); the actual
+workspace — search form + map + results + add — lived only at
+`discovery/[id]`, not in nav, reachable only by clicking a history row.
+
+Extracted the whole workspace into one client component,
+`DiscoveryWorkspace`, that both routes now render:
+- `/dashboard/discovery` → `<DiscoveryWorkspace />` — opens on the most
+  recent search (or the empty state).
+- `/dashboard/discovery/[id]` → `<DiscoveryWorkspace initialSearchId=… />`
+  — a permalink to one search; keeps the discovered-business detail
+  page's "← Back to search results" link and any bookmarked search
+  URLs working.
+
+The component carries: the search form **always visible** at the top
+(industry / location / business type / keywords / website filter / Run
+search); a "Showing …" `<select>` to switch between past searches
+(replaces the old history table); the criteria header; the existing
+result filters + sort + "on map only"; the existing `DiscoveryMap`
+(reused unchanged); the existing results table (website-status badges,
+score, per-row "Add lead"/"View lead"); "Load more"; and a "Review
+queue →" link. Switching the active search updates the URL in place
+via `history.replaceState` (no full navigation). No map rebuild, no
+design-system / nav-styling change, no backend change, no endpoint
+change (`listDiscoverySearches` / `createDiscoverySearch` /
+`getDiscoverySearch` / `listDiscoveredBusinesses` /
+`loadMoreDiscoverySearch` / `importDiscoveredBusiness` all as-is).
+
+`/dashboard/review` and `/dashboard/discovered-businesses/[id]` left
+exactly as they were — Review is the cross-search triage/bulk-approve
+queue (T3 simplifies its contents), the detail route is the deep-dive.
+
+**Routes:** none added, none removed. `discovery/page.tsx` and
+`discovery/[id]/page.tsx` both re-point at the shared component.
+
+**Verified:** `eslint` clean, `vitest run` 102/102, `next build` clean
+(TypeScript checked). Full browser pass on a throwaway instance (API
+:8020 + web :3020, fresh `webdesignos_t2audit` DB migrated to head,
+seeded admin): opened `/dashboard/discovery` → search form + empty
+state; ran a live Google Places search ("cafe" / "Byron Bay") → URL
+became `/discovery/<id>`, "Showing" picker populated, criteria header,
+map rendered with clustered markers, 20 results with website badges;
+website filter "No website" → 1 result, map + count updated; "Add
+lead" on that row → became "View lead →"; `/dashboard/leads` → the new
+lead present; reloaded `/discovery/<id>` directly → full workspace,
+persisted "View lead"; clicked a business → deep-dive route, its "←
+Back to search results" link resolves to the unified workspace. Zero
+console errors. Instance + DB torn down.
+
+**Next up:** T3 — approving a discovered business auto-imports it into
+the CRM (reuse `import_to_lead`), and strip the Review queue to the
+essentials.
+
+---
+
 ## 2026-09-01 — T1: Workflow audit — current vs. intended Web Design OS flow (audit only, no app code)
 **Mode:** worktree (`workflow-audit-t1-t5`), branched from `main`.
 **Merge to main after:** yes — docs only.
