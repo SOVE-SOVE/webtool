@@ -11,6 +11,70 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T3: approving a discovered business auto-imports it to the CRM
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T2. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/api/app/modules/discovery/{service,routes,schemas}.py`,
+`apps/web/src/app/dashboard/review/page.tsx`, `apps/web/src/lib/api.ts`,
+`apps/api/tests/{test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file. (Test-infra fixes in a separate prior commit.)
+
+**What happened:** Closes audit gaps **G2** and **G3**.
+
+*Backend — approve = in CRM (G2):*
+- `import_to_lead` split into `_import_discovered_business(db, ..., business)`
+  (the core create-business-+-lead logic, **no commit** — caller owns the
+  transaction) + a thin `import_to_lead` wrapper (loads + commits) that
+  still backs the standalone `POST /discovered-businesses/{id}/import`
+  ("Add lead" button in the discovery results table). Plus a shared
+  `_resolve_crm_business` helper.
+- `approve_business` now: sets APPROVED, then calls
+  `_import_discovered_business` in the **same transaction**. Success →
+  one commit, business is IMPORTED with a real lead. Import failure →
+  nothing commits (FastAPI's session closes without commit → rollback),
+  so the business stays reviewable, never stuck "approved but not
+  imported". `DuplicateLeadError` (already represented in the CRM) is
+  caught: no second lead, the discovered row is linked to the existing
+  lead, outcome `already_in_crm`.
+- New `ApproveResult { business, outcome: "imported"|"already_in_crm",
+  lead_id }` — `POST .../approve` response. Route also catches
+  `CannotImportError` → 400.
+- `bulk_approve` → approve **and import** each selection, one
+  transaction per item (`db.rollback()` on a failure so the rest still
+  go through). New `BulkApproveResult { imported, already_in_crm,
+  failed: [{id,name,reason}], not_found }`.
+- The separate `/import` endpoint stays — the "Add lead" quick path on
+  the discovery results table is unchanged.
+
+*Frontend — Review queue simplified (G3):* 13 columns → 7 (checkbox,
+Business, Location, Website, Score chip, "Why review", Actions). Dropped
+the internal-status dropdown filter, the "Audit summary"/"Confidence"/
+"Key problems"/"Sales angle"/"Source"/"Researched" columns (still on the
+deep-dive route), and the "Research again"/"Archive"/standalone "Add to
+CRM" actions. Primary actions are just **Approve** / **Reject**;
+approve shows a green "Added X to the CRM as a lead" (or "was already in
+the CRM") notice. Bulk button is "Approve & add to CRM (N)" and reports
+"N added · M already in the CRM · K couldn't be added". Settled rows
+(imported/rejected/archived) show status text + a "View lead →" link.
+Website/spacing/dark-mode classes unchanged.
+
+**Verified:** `eslint` + `tsc` (via `next build`) + `vitest` (102) all
+clean. Full backend suite **884 passed, 0 failed** (on an isolated DB;
+the 2 date-bomb failures were fixed in the prior commit). Browser pass
+on a throwaway instance (API :8031 + web :3031, `webdesignos_t3audit`):
+live Places search → Review queue shows the 7-column layout → **Approve**
+one row → green notice, row flips to "View lead →", `GET
+/api/v1/businesses` has exactly one new Business, `GET /api/v1/leads`
+one new Lead (`source: discovery:google_places`) → **Reject** another →
+row shows "Rejected", checkbox disabled → **select 2 + bulk approve** →
+both become "View lead →", 3 leads total, no duplicate businesses.
+Instance + DBs torn down.
+
+**Next up:** T4 — two-user account management (largely already built;
+verify + test + minor Settings copy).
+
+---
+
 ## 2026-09-01 — T2: Lead Discovery unified into one workspace
 **Mode:** worktree (`workflow-audit-t1-t5`), stacked on the T1 commit.
 **Merge to main after:** yes — pending review (same branch as T1; PR #41).

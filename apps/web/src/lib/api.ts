@@ -1555,8 +1555,20 @@ export type DiscoveredBusinessReviewItem = {
   recommended_sales_angle: string | null;
 };
 
+// Approving a discovered business also adds it to the CRM in the same
+// step — see the discovery service's approve_business.
+export type ApproveResult = {
+  business: DiscoveredBusiness;
+  outcome: "imported" | "already_in_crm";
+  lead_id: string | null;
+};
+
+export type BulkApproveFailure = { id: string; name: string; reason: string };
+
 export type BulkApproveResult = {
-  approved: DiscoveredBusiness[];
+  imported: DiscoveredBusiness[];
+  already_in_crm: DiscoveredBusiness[];
+  failed: BulkApproveFailure[];
   not_found: string[];
 };
 
@@ -1935,7 +1947,7 @@ export const api = {
       `/api/v1/discovered-businesses${opts?.includeArchived ? "?include_archived=true" : ""}`,
     ),
   approveDiscoveredBusiness: (id: string) =>
-    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
+    request<ApproveResult>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
   rejectDiscoveredBusiness: (id: string, notes?: string) =>
     request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/reject`, {
       method: "POST",

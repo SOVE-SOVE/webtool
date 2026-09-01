@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.integrations.discovery.registry import UnknownProviderError
 from app.modules.discovery import service
 from app.modules.discovery.schemas import (
+    ApproveResult,
     BulkApproveRequest,
     BulkApproveResult,
     DiscoveredBusinessRead,
@@ -160,17 +161,20 @@ def get_discovered_business(
     return business
 
 
-@discovered_businesses_router.post("/{business_id}/approve", response_model=DiscoveredBusinessRead)
+@discovered_businesses_router.post("/{business_id}/approve", response_model=ApproveResult)
 def approve_business(
     business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-) -> DiscoveredBusinessRead:
+) -> ApproveResult:
+    """Approve **and** add to the CRM in one step — see
+    service.approve_business. 400 if the business is already imported or
+    can't be imported."""
     try:
-        business = service.approve_business(db, current_user.workspace_id, current_user.id, business_id)
-    except service.InvalidReviewActionError as exc:
+        result = service.approve_business(db, current_user.workspace_id, current_user.id, business_id)
+    except (service.InvalidReviewActionError, service.CannotImportError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if business is None:
+    if result is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
-    return business
+    return result
 
 
 @discovered_businesses_router.post("/{business_id}/reject", response_model=DiscoveredBusinessRead)

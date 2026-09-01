@@ -24,6 +24,8 @@ from app.modules.discovery.models import (
     OpportunityScoreCategory,
 )
 from app.modules.discovery.schemas import (
+    ApproveResult,
+    BulkApproveFailure,
     BulkApproveResult,
     DiscoveredBusinessRead,
     DiscoveredBusinessReviewRead,
@@ -589,8 +591,71 @@ def _set_review_status(
 
 def approve_business(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
-) -> DiscoveredBusinessRead | None:
-    return _set_review_status(db, workspace_id, actor_id, business_id, DiscoveredBusinessStatus.APPROVED, "approved")
+) -> ApproveResult | None:
+    """
+    Approving a discovered business brings it into the CRM in the same
+    step — there is no separate "add to CRM" action. It's marked
+    APPROVED and then imported (reusing `_import_discovered_business`),
+    both in one transaction: if the import fails, the whole thing rolls
+    back and the business stays reviewable rather than getting stuck
+    "approved but not imported". If the business is already represented
+    by a CRM lead, links to that lead instead of creating a duplicate.
+    """
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    if business.status == DiscoveredBusinessStatus.IMPORTED:
+        raise InvalidReviewActionError(
+            f"{business.name} is already in the CRM — review it there instead"
+        )
+
+    business.status = DiscoveredBusinessStatus.APPROVED
+    business.reviewed_by_user_id = actor_id
+    business.reviewed_at = datetime.now(timezone.utc)
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="discovered_business",
+        entity_id=business.id,
+        action="approved",
+        summary=f"{business.name}: approved",
+    )
+
+    try:
+        lead = _import_discovered_business(db, workspace_id, actor_id, business)
+    except DuplicateLeadError:
+        crm_business = _resolve_crm_business(db, workspace_id, business)
+        existing_lead = crm_business.lead if crm_business is not None else None
+        business.status = DiscoveredBusinessStatus.IMPORTED
+        if existing_lead is not None:
+            business.imported_lead_id = existing_lead.id
+            business.duplicate_of_business_id = crm_business.id
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="discovered_business",
+            entity_id=business.id,
+            action="imported",
+            summary=f"{business.name}: already in the CRM"
+            + (f" as a lead for {crm_business.name}" if crm_business is not None else ""),
+        )
+        db.commit()
+        db.refresh(business)
+        return ApproveResult(
+            business=DiscoveredBusinessRead.model_validate(business),
+            outcome="already_in_crm",
+            lead_id=existing_lead.id if existing_lead is not None else None,
+        )
+
+    db.commit()
+    db.refresh(business)
+    return ApproveResult(
+        business=DiscoveredBusinessRead.model_validate(business),
+        outcome="imported",
+        lead_id=lead.id,
+    )
 
 
 def reject_business(
@@ -610,39 +675,41 @@ def archive_business(
 def bulk_approve(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_ids: list[uuid.UUID]
 ) -> BulkApproveResult:
-    """Silently skips ids that don't exist in this workspace or are already
-    IMPORTED, rather than failing the whole batch — a bulk action over a
-    mixed selection should apply to what it can."""
+    """Approve + add-to-CRM for each selected business. Each one is its
+    own transaction (via `approve_business`), so one that can't be
+    imported doesn't roll back the rest. Ids not in this workspace go to
+    `not_found`; ones already imported are silently skipped (they're
+    already done); a genuine import failure goes to `failed` with a
+    reason and the business is left reviewable."""
     query = (
         select(DiscoveredBusiness)
         .join(DiscoverySearch, DiscoveredBusiness.discovery_search_id == DiscoverySearch.id)
         .where(DiscoverySearch.workspace_id == workspace_id, DiscoveredBusiness.id.in_(business_ids))
     )
-    found = list(db.scalars(query))
-    approvable = [b for b in found if b.status not in _REVIEW_ACTION_BLOCKED_STATUSES]
-    found_ids = {b.id for b in approvable}
-    not_found = [business_id for business_id in business_ids if business_id not in found_ids]
+    names = {b.id: b.name for b in db.scalars(query)}
+    not_found = [bid for bid in business_ids if bid not in names]
 
-    now = datetime.now(timezone.utc)
-    for business in approvable:
-        business.status = DiscoveredBusinessStatus.APPROVED
-        business.reviewed_by_user_id = actor_id
-        business.reviewed_at = now
-        activity_service.record(
-            db,
-            workspace_id=workspace_id,
-            user_id=actor_id,
-            entity_type="discovered_business",
-            entity_id=business.id,
-            action="approved",
-            summary=f"{business.name}: approved (bulk)",
-        )
+    imported: list[DiscoveredBusinessRead] = []
+    already_in_crm: list[DiscoveredBusinessRead] = []
+    failed: list[BulkApproveFailure] = []
 
-    db.commit()
-    for business in approvable:
-        db.refresh(business)
+    for bid in business_ids:
+        if bid not in names:
+            continue
+        try:
+            result = approve_business(db, workspace_id, actor_id, bid)
+        except InvalidReviewActionError:
+            continue  # already imported — nothing to do
+        except (CannotImportError, DuplicateLeadError, ValueError) as exc:
+            db.rollback()
+            failed.append(BulkApproveFailure(id=bid, name=names[bid], reason=str(exc)))
+            continue
+        if result is None:
+            continue
+        (imported if result.outcome == "imported" else already_in_crm).append(result.business)
+
     return BulkApproveResult(
-        approved=[DiscoveredBusinessRead.model_validate(b) for b in approvable], not_found=not_found
+        imported=imported, already_in_crm=already_in_crm, failed=failed, not_found=not_found
     )
 
 
@@ -690,40 +757,49 @@ def _build_import_notes(
     return "\n\n".join(parts)
 
 
-def import_to_lead(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
-) -> DiscoveredBusinessRead | None:
+def _resolve_crm_business(
+    db: Session, workspace_id: uuid.UUID, business: DiscoveredBusiness
+) -> Business | None:
+    """The CRM business this discovered row maps to, if any — the
+    dedup-flagged one first, otherwise a fresh match against the
+    workspace (re-checked at import time, not just at discovery time)."""
+    if business.duplicate_of_business_id:
+        crm_business = db.get(Business, business.duplicate_of_business_id)
+        if crm_business is not None:
+            return crm_business
+    normalized = NormalizedBusinessResult(
+        name=business.name,
+        website_url=business.website_url,
+        phone=business.phone,
+        email=business.email,
+        address=business.address,
+        suburb=business.suburb,
+        state=business.state,
+        postcode=business.postcode,
+    )
+    return dedup.find_existing_business_match(db, workspace_id, normalized)
+
+
+def _import_discovered_business(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business: DiscoveredBusiness
+) -> Lead:
     """
-    Creates (or reuses) a CRM Business and a new Lead for this
+    Core import: create (or reuse) a CRM Business and a new Lead for this
     discovered business, preserving research/quality/score context onto
     the new Lead (score, priority derived from score category, a
     WebsiteAudit row from the latest research, and a full digest in
-    notes — see _build_import_notes). Re-checks for a duplicate CRM
-    business at import time (not just the dedup flag set at discovery
-    time) and refuses to create a second lead for a business that
-    already has one — see DuplicateLeadError.
+    notes — see _build_import_notes).
+
+    Does **not** commit — the caller owns the transaction, so approval
+    can import in the same transaction as the approval (and roll both
+    back together on failure). Raises CannotImportError for a
+    rejected/archived/already-imported row, and DuplicateLeadError when
+    the matching CRM business already has a lead.
     """
-    business = _get_discovered_business_orm(db, workspace_id, business_id)
-    if business is None:
-        return None
     if business.status in _NOT_IMPORTABLE_STATUSES:
         raise CannotImportError(f"Cannot import a business with status {business.status.value}")
 
-    crm_business = None
-    if business.duplicate_of_business_id:
-        crm_business = db.get(Business, business.duplicate_of_business_id)
-    if crm_business is None:
-        normalized = NormalizedBusinessResult(
-            name=business.name,
-            website_url=business.website_url,
-            phone=business.phone,
-            email=business.email,
-            address=business.address,
-            suburb=business.suburb,
-            state=business.state,
-            postcode=business.postcode,
-        )
-        crm_business = dedup.find_existing_business_match(db, workspace_id, normalized)
+    crm_business = _resolve_crm_business(db, workspace_id, business)
 
     if crm_business is not None and crm_business.lead is not None:
         raise DuplicateLeadError(f"{crm_business.name} already has a lead in the CRM — not importing a duplicate")
@@ -798,6 +874,21 @@ def import_to_lead(
         summary=f"Imported into CRM as a lead for {crm_business.name}",
     )
 
+    return lead
+
+
+def import_to_lead(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
+) -> DiscoveredBusinessRead | None:
+    """The standalone "add to CRM" action (the discovery results table's
+    "Add lead" button, `POST /discovered-businesses/{id}/import`).
+    Approving a business does the same thing in one step — see
+    `approve_business` — this is the direct path for a row the operator
+    doesn't need to formally review first."""
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    _import_discovered_business(db, workspace_id, actor_id, business)
     db.commit()
     db.refresh(business)
     return DiscoveredBusinessRead.model_validate(business)
