@@ -21,8 +21,13 @@ $ApiDir  = Join-Path $RepoRoot "apps\api"
 $WebDir  = Join-Path $RepoRoot "apps\web"
 $ApiPort = 8000
 $WebPort = 3000
-$ApiUrl  = "http://localhost:$ApiPort"
-$WebUrl  = "http://localhost:$WebPort"
+# 127.0.0.1, not localhost: on this class of Windows/Docker Desktop (WSL2)
+# setup, "localhost" resolves ::1 first and nothing answers there (uvicorn
+# and next dev only bind IPv4), so every health check burns its timeout on
+# a doomed IPv6 attempt before ever trying IPv4 - verified directly (10/10
+# 2s-timeout requests to "localhost" timed out; 127.0.0.1 requests did not).
+$ApiUrl  = "http://127.0.0.1:$ApiPort"
+$WebUrl  = "http://127.0.0.1:$WebPort"
 
 $ApiPidFile = Join-Path $RunDir "api.pid"
 $WebPidFile = Join-Path $RunDir "web.pid"
