@@ -11,6 +11,63 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T4: Follow-ups page — fewer screens, clean empty state
+**Mode:** worktree (`follow-ups-ux`), branched from `main` (d22c5a6).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/web/src/app/dashboard/follow-ups/page.tsx`;
+new `apps/web/src/lib/followUps.ts` (+ `.test.ts`); this file.
+No backend change.
+
+**What happened:** UX pass on `/dashboard/follow-ups`. Complete /
+reschedule / open-lead were already inline per row; kept them inline and
+moved the hand-rolled `<button>` / `<select>` markup onto the design
+system (`.btn btn-secondary btn-sm`, `.btn btn-primary btn-sm`,
+`select.input`) so the row reads the same as the rest of the app. The
+snooze control is relabelled **Reschedule…** (the API call is still
+`snoozeFollowUp`; only the label + local handler name changed).
+
+- **Empty state.** New pure helpers in `lib/followUps.ts`:
+  `scheduledFollowUpCount`, `isFollowUpQueueEmpty(buckets, candidates)`,
+  `followUpBusinessLabel`. When a load has succeeded and there are zero
+  scheduled follow-ups *and* zero detected candidates, the three empty
+  bucket lists + the candidates section are replaced by a single
+  `EmptyState` ("You're all caught up") whose description explains in two
+  sentences what the page is for and how items arrive (auto-detected or
+  generated, grouped Overdue / Due today / Upcoming). No onboarding, no
+  tutorial — just the one panel.
+- **No associated lead/business.** New `BusinessName` sub-component
+  renders the name as a link to `/dashboard/leads/{id}` only when
+  `lead_id` is present, plain text otherwise; `followUpBusinessLabel`
+  shows "Unnamed business" for a blank/missing name instead of an empty
+  clickable gap. The candidate row's **Schedule** button is disabled
+  when there's no `lead_id`. (Backend always attaches both today — this
+  is defensive, per the task.)
+- **Mobile.** Each row is now `flex-col gap-3 sm:flex-row …`; the
+  action cluster (channel badge, due date, reschedule, mark done) is
+  `flex-wrap`, and the header's lead-picker row wraps too. No more
+  squished two-column row on a phone.
+- The "Needs a follow-up scheduled" section now only renders when there
+  is at least one candidate (was always shown with a "Nothing's gone
+  quiet" filler row).
+
+**Verified:** `apps/web` — `npm run test` **109 passed** (10 files; 7
+new in `followUps.test.ts` covering count / queue-empty / blank-name
+fallback), `npm run build` clean (TypeScript clean, `/dashboard/follow-ups`
+prerenders), `npm run lint` **2 errors / 2 warnings — unchanged
+pre-existing baseline** in `layout.tsx` + `settings/page.tsx` (the
+set-state-in-effect pair; nothing new). Not click-tested in a browser
+(worktree has no live API; the scenario matrix — no / one / many
+follow-ups, overdue / due today / upcoming, complete, reschedule, open
+lead, mobile — is covered by the unit tests + reading the rendered
+markup). `apps/api` untouched, not run.
+
+**Blockers/issues:** Turbopack `next build` rejects a junction/symlinked
+`node_modules` ("points out of the filesystem root"), so the worktree
+needs a real `node_modules` (robocopy'd from `apps/web`) — a plain
+junction is enough for `vitest` but not the build.
+
+---
+
 ## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — docs only, no app code changed.

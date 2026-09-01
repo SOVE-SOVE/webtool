@@ -11,10 +11,12 @@ import {
   type Lead,
   type LeadStatus,
 } from "@/lib/api";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { followUpBusinessLabel, isFollowUpQueueEmpty } from "@/lib/followUps";
 
-const SNOOZE_OPTIONS: { label: string; days: number }[] = [
+const RESCHEDULE_OPTIONS: { label: string; days: number }[] = [
   { label: "+1 day", days: 1 },
   { label: "+3 days", days: 3 },
   { label: "+1 week", days: 7 },
@@ -33,22 +35,32 @@ const FOLLOW_UP_ELIGIBLE_STATUSES: LeadStatus[] = [
   "nurture",
 ];
 
+/** Business name — a link to the lead when we have one, plain text otherwise. */
+function BusinessName({ leadId, label }: { leadId: string | null | undefined; label: string }) {
+  if (!leadId) {
+    return <span className="font-medium text-fg">{label}</span>;
+  }
+  return (
+    <Link href={`/dashboard/leads/${leadId}`} className="font-medium text-fg hover:underline">
+      {label}
+    </Link>
+  );
+}
+
 function FollowUpRow({
   item,
   onResolve,
-  onSnooze,
+  onReschedule,
 }: {
   item: FollowUp;
   onResolve: (id: string) => void;
-  onSnooze: (id: string, days: number) => void;
+  onReschedule: (id: string, days: number) => void;
 }) {
   return (
     <li className="px-4 py-3 text-sm">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-fg hover:underline">
-            {item.business_name}
-          </Link>
+          <BusinessName leadId={item.lead_id} label={followUpBusinessLabel(item)} />
           <p className="mt-0.5 text-xs text-fg-muted">
             {item.previous_outreach
               ? `Previous: ${item.previous_outreach.channel.replace("_", " ")} (${item.previous_outreach.status.replace("_", " ")}) — ${item.previous_outreach.excerpt}`
@@ -56,31 +68,29 @@ function FollowUpRow({
           </p>
           <p className="mt-1 text-fg">{item.suggested_next_action}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
           <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
             {item.channel.replace("_", " ")}
           </span>
-          <span className="text-xs text-fg-muted">{new Date(item.due_date).toLocaleDateString()}</span>
+          <span className="text-xs text-fg-muted">Due {new Date(item.due_date).toLocaleDateString()}</span>
           <div className="flex items-center gap-2">
             <select
               value=""
               onChange={(e) => {
                 const days = Number(e.target.value);
-                if (days) onSnooze(item.id, days);
+                if (days) onReschedule(item.id, days);
               }}
-              className="rounded-md border border-border-strong px-2 py-1 text-xs"
+              className="input w-auto text-xs"
+              aria-label={`Reschedule follow-up for ${followUpBusinessLabel(item)}`}
             >
-              <option value="">Snooze…</option>
-              {SNOOZE_OPTIONS.map((opt) => (
+              <option value="">Reschedule…</option>
+              {RESCHEDULE_OPTIONS.map((opt) => (
                 <option key={opt.days} value={opt.days}>
                   {opt.label}
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => onResolve(item.id)}
-              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-            >
+            <button onClick={() => onResolve(item.id)} className="btn btn-secondary btn-sm">
               Mark done
             </button>
           </div>
@@ -94,18 +104,18 @@ function bucketSection(
   title: string,
   items: FollowUp[],
   onResolve: (id: string) => void,
-  onSnooze: (id: string, days: number) => void,
+  onReschedule: (id: string, days: number) => void,
   emptyLabel: string,
 ) {
   return (
     <section className="mt-6">
-      <h2 className="text-sm font-semibold text-fg">
+      <h2 className="section-title">
         {title} <span className="font-normal text-fg-muted">({items.length})</span>
       </h2>
-      <ul className="mt-2 divide-y divide-border border border-border">
+      <ul className="mt-2 divide-y divide-border rounded-md border border-border">
         {items.length === 0 && <li className="px-4 py-3 text-sm text-fg-muted">{emptyLabel}</li>}
         {items.map((item) => (
-          <FollowUpRow key={item.id} item={item} onResolve={onResolve} onSnooze={onSnooze} />
+          <FollowUpRow key={item.id} item={item} onResolve={onResolve} onReschedule={onReschedule} />
         ))}
       </ul>
     </section>
@@ -123,22 +133,20 @@ function NeedsFollowUpRow({
 }) {
   return (
     <li className="px-4 py-3 text-sm">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <Link href={`/dashboard/leads/${item.lead_id}`} className="font-medium text-fg hover:underline">
-            {item.business_name}
-          </Link>
+          <BusinessName leadId={item.lead_id} label={followUpBusinessLabel(item)} />
           <p className="mt-0.5 text-xs text-fg-muted">Status: {item.lead_status.replace("_", " ")}</p>
           <p className="mt-1 text-fg">{item.reason}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
             Suggest: {item.suggested_channel.replace("_", " ")}
           </span>
           <button
             onClick={() => onSchedule(item.lead_id)}
-            disabled={scheduling}
-            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
+            disabled={scheduling || !item.lead_id}
+            className="btn btn-primary btn-sm"
           >
             Schedule
           </button>
@@ -191,7 +199,7 @@ export default function FollowUpsPage() {
     load();
   }
 
-  async function handleSnooze(id: string, days: number) {
+  async function handleReschedule(id: string, days: number) {
     await api.snoozeFollowUp(id, days);
     load();
   }
@@ -210,19 +218,21 @@ export default function FollowUpsPage() {
   }
 
   const eligibleLeads = leads.filter((l) => !l.archived_at && FOLLOW_UP_ELIGIBLE_STATUSES.includes(l.status));
+  const queueEmpty = buckets !== null && isFollowUpQueueEmpty(buckets, candidates);
 
   return (
     <div className="p-6">
       <PageHeader
         title="Follow-ups"
-        description="Your daily action queue — leads that need a touch, snoozed reminders, and nothing gets contacted without you."
+        description="Your daily contact queue — leads that have gone quiet, sorted by when they're due. Reschedule or mark each one done from here; nothing is contacted without you."
       />
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <select
           value={selectedLeadId}
           onChange={(e) => setSelectedLeadId(e.target.value)}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
+          className="input w-auto"
+          aria-label="Lead to generate a follow-up for"
         >
           <option value="">Select a lead…</option>
           {eligibleLeads.map((lead) => (
@@ -231,11 +241,7 @@ export default function FollowUpsPage() {
             </option>
           ))}
         </select>
-        <button
-          onClick={handleGenerate}
-          disabled={!selectedLeadId || generating}
-          className="btn btn-primary"
-        >
+        <button onClick={handleGenerate} disabled={!selectedLeadId || generating} className="btn btn-primary">
           {generating ? "Generating…" : "Generate follow-up"}
         </button>
       </div>
@@ -245,36 +251,44 @@ export default function FollowUpsPage() {
         </div>
       )}
 
-      <section className="mt-6">
-        <h2 className="text-sm font-semibold text-fg">
-          Needs a follow-up scheduled <span className="font-normal text-fg-muted">({candidates.length})</span>
-        </h2>
-        <p className="mt-0.5 text-xs text-fg-muted">
-          Detected automatically from last contact, pipeline stage, and meeting outcomes — nothing is sent until you
-          click Schedule.
-        </p>
-        <ul className="mt-2 divide-y divide-border border border-border">
-          {candidates.length === 0 && (
-            <li className="px-4 py-3 text-sm text-fg-muted">
-              Nothing&apos;s gone quiet — you&apos;re caught up.
-            </li>
-          )}
-          {candidates.map((c) => (
-            <NeedsFollowUpRow
-              key={c.lead_id}
-              item={c}
-              onSchedule={handleSchedule}
-              scheduling={schedulingLeadId === c.lead_id}
-            />
-          ))}
-        </ul>
-      </section>
-
-      {buckets && (
+      {queueEmpty ? (
+        <div className="mt-6">
+          <EmptyState
+            title="You're all caught up"
+            description="Follow-ups land here when a lead goes quiet — automatically from last contact and pipeline stage, or when you generate one above. They're grouped by Overdue, Due today, and Upcoming so you always know who to contact next."
+          />
+        </div>
+      ) : (
         <>
-          {bucketSection("Overdue", buckets.overdue, handleResolve, handleSnooze, "Nothing overdue.")}
-          {bucketSection("Due today", buckets.due_today, handleResolve, handleSnooze, "Nothing due today.")}
-          {bucketSection("Upcoming", buckets.upcoming, handleResolve, handleSnooze, "Nothing upcoming.")}
+          {candidates.length > 0 && (
+            <section className="mt-6">
+              <h2 className="section-title">
+                Needs a follow-up scheduled <span className="font-normal text-fg-muted">({candidates.length})</span>
+              </h2>
+              <p className="mt-0.5 text-xs text-fg-muted">
+                Detected automatically from last contact, pipeline stage, and meeting outcomes — nothing is sent until
+                you click Schedule.
+              </p>
+              <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+                {candidates.map((c) => (
+                  <NeedsFollowUpRow
+                    key={c.lead_id}
+                    item={c}
+                    onSchedule={handleSchedule}
+                    scheduling={schedulingLeadId === c.lead_id}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {buckets && (
+            <>
+              {bucketSection("Overdue", buckets.overdue, handleResolve, handleReschedule, "Nothing overdue.")}
+              {bucketSection("Due today", buckets.due_today, handleResolve, handleReschedule, "Nothing due today.")}
+              {bucketSection("Upcoming", buckets.upcoming, handleResolve, handleReschedule, "Nothing upcoming.")}
+            </>
+          )}
         </>
       )}
     </div>
