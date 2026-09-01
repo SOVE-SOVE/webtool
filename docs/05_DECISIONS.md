@@ -20,19 +20,26 @@ accepts flat inputs and is deterministic. The only thing standing
 between "a project with just a business name" and "a generated
 `Website` row" was `websites/service.py::generate_website` refusing
 without a sitemap. So `generate_initial_website()` seeds a starter
-DRAFT `Sitemap` (Home/About/Services/Contact) and pre-fills the
-`DesignBrief` from data already on file (business fields; the
-originating lead's `WebsiteAudit.meta_description` — the business's own
-words — as the draft description), then calls the unchanged
-`generate_website()`. Unknown copy is a labelled `[DRAFT — …]`
-placeholder or omitted; **no business claim is invented** (the hard
-constraint from every prior website-generation entry below is
-untouched). Both seeded rows are ordinary editable DRAFT artifacts, and
-the seed is idempotent — an existing sitemap or an operator-entered
-brief field is never overwritten. All downstream gates (`approve_website`,
-QA, Phase-6 workflow transitions, deployment) are unchanged: an initial
-website is a normal `Website` version that still has to earn every one
-of them before it can ship.
+DRAFT `Sitemap` — Home / About / an offering page chosen by industry
+keyword (Menu, Products, Work, else Services — page *structure* only,
+never invented copy) / Contact — and pre-fills the `DesignBrief` from
+data already on file: business fields, and for the home description the
+business's existing site's own meta description (their words, via the
+originating lead's `WebsiteAudit`) or else **a plain factual sentence
+from known facts only** (name + industry + location). No bracketed
+lorem: anything with no honest source is left for the generator to
+report in `missing_information`. **No business claim is invented** (the
+hard constraint from every prior website-generation entry below is
+untouched). Then it calls the unchanged `generate_website()`, passing
+`advance_to_stage=DESIGN` (a pre-sale demo has not reached development;
+the plain route keeps its DEVELOPMENT default) and a `sources_note`
+that labels the version an intentional demo so the workspace UI frames
+it as a draft, not a failed generation. Seeded rows are ordinary
+editable DRAFT artifacts; the seed is idempotent — an existing sitemap
+or an operator-entered brief field is never overwritten. All downstream
+gates (`approve_website`, QA, Phase-6 workflow transitions, deployment)
+are unchanged: an initial website is a normal `Website` version that
+still has to earn every one of them before it can ship.
 
 **2. Approving a discovered business now imports it to the CRM.** This
 reverses the 2026-08-27 "Review + CRM import stays manual" decision
@@ -46,14 +53,16 @@ unchanged `import_to_lead` (best-effort — a business that already has a
 lead stays APPROVED rather than erroring). Rejecting/archiving and the
 "import without approving" shortcut are unchanged.
 
-**Alternatives considered:** A dedicated `is_initial` flag / separate
-table for demo sites — rejected, it would fork every downstream
-consumer (`regenerate_section`, approvals, previews, deployments) for no
-real gain; the "initial" site *is* just the first version. Auto-seeding
-inside `generate_website` itself (so the plain route also works from
-zero) — rejected, it would have silently changed that route's
-documented 400 and the e2e refusal assertions; a separate
-`/initial-website` route keeps the concept explicit.
+**Alternatives considered:** A dedicated `is_initial` column / separate
+table for demo sites — rejected, it would fork every downstream consumer
+(`regenerate_section`, approvals, previews, deployments) for no real
+gain; the "initial" site *is* just the first version, and the
+demo-vs-real distinction is carried by `sources_note` (a display string
+that a real regeneration recomputes away) rather than a stored flag
+anything branches on. Auto-seeding inside `generate_website` itself (so
+the plain route also works from zero) — rejected, it would have silently
+changed that route's documented 400 and the e2e refusal assertions; a
+separate `/initial-website` route keeps the concept explicit.
 
 ---
 

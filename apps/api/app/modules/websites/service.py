@@ -292,8 +292,22 @@ def _sources_note(brief: DesignBrief | None, cd: CreativeDirectionBrief | None, 
 
 
 def generate_website(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, project_id: uuid.UUID, request: GenerateWebsiteRequest
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    project_id: uuid.UUID,
+    request: GenerateWebsiteRequest,
+    *,
+    advance_to_stage: ProjectStage | None = ProjectStage.DEVELOPMENT,
+    sources_note: str | None = None,
 ) -> WebsiteRead | None:
+    """`advance_to_stage` is the project stage this generation nudges the
+    project to (forward-only, via projects_service.advance_stage) — the
+    default DEVELOPMENT is the real build starting; `generate_initial_website`
+    passes DESIGN instead, since a pre-sale demo hasn't reached development
+    yet. `sources_note`, when given, overrides the computed brief/creative-
+    direction/sitemap summary stored on the version (used to label an
+    initial demo)."""
     project = _get_project_with_business(db, workspace_id, project_id)
     if project is None:
         return None
@@ -327,7 +341,7 @@ def generate_website(
         config=config,
         anti_slop_score=anti_slop.score,
         flagged_for_review=result.flagged_for_review or not anti_slop.passed,
-        sources_note=_sources_note(brief, creative_direction, sitemap),
+        sources_note=sources_note or _sources_note(brief, creative_direction, sitemap),
         generated_by_user_id=actor_id,
     )
     db.add(website)
@@ -342,9 +356,10 @@ def generate_website(
         action="website_generated",
         summary=f"Generated website for {project.name} ({len(config['pages'])} pages, quality score {anti_slop.score})",
     )
-    projects_service.advance_stage(
-        db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=ProjectStage.DEVELOPMENT
-    )
+    if advance_to_stage is not None:
+        projects_service.advance_stage(
+            db, workspace_id=workspace_id, actor_id=actor_id, project=project, new_stage=advance_to_stage
+        )
     db.commit()
 
     # Automation hand-off: technical QA runs next on its own — read-only
@@ -374,55 +389,133 @@ def generate_website(
 # onto the originating lead) to a real Website version that flows
 # through the exact same pipeline afterwards.
 #
-# It does that by seeding a starter Sitemap and pre-filling the
-# project's DesignBrief from real business data the first time it runs,
-# then delegating to generate_website() unchanged. Nothing here
-# fabricates a business claim: unknown copy is left as a clearly
-# labelled draft placeholder (or omitted, surfacing as
-# missing_information), never invented. Both seeded artifacts are plain
-# DRAFT rows the operator edits or regenerates normally — this is an
-# entry point, not a separate system.
+# It does that by seeding a starter Sitemap (offering page chosen to fit
+# the industry) and pre-filling the project's DesignBrief from real
+# business data the first time it runs, then delegating to
+# generate_website() unchanged. Nothing here fabricates a business
+# claim: the brief description is either the business's own existing
+# meta description or a plain factual sentence from known facts (name,
+# industry, location); everything else it has no source for is left for
+# the generator to report as missing_information, never invented. Both
+# seeded artifacts are plain DRAFT rows the operator edits or
+# regenerates normally — this is an entry point, not a separate system.
 # ---------------------------------------------------------------------
 
-_DRAFT_PREFIX = "[DRAFT — confirm with the business owner before sharing]"
+# Stored as the version's sources_note so the workspace UI frames an
+# initial build as an intentional draft demo (see WebsiteView.tsx),
+# not a generation that went wrong. A real regeneration recomputes it
+# from the actual brief/sitemap and this label drops away.
+_INITIAL_DEMO_SOURCES_NOTE = (
+    "Initial demo website — generated from the business information on file. The sitemap and brief were "
+    "seeded automatically; anything still missing is listed above, not invented. Review and fill in the "
+    "real content before showing the business owner."
+)
 
-# A deliberately minimal starter structure — the four pages almost every
-# small local business needs. The operator adds/removes/reorders pages,
-# or regenerates the sitemap properly, from here.
-_INITIAL_SITEMAP_PAGES: list[dict] = [
-    {
-        "title": "Home",
-        "slug": "home",
-        "page_type": PageType.HOME,
-        "purpose": "Landing page — what the business does and how to get in touch.",
-        "primary_cta": "Get in touch",
-    },
-    {
-        "title": "About",
-        "slug": "about",
-        "page_type": PageType.ABOUT,
-        "purpose": "Background on the business and the people behind it.",
-    },
-    {
-        "title": "Services",
-        "slug": "services",
-        "page_type": PageType.SERVICES,
-        "purpose": "What the business offers.",
-        "primary_cta": "Get in touch",
-    },
-    {
-        "title": "Contact",
-        "slug": "contact",
-        "page_type": PageType.CONTACT,
-        "purpose": "Contact details and an enquiry form.",
-        "primary_cta": "Get in touch",
-    },
+_HOME_PAGE = {
+    "title": "Home",
+    "slug": "home",
+    "page_type": PageType.HOME,
+    "purpose": "Landing page — what the business does and how to get in touch.",
+    "primary_cta": "Get in touch",
+}
+_ABOUT_PAGE = {
+    "title": "About",
+    "slug": "about",
+    "page_type": PageType.ABOUT,
+    "purpose": "Background on the business and the people behind it.",
+}
+_CONTACT_PAGE = {
+    "title": "Contact",
+    "slug": "contact",
+    "page_type": PageType.CONTACT,
+    "purpose": "Contact details and an enquiry form.",
+    "primary_cta": "Get in touch",
+}
+_SERVICES_PAGE = {
+    "title": "Services",
+    "slug": "services",
+    "page_type": PageType.SERVICES,
+    "purpose": "What the business offers.",
+    "primary_cta": "Get in touch",
+}
+
+# Industry keyword -> the "what we offer" page that fits it better than a
+# generic Services page. Page *structure* only (a Menu page, a Products
+# page) — never invented copy — so this is safe to pick deterministically.
+_OFFERING_PAGE_BY_INDUSTRY: list[tuple[tuple[str, ...], dict]] = [
+    (
+        ("restaurant", "cafe", "café", "coffee", "bakery", "patisserie", "catering", "food", "bar ",
+         "bistro", "takeaway", "diner", "brewery", "winery", "pub"),
+        {
+            "title": "Menu",
+            "slug": "menu",
+            "page_type": PageType.CUSTOM,
+            "purpose": "Food and drink menu.",
+            "primary_cta": "Book a table",
+        },
+    ),
+    (
+        ("retail", "shop", "store", "boutique", "ecommerce", "e-commerce", "clothing", "apparel",
+         "furniture", "florist", "grocer", "nursery", "bookshop", "jewel", "homeware"),
+        {
+            "title": "Products",
+            "slug": "products",
+            "page_type": PageType.PRODUCTS,
+            "purpose": "What the business sells.",
+            "primary_cta": "Get in touch",
+        },
+    ),
+    (
+        ("photograph", "portfolio", "design studio", "architect", "interior design", "landscap",
+         "construction", "builder", "joinery", "cabinet"),
+        {
+            "title": "Work",
+            "slug": "work",
+            "page_type": PageType.PORTFOLIO,
+            "purpose": "Examples of past work.",
+            "primary_cta": "Get in touch",
+        },
+    ),
 ]
+
+
+def _offering_page(industry: str | None) -> dict:
+    text = (industry or "").lower()
+    for keywords, page in _OFFERING_PAGE_BY_INDUSTRY:
+        if any(keyword in text for keyword in keywords):
+            return page
+    return _SERVICES_PAGE
+
+
+def _initial_sitemap_pages(industry: str | None) -> list[dict]:
+    """The starter structure: Home, About, the offering page that fits
+    the industry, and Contact. The operator adds/removes/reorders from
+    here, or regenerates a proper sitemap once the brief is filled in."""
+    return [_HOME_PAGE, _ABOUT_PAGE, _offering_page(industry), _CONTACT_PAGE]
 
 
 def _location_from_business(business: Business) -> str | None:
     parts = [p for p in (business.suburb, business.state, business.postcode) if p]
     return ", ".join(parts) if parts else None
+
+
+def _initial_brief_description(business: Business, audit: WebsiteAudit | None) -> str | None:
+    """A home-page description for the seeded brief, in order of
+    preference: the business's existing site's own meta description
+    (their words), then a plain factual sentence built only from known
+    facts (name, industry, location — no claim beyond what's on file),
+    then nothing."""
+    if audit and audit.meta_description and audit.meta_description.strip():
+        return audit.meta_description.strip()
+    industry = (business.industry or "").strip().lower()
+    location = _location_from_business(business)
+    if industry and location:
+        return f"{business.name} provides {industry} services in {location}."
+    if industry:
+        return f"{business.name} is a {industry} business."
+    if location:
+        return f"{business.name} is a local business based in {location}."
+    return None
 
 
 def _latest_lead_audit(db: Session, project: Project) -> WebsiteAudit | None:
@@ -441,21 +534,22 @@ def _latest_lead_audit(db: Session, project: Project) -> WebsiteAudit | None:
     )
 
 
-def _seed_initial_sitemap(db: Session, project: Project) -> None:
+def _seed_initial_sitemap(db: Session, project: Project, business: Business) -> None:
     sitemap = Sitemap(
         id=uuid.uuid4(),
         project_id=project.id,
         overview=(
             "Starter structure for the initial demo website — the pages a small "
-            "local business almost always needs. Edit, reorder, or regenerate a "
-            "proper sitemap once the brief is filled in."
+            "local business almost always needs, with the offering page picked to "
+            "fit the industry. Edit, reorder, or regenerate a proper sitemap once "
+            "the brief is filled in."
         ),
         sources_note="Auto-seeded for the initial demo website from business information.",
         flagged_for_review=True,
         review_notes="Starter sitemap — review before sharing with the business owner.",
     )
     db.add(sitemap)
-    for order_index, page in enumerate(_INITIAL_SITEMAP_PAGES):
+    for order_index, page in enumerate(_initial_sitemap_pages(business.industry)):
         db.add(
             SitemapPage(
                 id=uuid.uuid4(),
@@ -481,32 +575,21 @@ def _prefill_initial_brief(db: Session, project: Project, business: Business) ->
         db.add(brief)
 
     audit = _latest_lead_audit(db, project)
-    location = _location_from_business(business)
 
-    if business.industry:
-        descriptor = f"a {business.industry} business"
-    else:
-        descriptor = "a local business"
-    where = f" based in {location}" if location else ""
-    draft_description = f"{_DRAFT_PREFIX} {business.name} is {descriptor}{where}."
-
-    factual = {
+    seed = {
         "business_name": business.name,
         "industry": business.industry,
-        "location": location,
+        "location": _location_from_business(business),
         "contact_email": business.email,
         "contact_phone": business.phone,
         "existing_website_url": business.website_url,
         "existing_social_profiles": business.social_links,
-        # The existing site's own meta description is the business's own
-        # words; fall back to a clearly-labelled draft line otherwise.
-        "business_description": (audit.meta_description if audit and audit.meta_description else draft_description),
-        "about_content": (
-            f"{_DRAFT_PREFIX} Placeholder introduction for {business.name}. "
-            "Replace with real background from the owner."
-        ),
+        "business_description": _initial_brief_description(business, audit),
+        # The one genuinely unknown field we still seed — kept short and
+        # visibly provisional rather than a bracketed lorem block.
+        "about_content": f"About {business.name} — company background to be confirmed with the owner.",
     }
-    for field, value in factual.items():
+    for field, value in seed.items():
         if value and getattr(brief, field) in (None, ""):
             setattr(brief, field, value)
     return brief
@@ -527,7 +610,7 @@ def generate_initial_website(
     existing_sitemap = db.scalar(select(Sitemap).where(Sitemap.project_id == project.id).limit(1))
     seeded_sitemap = existing_sitemap is None
     if seeded_sitemap:
-        _seed_initial_sitemap(db, project)
+        _seed_initial_sitemap(db, project, business)
     _prefill_initial_brief(db, project, business)
 
     activity_service.record(
@@ -544,7 +627,17 @@ def generate_initial_website(
     )
     db.commit()
 
-    return generate_website(db, workspace_id, actor_id, project_id, request)
+    # A pre-sale demo hasn't reached development yet — nudge the project
+    # only to DESIGN, and label the version as an intentional demo.
+    return generate_website(
+        db,
+        workspace_id,
+        actor_id,
+        project_id,
+        request,
+        advance_to_stage=ProjectStage.DESIGN,
+        sources_note=_INITIAL_DEMO_SOURCES_NOTE,
+    )
 
 
 def regenerate_section(

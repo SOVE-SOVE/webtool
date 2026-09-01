@@ -436,6 +436,8 @@ class TestGenerateInitialWebsite:
         website = res.json()
         page_names = [p["name"] for p in website["pages"]]
         assert page_names == ["Home", "About", "Services", "Contact"]
+        # Labelled as an intentional demo, not a broken generation.
+        assert website["sources_note"].startswith("Initial demo website")
 
         # A real DRAFT sitemap now exists with those four pages.
         sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
@@ -448,6 +450,40 @@ class TestGenerateInitialWebsite:
         assert brief["business"]["fields"]["business_name"] == "Harbour Electrical"
         assert brief["business"]["fields"]["industry"] == "Electrical"
         assert "Business name" not in brief["missing_fields"]
+
+        # A pre-sale demo nudges the project to DESIGN, not DEVELOPMENT.
+        assert authed_client.get(f"/api/v1/projects/{project['id']}").json()["stage"] == "design"
+
+    def test_offering_page_follows_the_industry(self, authed_client):
+        def pages_for(industry):
+            client = authed_client.post(
+                "/api/v1/clients", json={"business_name": f"{industry} Co", "industry": industry}
+            ).json()
+            project = authed_client.post(
+                "/api/v1/projects", json={"client_id": client["id"], "name": f"{industry} site"}
+            ).json()
+            website = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website").json()
+            return [p["name"] for p in website["pages"]]
+
+        assert pages_for("Cafe") == ["Home", "About", "Menu", "Contact"]
+        assert pages_for("Retail clothing") == ["Home", "About", "Products", "Contact"]
+        assert pages_for("Plumbing") == ["Home", "About", "Services", "Contact"]
+
+    def test_brief_description_is_factual_not_a_bracketed_placeholder(self, authed_client):
+        client = authed_client.post(
+            "/api/v1/clients",
+            json={"business_name": "Reef Plumbing", "industry": "Plumbing", "suburb": "Cairns", "state": "QLD"},
+        ).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Reef site"}
+        ).json()
+        authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+
+        desc = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"][
+            "business_description"
+        ]
+        assert "[" not in desc and "DRAFT" not in desc
+        assert "Reef Plumbing" in desc and "Cairns" in desc
 
     def test_second_call_reuses_seeded_sources_and_adds_a_version(self, authed_client):
         client = authed_client.post("/api/v1/clients", json={"business_name": "Peak Roofing"}).json()
