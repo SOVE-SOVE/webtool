@@ -61,9 +61,10 @@ def test_overview_counts_contacted_leads(authed_client, db_session):
 
 def test_overview_counts_meetings_and_revenue(authed_client, db_session):
     lead = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     authed_client.post(
         "/api/v1/meetings",
-        json={"title": "Discovery call", "scheduled_at": "2026-09-01T10:00:00Z", "lead_id": lead["id"]},
+        json={"title": "Discovery call", "scheduled_at": soon, "lead_id": lead["id"]},
     )
 
     opportunity = SalesOpportunity(
@@ -87,7 +88,7 @@ def test_overview_counts_project_meetings_too(authed_client):
         "/api/v1/meetings",
         json={
             "title": "Kickoff check-in",
-            "scheduled_at": "2026-09-01T10:00:00Z",
+            "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
             "project_id": project["id"],
         },
     )
