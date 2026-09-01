@@ -11,6 +11,59 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T1: Workflow audit — current vs. intended Web Design OS flow (audit only, no app code)
+**Mode:** worktree (`workflow-audit-t1-t5`), branched from `main`.
+**Merge to main after:** yes — docs only.
+**Scope touched:** new `docs/08_WORKFLOW_AUDIT.md`; this file.
+
+**What happened:** First task of a fresh 5-task batch (T1 audit, then
+T2 Discovery workspace, T3 approve→auto-CRM, T4 two-user management, T5
+Overview dashboard). Read the full funnel end to end — discovery
+list/detail/deep-dive/review pages + `discovery/service.py`
+(`create_and_run_search`, `approve_business`, `import_to_lead`,
+`bulk_approve`), leads list/detail + `clients/service.py` conversion,
+projects list/detail + website workspace + the brief→creative
+direction→sitemap→website→QA→deploy chain, `dashboard/service.py` +
+`sales_dashboard/schemas.py`, `users/{routes,service}.py`, the login
+page, and `layout.tsx`/`nav.ts`. No code changed.
+
+**Findings (full detail in `docs/08_WORKFLOW_AUDIT.md`):**
+- **G1 (T2):** nav "Discovery" lands on a *search-history table*; the
+  actual workspace (search + map + results + add) is
+  `/dashboard/discovery/[id]`, not in nav, reachable only by clicking a
+  history row.
+- **G2 (T3):** "Approve" in the Review queue only sets `status=approved`
+  — a dead-end state. Adding to the CRM is a *separate* "Add to CRM"
+  button calling `import_to_lead`. Bulk-approve imports nothing.
+- **G3 (T3):** Review queue is a 13-column pipeline console exposing all
+  8 internal statuses, "confidence", "sales angle", "research again",
+  etc.
+- **G4 (biggest, not in T2–T5 scope):** a `Project` (hence any website)
+  can only be created by `create_client`, which *requires marking the
+  lead WON*. The demo cannot be built before the client agrees —
+  directly contradicts the product principle. Recommended as a
+  follow-up task.
+- **G5:** ~10 manual generate/approve steps from project to previewable
+  site. **G7 (T5):** Overview mixes a metric wall + Quick Actions
+  (dup of nav) + Recent Activity (event log, not attention) + the
+  global "Do this next". **G8 (T5):** no website-lifecycle counts
+  exist — a new dashboard aggregation is needed for the "WEBSITES"
+  module.
+- **T4 is essentially already built:** admin-only `POST /users` with
+  password hashing, no register route anywhere, Settings → People
+  "Add teammate" form already present, last-admin-demotion guard. T4
+  becomes mostly verify + test + minor copy.
+
+**Verified:** N/A (no code). Audit doc cross-checked against the
+current source (file:line references throughout).
+
+**Next up:** T2 — make `/dashboard/discovery` the single unified
+workspace (reuse `DiscoveryMap`, `lib/filters.ts`, existing results
+markup; keep `/discovery/[id]` as a permalink; keep the deep-dive
+route).
+
+---
+
 ## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — docs only, no app code changed.
