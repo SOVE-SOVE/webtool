@@ -11,6 +11,88 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — Local dev environment: stale dev-server processes not serving merged T1/T2 code
+**Mode:** operator ran `./scripts/start-mac.sh` in the primary checkout
+(`/Users/sove/webtool/web-design-os`, not a worktree) after T1 and T2
+merged, and reported "I can't see any change when running ./scripts
+and going on the website." **No app code changed.**
+**Scope touched:** none (operational only); this file.
+
+**What happened:** The primary checkout's `main` branch was already at
+the merge commit (`99e51a3`, includes both T1 and T2) — the source on
+disk was correct. The actual cause: `next dev` (port 3000) and
+`uvicorn --reload` (port 8000) had been running continuously since
+**31 Aug 23:05/23:07** (confirmed via `ps -o lstart`), i.e. from
+*before* T1 merged (~09:32 AEST on 1 Sep) and T2 merged (~09:46 AEST).
+`scripts/start-mac.sh` checks whether the app is already answering on
+its ports before starting anything (`scripts/README.md`'s documented
+behavior) — so re-running it left the stale processes in place instead
+of restarting them. Fixed by running `scripts/stop-mac.sh` then
+`scripts/start-mac.sh`; confirmed fresh process start times and
+`/health` returning `{"status":"ok"}` afterward.
+
+Also re-confirmed, while diagnosing: this machine still has **two**
+Postgres servers able to claim `localhost:5432` — a native Homebrew
+`postgresql@16` service (`lsof` shows it owns both the IPv4 and IPv6
+listeners) and the `docker-compose` container (`docker ps` shows it
+"Up," but it never actually receives `localhost` traffic). The API's
+`.env` `DATABASE_URL` points at `localhost:5432`, so all real traffic
+goes to the Homebrew instance — `docker compose stop/start` has no
+effect on the data the app is actually using. Same issue first noted
+in T1's entry below; still not fixed, just re-verified. Worth an actual
+fix (e.g. document it prominently in `scripts/README.md`'s
+troubleshooting section, or have the Homebrew service disabled/stopped
+on this machine) next time someone's touching local-dev tooling.
+
+**Also clarified for the operator:** T1's change is only visible when
+*creating a new project* (redirect + "Project created." banner + brief
+auto-expand) — existing projects look unchanged, which is correct. T2
+made zero code changes, so Discovery looks identical to before, also
+correct — the investigation concluded it was already consolidated.
+
+**Blockers/issues:** None beyond the Postgres port note above (informational, not blocking).
+
+**Next up:** none outstanding from this session.
+
+---
+
+## 2026-09-01 — T3: UX review of Project Creation + Discovery changes (PASS — no changes needed)
+**Mode:** worktree (`send-email-button`), same session as T1/T2.
+**Merge to main after:** yes — docs only, no app code changed.
+**Scope touched:** this file only.
+
+**What happened:** Reviewed the merged T1 (project-creation
+simplification, PR #38) and T2 (Discovery consolidation verification,
+PR #39) changes against the task's own checklist, without adding
+features or making speculative improvements, per its explicit
+instruction to change nothing if everything already works.
+
+- **Project creation — PASS.** Fast (client + name only, no brief
+  gate), required fields clear, optional info deferred correctly,
+  existing project data/relationships/website workflows all intact —
+  same evidence already gathered live during T1's own implementation
+  (throwaway instance, full click-through) re-confirmed here.
+- **Discovery — PASS.** One primary destination in nav, Review
+  correctly subordinate, map/results/detail/add-lead all present and
+  untouched, no duplicate-page confusion — T2 made zero code changes,
+  so there was nothing new to regress.
+- **Regression — PASS.** Full suite reran on the final merged `main`
+  (commit `99e51a3`, T1+T2 together, not just each individually against
+  its own base): `apps/api` pytest 882/882, `apps/web` vitest 102/102,
+  `tsc --noEmit` clean, `next build` clean. `eslint` shows the same 2
+  pre-existing errors in `layout.tsx`/`settings/page.tsx` as before —
+  confirmed unrelated to T1/T2 (neither touched those files), correctly
+  left unfixed per this task's own "only fix what's directly related"
+  instruction.
+
+**Blockers/issues:** None.
+
+**Next up:** none outstanding from T1/T2/T3. (See the entry above for
+a follow-up dev-environment issue reported by the operator right after
+this review closed out.)
+
+---
+
 ## 2026-09-01 — T2: Consolidate Lead Discovery into one primary experience (verified — no changes needed)
 **Mode:** worktree (`send-email-button`), branched from `main-sync`.
 **Merge to main after:** yes — docs only, no app code changed.
