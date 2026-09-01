@@ -1303,6 +1303,14 @@ export type FollowUpCandidate = {
   days_quiet: number;
 };
 
+export type WebsitePipeline = {
+  building: number;
+  in_review: number;
+  ready_to_launch: number;
+  deployed: number;
+  maintenance: number;
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -1310,6 +1318,7 @@ export type DashboardOverview = {
   upcoming_meetings: number;
   won_projects: number;
   active_projects: number;
+  websites: WebsitePipeline;
   revenue_cents: number;
   tasks_needing_attention: number;
   follow_ups_due: number;

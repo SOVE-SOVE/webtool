@@ -112,6 +112,44 @@ def test_overview_active_projects_excludes_maintenance_and_complete(authed_clien
     assert authed_client.get("/api/v1/dashboard/overview").json()["active_projects"] == 0
 
 
+def test_overview_website_pipeline_buckets_projects_by_stage(authed_client):
+    client_row = authed_client.post("/api/v1/clients", json={"business_name": "A"}).json()
+
+    def project_at(stage: str) -> None:
+        p = authed_client.post(
+            "/api/v1/projects", json={"client_id": client_row["id"], "name": f"Site {stage}"}
+        ).json()
+        if stage != "intake":
+            authed_client.patch(f"/api/v1/projects/{p['id']}", json={"stage": stage})
+
+    project_at("intake")  # building
+    project_at("development")  # building
+    project_at("client_review")  # in_review
+    project_at("ready_to_deploy")  # ready_to_launch
+    project_at("deployed")  # deployed
+    project_at("maintenance")  # maintenance
+
+    websites = authed_client.get("/api/v1/dashboard/overview").json()["websites"]
+    assert websites == {
+        "building": 2,
+        "in_review": 1,
+        "ready_to_launch": 1,
+        "deployed": 1,
+        "maintenance": 1,
+    }
+
+
+def test_overview_website_pipeline_empty_state(authed_client):
+    websites = authed_client.get("/api/v1/dashboard/overview").json()["websites"]
+    assert websites == {
+        "building": 0,
+        "in_review": 0,
+        "ready_to_launch": 0,
+        "deployed": 0,
+        "maintenance": 0,
+    }
+
+
 def test_overview_needs_attention_overdue_task(authed_client):
     lead = authed_client.post("/api/v1/leads", json={"business_name": "A"}).json()
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()

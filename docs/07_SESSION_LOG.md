@@ -11,6 +11,61 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-02 — T5: Overview dashboard restructured into modules
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T4. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/page.tsx`,
+`apps/web/src/lib/api.ts`, `apps/web/src/lib/overview.test.ts`,
+`apps/api/app/modules/dashboard/{service,schemas}.py`,
+`apps/api/tests/test_dashboard.py`; this file. Closes audit **G7 + G8**.
+
+*Frontend:* the Overview page dropped **Quick Actions** (duplicated the
+nav) and **Recent Activity** (an event log, not "what needs
+attention" — the global "Do this next" queue already does that job and
+stays untouched at the bottom of every page). The `PageHeader` action
+buttons went too. The single 10-tile grid is now six labelled modules,
+each a `<h2 class="section-title">` + a `MetricGrid` of `Metric` tiles
+(components/spacing/dark-mode unchanged):
+- **Leads** — Active · New · Qualified · Contacted
+- **Sales** — Hot leads · In sales process (proposals) · Upcoming
+  meetings · Won deals
+- **Projects** — Active · Being built · In review / QA
+- **Websites** — Ready to launch · Deployed · In maintenance
+- **Follow-ups** — Overdue · Due today · Upcoming
+- **Revenue** — Revenue won · Open pipeline
+The **Hot leads** and **Recent wins** lists stay (a "what's happening"
+glance, not a task list). Every value is a real query — no invented
+metrics; a metric with no source shows "—", never a fake number.
+Data: `GET /dashboard/overview` + `GET /sales-dashboard` +
+`GET /follow-ups` (the last for the accurate overdue / due-today /
+upcoming split — its buckets aren't truncated).
+
+*Backend (G8):* `GET /dashboard/overview` gains a `websites`
+`WebsitePipeline` object — `building` / `in_review` / `ready_to_launch`
+/ `deployed` / `maintenance` — from one `GROUP BY Project.stage` query
+bucketed by stage (intake→development = building; qa/client_review/
+revisions = in_review; the rest map 1:1). No new table, no migration.
+
+**Verified:** `eslint` clean, `vitest` 102/102 (overview.test fixture
+updated for the new field), `next build` + TypeScript clean. Backend
+`test_dashboard.py` 20 passed incl. two new `websites`-pipeline tests
+(bucketing + empty state); full suite run separately. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): empty
+dashboard → all six modules render 0/$0, both lists say "Nothing here
+right now", no Quick Actions / Recent Activity, "Do this next" still
+present. Seeded a lead + a `development`-stage project → Leads "Active
+1 / New 1", Sales "Hot leads 1", Projects "Active 1 / Being built 1",
+Hot-leads list shows the lead. No horizontal overflow at 375px, zero
+console errors.
+
+**Batch T1–T5 complete.** All five on branch
+`worktree-workflow-audit-t1-t5` / PR #41, one commit per task (+ a
+test-infra fix commit). Recommended follow-up from the T1 audit (G4:
+a website can't be built until the deal is won) is **not** in this
+batch.
+
+---
+
 ## 2026-09-02 — T4: two-user account management (verified — already built, minor Settings copy)
 **Mode:** worktree (`workflow-audit-t1-t5`), stacked after T3. PR #41.
 **Merge to main after:** yes — pending review.
