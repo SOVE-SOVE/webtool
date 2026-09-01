@@ -1,9 +1,12 @@
 """
 Task 6 of Phase 2 ("Lead Intelligence") — the review workflow and CRM
 import that completes the pipeline: discover -> research -> audit ->
-score -> human review (approve/reject/archive) -> import into CRM.
-Covers the full end-to-end path plus each review action, duplicate
-prevention on import, and research/score preservation.
+score -> human review. Approving a prospect IS the CRM import (one
+step, per docs/05_DECISIONS.md 2026-09-01); reject/archive just record
+the decision. The POST .../import endpoint is retained as the mechanism
+approve calls internally and is still exercised directly here. Covers
+the full end-to-end path plus each review action, duplicate prevention,
+and research/score preservation.
 """
 
 import uuid
@@ -67,13 +70,9 @@ def test_full_workflow_discover_research_score_approve_import(authed_client, mon
 
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve")
     assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    assert approved.json()["reviewed_by_user_id"] is not None
-
-    imported = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import")
-    assert imported.status_code == 200
-    body = imported.json()
-    assert body["status"] == "imported"
+    body = approved.json()
+    assert body["status"] == "imported"  # approve brings it straight into the CRM
+    assert body["reviewed_by_user_id"] is not None
     assert body["imported_lead_id"] is not None
 
     lead_id = body["imported_lead_id"]
@@ -267,6 +266,41 @@ def test_cannot_review_action_an_already_imported_business(authed_client, monkey
     assert res.status_code == 400
 
 
+def test_approve_creates_the_lead_and_wont_duplicate(authed_client, db_session, workspace, monkeypatch):
+    """Approve is the only step: it creates the CRM business + lead. A
+    second approve is rejected (already imported), and approving a
+    prospect whose CRM business already has a lead is a 409, not a
+    duplicate."""
+    from sqlalchemy import select
+
+    from app.modules.leads.models import Lead
+
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    approved = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/approve")
+    assert approved.status_code == 200
+    lead_id = approved.json()["imported_lead_id"]
+    assert lead_id is not None
+    assert authed_client.get(f"/api/v1/leads/{lead_id}").status_code == 200
+
+    # Re-approving the same row does not create a second lead.
+    again = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/approve")
+    assert again.status_code == 400
+    crm_business_id = approved.json()["duplicate_of_business_id"]
+    leads = db_session.scalars(select(Lead).where(Lead.business_id == crm_business_id)).all()
+    assert len(leads) == 1
+
+    # A fresh discovery of the same business (now a CRM business with a
+    # lead) can't be approved into a duplicate.
+    second = _run_discovery(authed_client)
+    assert second["id"] != business["id"]
+    dup = authed_client.post(f"/api/v1/discovered-businesses/{second['id']}/approve")
+    assert dup.status_code == 409
+    leads = db_session.scalars(select(Lead).where(Lead.business_id == crm_business_id)).all()
+    assert len(leads) == 1
+
+
 def test_bulk_approve(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
@@ -285,7 +319,8 @@ def test_bulk_approve(authed_client, monkeypatch):
     assert res.status_code == 200
     body = res.json()
     assert len(body["approved"]) == 2
-    assert all(b["status"] == "approved" for b in body["approved"])
+    assert all(b["status"] == "imported" for b in body["approved"])
+    assert all(b["imported_lead_id"] for b in body["approved"])
     assert len(body["not_found"]) == 1
 
 

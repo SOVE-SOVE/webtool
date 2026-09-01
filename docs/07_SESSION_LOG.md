@@ -11,6 +11,72 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-01 — T5: Discovery — approve brings the prospect into the CRM in one step
+**Mode:** worktree (`follow-ups-ux`), same worktree as T4, branched from
+`main` (d22c5a6).
+**Merge to main after:** yes, pending review.
+**Scope touched:** `apps/api` — `modules/discovery/service.py`,
+`modules/discovery/routes.py`, `modules/discovery/models.py` (enum
+comment only); `apps/web` — `app/dashboard/review/page.tsx`,
+`app/dashboard/discovery/[id]/page.tsx`; `docs/05_DECISIONS.md`; tests
+(`test_lead_intelligence_workflow.py`, `test_automation_pipeline.py`);
+this file. No migration. `apps/web/src/lib/api.ts` unchanged
+(`importDiscoveredBusiness` kept — the `/import` endpoint stays).
+
+**What happened:** The Discovery review flow had two positive actions —
+**Approve** (set status `approved`, did nothing else) and **Add to CRM**
+(the real `import_to_lead`). Merged them: approving a discovered
+business now runs the full import (create/reuse CRM `Business`, create
+`Lead`, carry research/quality/score + notes) and the row lands
+`IMPORTED`. See `docs/05_DECISIONS.md` 2026-09-01 for the reasoning and
+how it squares with the 2026-08-27 "import stays manual" decision (the
+human gate is unchanged — one click instead of two).
+
+- `service.approve_business` — guards `IMPORTED` (→ `InvalidReviewActionError`,
+  400) and `REJECTED`/`ARCHIVED` (can't approve a "no"), stamps
+  `reviewed_by_user_id`/`reviewed_at`, records an `approved` activity,
+  then delegates to `import_to_lead` (one transaction). `DuplicateLeadError`
+  → 409 via the route.
+- `service.bulk_approve` — rewritten to call `approve_business` per id;
+  ids that can't be imported (missing, already imported, rejected/
+  archived, or the CRM business already has a lead) fall into
+  `not_found` instead of failing the batch. Same `BulkApproveResult`
+  shape.
+- `routes.approve_business` — now also maps `CannotImportError` → 400,
+  `DuplicateLeadError` → 409.
+- `DiscoveredBusinessStatus.APPROVED` kept in the enum (legacy rows +
+  untouched PG enum type); nothing sets it now.
+- **Frontend:** removed the "Add to CRM" button (Review queue) and the
+  "Add lead" button (`discovery/[id]` results table — its `handleAddLead`/
+  `importingId`/`IMPORTABLE` too; the "Lead" column is now a "Status"
+  column showing state / "View lead →"). "Approve" → "Approve → CRM"
+  with a tooltip; bulk button likewise. Page descriptions updated.
+- `POST /api/v1/discovered-businesses/{id}/import` and its ~10 tests are
+  untouched — it's the mechanism `approve` calls and a hook for any
+  future manual-import surface.
+
+**Verified:** `apps/api` — `pytest tests/test_lead_intelligence_workflow.py
+tests/test_automation_pipeline.py tests/test_business_discovery.py
+tests/test_discovery_architecture.py` → 80 passed (incl. new
+`test_approve_creates_the_lead_and_wont_duplicate`: approve creates the
+lead, re-approve → 400, a fresh discovery of the same business →
+approve 409, never a second lead/business). Full `apps/api` suite: see
+run below. `apps/web` — `npm run test` 109, `npm run build` +
+TypeScript clean, `npm run lint` 2 errors / 2 warnings (unchanged
+`layout.tsx` + `settings/page.tsx` baseline). Not click-tested in a
+browser.
+
+**Flow checked (Discovery → Review → Approve → CRM → Project):** covered
+by `test_full_workflow_discover_research_score_approve_import` (discover
+→ research → audit → score → approve → lead exists with score/priority/
+source, review list shows `imported`) and `test_automation_pipeline`
+(same, then convert → project). No duplicate leads/businesses:
+`import_to_lead`'s re-check at import time + the new test. Manual CRM
+paths outside Discovery (`POST /leads`, lead→client convert) untouched
+and still covered by `test_end_to_end_workflow`.
+
+---
+
 ## 2026-09-01 — T4: Follow-ups page — fewer screens, clean empty state
 **Mode:** worktree (`follow-ups-ux`), branched from `main` (d22c5a6).
 **Merge to main after:** yes, pending review.

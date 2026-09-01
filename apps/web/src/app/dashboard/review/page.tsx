@@ -125,14 +125,14 @@ export default function ReviewPage() {
     <div className="p-6">
       <PageHeader
         title="Review queue"
-        description="Every discovered prospect, with research and scoring context, ready to approve, reject, or bring into the CRM."
+        description="Every discovered prospect, with research and scoring context. Approve to bring one into the CRM as a lead — the research, audit, and score come across automatically."
         actions={
           <button
             onClick={handleBulkApprove}
             disabled={selected.size === 0 || bulkApproving}
             className="btn btn-primary"
           >
-            {bulkApproving ? "Approving…" : `Bulk approve (${selected.size})`}
+            {bulkApproving ? "Approving…" : `Approve → CRM (${selected.size})`}
           </button>
         }
       />
@@ -301,9 +301,10 @@ export default function ReviewPage() {
                                 <button
                                   disabled={busy}
                                   onClick={() => runAction(item.id, () => api.approveDiscoveredBusiness(item.id))}
-                                  className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
+                                  title="Creates a CRM lead with the research, audit, and score carried over"
+                                  className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
                                 >
-                                  Approve
+                                  Approve → CRM
                                 </button>
                                 <button
                                   disabled={busy}
@@ -320,15 +321,6 @@ export default function ReviewPage() {
                                   Archive
                                 </button>
                               </>
-                            )}
-                            {item.status !== "rejected" && item.status !== "archived" && (
-                              <button
-                                disabled={busy}
-                                onClick={() => runAction(item.id, () => api.importDiscoveredBusiness(item.id))}
-                                className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                              >
-                                Add to CRM
-                              </button>
                             )}
                           </>
                         )}

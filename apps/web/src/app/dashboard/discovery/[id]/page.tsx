@@ -32,14 +32,6 @@ const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], string> = {
   unknown: "bg-surface-subtle text-fg-subtle",
 };
 
-const IMPORTABLE = new Set<DiscoveredBusiness["status"]>([
-  "new",
-  "researched",
-  "audited",
-  "scored",
-  "approved",
-]);
-
 export default function DiscoverySearchDetailPage() {
   const params = useParams<{ id: string }>();
   const [search, setSearch] = useState<DiscoverySearch | null>(null);
@@ -49,7 +41,6 @@ export default function DiscoverySearchDetailPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
-  const [importingId, setImportingId] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   function load() {
@@ -94,19 +85,6 @@ export default function DiscoverySearchDetailPage() {
       setError(err instanceof ApiError ? err.message : "Couldn't load more results.");
     } finally {
       setLoadingMore(false);
-    }
-  }
-
-  async function handleAddLead(business: DiscoveredBusiness) {
-    setImportingId(business.id);
-    setError(null);
-    try {
-      const updated = await api.importDiscoveredBusiness(business.id);
-      setResults((rows) => (rows ? rows.map((r) => (r.id === updated.id ? updated : r)) : rows));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Couldn't add ${business.name} as a lead.`);
-    } finally {
-      setImportingId(null);
     }
   }
 
@@ -205,7 +183,7 @@ export default function DiscoverySearchDetailPage() {
                     <th className="px-3 py-2">Phone</th>
                     <th className="px-3 py-2">Website</th>
                     <th className="px-3 py-2">Score</th>
-                    <th className="px-3 py-2">Lead</th>
+                    <th className="px-3 py-2">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -293,17 +271,6 @@ export default function DiscoverySearchDetailPage() {
                             >
                               View lead &rarr;
                             </Link>
-                          ) : IMPORTABLE.has(business.status) ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAddLead(business);
-                              }}
-                              disabled={importingId === business.id}
-                              className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                            >
-                              {importingId === business.id ? "Adding…" : "Add lead"}
-                            </button>
                           ) : (
                             <span className="text-xs text-fg-subtle">{business.status}</span>
                           )}

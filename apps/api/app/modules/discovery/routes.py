@@ -166,8 +166,10 @@ def approve_business(
 ) -> DiscoveredBusinessRead:
     try:
         business = service.approve_business(db, current_user.workspace_id, current_user.id, business_id)
-    except service.InvalidReviewActionError as exc:
+    except (service.InvalidReviewActionError, service.CannotImportError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except service.DuplicateLeadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if business is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return business

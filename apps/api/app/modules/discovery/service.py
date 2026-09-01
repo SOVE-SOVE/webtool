@@ -590,7 +590,45 @@ def _set_review_status(
 def approve_business(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
 ) -> DiscoveredBusinessRead | None:
-    return _set_review_status(db, workspace_id, actor_id, business_id, DiscoveredBusinessStatus.APPROVED, "approved")
+    """
+    Approving a discovered business *is* the decision to work it, so it
+    does the whole administrative job in one step: a CRM Business and
+    Lead are created (or an existing Business reused) with all
+    research / quality / score context carried over — exactly what
+    import_to_lead does — and the row lands IMPORTED with
+    `imported_lead_id` set. The human review this click represents is the
+    only gate; there is no separate "add to CRM" step (see
+    docs/05_DECISIONS.md 2026-09-01). Reject / Archive are unchanged — a
+    "no" still only records the decision.
+    """
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    if business.status == DiscoveredBusinessStatus.IMPORTED:
+        raise InvalidReviewActionError(
+            f"{business.name} is already in the CRM — review it there instead"
+        )
+    if business.status in (DiscoveredBusinessStatus.REJECTED, DiscoveredBusinessStatus.ARCHIVED):
+        raise InvalidReviewActionError(
+            f"{business.name} was {business.status.value} — a rejected/archived prospect can't be approved"
+        )
+
+    business.reviewed_by_user_id = actor_id
+    business.reviewed_at = datetime.now(timezone.utc)
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="discovered_business",
+        entity_id=business.id,
+        action="approved",
+        summary=f"{business.name}: approved",
+    )
+    # import_to_lead commits the whole transaction (reviewed_* fields and
+    # the activity row ride along); it re-checks for a duplicate CRM
+    # business and raises DuplicateLeadError rather than creating a
+    # second lead.
+    return import_to_lead(db, workspace_id, actor_id, business_id)
 
 
 def reject_business(
@@ -610,40 +648,25 @@ def archive_business(
 def bulk_approve(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_ids: list[uuid.UUID]
 ) -> BulkApproveResult:
-    """Silently skips ids that don't exist in this workspace or are already
-    IMPORTED, rather than failing the whole batch — a bulk action over a
-    mixed selection should apply to what it can."""
-    query = (
-        select(DiscoveredBusiness)
-        .join(DiscoverySearch, DiscoveredBusiness.discovery_search_id == DiscoverySearch.id)
-        .where(DiscoverySearch.workspace_id == workspace_id, DiscoveredBusiness.id.in_(business_ids))
-    )
-    found = list(db.scalars(query))
-    approvable = [b for b in found if b.status not in _REVIEW_ACTION_BLOCKED_STATUSES]
-    found_ids = {b.id for b in approvable}
-    not_found = [business_id for business_id in business_ids if business_id not in found_ids]
-
-    now = datetime.now(timezone.utc)
-    for business in approvable:
-        business.status = DiscoveredBusinessStatus.APPROVED
-        business.reviewed_by_user_id = actor_id
-        business.reviewed_at = now
-        activity_service.record(
-            db,
-            workspace_id=workspace_id,
-            user_id=actor_id,
-            entity_type="discovered_business",
-            entity_id=business.id,
-            action="approved",
-            summary=f"{business.name}: approved (bulk)",
-        )
-
-    db.commit()
-    for business in approvable:
-        db.refresh(business)
-    return BulkApproveResult(
-        approved=[DiscoveredBusinessRead.model_validate(b) for b in approvable], not_found=not_found
-    )
+    """Approve (i.e. bring straight into the CRM — see approve_business)
+    each id in turn. An id that isn't in this workspace, is already
+    imported, was rejected/archived, or whose matching CRM business
+    already has a lead is skipped into `not_found` rather than failing
+    the whole batch — a bulk action over a mixed selection applies to
+    what it can."""
+    approved: list[DiscoveredBusinessRead] = []
+    not_found: list[uuid.UUID] = []
+    for business_id in business_ids:
+        try:
+            result = approve_business(db, workspace_id, actor_id, business_id)
+        except (InvalidReviewActionError, CannotImportError, DuplicateLeadError):
+            not_found.append(business_id)
+            continue
+        if result is None:
+            not_found.append(business_id)
+        else:
+            approved.append(result)
+    return BulkApproveResult(approved=approved, not_found=not_found)
 
 
 def _split(text: str | None) -> str:

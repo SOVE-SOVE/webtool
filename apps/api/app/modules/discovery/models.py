@@ -41,6 +41,10 @@ class DiscoveredBusinessStatus(str, enum.Enum):
     RESEARCHED = "researched"
     AUDITED = "audited"
     SCORED = "scored"
+    # Legacy: approving now imports straight into the CRM (the row goes
+    # to IMPORTED), so nothing sets APPROVED anymore. Kept for rows
+    # written before docs/05_DECISIONS.md 2026-09-01 and so the DB enum
+    # type is unchanged.
     APPROVED = "approved"
     REJECTED = "rejected"
     ARCHIVED = "archived"

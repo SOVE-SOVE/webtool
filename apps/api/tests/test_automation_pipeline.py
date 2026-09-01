@@ -219,13 +219,13 @@ def test_full_pipeline_discovery_to_deployment_with_automation(authed_client, db
     assert scored["imported_lead_id"] is None
 
     # ---------------------------------------------------------------
-    # 2. HUMAN REVIEW + CRM IMPORT — unchanged, explicit operator action.
+    # 2. HUMAN REVIEW = CRM IMPORT — one explicit operator action.
+    #    Approving a discovered business is the review gate AND brings it
+    #    into the CRM in the same step (docs/05_DECISIONS.md 2026-09-01).
     # ---------------------------------------------------------------
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve").json()
-    assert approved["status"] == "approved"
-    imported = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import").json()
-    assert imported["status"] == "imported"
-    lead_id = imported["imported_lead_id"]
+    assert approved["status"] == "imported"
+    lead_id = approved["imported_lead_id"]
     assert lead_id is not None
 
     # ---------------------------------------------------------------

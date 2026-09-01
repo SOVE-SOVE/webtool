@@ -8,6 +8,46 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-01 — Discovery: approving a prospect IS the CRM import (one step)
+
+**Decision:** The Review queue's `Approve` action now brings the
+discovered business straight into the CRM — it runs the full
+`import_to_lead` (create/reuse the CRM `Business`, create the `Lead`,
+carry over research/quality/score context and notes) and the row lands
+`IMPORTED`. The separate `Add to CRM` button (Review queue) and
+`Add lead` button (discovery search-results page) are removed.
+`bulk_approve` imports each selected row the same way. Reject/Archive
+are unchanged.
+
+**Why:** Two positive-sounding actions ("Approve" then "Add to CRM")
+made the operator do the same administrative decision twice, with
+`approved` a dead-end state that did nothing on its own — flagged in
+`07_SESSION_LOG.md` 2026-08-30. Approving a prospect already *is* the
+human's "yes, work this" decision; nothing about the pipeline needs a
+distinct approved-but-not-in-CRM state.
+
+**Relationship to the 2026-08-27 decision below** ("Review + CRM import
+stays manual"): the *manual gate* is unchanged — a human still reviews
+every discovered business and clicks Approve; nothing auto-imports on a
+score. What changed is that the single click now also does the
+bookkeeping instead of requiring a second one. The requirement it
+traces to ("nothing here is CRM data until a human reviews it") is
+still met.
+
+**Kept:** `POST /api/v1/discovered-businesses/{id}/import` stays as the
+mechanism `approve` calls internally (and the path for any future
+manual-import surface) — not removed, so its tests stay meaningful.
+`DiscoveredBusinessStatus.APPROVED` stays in the enum for rows written
+before this change and to leave the Postgres enum type untouched;
+nothing sets it anymore.
+
+**Alternatives considered:** keep `approved` as a distinct state with a
+linked lead (rejected — more states to reason about, no consumer wants
+the distinction); delete the `/import` endpoint entirely (rejected —
+larger diff, breaks ~10 import-specific tests for no functional gain).
+
+---
+
 ## 2026-08-27 — Phase 7 Part 3: connecting the automation systems — what stayed manual and why
 
 **Decision:** Wired the previously-inert job queue (`apps/api/app/jobs/`,
