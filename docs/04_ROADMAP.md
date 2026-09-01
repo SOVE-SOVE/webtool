@@ -657,6 +657,49 @@ winning/closing a deal, approving website content, and deploying.
       `tests/test_job_runner.py` covers the handler-dispatch mechanism
       itself (unregistered job_type, a raising handler, retry-then-fail).
 
+## M9 — Demo sites: build before the deal is won
+
+Goal: close [[08_WORKFLOW_AUDIT]] gap **G4** — the core product
+principle from [[00_VISION]] is "I made this for you," walking into a
+business with a finished website *before* they've agreed to anything.
+Today the build pipeline is gated behind marking the lead **WON**
+(`create_client` is the only thing that makes a `Project`), so the demo
+can't exist until after the conversation it's meant to open.
+
+- [ ] **A project can be created straight from an
+      approved/imported lead**, with no `Client` and no WON
+      `SalesOpportunity`. A "Build a demo site" action on the lead
+      (`/dashboard/leads/[id]`) creates a `Project` linked via the
+      existing `source_lead_id`, in a new pre-client state (e.g. a
+      `is_demo` flag or a `DEMO` stage before `INTAKE`). Nothing about
+      this changes the lead's status or the sales pipeline.
+- [ ] **Convert-to-client adopts the existing demo project** instead of
+      creating a second one: when a lead with a demo project is won,
+      `create_client` attaches that project to the new client and moves
+      it out of the demo state rather than adding a fresh INTAKE
+      project. A won lead with no demo project behaves exactly as it
+      does now.
+- [ ] **"Generate demo site" runs the whole chain in one action** —
+      brief → creative direction → sitemap → website — auto-approving
+      each intermediate artifact for the demo (the granular approve
+      gates stay for the post-client-feedback iterations, per
+      [[03_AGENT_RULES]] / Phase 6). The operator gets a previewable
+      site from one click, not ~10.
+- [ ] **The demo is shown, not sent.** Sharing the preview link with
+      the business owner stays a human action (existing secure-preview
+      token flow) — auto-generation never contacts the client, matching
+      [[03_AGENT_RULES]]'s "client approval communication" rule.
+- [ ] Overview / Projects surface demo projects distinctly from
+      client projects (they're speculative, not committed work).
+- [ ] Dedup: a discovered business already imported as a lead with a
+      demo project doesn't get a duplicate on re-approval.
+- [ ] Tests: a lead can go discover → approve → demo site → preview
+      with no client and no opportunity; winning that lead reuses the
+      demo project; the sales/revenue dashboards never count a demo
+      project as delivery work.
+
+See [[08_WORKFLOW_AUDIT]] §4 "Beyond T2–T5" for the original framing.
+
 ## Explicitly not roadmapped
 
 - Multi-tenant/team features — this is a one-operator system by design.

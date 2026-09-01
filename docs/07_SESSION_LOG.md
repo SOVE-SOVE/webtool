@@ -60,9 +60,12 @@ console errors.
 
 **Batch T1–T5 complete.** All five on branch
 `worktree-workflow-audit-t1-t5` / PR #41, one commit per task (+ a
-test-infra fix commit). Recommended follow-up from the T1 audit (G4:
-a website can't be built until the deal is won) is **not** in this
-batch.
+test-infra fix commit).
+
+The T1-audit follow-up (G4: a website can't be built until the deal is
+won) is now written up as **roadmap M9 — "Demo sites: build before the
+deal is won"** (`docs/04_ROADMAP.md`), added in this session but not
+implemented.
 
 ---
 
