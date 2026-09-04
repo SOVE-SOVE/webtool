@@ -7,7 +7,12 @@ app.core.settings.settings is built once at import time.
 
 import os
 
-os.environ["DATABASE_URL"] = "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
+# `setdefault`, not an unconditional assignment, so parallel test runs
+# (e.g. several worktrees at once) can each point at their own database
+# via DATABASE_URL and not truncate/drop each other's tables mid-run.
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
+)
 # Long enough to satisfy the Settings validator's minimum — see
 # app/core/settings.py; a short/placeholder secret now refuses to start.
 os.environ["SESSION_SECRET"] = "test-session-secret-not-used-in-any-real-deployment"

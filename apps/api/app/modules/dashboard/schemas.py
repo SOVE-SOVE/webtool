@@ -19,6 +19,17 @@ class AttentionItem(BaseModel):
     href: str
 
 
+class WebsitePipeline(BaseModel):
+    """How many client sites sit at each delivery stage — bucketed from
+    Project.stage (see modules/dashboard/service.py)."""
+
+    building: int  # intake → development
+    in_review: int  # QA / client review / revisions
+    ready_to_launch: int  # ready_to_deploy
+    deployed: int
+    maintenance: int
+
+
 class DashboardOverview(BaseModel):
     total_leads: int
     qualified_leads: int
@@ -26,6 +37,7 @@ class DashboardOverview(BaseModel):
     upcoming_meetings: int
     won_projects: int
     active_projects: int
+    websites: WebsitePipeline
     revenue_cents: int
     tasks_needing_attention: int
     follow_ups_due: int

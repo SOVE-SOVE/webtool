@@ -11,6 +11,294 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-02 — T5: Overview dashboard restructured into modules
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T4. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/page.tsx`,
+`apps/web/src/lib/api.ts`, `apps/web/src/lib/overview.test.ts`,
+`apps/api/app/modules/dashboard/{service,schemas}.py`,
+`apps/api/tests/test_dashboard.py`; this file. Closes audit **G7 + G8**.
+
+*Frontend:* the Overview page dropped **Quick Actions** (duplicated the
+nav) and **Recent Activity** (an event log, not "what needs
+attention" — the global "Do this next" queue already does that job and
+stays untouched at the bottom of every page). The `PageHeader` action
+buttons went too. The single 10-tile grid is now six labelled modules,
+each a `<h2 class="section-title">` + a `MetricGrid` of `Metric` tiles
+(components/spacing/dark-mode unchanged):
+- **Leads** — Active · New · Qualified · Contacted
+- **Sales** — Hot leads · In sales process (proposals) · Upcoming
+  meetings · Won deals
+- **Projects** — Active · Being built · In review / QA
+- **Websites** — Ready to launch · Deployed · In maintenance
+- **Follow-ups** — Overdue · Due today · Upcoming
+- **Revenue** — Revenue won · Open pipeline
+The **Hot leads** and **Recent wins** lists stay (a "what's happening"
+glance, not a task list). Every value is a real query — no invented
+metrics; a metric with no source shows "—", never a fake number.
+Data: `GET /dashboard/overview` + `GET /sales-dashboard` +
+`GET /follow-ups` (the last for the accurate overdue / due-today /
+upcoming split — its buckets aren't truncated).
+
+*Backend (G8):* `GET /dashboard/overview` gains a `websites`
+`WebsitePipeline` object — `building` / `in_review` / `ready_to_launch`
+/ `deployed` / `maintenance` — from one `GROUP BY Project.stage` query
+bucketed by stage (intake→development = building; qa/client_review/
+revisions = in_review; the rest map 1:1). No new table, no migration.
+
+**Verified:** `eslint` clean, `vitest` 102/102 (overview.test fixture
+updated for the new field), `next build` + TypeScript clean. Backend
+`test_dashboard.py` 20 passed incl. two new `websites`-pipeline tests
+(bucketing + empty state); full suite run separately. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): empty
+dashboard → all six modules render 0/$0, both lists say "Nothing here
+right now", no Quick Actions / Recent Activity, "Do this next" still
+present. Seeded a lead + a `development`-stage project → Leads "Active
+1 / New 1", Sales "Hot leads 1", Projects "Active 1 / Being built 1",
+Hot-leads list shows the lead. No horizontal overflow at 375px, zero
+console errors.
+
+**Batch T1–T5 complete.** All five on branch
+`worktree-workflow-audit-t1-t5` / PR #41, one commit per task (+ a
+test-infra fix commit).
+
+The T1-audit follow-up (G4: a website can't be built until the deal is
+won) is now written up as **roadmap M9 — "Demo sites: build before the
+deal is won"** (`docs/04_ROADMAP.md`), added in this session but not
+implemented.
+
+---
+
+## 2026-09-02 — T4: two-user account management (verified — already built, minor Settings copy)
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T3. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/settings/page.tsx`; this file.
+
+**What happened:** The two-user model the task describes is **already
+implemented and already fully tested** (`apps/api/tests/test_users.py`,
+`test_auth.py`):
+- `workspaces` + `users` (role `admin` | `member`), business data
+  scoped by `businesses.workspace_id`.
+- `POST /api/v1/users` is `require_admin`; hashes the password
+  (`hash_password`), 12-char minimum (`UserCreate`), rejects duplicate
+  email (409). `UserRead` exposes no `password_hash`/`password`.
+- No register/sign-up route anywhere (verified 404); login page has no
+  "create account" link.
+- Settings → People already had the admin-only "Add teammate" form
+  (name / email / password / role) + inline role editing, guarded by
+  the "can't demote the only admin" rule (`update_user_role`).
+
+So T4 was verify + a small Settings copy pass, no new infrastructure,
+no migration:
+- People section now carries a one-line explanation (admin creates each
+  teammate here, no public sign-up, what a Member can/can't do), with a
+  shorter member-facing variant.
+- "Temporary password" → "Password (min 12 characters)" with
+  `minLength={12}`, plus a note that password change/reset isn't built
+  yet so pick one to keep.
+- Fixed a **pre-existing** lint error in the same file
+  (`setCalendarStatus` in an effect → a client-only lazy `useState`
+  initializer, no extra render). Three other pre-existing lint
+  errors/warnings remain in files this branch doesn't touch
+  (`layout.tsx:137`, `calendar/page.tsx:101`,
+  `projects/[id]/page.tsx:174`) — not addressed here.
+
+**Verified:** `eslint src/app/dashboard/settings/page.tsx` clean,
+`vitest` 102/102, `next build` clean. Backend `test_users.py` +
+`test_auth.py` + `test_assignment.py` = 29 passed. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): admin →
+Settings → "Add teammate" creates "Sam Teammate" (member) → sign out →
+Sam signs in → Settings shows no "Add teammate", member-facing copy,
+read-only workspace name. API spot-check as Sam: `POST /users` 403
+("Admin role required"), `PATCH /users/{id}` 403, `POST
+/auth/register` 404, wrong password 401.
+
+**Next up:** T5 — restructure the Overview dashboard (remove Quick
+Actions + Recent Activity; group real metrics into Leads / Sales /
+Projects / Websites / Follow-ups / Revenue modules; a new backend
+aggregation is needed for the Websites counts — see audit G8).
+
+---
+
+## 2026-09-01 — T3: approving a discovered business auto-imports it to the CRM
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T2. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/api/app/modules/discovery/{service,routes,schemas}.py`,
+`apps/web/src/app/dashboard/review/page.tsx`, `apps/web/src/lib/api.ts`,
+`apps/api/tests/{test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file. (Test-infra fixes in a separate prior commit.)
+
+**What happened:** Closes audit gaps **G2** and **G3**.
+
+*Backend — approve = in CRM (G2):*
+- `import_to_lead` split into `_import_discovered_business(db, ..., business)`
+  (the core create-business-+-lead logic, **no commit** — caller owns the
+  transaction) + a thin `import_to_lead` wrapper (loads + commits) that
+  still backs the standalone `POST /discovered-businesses/{id}/import`
+  ("Add lead" button in the discovery results table). Plus a shared
+  `_resolve_crm_business` helper.
+- `approve_business` now: sets APPROVED, then calls
+  `_import_discovered_business` in the **same transaction**. Success →
+  one commit, business is IMPORTED with a real lead. Import failure →
+  nothing commits (FastAPI's session closes without commit → rollback),
+  so the business stays reviewable, never stuck "approved but not
+  imported". `DuplicateLeadError` (already represented in the CRM) is
+  caught: no second lead, the discovered row is linked to the existing
+  lead, outcome `already_in_crm`.
+- New `ApproveResult { business, outcome: "imported"|"already_in_crm",
+  lead_id }` — `POST .../approve` response. Route also catches
+  `CannotImportError` → 400.
+- `bulk_approve` → approve **and import** each selection, one
+  transaction per item (`db.rollback()` on a failure so the rest still
+  go through). New `BulkApproveResult { imported, already_in_crm,
+  failed: [{id,name,reason}], not_found }`.
+- The separate `/import` endpoint stays — the "Add lead" quick path on
+  the discovery results table is unchanged.
+
+*Frontend — Review queue simplified (G3):* 13 columns → 7 (checkbox,
+Business, Location, Website, Score chip, "Why review", Actions). Dropped
+the internal-status dropdown filter, the "Audit summary"/"Confidence"/
+"Key problems"/"Sales angle"/"Source"/"Researched" columns (still on the
+deep-dive route), and the "Research again"/"Archive"/standalone "Add to
+CRM" actions. Primary actions are just **Approve** / **Reject**;
+approve shows a green "Added X to the CRM as a lead" (or "was already in
+the CRM") notice. Bulk button is "Approve & add to CRM (N)" and reports
+"N added · M already in the CRM · K couldn't be added". Settled rows
+(imported/rejected/archived) show status text + a "View lead →" link.
+Website/spacing/dark-mode classes unchanged.
+
+**Verified:** `eslint` + `tsc` (via `next build`) + `vitest` (102) all
+clean. Full backend suite **884 passed, 0 failed** (on an isolated DB;
+the 2 date-bomb failures were fixed in the prior commit). Browser pass
+on a throwaway instance (API :8031 + web :3031, `webdesignos_t3audit`):
+live Places search → Review queue shows the 7-column layout → **Approve**
+one row → green notice, row flips to "View lead →", `GET
+/api/v1/businesses` has exactly one new Business, `GET /api/v1/leads`
+one new Lead (`source: discovery:google_places`) → **Reject** another →
+row shows "Rejected", checkbox disabled → **select 2 + bulk approve** →
+both become "View lead →", 3 leads total, no duplicate businesses.
+Instance + DBs torn down.
+
+**Next up:** T4 — two-user account management (largely already built;
+verify + test + minor Settings copy).
+
+---
+
+## 2026-09-01 — T2: Lead Discovery unified into one workspace
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked on the T1 commit.
+**Merge to main after:** yes — pending review (same branch as T1; PR #41).
+**Scope touched:** `apps/web/src/components/DiscoveryWorkspace.tsx` (new),
+`apps/web/src/app/dashboard/discovery/page.tsx`,
+`apps/web/src/app/dashboard/discovery/[id]/page.tsx`; this file.
+
+**What happened:** Closes audit gap **G1**. Before: nav "Discovery"
+opened a search-*history table* (`discovery/page.tsx`); the actual
+workspace — search form + map + results + add — lived only at
+`discovery/[id]`, not in nav, reachable only by clicking a history row.
+
+Extracted the whole workspace into one client component,
+`DiscoveryWorkspace`, that both routes now render:
+- `/dashboard/discovery` → `<DiscoveryWorkspace />` — opens on the most
+  recent search (or the empty state).
+- `/dashboard/discovery/[id]` → `<DiscoveryWorkspace initialSearchId=… />`
+  — a permalink to one search; keeps the discovered-business detail
+  page's "← Back to search results" link and any bookmarked search
+  URLs working.
+
+The component carries: the search form **always visible** at the top
+(industry / location / business type / keywords / website filter / Run
+search); a "Showing …" `<select>` to switch between past searches
+(replaces the old history table); the criteria header; the existing
+result filters + sort + "on map only"; the existing `DiscoveryMap`
+(reused unchanged); the existing results table (website-status badges,
+score, per-row "Add lead"/"View lead"); "Load more"; and a "Review
+queue →" link. Switching the active search updates the URL in place
+via `history.replaceState` (no full navigation). No map rebuild, no
+design-system / nav-styling change, no backend change, no endpoint
+change (`listDiscoverySearches` / `createDiscoverySearch` /
+`getDiscoverySearch` / `listDiscoveredBusinesses` /
+`loadMoreDiscoverySearch` / `importDiscoveredBusiness` all as-is).
+
+`/dashboard/review` and `/dashboard/discovered-businesses/[id]` left
+exactly as they were — Review is the cross-search triage/bulk-approve
+queue (T3 simplifies its contents), the detail route is the deep-dive.
+
+**Routes:** none added, none removed. `discovery/page.tsx` and
+`discovery/[id]/page.tsx` both re-point at the shared component.
+
+**Verified:** `eslint` clean, `vitest run` 102/102, `next build` clean
+(TypeScript checked). Full browser pass on a throwaway instance (API
+:8020 + web :3020, fresh `webdesignos_t2audit` DB migrated to head,
+seeded admin): opened `/dashboard/discovery` → search form + empty
+state; ran a live Google Places search ("cafe" / "Byron Bay") → URL
+became `/discovery/<id>`, "Showing" picker populated, criteria header,
+map rendered with clustered markers, 20 results with website badges;
+website filter "No website" → 1 result, map + count updated; "Add
+lead" on that row → became "View lead →"; `/dashboard/leads` → the new
+lead present; reloaded `/discovery/<id>` directly → full workspace,
+persisted "View lead"; clicked a business → deep-dive route, its "←
+Back to search results" link resolves to the unified workspace. Zero
+console errors. Instance + DB torn down.
+
+**Next up:** T3 — approving a discovered business auto-imports it into
+the CRM (reuse `import_to_lead`), and strip the Review queue to the
+essentials.
+
+---
+
+## 2026-09-01 — T1: Workflow audit — current vs. intended Web Design OS flow (audit only, no app code)
+**Mode:** worktree (`workflow-audit-t1-t5`), branched from `main`.
+**Merge to main after:** yes — docs only.
+**Scope touched:** new `docs/08_WORKFLOW_AUDIT.md`; this file.
+
+**What happened:** First task of a fresh 5-task batch (T1 audit, then
+T2 Discovery workspace, T3 approve→auto-CRM, T4 two-user management, T5
+Overview dashboard). Read the full funnel end to end — discovery
+list/detail/deep-dive/review pages + `discovery/service.py`
+(`create_and_run_search`, `approve_business`, `import_to_lead`,
+`bulk_approve`), leads list/detail + `clients/service.py` conversion,
+projects list/detail + website workspace + the brief→creative
+direction→sitemap→website→QA→deploy chain, `dashboard/service.py` +
+`sales_dashboard/schemas.py`, `users/{routes,service}.py`, the login
+page, and `layout.tsx`/`nav.ts`. No code changed.
+
+**Findings (full detail in `docs/08_WORKFLOW_AUDIT.md`):**
+- **G1 (T2):** nav "Discovery" lands on a *search-history table*; the
+  actual workspace (search + map + results + add) is
+  `/dashboard/discovery/[id]`, not in nav, reachable only by clicking a
+  history row.
+- **G2 (T3):** "Approve" in the Review queue only sets `status=approved`
+  — a dead-end state. Adding to the CRM is a *separate* "Add to CRM"
+  button calling `import_to_lead`. Bulk-approve imports nothing.
+- **G3 (T3):** Review queue is a 13-column pipeline console exposing all
+  8 internal statuses, "confidence", "sales angle", "research again",
+  etc.
+- **G4 (biggest, not in T2–T5 scope):** a `Project` (hence any website)
+  can only be created by `create_client`, which *requires marking the
+  lead WON*. The demo cannot be built before the client agrees —
+  directly contradicts the product principle. Recommended as a
+  follow-up task.
+- **G5:** ~10 manual generate/approve steps from project to previewable
+  site. **G7 (T5):** Overview mixes a metric wall + Quick Actions
+  (dup of nav) + Recent Activity (event log, not attention) + the
+  global "Do this next". **G8 (T5):** no website-lifecycle counts
+  exist — a new dashboard aggregation is needed for the "WEBSITES"
+  module.
+- **T4 is essentially already built:** admin-only `POST /users` with
+  password hashing, no register route anywhere, Settings → People
+  "Add teammate" form already present, last-admin-demotion guard. T4
+  becomes mostly verify + test + minor copy.
+
+**Verified:** N/A (no code). Audit doc cross-checked against the
+current source (file:line references throughout).
+
+**Next up:** T2 — make `/dashboard/discovery` the single unified
+workspace (reuse `DiscoveryMap`, `lib/filters.ts`, existing results
+markup; keep `/discovery/[id]` as a permalink; keep the deep-dive
+route).
+
+---
+
 ## 2026-09-01 — Local dev environment: stale dev-server processes not serving merged T1/T2 code
 **Mode:** operator ran `./scripts/start-mac.sh` in the primary checkout
 (`/Users/sove/webtool/web-design-os`, not a worktree) after T1 and T2

@@ -49,7 +49,7 @@ from sqlalchemy.orm import Session, aliased, joinedload
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
-from app.modules.dashboard.schemas import AttentionItem, DashboardOverview
+from app.modules.dashboard.schemas import AttentionItem, DashboardOverview, WebsitePipeline
 from app.modules.deployments.models import Deployment
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.interactions.models import Interaction, InteractionKind
@@ -72,6 +72,19 @@ QUALIFIED_STATUSES = (
     LeadStatus.WON,
 )
 FINISHED_PROJECT_STAGES = (ProjectStage.MAINTENANCE, ProjectStage.COMPLETE)
+
+# Website-pipeline buckets for the Overview (see WebsitePipeline). A
+# project is "building" from intake through development, "in review"
+# while it's in QA / client review / revisions; the remaining stages map
+# one-to-one. COMPLETE (fully closed out) isn't surfaced as a live site.
+_BUILDING_STAGES = (
+    ProjectStage.INTAKE,
+    ProjectStage.RESEARCH,
+    ProjectStage.BRIEF,
+    ProjectStage.DESIGN,
+    ProjectStage.DEVELOPMENT,
+)
+_REVIEW_STAGES = (ProjectStage.QA, ProjectStage.CLIENT_REVIEW, ProjectStage.REVISIONS)
 STALE_LEAD_THRESHOLD = timedelta(days=5)
 ATTENTION_DUE_WINDOW = timedelta(days=2)
 UPCOMING_MEETING_WINDOW = timedelta(days=2)
@@ -198,6 +211,27 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         )
     )
     active_projects = len(active_project_rows)
+
+    # Website delivery pipeline — every project bucketed by its stage, so
+    # the Overview can answer "how many sites are being built / in review
+    # / live / in maintenance" at a glance. Derived from Project.stage
+    # (the operator-set delivery stage every project has), not recomputed
+    # from website/QA/deployment rows.
+    stage_counts_rows = db.execute(
+        select(Project.stage, func.count())
+        .join(Client, Project.client_id == Client.id)
+        .join(Business, Client.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id)
+        .group_by(Project.stage)
+    ).all()
+    stage_counts = {stage: count for stage, count in stage_counts_rows}
+    websites = WebsitePipeline(
+        building=sum(stage_counts.get(s, 0) for s in _BUILDING_STAGES),
+        in_review=sum(stage_counts.get(s, 0) for s in _REVIEW_STAGES),
+        ready_to_launch=stage_counts.get(ProjectStage.READY_TO_DEPLOY, 0),
+        deployed=stage_counts.get(ProjectStage.DEPLOYED, 0),
+        maintenance=stage_counts.get(ProjectStage.MAINTENANCE, 0),
+    )
 
     revenue_cents = (
         db.scalar(
@@ -351,6 +385,7 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         upcoming_meetings=upcoming_meetings,
         won_projects=won_projects,
         active_projects=active_projects,
+        websites=websites,
         revenue_cents=revenue_cents,
         tasks_needing_attention=tasks_needing_attention,
         follow_ups_due=follow_ups_due,

@@ -219,13 +219,14 @@ def test_full_pipeline_discovery_to_deployment_with_automation(authed_client, db
     assert scored["imported_lead_id"] is None
 
     # ---------------------------------------------------------------
-    # 2. HUMAN REVIEW + CRM IMPORT — unchanged, explicit operator action.
+    # 2. HUMAN REVIEW + CRM IMPORT — still an explicit operator action;
+    #    approving now also creates the CRM lead in the same step (no
+    #    separate "add to CRM" click), but nothing auto-approves.
     # ---------------------------------------------------------------
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve").json()
-    assert approved["status"] == "approved"
-    imported = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import").json()
-    assert imported["status"] == "imported"
-    lead_id = imported["imported_lead_id"]
+    assert approved["outcome"] == "imported"
+    assert approved["business"]["status"] == "imported"
+    lead_id = approved["lead_id"]
     assert lead_id is not None
 
     # ---------------------------------------------------------------
