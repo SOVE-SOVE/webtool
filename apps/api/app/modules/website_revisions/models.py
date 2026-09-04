@@ -53,7 +53,7 @@ class WebsiteRevision(Base):
     __tablename__ = "website_revisions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     revision_number: Mapped[int] = mapped_column(Integer)
 
     kind: Mapped[RevisionKind] = mapped_column(Enum(RevisionKind, name="website_revision_kind"))
