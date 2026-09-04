@@ -11,6 +11,89 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-04 — Leads list / Lead detail / Follow-ups page simplification (a separate task set — user T2/T3/T5), plus T4/T6 verification
+**Mode:** new session, branch `leads-workflow-ui-t2-t3-t5` off `origin/main`
+(which already carries PR #41's own "T1–T5" — Discovery unification,
+approve→CRM, Settings, Overview). **This session's task numbers are a
+different list** and only overlap #41 on approve→CRM (its T3 = this T4)
+and the workflow audit (its T1 doc = this T6 input).
+**Merge to main after:** held as a batch at the user's request — not
+merged or pushed. Commits `c431d71` (T2), `327268d` (T3), `7f4f2cd`
+(T5), `0cef4ca` (T6 test fix).
+**Scope touched:** `apps/web/src/app/dashboard/leads/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/follow-ups/page.tsx`,
+`apps/web/src/lib/leads.ts` (+ `.test.ts`),
+`apps/web/src/components/LeadStatusBadge.tsx` (new),
+`apps/api/tests/conftest.py`; this file. No API / schema / DB / nav /
+design-system changes.
+
+**T2 — Leads list.** Rebuilt as a compact read-only table answering
+who / what status / what next: columns Business · Website (has/none) ·
+Status (`LeadStatusBadge`) · Next (`leadNextAction`) · **Open lead →**.
+One status `<select>` over the existing `LEAD_TABS` groups replaces the
+8-tab bar; a has/no-website filter and a quiet "show archived" toggle;
+search kept. Removed: Table/Board sort headers, priority/assignee
+filters, and all per-row inline `<select>`s (status/priority/score/
+assignee now edited on the detail page). Board view kept as a demoted
+header toggle — `LeadsBoard`, `nav.ts`, the `/pipeline` and `/clients`
+redirects, and `?tab=`/`?view=`/`?new=` deep links all still work.
+Manual "Add lead" / "Add client without a lead" forms moved behind a
+secondary toggle. New tested pure helpers in `lib/leads.ts`:
+`LEAD_STATUS_LABEL`, `leadTone`, `leadNextAction`.
+
+**T3 — Lead detail.** Same information, reordered as who / status /
+next / project. New at-a-glance three-card strip (Who / Status / Next,
+the last showing the lead's scheduled follow-up from `listFollowUps`).
+"Project & website" is now a first-class section with ONE primary
+action when no project exists — **Start website project →**
+(`createClient({from_lead_id})` → open the new project) — "Convert with
+full details" demoted. The editable Business+Lead field grids, the
+proposal/sales-audit/outreach tooling, and meetings/pipeline/activity
+each moved into a collapsed `Disclosure`. Every handler and API call
+unchanged.
+
+**T5 — Follow-ups.** Rows answer who/when/why/what: business name +
+`LeadStatusBadge` + plain-words due label ("3 days overdue") + next
+action + prior-outreach context + one **Open lead →**. Buckets ordered
+Overdue (red) → Today → Upcoming, empty buckets hidden; one calm
+`EmptyState` when the whole queue is clear. "Gone quiet — needs
+scheduling" moved below; manual generator moved into a `Disclosure`.
+Lead status via client-side join on `listLeads`. "Completed" group not
+added — `GET /follow-ups` only returns PENDING (noted as a limit).
+
+**T4 — verified, already done by PR #41.** `approve_business` /
+`bulk_approve` mark APPROVED + import in one transaction (rollback on
+failure), dedupe to an existing lead (`outcome: already_in_crm`), no
+separate "Add to CRM" button, plain-language success notice on the
+review page. 64/64 discovery + lead-intelligence tests pass once the
+Places key is blanked (see T6). No code change needed.
+
+**T6 — audit + one fix.** Re-walked Discover → Review → Leads → Lead
+detail → Follow-ups → Projects → Website. The linear flow now holds
+end to end for the parts in scope; the one remaining contradiction is
+**audit G4** (a `Project` still can't exist without marking the lead
+WON — the "build the demo before they say yes" principle needs backend
+milestone M9, out of scope here). The new "Start website project"
+button is honest about the WON side effect. Fixed one genuine issue
+exposed during verification: `conftest.py` didn't blank
+`GOOGLE_PLACES_API_KEY`, so a dev's real key silently made ~10 tests
+hit the live API. **Pre-existing, not fixed:** `alembic check` fails on
+`origin/main` — `notification_preferences` / `notifications` /
+`action_queue_items` / `daily_action_runs` tables + many `ix_*` indexes
+are in migrations but not the models (models deleted without a
+migration). Unrelated to the lead workflow; `pytest` is unaffected
+(schema fixture builds from models).
+
+**Verified:** `apps/web` — `eslint` clean for changed files (3
+pre-existing problems elsewhere untouched), `vitest` 107/107, `next
+build` + TypeScript clean. `apps/api` — `test_leads` / `test_outreach`
+/ `test_lead_intelligence_workflow` / `test_business_discovery` all
+green (125 passed) with the conftest fix; full suite run separately.
+**Browser pass NOT done** — the dev login's stored password is stale
+and minting one was blocked; needs an operator spot-check of
+`/dashboard/leads`, the lead detail page, and `/dashboard/follow-ups`.
+
 ## 2026-09-02 — T5: Overview dashboard restructured into modules
 **Mode:** worktree (`workflow-audit-t1-t5`), stacked after T4. PR #41.
 **Merge to main after:** yes — pending review.
