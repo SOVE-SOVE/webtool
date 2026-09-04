@@ -21,6 +21,7 @@ os.environ["SESSION_SECRET"] = "test-session-secret-not-used-in-any-real-deploym
 # "key not configured" behavior needs to be reachable no matter what's
 # in the local environment.
 os.environ["BRAVE_SEARCH_API_KEY"] = ""
+os.environ["GOOGLE_PLACES_API_KEY"] = ""
 os.environ["LLM_API_KEY"] = ""
 # A real (test-only) Fernet key so calendar-connection encryption tests
 # can round-trip — tests that want the "not configured" path unset this
