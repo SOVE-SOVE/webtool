@@ -11,6 +11,36 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-04 (follow-up) — resolve the `alembic check` drift
+**Mode:** same session, direct to `main`. Commit `39ddb6f`.
+**Scope touched:** `apps/api/app/modules/{outreach,meetings,website_revisions}/models.py`,
+`apps/api/alembic/versions/e1a2b3c4d5f6_drop_removed_notification_and_action_queue_tables.py`.
+
+`alembic check` was failing for two reasons:
+1. Five FK columns (`EmailSend.lead_id` / `.outreach_message_id`,
+   `MeetingAttendee.meeting_id`, `MeetingReminder.meeting_id`,
+   `WebsiteRevision.project_id`) had `op.create_index` in their
+   table-creating migration but no `index=True` on the model —
+   autogenerate wanted to drop the index every run. Added `index=True`.
+2. The removed notification-centre + daily-action-queue feature left
+   four orphan tables (`notifications`, `notification_preferences`,
+   `action_queue_items`, `daily_action_runs`) + two enums. They were
+   only ever made by old `create_all()` runs, never a migration. New
+   migration `e1a2b3c4d5f6` drops them `IF EXISTS` (no-op on DBs that
+   never had them).
+
+Verified: fresh DB → 38 migrations → `alembic check` exit 0; long-lived
+dev DB (had the orphans) → migrate → check exit 0.
+
+**Environment note for whoever's next:** this machine runs **two**
+Postgres servers on `localhost:5432` — a Homebrew `postgresql@16`
+(bound to `127.0.0.1`/`::1`, wins for `localhost`) and the intended
+docker `web-design-os-postgres-1` (bound to `0.0.0.0`). The app, tests,
+and alembic all hit the **Homebrew** one; `docker exec … psql` hits the
+docker one. The docker DB is stale and unused. Pick one — either
+`brew services stop postgresql@16` (then everything uses docker as the
+README intends) or drop the docker container.
+
 ## 2026-09-04 — Leads list / Lead detail / Follow-ups page simplification (a separate task set — user T2/T3/T5), plus T4/T6 verification
 **Mode:** new session, branch `leads-workflow-ui-t2-t3-t5` off `origin/main`
 (which already carries PR #41's own "T1–T5" — Discovery unification,
