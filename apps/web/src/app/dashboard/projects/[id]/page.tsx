@@ -10,6 +10,7 @@ import {
   PROJECT_STAGE_LABELS,
   type ActivityItem,
   type Brief,
+  type Business,
   type CreativeDirectionBrief,
   type DeliveryStatus,
   type Deployment,
@@ -23,7 +24,6 @@ import {
   type WebsiteBrief,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
-import { BriefEditor } from "@/components/BriefEditor";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
@@ -53,11 +53,30 @@ function StatusChip({ status }: { status: "approved" | "draft" | undefined }) {
   return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-subtle">Not started</span>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+const detailInputClass = "w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm";
+
+function DetailField({
+  label,
+  value,
+  onSave,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onSave: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-fg-subtle">{label}</p>
-      <div className="mt-0.5 text-sm text-fg">{children}</div>
+      <input
+        defaultValue={value}
+        placeholder={placeholder}
+        onBlur={(e) => {
+          if (e.target.value !== value) onSave(e.target.value);
+        }}
+        className={`mt-1 ${detailInputClass}`}
+      />
     </div>
   );
 }
@@ -68,12 +87,9 @@ export default function ProjectDetailPage() {
   const projectId = params.id;
 
   const [project, setProject] = useState<Project | null>(null);
-  // justCreated is sticky (drives auto-opening the brief once); showCreatedBanner
-  // is independently dismissible so closing the banner doesn't also collapse a
-  // brief the user is actively filling in.
-  const [justCreated, setJustCreated] = useState(false);
-  const [showCreatedBanner, setShowCreatedBanner] = useState(false);
+  const [business, setBusiness] = useState<Business | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
+  const [showCreatedBanner, setShowCreatedBanner] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +101,13 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [newTask, setNewTask] = useState("");
   const [addingTask, setAddingTask] = useState(false);
+
+  const [confirmingDetails, setConfirmingDetails] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  const [directionDraft, setDirectionDraft] = useState("");
+  const [savingDirection, setSavingDirection] = useState(false);
+  const [directionSaved, setDirectionSaved] = useState(false);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -151,7 +174,10 @@ export default function ProjectDetailPage() {
       .then((p) => {
         setError(null);
         setProject(p);
+        setDirectionDraft(p.build_direction ?? "");
+        return api.getBusiness(p.business_id);
       })
+      .then((b) => setBusiness(b))
       .catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
@@ -176,12 +202,16 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has("created")) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setJustCreated(true);
       setShowCreatedBanner(true);
       router.replace(`/dashboard/projects/${projectId}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  async function saveBusiness(data: Parameters<typeof api.updateBusiness>[1]) {
+    if (!business) return;
+    setBusiness(await api.updateBusiness(business.id, data));
+  }
 
   async function handleStageChange(stage: ProjectStage) {
     if (!project) return;
@@ -192,6 +222,42 @@ export default function ProjectDetailPage() {
   async function handleAssigneeChange(assigneeId: string) {
     if (!project) return;
     setProject(await api.updateProject(project.id, { assigned_user_id: assigneeId || null }));
+  }
+
+  async function handleConfirmDetails() {
+    if (!business) return;
+    setConfirmingDetails(true);
+    setConfirmError(null);
+    try {
+      await api.updateBrief(projectId, {
+        business_name: business.name,
+        industry: business.industry ?? "",
+        location: [business.suburb, business.state].filter(Boolean).join(", "),
+        contact_phone: business.phone ?? "",
+        contact_email: business.email ?? "",
+        existing_website_url: business.website_url ?? "",
+        business_description: business.notes ?? "",
+      });
+      setBrief(await api.approveBrief(projectId));
+      loadApprovalsAndDeployments();
+    } catch (err) {
+      setConfirmError(err instanceof ApiError ? err.message : "Couldn't confirm the details — try again.");
+    } finally {
+      setConfirmingDetails(false);
+    }
+  }
+
+  async function handleSaveDirection() {
+    if (!project) return;
+    setSavingDirection(true);
+    try {
+      const updated = await api.updateProject(project.id, { build_direction: directionDraft || null });
+      setProject(updated);
+      setDirectionSaved(true);
+      setTimeout(() => setDirectionSaved(false), 2000);
+    } finally {
+      setSavingDirection(false);
+    }
   }
 
   async function handleAddTask(e: React.FormEvent) {
@@ -212,6 +278,12 @@ export default function ProjectDetailPage() {
     loadTasks();
   }
 
+  // The pasted build direction flows into the AI steps as context, on top
+  // of anything typed into the per-generation notes field.
+  function withBuildDirection(notes: string): string | undefined {
+    return [notes, project?.build_direction].map((s) => s?.trim()).filter(Boolean).join("\n\n") || undefined;
+  }
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setGenerating(true);
@@ -220,7 +292,7 @@ export default function ProjectDetailPage() {
       const generated = await api.generateCreativeDirection(projectId, {
         target_audience: targetAudience || undefined,
         business_goals: businessGoals || undefined,
-        additional_notes: additionalNotes || undefined,
+        additional_notes: withBuildDirection(additionalNotes),
       });
       setBriefs((prev) => [generated, ...(prev ?? [])]);
       setExpandedId(generated.id);
@@ -247,7 +319,7 @@ export default function ProjectDetailPage() {
     try {
       const generated = await api.generateSitemap(projectId, {
         creative_direction_id: sitemapCreativeDirectionId || undefined,
-        additional_notes: sitemapAdditionalNotes || undefined,
+        additional_notes: withBuildDirection(sitemapAdditionalNotes),
       });
       setSitemaps((prev) => [generated, ...(prev ?? [])]);
       setSitemapExpandedId(generated.id);
@@ -293,18 +365,10 @@ export default function ProjectDetailPage() {
       ? stageProgress(project.stage)
       : 0;
   const nextCheckpoint = approvalStatus?.checkpoints.find((c) => !c.approved) ?? null;
-  const nextAction =
-    project?.delivered_at
-      ? "Delivered — nothing outstanding"
-      : approvalStatus?.missing_for_deployment[0] ??
-        nextCheckpoint?.blocked_reason ??
-        openTasks[0]?.title ??
-        "On track";
 
   const cdStatus = briefs?.[0]?.status;
   const sitemapStatus = sitemaps?.[0]?.status;
   const wbStatus = websiteBriefs?.[0]?.status;
-  const briefStatus = brief?.status;
 
   if (error) {
     return (
@@ -316,9 +380,11 @@ export default function ProjectDetailPage() {
   if (!project) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   const dl = deadlineStatus(project.deadline);
+  const detailsConfirmed = brief?.status === "approved";
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
+      {/* 1. Project header */}
       <div>
         <Link href="/dashboard/projects" className="text-sm text-fg-muted hover:underline">
           ← All projects
@@ -341,6 +407,24 @@ export default function ProjectDetailPage() {
                     from lead
                   </Link>
                 </>
+              )}
+              {" · "}
+              {[project.package, money(project.price_cents)].filter((v) => v && v !== "—").join(" · ") || "No package set"}
+              {" · "}
+              {project.deadline ? (
+                <span
+                  className={
+                    dl === "overdue"
+                      ? "text-red-700 dark:text-red-400"
+                      : dl === "soon"
+                        ? "text-amber-700 dark:text-amber-400"
+                        : undefined
+                  }
+                >
+                  due {new Date(project.deadline).toLocaleDateString()}
+                </span>
+              ) : (
+                "no deadline"
               )}
             </p>
           </div>
@@ -375,8 +459,8 @@ export default function ProjectDetailPage() {
       {showCreatedBanner && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
           <p className="text-sm text-emerald-900 dark:text-emerald-300">
-            <span className="font-semibold">Project created.</span> Add the project brief and other
-            details below whenever you&apos;re ready — nothing else is required right now.
+            <span className="font-semibold">Project created.</span> Business details are filled in from the lead —
+            check them below, add build direction whenever you&apos;re ready, then open the website workspace.
           </p>
           <button
             onClick={() => setShowCreatedBanner(false)}
@@ -387,59 +471,100 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Snapshot */}
-      <section className="rounded-md border border-border bg-surface p-4">
-        <ProgressBar
-          value={progress}
-          label={
-            approvalStatus
-              ? `${progress}% · ${approvalStatus.checkpoints.filter((c) => c.approved).length} of ${approvalStatus.checkpoints.length} approval stages done`
-              : `${progress}% · ${PROJECT_STAGE_LABELS[project.stage]}`
-          }
-        />
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Field label="Current phase">{nextCheckpoint?.label ?? PROJECT_STAGE_LABELS[project.stage]}</Field>
-          <Field label="Next action">
-            <span className="line-clamp-2">{nextAction}</span>
-          </Field>
-          <Field label="Deadline">
-            {project.deadline ? (
-              <span
-                className={
-                  dl === "overdue"
-                    ? "text-red-700 dark:text-red-400"
-                    : dl === "soon"
-                      ? "text-amber-700 dark:text-amber-400"
-                      : undefined
-                }
-              >
-                {new Date(project.deadline).toLocaleDateString()}
-              </span>
-            ) : (
-              <span className="text-fg-subtle">Not set</span>
-            )}
-          </Field>
-          <Field label="Package">
-            {[project.package, money(project.price_cents)].filter((v) => v && v !== "—").join(" · ") || (
-              <span className="text-fg-subtle">Not set</span>
-            )}
-          </Field>
-        </div>
-      </section>
-
-      {/* Build & delivery */}
+      {/* 2. Business details — carried over from the lead, editable */}
       <section className="rounded-md border border-border bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="section-title">Build &amp; delivery</h2>
-          <Link
-            href={`/dashboard/projects/${projectId}/website`}
-            className="btn btn-primary btn-sm"
-          >
+          <h2 className="section-title">Business details</h2>
+          {detailsConfirmed ? (
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+              Confirmed
+            </span>
+          ) : (
+            <button
+              onClick={handleConfirmDetails}
+              disabled={confirmingDetails || !business}
+              className="btn btn-secondary btn-sm"
+              title="Locks these details in as the basis for the build"
+            >
+              {confirmingDetails ? "Confirming…" : "Confirm details"}
+            </button>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-fg-muted">
+          Carried over from the lead. Edit anything that&apos;s wrong — no need to re-enter what we already know.
+        </p>
+        {confirmError && <p className="mt-2 text-error">{confirmError}</p>}
+        {business ? (
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailField label="Business name" value={business.name} onSave={(v) => saveBusiness({ name: v })} />
+            <DetailField
+              label="Industry"
+              value={business.industry ?? ""}
+              onSave={(v) => saveBusiness({ industry: v })}
+            />
+            <DetailField
+              label="Location"
+              value={[business.suburb, business.state].filter(Boolean).join(", ")}
+              placeholder="Suburb, State"
+              onSave={(v) => {
+                const [suburb, state] = v.split(",").map((s) => s.trim());
+                saveBusiness({ suburb: suburb ?? "", state: state ?? "" });
+              }}
+            />
+            <DetailField label="Phone" value={business.phone ?? ""} onSave={(v) => saveBusiness({ phone: v })} />
+            <DetailField label="Email" value={business.email ?? ""} onSave={(v) => saveBusiness({ email: v })} />
+            <DetailField
+              label="Existing website"
+              value={business.website_url ?? ""}
+              placeholder="https://…"
+              onSave={(v) => saveBusiness({ website_url: v })}
+            />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <p className="text-xs uppercase tracking-wide text-fg-subtle">Business description</p>
+              <textarea
+                defaultValue={business.notes ?? ""}
+                placeholder="What the business does — only if we already know it"
+                onBlur={(e) => {
+                  if (e.target.value !== (business.notes ?? "")) saveBusiness({ notes: e.target.value });
+                }}
+                rows={2}
+                className={`mt-1 ${detailInputClass}`}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-fg-muted">Loading…</p>
+        )}
+      </section>
+
+      {/* 3. Website / build workspace — the primary area */}
+      <section className="rounded-md border border-border bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="section-title">Website &amp; build</h2>
+          <Link href={`/dashboard/projects/${projectId}/website`} className="btn btn-primary btn-sm">
             Open website workspace →
           </Link>
         </div>
+        <div className="mt-3">
+          <ProgressBar
+            value={progress}
+            label={
+              approvalStatus
+                ? `${progress}% · ${approvalStatus.checkpoints.filter((c) => c.approved).length} of ${approvalStatus.checkpoints.length} approval stages done`
+                : `${progress}% · ${PROJECT_STAGE_LABELS[project.stage]}`
+            }
+          />
+          <p className="mt-2 text-sm text-fg-muted">
+            Next:{" "}
+            <span className="text-fg">
+              {project.delivered_at
+                ? "Delivered — nothing outstanding"
+                : nextCheckpoint?.blocked_reason ?? nextCheckpoint?.label ?? "On track"}
+            </span>
+          </p>
+        </div>
         {approvalStatus ? (
-          <div className="mt-3 space-y-4">
+          <div className="mt-4 space-y-4">
             <ApprovalPipelineView status={approvalStatus} />
             <DeploymentPanel
               projectId={projectId}
@@ -456,75 +581,42 @@ export default function ProjectDetailPage() {
         )}
       </section>
 
-      {/* Tasks */}
+      {/* 4. Build direction — bring in direction worked out elsewhere */}
       <section className="rounded-md border border-border bg-surface p-4">
-        <h2 className="section-title">Tasks</h2>
-        <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
-          <input
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Add a task for this project…"
-            className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
-          />
-          <button type="submit" disabled={addingTask || !newTask.trim()} className="btn btn-secondary btn-sm">
-            {addingTask ? "Adding…" : "Add"}
+        <h2 className="section-title">Build direction</h2>
+        <p className="mt-0.5 text-xs text-fg-muted">
+          Optional. Worked out the concept, visual direction, copy direction, page structure or generation prompts in
+          ChatGPT or Claude? Paste it here — it&apos;s fed into the creative-direction and sitemap steps as context.
+        </p>
+        <textarea
+          value={directionDraft}
+          onChange={(e) => {
+            setDirectionDraft(e.target.value);
+            setDirectionSaved(false);
+          }}
+          rows={10}
+          placeholder="Paste your build direction, prompts, or instructions here…"
+          className="mt-3 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+        />
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            onClick={handleSaveDirection}
+            disabled={savingDirection || directionDraft === (project.build_direction ?? "")}
+            className="btn btn-secondary btn-sm"
+          >
+            {savingDirection ? "Saving…" : "Save direction"}
           </button>
-        </form>
-        <ul className="mt-3 space-y-1.5">
-          {tasks === null && <li className="text-sm text-fg-muted">Loading…</li>}
-          {tasks !== null && openTasks.length === 0 && doneTasks.length === 0 && (
-            <li className="text-sm text-fg-muted">No tasks yet.</li>
-          )}
-          {openTasks.map((t) => (
-            <li key={t.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={false}
-                onChange={() => handleToggleTask(t.id, true)}
-                aria-label={`Mark "${t.title}" done`}
-              />
-              <span className="text-fg">{t.title}</span>
-              {t.due_at && (
-                <span className="text-xs text-fg-subtle">· {new Date(t.due_at).toLocaleDateString()}</span>
-              )}
-            </li>
-          ))}
-          {doneTasks.length > 0 && (
-            <li className="pt-1 text-xs text-fg-subtle">
-              {doneTasks.length} done
-            </li>
-          )}
-          {doneTasks.slice(0, 5).map((t) => (
-            <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
-              <input
-                type="checkbox"
-                checked
-                onChange={() => handleToggleTask(t.id, false)}
-                aria-label={`Reopen "${t.title}"`}
-              />
-              <span className="line-through">{t.title}</span>
-            </li>
-          ))}
-        </ul>
+          {directionSaved && <span className="text-xs text-emerald-700 dark:text-emerald-400">Saved</span>}
+        </div>
       </section>
 
-      {/* Build artifacts — collapsed by default */}
+      {/* Build steps — collapsed */}
       <section className="space-y-2">
-        <h2 className="section-title">Build artifacts</h2>
-
-        <Disclosure
-          key={justCreated ? "brief-auto-open" : "brief-default"}
-          title="Project brief"
-          hint="The structured client intake — the source of truth for the build."
-          badge={<StatusChip status={briefStatus} />}
-          defaultOpen={justCreated}
-        >
-          {brief ? <BriefEditor brief={brief} onChange={setBrief} /> : <p className="text-sm text-fg-muted">Loading brief…</p>}
-        </Disclosure>
+        <h2 className="section-title">Build steps</h2>
 
         <Disclosure
           title="Creative direction"
-          hint="Creative concept, visual and brand direction — review before design/build starts."
+          hint="Concept, visual and brand direction — review before design/build starts."
           badge={<StatusChip status={cdStatus} />}
         >
           <div className="flex items-center justify-end">
@@ -539,8 +631,8 @@ export default function ProjectDetailPage() {
           {showGenerateForm && (
             <form onSubmit={handleGenerate} className="mt-3 space-y-3 rounded-md border border-border p-3">
               <p className="text-xs text-fg-muted">
-                Optional — left blank, target audience and business goals come from the brief; gaps are flagged
-                as assumptions to confirm.
+                Optional — left blank, target audience and business goals come from the business details and your
+                saved build direction.
               </p>
               <textarea
                 value={targetAudience}
@@ -681,7 +773,7 @@ export default function ProjectDetailPage() {
 
         <Disclosure
           title="Website brief"
-          hint="The client-facing rollup — brief + creative direction + sitemap in one editable document."
+          hint="The client-facing rollup — business details + creative direction + sitemap in one editable document."
           badge={<StatusChip status={wbStatus} />}
         >
           <div className="flex items-center justify-end">
@@ -722,6 +814,54 @@ export default function ProjectDetailPage() {
             })}
           </ul>
         </Disclosure>
+      </section>
+
+      {/* Tasks */}
+      <section className="rounded-md border border-border bg-surface p-4">
+        <h2 className="section-title">Tasks</h2>
+        <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
+          <input
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            placeholder="Add a task for this project…"
+            className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+          />
+          <button type="submit" disabled={addingTask || !newTask.trim()} className="btn btn-secondary btn-sm">
+            {addingTask ? "Adding…" : "Add"}
+          </button>
+        </form>
+        <ul className="mt-3 space-y-1.5">
+          {tasks === null && <li className="text-sm text-fg-muted">Loading…</li>}
+          {tasks !== null && openTasks.length === 0 && doneTasks.length === 0 && (
+            <li className="text-sm text-fg-muted">No tasks yet.</li>
+          )}
+          {openTasks.map((t) => (
+            <li key={t.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={false}
+                onChange={() => handleToggleTask(t.id, true)}
+                aria-label={`Mark "${t.title}" done`}
+              />
+              <span className="text-fg">{t.title}</span>
+              {t.due_at && (
+                <span className="text-xs text-fg-subtle">· {new Date(t.due_at).toLocaleDateString()}</span>
+              )}
+            </li>
+          ))}
+          {doneTasks.length > 0 && <li className="pt-1 text-xs text-fg-subtle">{doneTasks.length} done</li>}
+          {doneTasks.slice(0, 5).map((t) => (
+            <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
+              <input
+                type="checkbox"
+                checked
+                onChange={() => handleToggleTask(t.id, false)}
+                aria-label={`Reopen "${t.title}"`}
+              />
+              <span className="line-through">{t.title}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* Meetings + activity */}

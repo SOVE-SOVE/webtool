@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,12 @@ class Project(Base):
     package: Mapped[str | None] = mapped_column(String(50))
     price_cents: Mapped[int | None] = mapped_column(Integer)
     deadline: Mapped[date | None] = mapped_column(Date)
+    # Free-text build direction the operator brings in from outside the app
+    # (a ChatGPT/Claude session working through concept, visual direction,
+    # copy, page structure, generation prompts, ...). Optional — a project
+    # is fully usable without it. Fed into the sitemap / creative-direction
+    # generation steps as extra context when present.
+    build_direction: Mapped[str | None] = mapped_column(Text)
     assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     # Set only by modules/projects/service.py::mark_delivered, the final
     # step of the delivery workflow (docs/04_ROADMAP.md M6) — gated on a

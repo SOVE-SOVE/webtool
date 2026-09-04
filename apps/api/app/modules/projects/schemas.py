@@ -28,6 +28,7 @@ class ProjectUpdate(BaseModel):
     package: str | None = None
     price_cents: int | None = None
     deadline: date | None = None
+    build_direction: str | None = None
 
 
 class ProjectRead(BaseModel):
@@ -35,6 +36,7 @@ class ProjectRead(BaseModel):
 
     id: uuid.UUID
     client_id: uuid.UUID
+    business_id: uuid.UUID
     client_business_name: str
     source_lead_id: uuid.UUID | None
     name: str
@@ -42,6 +44,7 @@ class ProjectRead(BaseModel):
     package: str | None
     price_cents: int | None
     deadline: date | None
+    build_direction: str | None
     assigned_user_id: uuid.UUID | None
     assigned_user_name: str | None
     delivered_at: datetime | None

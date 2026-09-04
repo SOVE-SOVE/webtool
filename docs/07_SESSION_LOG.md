@@ -11,6 +11,67 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-04 — Project page: kill the giant intake form, auto-carry business details, add a build-direction paste area
+**Mode:** same session, direct to `main`.
+**Scope touched:** `apps/web/src/app/dashboard/projects/[id]/page.tsx`
+(rewrite), `apps/web/src/components/BriefEditor.tsx` (deleted),
+`apps/web/src/lib/api.ts`, `apps/api/app/modules/projects/{models,schemas,service}.py`,
+`apps/api/alembic/versions/f2b7c1a9e3d4_projects_build_direction.py` (new);
+this file.
+
+**Problem:** the Project page led with `BriefEditor` — a 40-field
+client-intake form with per-field "Missing" badges and "nothing has
+been filled in for you". Wrong direction: the page should be an
+operational workspace, not a questionnaire.
+
+**Change (deliberately minimal — the `design_briefs` backend and the
+whole approval pipeline are untouched):**
+- **Removed `BriefEditor`** and the "Project brief" disclosure. Deleted
+  the component (only the project page used it).
+- **Business details** section: reads the project's `Business` record
+  (already carried over from the lead) and edits it inline via
+  `updateBusiness` — the exact pattern the lead detail page uses. No
+  re-entry of known facts. One "Confirm details" button pushes those
+  fields into the `DesignBrief` and approves it (clears the "Client
+  brief" checkpoint without a form — the brief endpoints are unchanged,
+  this just calls `updateBrief` + `approveBrief`). Existing projects
+  with an already-approved brief show "Confirmed" and no button.
+- **Build direction** section: a plain textarea backed by a new
+  `Project.build_direction` (nullable Text, migration
+  `f2b7c1a9e3d4`). Optional. Paste concept / visual direction / copy
+  direction / page structure / generation prompts worked out in
+  ChatGPT/Claude. It's folded into the `additional_notes` of the
+  creative-direction and sitemap generation steps automatically
+  (frontend `withBuildDirection` helper) — no ChatGPT-in-the-app.
+- Page reorders to: header (now carries package/price/deadline inline)
+  → business details → **website & build** (progress + approval
+  pipeline + "Open website workspace →", kept prominent) → build
+  direction → collapsed build steps (creative direction / sitemap /
+  website brief, unchanged) → tasks → meetings/activity. Dropped the
+  separate "Snapshot" card.
+- API: `ProjectRead` gains `business_id` + `build_direction`;
+  `ProjectUpdate` gains `build_direction`.
+
+**Verified:** `apps/web` — `eslint` clean for changed files (1
+pre-existing exhaustive-deps warning on the same `useEffect(load)` as
+before), `vitest` 107/107, `next build` + TypeScript clean. `apps/api`
+— `alembic check` exit 0; `test_projects` / `test_websites` /
+`test_website_workflow` / `test_project_delivery` / `test_approvals` /
+`test_end_to_end_workflow` / `test_design_briefs` / `test_sitemaps` /
+`test_creative_directions` / `test_website_briefs` / `test_website_generator`
+/ `test_automation_pipeline` / `test_dashboard` / `test_workspace_isolation`
+all green (181 in that set); full suite run separately.
+**Browser pass NOT done** — same stale-dev-login blocker as earlier
+today; needs an operator to open a project and check the page.
+
+**Remaining limitations:** the `DesignBrief` still exists as an
+internal record and its brand/content/assets sections are no longer
+editable from the UI (they were rarely filled and the generator
+tolerates nulls); if that data is ever needed, the `PATCH
+/projects/{id}/brief` endpoint is still there. `build_direction` feeds
+the AI generation steps but not the deterministic `website_generator`
+itself.
+
 ## 2026-09-04 (follow-up) — resolve the `alembic check` drift
 **Mode:** same session, direct to `main`. Commit `39ddb6f`.
 **Scope touched:** `apps/api/app/modules/{outreach,meetings,website_revisions}/models.py`,

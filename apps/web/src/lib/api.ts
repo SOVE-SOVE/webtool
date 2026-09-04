@@ -281,6 +281,7 @@ export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
 export type Project = {
   id: string;
   client_id: string;
+  business_id: string;
   client_business_name: string;
   source_lead_id: string | null;
   name: string;
@@ -288,6 +289,7 @@ export type Project = {
   package: string | null;
   price_cents: number | null;
   deadline: string | null;
+  build_direction: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   delivered_at: string | null;
@@ -327,6 +329,7 @@ export type ProjectUpdate = {
   package?: string | null;
   price_cents?: number | null;
   deadline?: string | null;
+  build_direction?: string | null;
 };
 
 export const BRIEF_STATUSES = ["draft", "approved"] as const;
