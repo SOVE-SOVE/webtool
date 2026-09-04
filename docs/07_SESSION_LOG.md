@@ -40,9 +40,17 @@ whole approval pipeline are untouched):**
   `Project.build_direction` (nullable Text, migration
   `f2b7c1a9e3d4`). Optional. Paste concept / visual direction / copy
   direction / page structure / generation prompts worked out in
-  ChatGPT/Claude. It's folded into the `additional_notes` of the
-  creative-direction and sitemap generation steps automatically
-  (frontend `withBuildDirection` helper) — no ChatGPT-in-the-app.
+  ChatGPT/Claude — no ChatGPT-in-the-app.
+  **Feeds the build server-side:** `generate_sitemap` and
+  `generate_creative_direction` fold `project.build_direction` into the
+  operator notes their agents see (`_with_build_direction` in each
+  service), so it applies on every generation regardless of caller. The
+  sitemap is the strong vehicle — it fully determines the generated
+  site's page structure, section layout, CTAs and key sections, which
+  `generate_website` then builds from. Tests
+  `test_project_build_direction_reaches_the_sitemap_agent` /
+  `..._the_creative_director_agent` assert the pasted text lands in the
+  agent prompt.
 - Page reorders to: header (now carries package/price/deadline inline)
   → business details → **website & build** (progress + approval
   pipeline + "Open website workspace →", kept prominent) → build
@@ -68,9 +76,12 @@ today; needs an operator to open a project and check the page.
 internal record and its brand/content/assets sections are no longer
 editable from the UI (they were rarely filled and the generator
 tolerates nulls); if that data is ever needed, the `PATCH
-/projects/{id}/brief` endpoint is still there. `build_direction` feeds
-the AI generation steps but not the deterministic `website_generator`
-itself.
+/projects/{id}/brief` endpoint is still there. `build_direction` reaches
+the LLM sitemap + creative-direction steps (and through the sitemap,
+the whole generated site); the deterministic `website_generator` itself
+only ever reads `cta_strategy` / `tone_of_voice` off the creative
+direction, so build direction shapes the site via structure, not via a
+direct freeform channel into the final assembler.
 
 ## 2026-09-04 (follow-up) — resolve the `alembic check` drift
 **Mode:** same session, direct to `main`. Commit `39ddb6f`.

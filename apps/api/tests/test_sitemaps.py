@@ -185,6 +185,27 @@ def test_generate_sitemap_happy_path_builds_page_tree(authed_client, monkeypatch
     assert any(a["action"] == "sitemap_generated" for a in activity)
 
 
+def test_project_build_direction_reaches_the_sitemap_agent(authed_client, monkeypatch):
+    """The pasted build direction on a project is folded into the notes
+    the sitemap agent sees — regardless of what the caller sends as
+    additional_notes."""
+    captured: dict = {}
+    monkeypatch.setattr(
+        "app.agents.sitemap.generate_structured",
+        lambda **kwargs: captured.update(kwargs) or dict(SITEMAP_LLM_OUTPUT),
+    )
+    project = _create_project_without_lead(authed_client)
+    marker = "BUILD-DIRECTION-MARKER: dark theme, one-page, book-a-table hero"
+    authed_client.patch(f"/api/v1/projects/{project['id']}", json={"build_direction": marker})
+
+    res = authed_client.post(
+        f"/api/v1/projects/{project['id']}/sitemaps", json={"additional_notes": "keep it to four pages"}
+    )
+    assert res.status_code == 201
+    assert marker in captured["user"]
+    assert "keep it to four pages" in captured["user"]
+
+
 def test_generate_sitemap_with_brief_and_creative_direction_not_flagged(authed_client, monkeypatch):
     _patch_sitemap_agent(monkeypatch)
     _patch_creative_director(monkeypatch)

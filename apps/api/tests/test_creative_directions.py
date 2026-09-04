@@ -163,6 +163,27 @@ def test_generate_creative_direction_without_client_context_flags_for_review(aut
     assert "no linked lead on record" in body["sources_note"]
 
 
+def test_project_build_direction_reaches_the_creative_director_agent(authed_client, monkeypatch):
+    """A project's pasted build direction is folded into the notes the
+    creative-director agent sees, on top of any per-request notes."""
+    captured: dict = {}
+    monkeypatch.setattr(
+        "app.agents.creative_director.generate_structured",
+        lambda **kwargs: captured.update(kwargs) or dict(CREATIVE_DIRECTION_LLM_OUTPUT),
+    )
+    project = _create_project_without_lead(authed_client)
+    marker = "BUILD-DIRECTION-MARKER: warm palette, hand-drawn illustration, no stock photos"
+    authed_client.patch(f"/api/v1/projects/{project['id']}", json={"build_direction": marker})
+
+    res = authed_client.post(
+        f"/api/v1/projects/{project['id']}/creative-directions",
+        json={"additional_notes": "lean into the family-run angle"},
+    )
+    assert res.status_code == 201
+    assert marker in captured["user"]
+    assert "lean into the family-run angle" in captured["user"]
+
+
 def test_update_creative_direction_edits_fields(authed_client, monkeypatch):
     _patch_creative_director(monkeypatch)
     project = _create_project_without_lead(authed_client)

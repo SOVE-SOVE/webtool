@@ -99,6 +99,13 @@ _INTAKE_CONTEXT_FIELDS = [
 ]
 
 
+def _with_build_direction(notes: str | None, build_direction: str | None) -> str | None:
+    """Fold the project's pasted build direction into the operator notes
+    the agent sees, so it feeds every generation regardless of caller."""
+    parts = [p.strip() for p in (notes, build_direction) if p and p.strip()]
+    return "\n\n".join(parts) or None
+
+
 def _build_intake_notes(brief: DesignBrief | None) -> str | None:
     if brief is None:
         return None
@@ -199,7 +206,7 @@ def generate_creative_direction(
         prior_suggested_offer=sales_audit.suggested_offer if sales_audit else None,
         target_audience=target_audience,
         business_goals=business_goals,
-        additional_notes=request.additional_notes,
+        additional_notes=_with_build_direction(request.additional_notes, project.build_direction),
         intake_notes=_build_intake_notes(design_brief),
     )
     result = creative_director_agent.run(agent_input)

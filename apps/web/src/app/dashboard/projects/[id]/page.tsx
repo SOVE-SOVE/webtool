@@ -278,21 +278,17 @@ export default function ProjectDetailPage() {
     loadTasks();
   }
 
-  // The pasted build direction flows into the AI steps as context, on top
-  // of anything typed into the per-generation notes field.
-  function withBuildDirection(notes: string): string | undefined {
-    return [notes, project?.build_direction].map((s) => s?.trim()).filter(Boolean).join("\n\n") || undefined;
-  }
-
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setGenerating(true);
     setGenerateError(null);
     try {
+      // The saved build direction is folded in server-side, so only the
+      // per-generation notes are sent here.
       const generated = await api.generateCreativeDirection(projectId, {
         target_audience: targetAudience || undefined,
         business_goals: businessGoals || undefined,
-        additional_notes: withBuildDirection(additionalNotes),
+        additional_notes: additionalNotes || undefined,
       });
       setBriefs((prev) => [generated, ...(prev ?? [])]);
       setExpandedId(generated.id);
@@ -319,7 +315,7 @@ export default function ProjectDetailPage() {
     try {
       const generated = await api.generateSitemap(projectId, {
         creative_direction_id: sitemapCreativeDirectionId || undefined,
-        additional_notes: withBuildDirection(sitemapAdditionalNotes),
+        additional_notes: sitemapAdditionalNotes || undefined,
       });
       setSitemaps((prev) => [generated, ...(prev ?? [])]);
       setSitemapExpandedId(generated.id);
