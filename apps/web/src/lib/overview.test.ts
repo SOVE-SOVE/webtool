@@ -14,6 +14,7 @@ vi.mock("./api", () => ({
         upcoming_meetings: 0,
         won_projects: 0,
         active_projects: 0,
+        websites: { building: 0, in_review: 0, ready_to_launch: 0, deployed: 0, maintenance: 0 },
         revenue_cents: 0,
         tasks_needing_attention: 0,
         follow_ups_due: 0,

@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from app.integrations.discovery.base import WebsiteStatus
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
+from app.modules.review_intelligence.models import ReviewActivityLevel
 
 
 class DiscoverySearchCreate(BaseModel):
@@ -97,6 +99,10 @@ class DiscoveredBusinessRead(BaseModel):
     status: DiscoveredBusinessStatus
     opportunity_score: int | None
     score_category: OpportunityScoreCategory | None
+    google_rating: float | None
+    google_review_count: int | None
+    review_health_score: int | None
+    review_activity_level: ReviewActivityLevel | None
     reviewed_by_user_id: uuid.UUID | None
     reviewed_at: datetime | None
     review_notes: str | None
@@ -143,11 +149,44 @@ class DiscoveredBusinessReviewRead(BaseModel):
     confidence: float | None
     recommended_sales_angle: str | None
 
+    google_rating: float | None
+    google_review_count: int | None
+    review_health_score: int | None
+    review_activity_level: ReviewActivityLevel | None
+
+
+class ApproveResult(BaseModel):
+    """
+    The outcome of approving a discovered business. Approval brings the
+    business into the CRM in the same step (no separate "add to CRM"
+    action), so this always carries the resulting review row plus:
+    - outcome "imported": a new CRM lead was created for it.
+    - outcome "already_in_crm": the business was already represented by a
+      CRM lead (existing dedup match) — no duplicate was created and
+      `lead_id` points at that existing lead.
+    """
+
+    business: DiscoveredBusinessRead
+    outcome: Literal["imported", "already_in_crm"]
+    lead_id: uuid.UUID | None
+
 
 class BulkApproveRequest(BaseModel):
     business_ids: list[uuid.UUID]
 
 
+class BulkApproveFailure(BaseModel):
+    id: uuid.UUID
+    name: str
+    reason: str
+
+
 class BulkApproveResult(BaseModel):
-    approved: list[DiscoveredBusinessRead]
+    """Bulk approve = approve + add-to-CRM for each selection. Buckets the
+    outcomes so the UI can say "N added, M already in the CRM, K couldn't
+    be added"."""
+
+    imported: list[DiscoveredBusinessRead]
+    already_in_crm: list[DiscoveredBusinessRead]
+    failed: list[BulkApproveFailure]
     not_found: list[uuid.UUID]

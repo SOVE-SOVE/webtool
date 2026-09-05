@@ -11,6 +11,626 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-05 — Google Review Intelligence: a reputation snapshot for Discovery, sourced only from what Google Places actually gives us
+**Mode:** background job, isolated worktree (`google-review-intelligence`), merged/pushed at session end.
+**Scope touched:** new `apps/api/app/modules/review_intelligence/` (models,
+schemas, service, routes), new `apps/api/app/agents/review_intelligence.py`
++ `agents/prompts/review_intelligence.md`, `apps/api/app/integrations/places.py`
+(added `get_place_details`), `apps/api/app/modules/discovery/{models,schemas,service}.py`
+(cached rating/health/activity columns + fields), `apps/api/app/modules/jobs/job_types.py`,
+`apps/api/app/jobs/handlers.py`, `apps/api/app/modules/leads/{schemas,service}.py`
+(read-only projection, no engine duplication), `apps/api/app/main.py`,
+new migration `b1d9f4a7c283_google_review_intelligence.py`, new
+`apps/api/tests/test_review_intelligence.py` (29 tests), one assertion
+fix in `test_automation_pipeline.py` (job count 3→4 — review_intelligence
+now fires in parallel with business_research off discovery); frontend:
+`apps/web/src/lib/api.ts` (types + 2 endpoints), Discovery detail page
+(new "Google reviews" section + button), Review Queue (2 new columns),
+Lead detail page (compact read-only review section).
+
+**Problem:** Discovery had no visibility into a business's Google
+reputation — rating, review volume/recency, or what customers actually
+say — despite the Google Places integration already existing (Text
+Search only; no Place Details/reviews fetch).
+
+**Key constraint that shaped the whole design:** Google Places API (New)
+never exposes a business's full review history — only an aggregate
+`rating` + `userRatingCount`, plus at most 5 individual reviews (Google's
+own pick, not guaranteed recent). So `rating_distribution` is *always*
+null for this provider (never reconstructed from the average — explicit
+anti-fabrication requirement), and every frequency/trend/theme
+calculation has documented minimum-sample thresholds in
+`agents/review_intelligence.py` that fall back to
+unknown/insufficient_data rather than a fabricated confident answer —
+expected to fire in most real cases given the 5-review cap, not a bug.
+
+**Change:**
+- `ReviewIntelligenceResult` — a sibling table to
+  `business_research_results`/`opportunity_score_results` (history kept,
+  newest first). JSON columns for structured lists (health factors,
+  themes, evidence), same precedent as `OpportunityScoreResult.factors`.
+- Review Health Score (0-100): Bayesian-smoothed rating (prior mean 4.0,
+  weight 10 "virtual" reviews) + volume/activity/recency/sentiment-
+  consistency/trend factors — verified by test that "5.0★/4 reviews"
+  never outscores "4.8★/400 reviews".
+- Theme extraction: a keyword lexicon scoped separately for
+  rating≥4 (positive) vs rating≤2 (negative) reviews, requiring ≥2
+  independent reviews before a theme counts as "recurring"; a distinct
+  `themes_data_sufficient` flag separates "no complaints found" from
+  "not enough data to say."
+- AI summary: one LLM call (`generate_structured`, existing Claude
+  adapter) fed only the already-computed facts + verbatim snippets —
+  skipped entirely (deterministic fallback text) when there's nothing to
+  synthesize; failure degrades to `review_summary_unavailable_reason`
+  without blocking the deterministic fields.
+- Service: `REVIEW_INTELLIGENCE_FRESHNESS` (24h) avoids re-hitting
+  Google; a transient Google outage serves the last good cached result
+  rather than clobbering it with a blank "unavailable" row.
+- Enqueued from `discovery/service.py::_enqueue_research` alongside
+  `business_research` (independent of website research — reviews don't
+  need a website); cheap no-op for non-Google-Places discoveries.
+- CRM Lead: read-only projection via reverse lookup
+  (`DiscoveredBusiness.imported_lead_id == lead.id`) — discovery remains
+  the sole analysis engine, nothing recomputed in the CRM.
+
+**Verification:** 916+29 backend tests passing (`pytest tests/`), `tsc
+--noEmit` clean, `next build` clean, `eslint` clean on touched files
+(3 pre-existing warnings/errors elsewhere, untouched).
+
+---
+
+## 2026-09-04 — Project page: kill the giant intake form, auto-carry business details, add a build-direction paste area
+**Mode:** same session, direct to `main`.
+**Scope touched:** `apps/web/src/app/dashboard/projects/[id]/page.tsx`
+(rewrite), `apps/web/src/components/BriefEditor.tsx` (deleted),
+`apps/web/src/lib/api.ts`, `apps/api/app/modules/projects/{models,schemas,service}.py`,
+`apps/api/alembic/versions/f2b7c1a9e3d4_projects_build_direction.py` (new);
+this file.
+
+**Problem:** the Project page led with `BriefEditor` — a 40-field
+client-intake form with per-field "Missing" badges and "nothing has
+been filled in for you". Wrong direction: the page should be an
+operational workspace, not a questionnaire.
+
+**Change (deliberately minimal — the `design_briefs` backend and the
+whole approval pipeline are untouched):**
+- **Removed `BriefEditor`** and the "Project brief" disclosure. Deleted
+  the component (only the project page used it).
+- **Business details** section: reads the project's `Business` record
+  (already carried over from the lead) and edits it inline via
+  `updateBusiness` — the exact pattern the lead detail page uses. No
+  re-entry of known facts. One "Confirm details" button pushes those
+  fields into the `DesignBrief` and approves it (clears the "Client
+  brief" checkpoint without a form — the brief endpoints are unchanged,
+  this just calls `updateBrief` + `approveBrief`). Existing projects
+  with an already-approved brief show "Confirmed" and no button.
+- **Build direction** section: a plain textarea backed by a new
+  `Project.build_direction` (nullable Text, migration
+  `f2b7c1a9e3d4`). Optional. Paste concept / visual direction / copy
+  direction / page structure / generation prompts worked out in
+  ChatGPT/Claude — no ChatGPT-in-the-app.
+  **Feeds the build server-side:** `generate_sitemap` and
+  `generate_creative_direction` fold `project.build_direction` into the
+  operator notes their agents see (`_with_build_direction` in each
+  service), so it applies on every generation regardless of caller. The
+  sitemap is the strong vehicle — it fully determines the generated
+  site's page structure, section layout, CTAs and key sections, which
+  `generate_website` then builds from. Tests
+  `test_project_build_direction_reaches_the_sitemap_agent` /
+  `..._the_creative_director_agent` assert the pasted text lands in the
+  agent prompt.
+- Page reorders to: header (now carries package/price/deadline inline)
+  → business details → **website & build** (progress + approval
+  pipeline + "Open website workspace →", kept prominent) → build
+  direction → collapsed build steps (creative direction / sitemap /
+  website brief, unchanged) → tasks → meetings/activity. Dropped the
+  separate "Snapshot" card.
+- API: `ProjectRead` gains `business_id` + `build_direction`;
+  `ProjectUpdate` gains `build_direction`.
+
+**Verified:** `apps/web` — `eslint` clean for changed files (1
+pre-existing exhaustive-deps warning on the same `useEffect(load)` as
+before), `vitest` 107/107, `next build` + TypeScript clean. `apps/api`
+— `alembic check` exit 0; `test_projects` / `test_websites` /
+`test_website_workflow` / `test_project_delivery` / `test_approvals` /
+`test_end_to_end_workflow` / `test_design_briefs` / `test_sitemaps` /
+`test_creative_directions` / `test_website_briefs` / `test_website_generator`
+/ `test_automation_pipeline` / `test_dashboard` / `test_workspace_isolation`
+all green (181 in that set); full suite run separately.
+**Browser pass NOT done** — same stale-dev-login blocker as earlier
+today; needs an operator to open a project and check the page.
+
+**Remaining limitations:** the `DesignBrief` still exists as an
+internal record and its brand/content/assets sections are no longer
+editable from the UI (they were rarely filled and the generator
+tolerates nulls); if that data is ever needed, the `PATCH
+/projects/{id}/brief` endpoint is still there. `build_direction` reaches
+the LLM sitemap + creative-direction steps (and through the sitemap,
+the whole generated site); the deterministic `website_generator` itself
+only ever reads `cta_strategy` / `tone_of_voice` off the creative
+direction, so build direction shapes the site via structure, not via a
+direct freeform channel into the final assembler.
+
+## 2026-09-04 (follow-up) — resolve the `alembic check` drift
+**Mode:** same session, direct to `main`. Commit `39ddb6f`.
+**Scope touched:** `apps/api/app/modules/{outreach,meetings,website_revisions}/models.py`,
+`apps/api/alembic/versions/e1a2b3c4d5f6_drop_removed_notification_and_action_queue_tables.py`.
+
+`alembic check` was failing for two reasons:
+1. Five FK columns (`EmailSend.lead_id` / `.outreach_message_id`,
+   `MeetingAttendee.meeting_id`, `MeetingReminder.meeting_id`,
+   `WebsiteRevision.project_id`) had `op.create_index` in their
+   table-creating migration but no `index=True` on the model —
+   autogenerate wanted to drop the index every run. Added `index=True`.
+2. The removed notification-centre + daily-action-queue feature left
+   four orphan tables (`notifications`, `notification_preferences`,
+   `action_queue_items`, `daily_action_runs`) + two enums. They were
+   only ever made by old `create_all()` runs, never a migration. New
+   migration `e1a2b3c4d5f6` drops them `IF EXISTS` (no-op on DBs that
+   never had them).
+
+Verified: fresh DB → 38 migrations → `alembic check` exit 0; long-lived
+dev DB (had the orphans) → migrate → check exit 0.
+
+**Environment note for whoever's next:** this machine runs **two**
+Postgres servers on `localhost:5432` — a Homebrew `postgresql@16`
+(bound to `127.0.0.1`/`::1`, wins for `localhost`) and the intended
+docker `web-design-os-postgres-1` (bound to `0.0.0.0`). The app, tests,
+and alembic all hit the **Homebrew** one; `docker exec … psql` hits the
+docker one. The docker DB is stale and unused. Pick one — either
+`brew services stop postgresql@16` (then everything uses docker as the
+README intends) or drop the docker container.
+
+## 2026-09-04 — Leads list / Lead detail / Follow-ups page simplification (a separate task set — user T2/T3/T5), plus T4/T6 verification
+**Mode:** new session, branch `leads-workflow-ui-t2-t3-t5` off `origin/main`
+(which already carries PR #41's own "T1–T5" — Discovery unification,
+approve→CRM, Settings, Overview). **This session's task numbers are a
+different list** and only overlap #41 on approve→CRM (its T3 = this T4)
+and the workflow audit (its T1 doc = this T6 input).
+**Merge to main after:** held as a batch at the user's request — not
+merged or pushed. Commits `c431d71` (T2), `327268d` (T3), `7f4f2cd`
+(T5), `0cef4ca` (T6 test fix).
+**Scope touched:** `apps/web/src/app/dashboard/leads/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/follow-ups/page.tsx`,
+`apps/web/src/lib/leads.ts` (+ `.test.ts`),
+`apps/web/src/components/LeadStatusBadge.tsx` (new),
+`apps/api/tests/conftest.py`; this file. No API / schema / DB / nav /
+design-system changes.
+
+**T2 — Leads list.** Rebuilt as a compact read-only table answering
+who / what status / what next: columns Business · Website (has/none) ·
+Status (`LeadStatusBadge`) · Next (`leadNextAction`) · **Open lead →**.
+One status `<select>` over the existing `LEAD_TABS` groups replaces the
+8-tab bar; a has/no-website filter and a quiet "show archived" toggle;
+search kept. Removed: Table/Board sort headers, priority/assignee
+filters, and all per-row inline `<select>`s (status/priority/score/
+assignee now edited on the detail page). Board view kept as a demoted
+header toggle — `LeadsBoard`, `nav.ts`, the `/pipeline` and `/clients`
+redirects, and `?tab=`/`?view=`/`?new=` deep links all still work.
+Manual "Add lead" / "Add client without a lead" forms moved behind a
+secondary toggle. New tested pure helpers in `lib/leads.ts`:
+`LEAD_STATUS_LABEL`, `leadTone`, `leadNextAction`.
+
+**T3 — Lead detail.** Same information, reordered as who / status /
+next / project. New at-a-glance three-card strip (Who / Status / Next,
+the last showing the lead's scheduled follow-up from `listFollowUps`).
+"Project & website" is now a first-class section with ONE primary
+action when no project exists — **Start website project →**
+(`createClient({from_lead_id})` → open the new project) — "Convert with
+full details" demoted. The editable Business+Lead field grids, the
+proposal/sales-audit/outreach tooling, and meetings/pipeline/activity
+each moved into a collapsed `Disclosure`. Every handler and API call
+unchanged.
+
+**T5 — Follow-ups.** Rows answer who/when/why/what: business name +
+`LeadStatusBadge` + plain-words due label ("3 days overdue") + next
+action + prior-outreach context + one **Open lead →**. Buckets ordered
+Overdue (red) → Today → Upcoming, empty buckets hidden; one calm
+`EmptyState` when the whole queue is clear. "Gone quiet — needs
+scheduling" moved below; manual generator moved into a `Disclosure`.
+Lead status via client-side join on `listLeads`. "Completed" group not
+added — `GET /follow-ups` only returns PENDING (noted as a limit).
+
+**T4 — verified, already done by PR #41.** `approve_business` /
+`bulk_approve` mark APPROVED + import in one transaction (rollback on
+failure), dedupe to an existing lead (`outcome: already_in_crm`), no
+separate "Add to CRM" button, plain-language success notice on the
+review page. 64/64 discovery + lead-intelligence tests pass once the
+Places key is blanked (see T6). No code change needed.
+
+**T6 — audit + one fix.** Re-walked Discover → Review → Leads → Lead
+detail → Follow-ups → Projects → Website. The linear flow now holds
+end to end for the parts in scope; the one remaining contradiction is
+**audit G4** (a `Project` still can't exist without marking the lead
+WON — the "build the demo before they say yes" principle needs backend
+milestone M9, out of scope here). The new "Start website project"
+button is honest about the WON side effect. Fixed one genuine issue
+exposed during verification: `conftest.py` didn't blank
+`GOOGLE_PLACES_API_KEY`, so a dev's real key silently made ~10 tests
+hit the live API. **Pre-existing, not fixed:** `alembic check` fails on
+`origin/main` — `notification_preferences` / `notifications` /
+`action_queue_items` / `daily_action_runs` tables + many `ix_*` indexes
+are in migrations but not the models (models deleted without a
+migration). Unrelated to the lead workflow; `pytest` is unaffected
+(schema fixture builds from models).
+
+**Verified:** `apps/web` — `eslint` clean for changed files (3
+pre-existing problems elsewhere untouched), `vitest` 107/107, `next
+build` + TypeScript clean. `apps/api` — `test_leads` / `test_outreach`
+/ `test_lead_intelligence_workflow` / `test_business_discovery` all
+green (125 passed) with the conftest fix; full suite run separately.
+**Browser pass NOT done** — the dev login's stored password is stale
+and minting one was blocked; needs an operator spot-check of
+`/dashboard/leads`, the lead detail page, and `/dashboard/follow-ups`.
+
+## 2026-09-02 — T5: Overview dashboard restructured into modules
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T4. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/page.tsx`,
+`apps/web/src/lib/api.ts`, `apps/web/src/lib/overview.test.ts`,
+`apps/api/app/modules/dashboard/{service,schemas}.py`,
+`apps/api/tests/test_dashboard.py`; this file. Closes audit **G7 + G8**.
+
+*Frontend:* the Overview page dropped **Quick Actions** (duplicated the
+nav) and **Recent Activity** (an event log, not "what needs
+attention" — the global "Do this next" queue already does that job and
+stays untouched at the bottom of every page). The `PageHeader` action
+buttons went too. The single 10-tile grid is now six labelled modules,
+each a `<h2 class="section-title">` + a `MetricGrid` of `Metric` tiles
+(components/spacing/dark-mode unchanged):
+- **Leads** — Active · New · Qualified · Contacted
+- **Sales** — Hot leads · In sales process (proposals) · Upcoming
+  meetings · Won deals
+- **Projects** — Active · Being built · In review / QA
+- **Websites** — Ready to launch · Deployed · In maintenance
+- **Follow-ups** — Overdue · Due today · Upcoming
+- **Revenue** — Revenue won · Open pipeline
+The **Hot leads** and **Recent wins** lists stay (a "what's happening"
+glance, not a task list). Every value is a real query — no invented
+metrics; a metric with no source shows "—", never a fake number.
+Data: `GET /dashboard/overview` + `GET /sales-dashboard` +
+`GET /follow-ups` (the last for the accurate overdue / due-today /
+upcoming split — its buckets aren't truncated).
+
+*Backend (G8):* `GET /dashboard/overview` gains a `websites`
+`WebsitePipeline` object — `building` / `in_review` / `ready_to_launch`
+/ `deployed` / `maintenance` — from one `GROUP BY Project.stage` query
+bucketed by stage (intake→development = building; qa/client_review/
+revisions = in_review; the rest map 1:1). No new table, no migration.
+
+**Verified:** `eslint` clean, `vitest` 102/102 (overview.test fixture
+updated for the new field), `next build` + TypeScript clean. Backend
+`test_dashboard.py` 20 passed incl. two new `websites`-pipeline tests
+(bucketing + empty state); full suite run separately. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): empty
+dashboard → all six modules render 0/$0, both lists say "Nothing here
+right now", no Quick Actions / Recent Activity, "Do this next" still
+present. Seeded a lead + a `development`-stage project → Leads "Active
+1 / New 1", Sales "Hot leads 1", Projects "Active 1 / Being built 1",
+Hot-leads list shows the lead. No horizontal overflow at 375px, zero
+console errors.
+
+**Batch T1–T5 complete.** All five on branch
+`worktree-workflow-audit-t1-t5` / PR #41, one commit per task (+ a
+test-infra fix commit).
+
+The T1-audit follow-up (G4: a website can't be built until the deal is
+won) is now written up as **roadmap M9 — "Demo sites: build before the
+deal is won"** (`docs/04_ROADMAP.md`), added in this session but not
+implemented.
+
+---
+
+## 2026-09-02 — T4: two-user account management (verified — already built, minor Settings copy)
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T3. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/web/src/app/dashboard/settings/page.tsx`; this file.
+
+**What happened:** The two-user model the task describes is **already
+implemented and already fully tested** (`apps/api/tests/test_users.py`,
+`test_auth.py`):
+- `workspaces` + `users` (role `admin` | `member`), business data
+  scoped by `businesses.workspace_id`.
+- `POST /api/v1/users` is `require_admin`; hashes the password
+  (`hash_password`), 12-char minimum (`UserCreate`), rejects duplicate
+  email (409). `UserRead` exposes no `password_hash`/`password`.
+- No register/sign-up route anywhere (verified 404); login page has no
+  "create account" link.
+- Settings → People already had the admin-only "Add teammate" form
+  (name / email / password / role) + inline role editing, guarded by
+  the "can't demote the only admin" rule (`update_user_role`).
+
+So T4 was verify + a small Settings copy pass, no new infrastructure,
+no migration:
+- People section now carries a one-line explanation (admin creates each
+  teammate here, no public sign-up, what a Member can/can't do), with a
+  shorter member-facing variant.
+- "Temporary password" → "Password (min 12 characters)" with
+  `minLength={12}`, plus a note that password change/reset isn't built
+  yet so pick one to keep.
+- Fixed a **pre-existing** lint error in the same file
+  (`setCalendarStatus` in an effect → a client-only lazy `useState`
+  initializer, no extra render). Three other pre-existing lint
+  errors/warnings remain in files this branch doesn't touch
+  (`layout.tsx:137`, `calendar/page.tsx:101`,
+  `projects/[id]/page.tsx:174`) — not addressed here.
+
+**Verified:** `eslint src/app/dashboard/settings/page.tsx` clean,
+`vitest` 102/102, `next build` clean. Backend `test_users.py` +
+`test_auth.py` + `test_assignment.py` = 29 passed. Browser pass
+(throwaway `webdesignos_t4audit`, API :8041 / web :3041): admin →
+Settings → "Add teammate" creates "Sam Teammate" (member) → sign out →
+Sam signs in → Settings shows no "Add teammate", member-facing copy,
+read-only workspace name. API spot-check as Sam: `POST /users` 403
+("Admin role required"), `PATCH /users/{id}` 403, `POST
+/auth/register` 404, wrong password 401.
+
+**Next up:** T5 — restructure the Overview dashboard (remove Quick
+Actions + Recent Activity; group real metrics into Leads / Sales /
+Projects / Websites / Follow-ups / Revenue modules; a new backend
+aggregation is needed for the Websites counts — see audit G8).
+
+---
+
+## 2026-09-01 — T3: approving a discovered business auto-imports it to the CRM
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked after T2. PR #41.
+**Merge to main after:** yes — pending review.
+**Scope touched:** `apps/api/app/modules/discovery/{service,routes,schemas}.py`,
+`apps/web/src/app/dashboard/review/page.tsx`, `apps/web/src/lib/api.ts`,
+`apps/api/tests/{test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file. (Test-infra fixes in a separate prior commit.)
+
+**What happened:** Closes audit gaps **G2** and **G3**.
+
+*Backend — approve = in CRM (G2):*
+- `import_to_lead` split into `_import_discovered_business(db, ..., business)`
+  (the core create-business-+-lead logic, **no commit** — caller owns the
+  transaction) + a thin `import_to_lead` wrapper (loads + commits) that
+  still backs the standalone `POST /discovered-businesses/{id}/import`
+  ("Add lead" button in the discovery results table). Plus a shared
+  `_resolve_crm_business` helper.
+- `approve_business` now: sets APPROVED, then calls
+  `_import_discovered_business` in the **same transaction**. Success →
+  one commit, business is IMPORTED with a real lead. Import failure →
+  nothing commits (FastAPI's session closes without commit → rollback),
+  so the business stays reviewable, never stuck "approved but not
+  imported". `DuplicateLeadError` (already represented in the CRM) is
+  caught: no second lead, the discovered row is linked to the existing
+  lead, outcome `already_in_crm`.
+- New `ApproveResult { business, outcome: "imported"|"already_in_crm",
+  lead_id }` — `POST .../approve` response. Route also catches
+  `CannotImportError` → 400.
+- `bulk_approve` → approve **and import** each selection, one
+  transaction per item (`db.rollback()` on a failure so the rest still
+  go through). New `BulkApproveResult { imported, already_in_crm,
+  failed: [{id,name,reason}], not_found }`.
+- The separate `/import` endpoint stays — the "Add lead" quick path on
+  the discovery results table is unchanged.
+
+*Frontend — Review queue simplified (G3):* 13 columns → 7 (checkbox,
+Business, Location, Website, Score chip, "Why review", Actions). Dropped
+the internal-status dropdown filter, the "Audit summary"/"Confidence"/
+"Key problems"/"Sales angle"/"Source"/"Researched" columns (still on the
+deep-dive route), and the "Research again"/"Archive"/standalone "Add to
+CRM" actions. Primary actions are just **Approve** / **Reject**;
+approve shows a green "Added X to the CRM as a lead" (or "was already in
+the CRM") notice. Bulk button is "Approve & add to CRM (N)" and reports
+"N added · M already in the CRM · K couldn't be added". Settled rows
+(imported/rejected/archived) show status text + a "View lead →" link.
+Website/spacing/dark-mode classes unchanged.
+
+**Verified:** `eslint` + `tsc` (via `next build`) + `vitest` (102) all
+clean. Full backend suite **884 passed, 0 failed** (on an isolated DB;
+the 2 date-bomb failures were fixed in the prior commit). Browser pass
+on a throwaway instance (API :8031 + web :3031, `webdesignos_t3audit`):
+live Places search → Review queue shows the 7-column layout → **Approve**
+one row → green notice, row flips to "View lead →", `GET
+/api/v1/businesses` has exactly one new Business, `GET /api/v1/leads`
+one new Lead (`source: discovery:google_places`) → **Reject** another →
+row shows "Rejected", checkbox disabled → **select 2 + bulk approve** →
+both become "View lead →", 3 leads total, no duplicate businesses.
+Instance + DBs torn down.
+
+**Next up:** T4 — two-user account management (largely already built;
+verify + test + minor Settings copy).
+
+---
+
+## 2026-09-01 — T2: Lead Discovery unified into one workspace
+**Mode:** worktree (`workflow-audit-t1-t5`), stacked on the T1 commit.
+**Merge to main after:** yes — pending review (same branch as T1; PR #41).
+**Scope touched:** `apps/web/src/components/DiscoveryWorkspace.tsx` (new),
+`apps/web/src/app/dashboard/discovery/page.tsx`,
+`apps/web/src/app/dashboard/discovery/[id]/page.tsx`; this file.
+
+**What happened:** Closes audit gap **G1**. Before: nav "Discovery"
+opened a search-*history table* (`discovery/page.tsx`); the actual
+workspace — search form + map + results + add — lived only at
+`discovery/[id]`, not in nav, reachable only by clicking a history row.
+
+Extracted the whole workspace into one client component,
+`DiscoveryWorkspace`, that both routes now render:
+- `/dashboard/discovery` → `<DiscoveryWorkspace />` — opens on the most
+  recent search (or the empty state).
+- `/dashboard/discovery/[id]` → `<DiscoveryWorkspace initialSearchId=… />`
+  — a permalink to one search; keeps the discovered-business detail
+  page's "← Back to search results" link and any bookmarked search
+  URLs working.
+
+The component carries: the search form **always visible** at the top
+(industry / location / business type / keywords / website filter / Run
+search); a "Showing …" `<select>` to switch between past searches
+(replaces the old history table); the criteria header; the existing
+result filters + sort + "on map only"; the existing `DiscoveryMap`
+(reused unchanged); the existing results table (website-status badges,
+score, per-row "Add lead"/"View lead"); "Load more"; and a "Review
+queue →" link. Switching the active search updates the URL in place
+via `history.replaceState` (no full navigation). No map rebuild, no
+design-system / nav-styling change, no backend change, no endpoint
+change (`listDiscoverySearches` / `createDiscoverySearch` /
+`getDiscoverySearch` / `listDiscoveredBusinesses` /
+`loadMoreDiscoverySearch` / `importDiscoveredBusiness` all as-is).
+
+`/dashboard/review` and `/dashboard/discovered-businesses/[id]` left
+exactly as they were — Review is the cross-search triage/bulk-approve
+queue (T3 simplifies its contents), the detail route is the deep-dive.
+
+**Routes:** none added, none removed. `discovery/page.tsx` and
+`discovery/[id]/page.tsx` both re-point at the shared component.
+
+**Verified:** `eslint` clean, `vitest run` 102/102, `next build` clean
+(TypeScript checked). Full browser pass on a throwaway instance (API
+:8020 + web :3020, fresh `webdesignos_t2audit` DB migrated to head,
+seeded admin): opened `/dashboard/discovery` → search form + empty
+state; ran a live Google Places search ("cafe" / "Byron Bay") → URL
+became `/discovery/<id>`, "Showing" picker populated, criteria header,
+map rendered with clustered markers, 20 results with website badges;
+website filter "No website" → 1 result, map + count updated; "Add
+lead" on that row → became "View lead →"; `/dashboard/leads` → the new
+lead present; reloaded `/discovery/<id>` directly → full workspace,
+persisted "View lead"; clicked a business → deep-dive route, its "←
+Back to search results" link resolves to the unified workspace. Zero
+console errors. Instance + DB torn down.
+
+**Next up:** T3 — approving a discovered business auto-imports it into
+the CRM (reuse `import_to_lead`), and strip the Review queue to the
+essentials.
+
+---
+
+## 2026-09-01 — T1: Workflow audit — current vs. intended Web Design OS flow (audit only, no app code)
+**Mode:** worktree (`workflow-audit-t1-t5`), branched from `main`.
+**Merge to main after:** yes — docs only.
+**Scope touched:** new `docs/08_WORKFLOW_AUDIT.md`; this file.
+
+**What happened:** First task of a fresh 5-task batch (T1 audit, then
+T2 Discovery workspace, T3 approve→auto-CRM, T4 two-user management, T5
+Overview dashboard). Read the full funnel end to end — discovery
+list/detail/deep-dive/review pages + `discovery/service.py`
+(`create_and_run_search`, `approve_business`, `import_to_lead`,
+`bulk_approve`), leads list/detail + `clients/service.py` conversion,
+projects list/detail + website workspace + the brief→creative
+direction→sitemap→website→QA→deploy chain, `dashboard/service.py` +
+`sales_dashboard/schemas.py`, `users/{routes,service}.py`, the login
+page, and `layout.tsx`/`nav.ts`. No code changed.
+
+**Findings (full detail in `docs/08_WORKFLOW_AUDIT.md`):**
+- **G1 (T2):** nav "Discovery" lands on a *search-history table*; the
+  actual workspace (search + map + results + add) is
+  `/dashboard/discovery/[id]`, not in nav, reachable only by clicking a
+  history row.
+- **G2 (T3):** "Approve" in the Review queue only sets `status=approved`
+  — a dead-end state. Adding to the CRM is a *separate* "Add to CRM"
+  button calling `import_to_lead`. Bulk-approve imports nothing.
+- **G3 (T3):** Review queue is a 13-column pipeline console exposing all
+  8 internal statuses, "confidence", "sales angle", "research again",
+  etc.
+- **G4 (biggest, not in T2–T5 scope):** a `Project` (hence any website)
+  can only be created by `create_client`, which *requires marking the
+  lead WON*. The demo cannot be built before the client agrees —
+  directly contradicts the product principle. Recommended as a
+  follow-up task.
+- **G5:** ~10 manual generate/approve steps from project to previewable
+  site. **G7 (T5):** Overview mixes a metric wall + Quick Actions
+  (dup of nav) + Recent Activity (event log, not attention) + the
+  global "Do this next". **G8 (T5):** no website-lifecycle counts
+  exist — a new dashboard aggregation is needed for the "WEBSITES"
+  module.
+- **T4 is essentially already built:** admin-only `POST /users` with
+  password hashing, no register route anywhere, Settings → People
+  "Add teammate" form already present, last-admin-demotion guard. T4
+  becomes mostly verify + test + minor copy.
+
+**Verified:** N/A (no code). Audit doc cross-checked against the
+current source (file:line references throughout).
+
+**Next up:** T2 — make `/dashboard/discovery` the single unified
+workspace (reuse `DiscoveryMap`, `lib/filters.ts`, existing results
+markup; keep `/discovery/[id]` as a permalink; keep the deep-dive
+route).
+
+---
+
+## 2026-09-01 — Local dev environment: stale dev-server processes not serving merged T1/T2 code
+**Mode:** operator ran `./scripts/start-mac.sh` in the primary checkout
+(`/Users/sove/webtool/web-design-os`, not a worktree) after T1 and T2
+merged, and reported "I can't see any change when running ./scripts
+and going on the website." **No app code changed.**
+**Scope touched:** none (operational only); this file.
+
+**What happened:** The primary checkout's `main` branch was already at
+the merge commit (`99e51a3`, includes both T1 and T2) — the source on
+disk was correct. The actual cause: `next dev` (port 3000) and
+`uvicorn --reload` (port 8000) had been running continuously since
+**31 Aug 23:05/23:07** (confirmed via `ps -o lstart`), i.e. from
+*before* T1 merged (~09:32 AEST on 1 Sep) and T2 merged (~09:46 AEST).
+`scripts/start-mac.sh` checks whether the app is already answering on
+its ports before starting anything (`scripts/README.md`'s documented
+behavior) — so re-running it left the stale processes in place instead
+of restarting them. Fixed by running `scripts/stop-mac.sh` then
+`scripts/start-mac.sh`; confirmed fresh process start times and
+`/health` returning `{"status":"ok"}` afterward.
+
+Also re-confirmed, while diagnosing: this machine still has **two**
+Postgres servers able to claim `localhost:5432` — a native Homebrew
+`postgresql@16` service (`lsof` shows it owns both the IPv4 and IPv6
+listeners) and the `docker-compose` container (`docker ps` shows it
+"Up," but it never actually receives `localhost` traffic). The API's
+`.env` `DATABASE_URL` points at `localhost:5432`, so all real traffic
+goes to the Homebrew instance — `docker compose stop/start` has no
+effect on the data the app is actually using. Same issue first noted
+in T1's entry below; still not fixed, just re-verified. Worth an actual
+fix (e.g. document it prominently in `scripts/README.md`'s
+troubleshooting section, or have the Homebrew service disabled/stopped
+on this machine) next time someone's touching local-dev tooling.
+
+**Also clarified for the operator:** T1's change is only visible when
+*creating a new project* (redirect + "Project created." banner + brief
+auto-expand) — existing projects look unchanged, which is correct. T2
+made zero code changes, so Discovery looks identical to before, also
+correct — the investigation concluded it was already consolidated.
+
+**Blockers/issues:** None beyond the Postgres port note above (informational, not blocking).
+
+**Next up:** none outstanding from this session.
+
+---
+
+## 2026-09-01 — T3: UX review of Project Creation + Discovery changes (PASS — no changes needed)
+**Mode:** worktree (`send-email-button`), same session as T1/T2.
+**Merge to main after:** yes — docs only, no app code changed.
+**Scope touched:** this file only.
+
+**What happened:** Reviewed the merged T1 (project-creation
+simplification, PR #38) and T2 (Discovery consolidation verification,
+PR #39) changes against the task's own checklist, without adding
+features or making speculative improvements, per its explicit
+instruction to change nothing if everything already works.
+
+- **Project creation — PASS.** Fast (client + name only, no brief
+  gate), required fields clear, optional info deferred correctly,
+  existing project data/relationships/website workflows all intact —
+  same evidence already gathered live during T1's own implementation
+  (throwaway instance, full click-through) re-confirmed here.
+- **Discovery — PASS.** One primary destination in nav, Review
+  correctly subordinate, map/results/detail/add-lead all present and
+  untouched, no duplicate-page confusion — T2 made zero code changes,
+  so there was nothing new to regress.
+- **Regression — PASS.** Full suite reran on the final merged `main`
+  (commit `99e51a3`, T1+T2 together, not just each individually against
+  its own base): `apps/api` pytest 882/882, `apps/web` vitest 102/102,
+  `tsc --noEmit` clean, `next build` clean. `eslint` shows the same 2
+  pre-existing errors in `layout.tsx`/`settings/page.tsx` as before —
+  confirmed unrelated to T1/T2 (neither touched those files), correctly
+  left unfixed per this task's own "only fix what's directly related"
+  instruction.
+
+**Blockers/issues:** None.
+
+**Next up:** none outstanding from T1/T2/T3. (See the entry above for
+a follow-up dev-environment issue reported by the operator right after
+this review closed out.)
 ## 2026-09-01 — Initial ("prospect / demo") website as the primary project workflow
 **Mode:** new session
 **Merge to main after:** yes

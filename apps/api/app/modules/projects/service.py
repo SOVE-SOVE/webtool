@@ -90,6 +90,7 @@ def _to_read(project: Project) -> ProjectRead:
     return ProjectRead(
         id=project.id,
         client_id=project.client_id,
+        business_id=project.client.business_id,
         client_business_name=project.client.business.name,
         source_lead_id=project.source_lead_id,
         name=project.name,
@@ -97,6 +98,7 @@ def _to_read(project: Project) -> ProjectRead:
         package=project.package,
         price_cents=project.price_cents,
         deadline=project.deadline,
+        build_direction=project.build_direction,
         assigned_user_id=project.assigned_user_id,
         assigned_user_name=project.assigned_user.name if project.assigned_user else None,
         delivered_at=project.delivered_at,
@@ -227,6 +229,8 @@ def update_project(
         project.price_cents = data.price_cents
     if "deadline" in data.model_fields_set:
         project.deadline = data.deadline
+    if "build_direction" in data.model_fields_set:
+        project.build_direction = data.build_direction
 
     if "assigned_user_id" in data.model_fields_set and data.assigned_user_id != project.assigned_user_id:
         if data.assigned_user_id is not None:

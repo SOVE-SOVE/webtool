@@ -84,6 +84,14 @@ _BRIEF_CONTEXT_FIELDS = [
 ]
 
 
+def _with_build_direction(notes: str | None, build_direction: str | None) -> str | None:
+    """Fold the project's pasted build direction into the operator notes
+    the agent sees, so it feeds every generation regardless of caller —
+    not only when the web client remembers to include it."""
+    parts = [p.strip() for p in (notes, build_direction) if p and p.strip()]
+    return "\n\n".join(parts) or None
+
+
 def _build_brief_notes(brief: DesignBrief | None) -> str | None:
     if brief is None:
         return None
@@ -156,7 +164,7 @@ def generate_sitemap(
         business_goals=business_goals,
         brief_notes=_build_brief_notes(brief),
         creative_direction_notes=_build_creative_direction_notes(creative_direction),
-        additional_notes=request.additional_notes,
+        additional_notes=_with_build_direction(request.additional_notes, project.build_direction),
     )
     result = sitemap_agent.run(agent_input)
     output = result.output

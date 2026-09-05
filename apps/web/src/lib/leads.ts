@@ -34,6 +34,84 @@ export const LEAD_TABS: LeadTabDef[] = [
   { id: "nurture", label: "Nurture", statuses: ["nurture"] },
 ];
 
+/**
+ * Human-readable label for each raw `LeadStatus` value. The enum values
+ * are unchanged and still stored/edited everywhere — this is display
+ * only, for badges and lists.
+ */
+export const LEAD_STATUS_LABEL: Record<LeadStatus, string> = {
+  new: "New",
+  researched: "Researched",
+  qualified: "Qualified",
+  contacted: "Contacted",
+  replied: "Replied",
+  meeting: "Meeting booked",
+  proposal: "Proposal sent",
+  won: "Won",
+  lost: "Lost",
+  nurture: "Nurturing",
+};
+
+/**
+ * Coarse grouping so a status badge has ~5 meanings, not 10 colours —
+ * same idea as `projectTone` in projects.ts. Mirrors the `LEAD_TABS`
+ * lifecycle groups: New (new/researched/qualified), Active (anything in
+ * the live funnel), Won, Lost, Nurture.
+ */
+export type LeadTone = "new" | "active" | "won" | "lost" | "nurture";
+
+export function leadTone(status: LeadStatus): LeadTone {
+  if (status === "won") return "won";
+  if (status === "lost") return "lost";
+  if (status === "nurture") return "nurture";
+  if (status === "new" || status === "researched" || status === "qualified") return "new";
+  return "active";
+}
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/**
+ * One short line answering "what should I do with this lead next" for
+ * the Leads list. A scheduled follow-up wins; otherwise a hint derived
+ * from the current status. Pure — `now` is injectable for tests.
+ */
+export function leadNextAction(
+  lead: Pick<Lead, "status">,
+  nextFollowUp?: string | null,
+  now: number = Date.now(),
+): string {
+  if (nextFollowUp) {
+    const due = new Date(nextFollowUp);
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const dueDay = new Date(due);
+    dueDay.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((dueDay.getTime() - startOfToday.getTime()) / MS_PER_DAY);
+    if (diffDays < 0) return "Follow-up overdue";
+    if (diffDays === 0) return "Follow up today";
+    return `Follow up ${due.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+  }
+  switch (lead.status) {
+    case "new":
+    case "researched":
+    case "qualified":
+      return "Needs first contact";
+    case "contacted":
+      return "Waiting on a reply";
+    case "replied":
+    case "meeting":
+      return "Move toward a proposal";
+    case "proposal":
+      return "Chase the proposal";
+    case "won":
+      return "Convert to a client";
+    case "nurture":
+      return "Check back later";
+    case "lost":
+      return "—";
+  }
+}
+
 const TAB_IDS = new Set(LEAD_TABS.map((t) => t.id));
 
 export function isLeadTab(value: string | null | undefined): value is LeadTab {

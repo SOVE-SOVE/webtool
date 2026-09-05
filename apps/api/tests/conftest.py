@@ -7,7 +7,12 @@ app.core.settings.settings is built once at import time.
 
 import os
 
-os.environ["DATABASE_URL"] = "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
+# `setdefault`, not an unconditional assignment, so parallel test runs
+# (e.g. several worktrees at once) can each point at their own database
+# via DATABASE_URL and not truncate/drop each other's tables mid-run.
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+psycopg://webdesignos:webdesignos@localhost:5432/webdesignos_test"
+)
 # Long enough to satisfy the Settings validator's minimum — see
 # app/core/settings.py; a short/placeholder secret now refuses to start.
 os.environ["SESSION_SECRET"] = "test-session-secret-not-used-in-any-real-deployment"
@@ -16,6 +21,7 @@ os.environ["SESSION_SECRET"] = "test-session-secret-not-used-in-any-real-deploym
 # "key not configured" behavior needs to be reachable no matter what's
 # in the local environment.
 os.environ["BRAVE_SEARCH_API_KEY"] = ""
+os.environ["GOOGLE_PLACES_API_KEY"] = ""
 os.environ["LLM_API_KEY"] = ""
 # A real (test-only) Fernet key so calendar-connection encryption tests
 # can round-trip — tests that want the "not configured" path unset this

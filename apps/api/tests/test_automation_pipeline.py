@@ -197,7 +197,12 @@ def test_full_pipeline_discovery_to_deployment_with_automation(authed_client, db
     assert authed_client.get(f"/api/v1/discovered-businesses/{business_id}").json()["status"] == "new"
 
     jobs_run = _drain_jobs()
-    assert jobs_run == 3  # business_research -> website_quality_audit -> opportunity_score
+    # business_research + review_intelligence fire in parallel off discovery
+    # (this business was found via the Brave-search provider, not Google
+    # Places, so review_intelligence resolves immediately to "no listing" —
+    # see modules/review_intelligence/service.py); business_research then
+    # chains into website_quality_audit -> opportunity_score.
+    assert jobs_run == 4
 
     scored = authed_client.get(f"/api/v1/discovered-businesses/{business_id}").json()
     assert scored["status"] == "scored"
@@ -219,12 +224,14 @@ def test_full_pipeline_discovery_to_deployment_with_automation(authed_client, db
     assert scored["imported_lead_id"] is None
 
     # ---------------------------------------------------------------
-    # 2. HUMAN REVIEW + CRM IMPORT — unchanged, explicit operator action.
+    # 2. HUMAN REVIEW + CRM IMPORT — still an explicit operator action;
+    #    approving now also creates the CRM lead in the same step (no
+    #    separate "add to CRM" click), but nothing auto-approves.
     # ---------------------------------------------------------------
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve").json()
-    # Approving a reviewed prospect now brings it straight into the CRM.
-    assert approved["status"] == "imported"
-    lead_id = approved["imported_lead_id"]
+    assert approved["outcome"] == "imported"
+    assert approved["business"]["status"] == "imported"
+    lead_id = approved["lead_id"]
     assert lead_id is not None
 
     # ---------------------------------------------------------------

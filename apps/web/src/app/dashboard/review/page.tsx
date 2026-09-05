@@ -7,23 +7,11 @@ import {
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
   type DiscoveredBusinessReviewItem,
-  type DiscoveredBusinessStatus,
   type OpportunityScoreCategory,
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-
-const STATUS_LABEL: Record<DiscoveredBusinessStatus, string> = {
-  new: "New",
-  researched: "Researched",
-  audited: "Audited",
-  scored: "Scored",
-  approved: "Approved",
-  rejected: "Rejected",
-  archived: "Archived",
-  imported: "Imported",
-};
 
 const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
   hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
@@ -32,22 +20,51 @@ const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
   review: "bg-surface-hover text-fg-muted",
 };
 
-function Truncated({ text, width = "max-w-[220px]" }: { text: string | null; width?: string }) {
+const ACTIVITY_LABEL: Record<string, string> = { high: "HIGH", medium: "MEDIUM", low: "LOW", unknown: "UNKNOWN" };
+
+function GoogleReviewsCell({ item }: { item: DiscoveredBusinessReviewItem }) {
+  if (item.google_rating === null && item.google_review_count === null) {
+    return <span className="text-fg-subtle">—</span>;
+  }
+  return (
+    <div>
+      <div className="text-fg">
+        {item.google_rating !== null ? `${item.google_rating.toFixed(1)}★` : "No rating"}
+        {item.google_review_count !== null && (
+          <span className="text-fg-muted"> ({item.google_review_count})</span>
+        )}
+      </div>
+      <div className="text-xs text-fg-muted">
+        {item.review_health_score !== null ? `Health ${item.review_health_score}` : "Health n/a"}
+        {item.review_activity_level && item.review_activity_level !== "unknown" && (
+          <> · {ACTIVITY_LABEL[item.review_activity_level]}</>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Truncated({ text }: { text: string | null }) {
   if (!text) return <span className="text-fg-subtle">—</span>;
   return (
-    <span title={text} className={`block ${width} truncate`}>
+    <span title={text} className="block max-w-[320px] truncate">
       {text}
     </span>
   );
 }
 
+/** The single line that tells the operator why this prospect is worth a look. */
+function whyReview(item: DiscoveredBusinessReviewItem): string | null {
+  return item.recommended_sales_angle || item.quality_summary || item.key_problems[0] || null;
+}
+
 export default function ReviewPage() {
   const [items, setItems] = useState<DiscoveredBusinessReviewItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<DiscoveredBusinessStatus | "">("");
   const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
 
@@ -64,14 +81,36 @@ export default function ReviewPage() {
 
   useEffect(load, [showArchived]);
 
-  async function runAction(id: string, action: () => Promise<unknown>) {
-    setBusyId(id);
+  async function handleApprove(item: DiscoveredBusinessReviewItem) {
+    setBusyId(item.id);
     setError(null);
+    setNotice(null);
     try {
-      await action();
+      const result = await api.approveDiscoveredBusiness(item.id);
+      setNotice(
+        result.outcome === "already_in_crm"
+          ? `${item.name} was already in the CRM.`
+          : `Added ${item.name} to the CRM as a lead.`,
+      );
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "That action failed.");
+      setError(
+        err instanceof ApiError ? err.message : `Couldn't add ${item.name} to the CRM — try again.`,
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleReject(item: DiscoveredBusinessReviewItem) {
+    setBusyId(item.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.rejectDiscoveredBusiness(item.id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't reject that.");
     } finally {
       setBusyId(null);
     }
@@ -81,8 +120,14 @@ export default function ReviewPage() {
     if (selected.size === 0) return;
     setBulkApproving(true);
     setError(null);
+    setNotice(null);
     try {
-      await api.bulkApproveDiscoveredBusinesses([...selected]);
+      const result = await api.bulkApproveDiscoveredBusinesses([...selected]);
+      const parts: string[] = [];
+      if (result.imported.length) parts.push(`${result.imported.length} added to the CRM`);
+      if (result.already_in_crm.length) parts.push(`${result.already_in_crm.length} already in the CRM`);
+      if (result.failed.length) parts.push(`${result.failed.length} couldn't be added`);
+      setNotice(parts.join(" · ") || "Nothing to approve.");
       setSelected(new Set());
       load();
     } catch (err) {
@@ -104,15 +149,17 @@ export default function ReviewPage() {
   const visibleItems = useMemo(() => {
     if (!items) return null;
     return items.filter((i) => {
-      if (statusFilter && i.status !== statusFilter) return false;
       if (websiteFilter === "has" && i.website_status !== "found") return false;
       if (websiteFilter === "no" && i.website_status !== "none") return false;
       return true;
     });
-  }, [items, statusFilter, websiteFilter]);
+  }, [items, websiteFilter]);
 
   const selectableIds = useMemo(
-    () => (visibleItems ?? []).filter((i) => i.status !== "imported").map((i) => i.id),
+    () =>
+      (visibleItems ?? [])
+        .filter((i) => i.status !== "imported" && i.status !== "rejected" && i.status !== "archived")
+        .map((i) => i.id),
     [visibleItems],
   );
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
@@ -125,31 +172,19 @@ export default function ReviewPage() {
     <div className="p-6">
       <PageHeader
         title="Review queue"
-        description="Every discovered prospect, with research and scoring context. Approving a prospect adds it to the CRM as a lead automatically."
+        description="Discovered businesses worth a look. Approve one to add it to the CRM as a lead, or reject it."
         actions={
           <button
             onClick={handleBulkApprove}
             disabled={selected.size === 0 || bulkApproving}
             className="btn btn-primary"
           >
-            {bulkApproving ? "Approving…" : `Bulk approve (${selected.size})`}
+            {bulkApproving ? "Adding…" : `Approve & add to CRM (${selected.size})`}
           </button>
         }
       />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as DiscoveredBusinessStatus | "")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
-        >
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
         <select
           value={websiteFilter}
           onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
@@ -162,9 +197,15 @@ export default function ReviewPage() {
         </select>
         <label className="flex items-center gap-1.5 text-sm text-fg-muted">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
+          Show rejected &amp; archived
         </label>
       </div>
+
+      {notice && (
+        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="mt-4">
@@ -174,7 +215,7 @@ export default function ReviewPage() {
 
       {!items && !error && (
         <div className="mt-4">
-          <TableSkeleton rows={5} cols={5} />
+          <TableSkeleton rows={5} cols={6} />
         </div>
       )}
 
@@ -190,32 +231,33 @@ export default function ReviewPage() {
             <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
               <tr>
                 <th className="px-2 py-2">
-                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all"
+                  />
                 </th>
                 <th className="px-3 py-2">Business</th>
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Website</th>
-                <th className="px-3 py-2">Audit summary</th>
                 <th className="px-3 py-2">Score</th>
-                <th className="px-3 py-2">Confidence</th>
-                <th className="px-3 py-2">Key problems</th>
-                <th className="px-3 py-2">Sales angle</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Researched</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Google reviews</th>
+                <th className="px-3 py-2">Why review</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {visibleItems.map((item) => {
                 const busy = busyId === item.id;
-                const settled = ["approved", "rejected", "archived", "imported"].includes(item.status);
+                const settled =
+                  item.status === "imported" || item.status === "rejected" || item.status === "archived";
                 return (
                   <tr key={item.id} className={item.status === "archived" ? "opacity-50" : undefined}>
                     <td className="px-2 py-2 align-top">
                       <input
                         type="checkbox"
-                        disabled={item.status === "imported"}
+                        disabled={settled}
                         checked={selected.has(item.id)}
                         onChange={() => toggleSelected(item.id)}
                       />
@@ -240,14 +282,13 @@ export default function ReviewPage() {
                           rel="noreferrer"
                           className="text-fg-muted hover:underline"
                         >
-                          <Truncated text={item.website_url} width="max-w-[160px]" />
+                          Website found
                         </a>
                       ) : (
-                        <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}</span>
+                        <span className="text-fg-subtle">
+                          {DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}
+                        </span>
                       )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Truncated text={item.quality_summary} />
                     </td>
                     <td className="px-3 py-2 align-top">
                       {item.opportunity_score !== null && item.score_category ? (
@@ -260,79 +301,46 @@ export default function ReviewPage() {
                         <span className="text-fg-subtle">Not scored</span>
                       )}
                     </td>
+                    <td className="px-3 py-2 align-top">
+                      <GoogleReviewsCell item={item} />
+                    </td>
                     <td className="px-3 py-2 align-top text-fg-muted">
-                      {item.confidence !== null ? `${Math.round(item.confidence * 100)}%` : "—"}
+                      <Truncated text={whyReview(item)} />
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <Truncated text={item.key_problems.join("; ") || null} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Truncated text={item.recommended_sales_angle} />
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">{item.source_provider}</td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      {item.researched_at ? new Date(item.researched_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">{STATUS_LABEL[item.status]}</td>
-                    <td className="px-3 py-2 align-top">
-                      <div className="flex flex-col gap-1">
-                        {item.status === "imported" ? (
-                          item.imported_lead_id && (
-                            <Link
-                              href={`/dashboard/leads/${item.imported_lead_id}`}
-                              className="text-xs text-fg-muted hover:underline"
-                            >
-                              View lead →
-                            </Link>
-                          )
+                      {item.status === "imported" ? (
+                        item.imported_lead_id ? (
+                          <Link
+                            href={`/dashboard/leads/${item.imported_lead_id}`}
+                            className="text-xs text-fg-muted hover:underline"
+                          >
+                            View lead →
+                          </Link>
                         ) : (
-                          <>
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                runAction(item.id, () => api.runBusinessResearch(item.id))
-                              }
-                              className="text-xs text-fg-muted hover:underline disabled:opacity-50"
-                            >
-                              Research again
-                            </button>
-                            {!settled && (
-                              <>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.approveDiscoveredBusiness(item.id))}
-                                  className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                                >
-                                  Approve &amp; add to CRM
-                                </button>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.rejectDiscoveredBusiness(item.id))}
-                                  className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
-                                >
-                                  Reject
-                                </button>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.archiveDiscoveredBusiness(item.id))}
-                                  className="text-xs text-fg-muted hover:underline disabled:opacity-50"
-                                >
-                                  Archive
-                                </button>
-                              </>
-                            )}
-                            {item.status !== "rejected" && item.status !== "archived" && (
-                              <button
-                                disabled={busy}
-                                onClick={() => runAction(item.id, () => api.importDiscoveredBusiness(item.id))}
-                                className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                              >
-                                Add to CRM
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
+                          <span className="text-xs text-fg-subtle">In the CRM</span>
+                        )
+                      ) : item.status === "rejected" ? (
+                        <span className="text-xs text-fg-subtle">Rejected</span>
+                      ) : item.status === "archived" ? (
+                        <span className="text-xs text-fg-subtle">Archived</span>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            disabled={busy}
+                            onClick={() => handleApprove(item)}
+                            className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
+                          >
+                            {busy ? "Adding…" : "Approve"}
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => handleReject(item)}
+                            className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

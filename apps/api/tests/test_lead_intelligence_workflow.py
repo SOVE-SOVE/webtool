@@ -65,19 +65,18 @@ def test_full_workflow_discover_research_score_approve_import(authed_client, mon
     assert score.status_code == 201
     assert score.json()["category"] == "hot"
 
-    # Approving a reviewed prospect brings it straight into the CRM as a
-    # lead — "approve -> automatically add to CRM" (docs/00_VISION.md).
+    # Approving brings it into the CRM in the same step — no separate
+    # "add to CRM" action.
     approved = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/approve")
     assert approved.status_code == 200
     body = approved.json()
-    assert body["status"] == "imported"
-    assert body["reviewed_by_user_id"] is not None
-    assert body["imported_lead_id"] is not None
+    assert body["outcome"] == "imported"
+    assert body["business"]["status"] == "imported"
+    assert body["business"]["reviewed_by_user_id"] is not None
+    assert body["business"]["imported_lead_id"] is not None
+    assert body["lead_id"] == body["business"]["imported_lead_id"]
 
-    # Re-importing an already-imported business is refused.
-    assert authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import").status_code == 400
-
-    lead_id = body["imported_lead_id"]
+    lead_id = body["lead_id"]
     lead = authed_client.get(f"/api/v1/leads/{lead_id}").json()
     assert lead["business_name"] == "Gold Coast Plumbing Co"
     assert lead["score"] == score.json()["overall_score"]
@@ -171,10 +170,10 @@ def test_cannot_reimport_already_imported_business(authed_client, monkeypatch):
     assert second.status_code == 400
 
 
-def test_approve_leaves_business_approved_when_a_lead_already_exists(authed_client, monkeypatch, db_session):
+def test_approve_links_to_existing_lead_when_a_duplicate_is_approved_again(authed_client, monkeypatch, db_session):
     """Approve auto-imports, but if the business already has a CRM lead
     (e.g. imported directly earlier, or a duplicate) the approval still
-    lands — the business is just left APPROVED, not failed."""
+    lands — it links to the existing lead instead of creating a duplicate."""
     monkeypatch.setattr(
         search_integration,
         "search_business",
@@ -190,12 +189,16 @@ def test_approve_leaves_business_approved_when_a_lead_already_exists(authed_clie
     second = authed_client.get(f"/api/v1/discovery-searches/{search2['id']}/results").json()[0]
     assert second["id"] != first["id"]
 
-    assert authed_client.post(f"/api/v1/discovered-businesses/{first['id']}/approve").json()["status"] == "imported"
+    first_approved = authed_client.post(f"/api/v1/discovered-businesses/{first['id']}/approve").json()
+    assert first_approved["outcome"] == "imported"
+    assert first_approved["business"]["status"] == "imported"
 
     approved_again = authed_client.post(f"/api/v1/discovered-businesses/{second['id']}/approve")
     assert approved_again.status_code == 200
-    assert approved_again.json()["status"] == "approved"
-    assert approved_again.json()["imported_lead_id"] is None
+    body = approved_again.json()
+    assert body["outcome"] == "already_in_crm"
+    assert body["lead_id"] == first_approved["lead_id"]
+    assert body["business"]["status"] == "imported"
 
 
 def test_cannot_import_rejected_business(authed_client, monkeypatch):
@@ -286,6 +289,52 @@ def test_archive_business(authed_client, monkeypatch):
     assert business["id"] in [b["id"] for b in with_archived]
 
 
+def test_approve_auto_imports_into_the_crm(authed_client, monkeypatch):
+    """Approve is the one action — it creates the CRM lead too, and the
+    lead is immediately visible in /api/v1/leads."""
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/approve")
+    assert res.status_code == 200
+    lead_id = res.json()["lead_id"]
+    assert lead_id is not None
+
+    leads = authed_client.get("/api/v1/leads").json()
+    assert lead_id in [lead["id"] for lead in leads]
+
+
+def test_approve_when_already_in_crm_links_to_existing_lead(authed_client, db_session, workspace, monkeypatch):
+    """A discovered business that already maps to a CRM lead: approving
+    it doesn't create a duplicate — it links to the one that's there."""
+    existing_business = Business(
+        workspace_id=workspace.id, name="Gold Coast Plumbing Co", website_url="https://gcplumbing.example"
+    )
+    db_session.add(existing_business)
+    db_session.commit()
+    from app.modules.leads.models import Lead
+
+    existing_lead = Lead(business_id=existing_business.id)
+    db_session.add(existing_lead)
+    db_session.commit()
+    existing_lead_id = str(existing_lead.id)
+
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/approve")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["outcome"] == "already_in_crm"
+    assert body["lead_id"] == existing_lead_id
+    assert body["business"]["status"] == "imported"
+
+    from sqlalchemy import select
+
+    leads = db_session.scalars(select(Lead).where(Lead.business_id == existing_business.id)).all()
+    assert len(leads) == 1
+
+
 def test_cannot_review_action_an_already_imported_business(authed_client, monkeypatch):
     _patch_discovery_and_research(monkeypatch)
     business = _run_discovery(authed_client)
@@ -295,7 +344,7 @@ def test_cannot_review_action_an_already_imported_business(authed_client, monkey
     assert res.status_code == 400
 
 
-def test_bulk_approve(authed_client, monkeypatch):
+def test_bulk_approve_adds_every_selection_to_the_crm(authed_client, monkeypatch):
     monkeypatch.setattr(
         search_integration,
         "search_business",
@@ -312,11 +361,16 @@ def test_bulk_approve(authed_client, monkeypatch):
 
     assert res.status_code == 200
     body = res.json()
-    assert len(body["approved"]) == 2
-    # Bulk approve, like single approve, also brings each into the CRM.
-    assert all(b["status"] == "imported" for b in body["approved"])
-    assert all(b["imported_lead_id"] is not None for b in body["approved"])
+    assert len(body["imported"]) == 2
+    assert all(b["status"] == "imported" for b in body["imported"])
+    assert body["already_in_crm"] == []
+    assert body["failed"] == []
     assert len(body["not_found"]) == 1
+
+    # Both are real CRM leads now.
+    leads = authed_client.get("/api/v1/leads").json()
+    imported_lead_ids = {b["imported_lead_id"] for b in body["imported"]}
+    assert imported_lead_ids <= {lead["id"] for lead in leads}
 
 
 def test_review_actions_returns_404_for_missing_business(authed_client):

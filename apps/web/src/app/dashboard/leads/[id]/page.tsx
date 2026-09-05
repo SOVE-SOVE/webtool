@@ -29,8 +29,11 @@ import {
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
+import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { LEAD_STATUS_LABEL, leadNextAction } from "@/lib/leads";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -66,6 +69,15 @@ function field(label: string, value: React.ReactNode) {
     <div>
       <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
       <div className="mt-1">{value}</div>
+    </div>
+  );
+}
+
+function summaryRow(label: string, value: React.ReactNode) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="text-fg-muted">{label}</span>
+      <span className="min-w-0 truncate text-right text-fg">{value}</span>
     </div>
   );
 }
@@ -108,7 +120,7 @@ export default function LeadDetailPage() {
 
   const [generatingFollowUp, setGeneratingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
-  const [latestFollowUp, setLatestFollowUp] = useState<FollowUp | null>(null);
+  const [scheduledFollowUp, setScheduledFollowUp] = useState<FollowUp | null>(null);
 
   const [opportunities, setOpportunities] = useState<SalesOpportunity[] | null>(null);
   const [proposalTier, setProposalTier] = useState("");
@@ -157,6 +169,15 @@ export default function LeadDetailPage() {
     api.listProjects().then(setProjects).catch(() => {});
     api.listMeetings({ leadId }).then(setMeetings).catch(() => {});
     api.listOpportunities(leadId).then(setOpportunities).catch(() => {});
+    api
+      .listFollowUps()
+      .then((b) => {
+        const mine = [...b.overdue, ...b.due_today, ...b.upcoming]
+          .filter((f) => f.lead_id === leadId)
+          .sort((a, z) => (a.due_date < z.due_date ? -1 : 1));
+        setScheduledFollowUp(mine[0] ?? null);
+      })
+      .catch(() => {});
   }
 
   function refreshActivity() {
@@ -342,13 +363,49 @@ export default function LeadDetailPage() {
     setFollowUpError(null);
     try {
       const followUp = await api.generateFollowUp(leadId);
-      setLatestFollowUp(followUp);
+      setScheduledFollowUp(followUp);
       refreshActivity();
       api.listOutreach(leadId).then(setOutreachMessages).catch(() => {});
     } catch (err) {
       setFollowUpError(err instanceof ApiError ? err.message : "Couldn't generate a follow-up.");
     } finally {
       setGeneratingFollowUp(false);
+    }
+  }
+
+  async function handleStartProject() {
+    if (!business) return;
+    const ok = await confirm({
+      title: `Start a website project for ${business.name}?`,
+      description:
+        "Marks the lead WON and creates the client and an intake-stage project in one step, then opens the project " +
+        "so you can build the website. The lead's history — audits, outreach, and notes — stays attached to it. " +
+        "This can't be undone.",
+      confirmLabel: "Start project",
+      danger: true,
+    });
+    if (!ok) return;
+
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const newClient = await api.createClient({ from_lead_id: leadId });
+      setConvertedClient(newClient);
+      setClients((prev) => [newClient, ...prev]);
+      const allProjects = await api.listProjects();
+      setProjects(allProjects);
+      const project = allProjects.find((p) => p.client_id === newClient.id);
+      if (project) {
+        router.push(`/dashboard/projects/${project.id}?created=1`);
+        return;
+      }
+      const updatedLead = await api.getLead(leadId);
+      setLead(updatedLead);
+      refreshActivity();
+    } catch (err) {
+      setConvertError(err instanceof ApiError ? err.message : "Couldn't start the project.");
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -392,42 +449,6 @@ export default function LeadDetailPage() {
     }
   }
 
-  async function handleQuickConvert() {
-    if (!business) return;
-    const ok = await confirm({
-      title: `Start a website project for ${business.name}?`,
-      description:
-        "Marks the lead WON and creates the client and an INTAKE-stage project in one step, then takes you " +
-        "to the project so you can generate the initial website. The lead's history stays attached to it. " +
-        "This can't be undone.",
-      confirmLabel: "Create project",
-      danger: true,
-    });
-    if (!ok) return;
-
-    setConverting(true);
-    setConvertError(null);
-    try {
-      const newClient = await api.createClient({ from_lead_id: leadId });
-      setConvertedClient(newClient);
-      setClients((prev) => [newClient, ...prev]);
-      const allProjects = await api.listProjects();
-      setProjects(allProjects);
-      const project = allProjects.find((p) => p.client_id === newClient.id);
-      if (project) {
-        router.push(`/dashboard/projects/${project.id}?created=1`);
-        return;
-      }
-      const updatedLead = await api.getLead(leadId);
-      setLead(updatedLead);
-      refreshActivity();
-    } catch (err) {
-      setConvertError(err instanceof ApiError ? err.message : "Couldn't create the project.");
-    } finally {
-      setConverting(false);
-    }
-  }
-
   if (error) {
     return (
       <div className="p-6">
@@ -437,14 +458,32 @@ export default function LeadDetailPage() {
   }
   if (!lead || !business) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
+  const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
+  const clientProjects = existingClient ? projects.filter((p) => p.client_id === existingClient.id) : [];
+  const activeProject =
+    clientProjects.find((p) => p.stage !== "maintenance" && p.stage !== "complete") ??
+    clientProjects[0] ??
+    null;
+
+  const contactLine = [business.phone, business.email].filter(Boolean).join(" · ") || "No contact details";
+  const locationLine = [business.suburb, business.state].filter(Boolean).join(", ") || "Location unknown";
+  const nextLine = scheduledFollowUp
+    ? `${scheduledFollowUp.suggested_next_action} (by ${new Date(scheduledFollowUp.due_date).toLocaleDateString()})`
+    : leadNextAction(lead, null);
+
+  const salesEligible = SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at;
+
   return (
     <div className="p-6">
       <Link href="/dashboard/leads" className="text-sm text-fg-muted hover:underline">
         ← All leads
       </Link>
 
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+          <LeadStatusBadge status={lead.status} />
+        </div>
         <button
           onClick={handleArchiveToggle}
           className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
@@ -458,752 +497,807 @@ export default function LeadDetailPage() {
         </p>
       )}
 
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8">
-        <section>
-          <h2 className="text-sm font-semibold text-fg">Business</h2>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field(
-              "Name",
-              <input
-                defaultValue={business.name}
-                onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Industry",
-              <input
-                defaultValue={business.industry ?? ""}
-                onBlur={(e) => saveBusiness({ industry: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
+      {/* At-a-glance: who / status / next */}
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="card p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Who</h2>
+          <div className="mt-2 space-y-1.5">
+            {summaryRow("Type", business.industry || "—")}
+            {summaryRow("Location", locationLine)}
+            {summaryRow("Contact", contactLine)}
+            {summaryRow(
               "Website",
-              <input
-                defaultValue={business.website_url ?? ""}
-                onBlur={(e) => saveBusiness({ website_url: e.target.value })}
-                className={inputClass}
-              />,
+              business.website_url ? (
+                <a href={business.website_url} target="_blank" rel="noreferrer" className="hover:underline">
+                  Visit site ↗
+                </a>
+              ) : (
+                "No website"
+              ),
             )}
-            {field(
-              "Phone",
-              <input
-                defaultValue={business.phone ?? ""}
-                onBlur={(e) => saveBusiness({ phone: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Email",
-              <input
-                defaultValue={business.email ?? ""}
-                onBlur={(e) => saveBusiness({ email: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Location",
-              <div className="flex gap-2">
-                <input
-                  placeholder="Suburb"
-                  defaultValue={business.suburb ?? ""}
-                  onBlur={(e) => saveBusiness({ suburb: e.target.value })}
-                  className={inputClass}
-                />
-                <input
-                  placeholder="State"
-                  defaultValue={business.state ?? ""}
-                  onBlur={(e) => saveBusiness({ state: e.target.value })}
-                  className={inputClass}
-                />
-              </div>,
-            )}
-            {field(
-              "Social links",
-              <textarea
-                defaultValue={business.social_links ?? ""}
-                onBlur={(e) => saveBusiness({ social_links: e.target.value })}
-                placeholder="One URL per line"
-                rows={2}
-                className={inputClass}
-              />,
-            )}
-            <div className="sm:col-span-2">
-              {field(
-                "Business notes",
-                <textarea
-                  defaultValue={business.notes ?? ""}
-                  onBlur={(e) => saveBusiness({ notes: e.target.value })}
-                  rows={3}
-                  className={inputClass}
-                />,
-              )}
-            </div>
           </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-semibold text-fg">Lead</h2>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field(
-              "Status",
-              <select
-                value={lead.status}
-                onChange={(e) => saveLead({ status: e.target.value as LeadStatus })}
-                className={inputClass}
-              >
-                {LEAD_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace("_", " ")}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field(
-              "Priority",
-              <select
-                value={lead.priority}
-                onChange={(e) => saveLead({ priority: e.target.value as LeadPriority })}
-                className={inputClass}
-              >
-                {LEAD_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field(
-              "Score",
-              <input
-                type="number"
-                defaultValue={lead.score ?? ""}
-                onBlur={(e) => {
-                  const parsed = e.target.value === "" ? undefined : Number(e.target.value);
-                  if (parsed === undefined || !Number.isNaN(parsed)) saveLead({ score: parsed });
-                }}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Assigned to",
-              <select
-                value={lead.assigned_user_id ?? ""}
-                onChange={(e) => saveLead({ assigned_user_id: e.target.value || null })}
-                className={inputClass}
-              >
-                <option value="">Unassigned</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field("Source", <span className="text-sm text-fg-muted">{lead.source ?? "—"}</span>)}
-            {field(
-              "Created",
-              <span className="text-sm text-fg-muted">
-                {new Date(lead.created_at).toLocaleDateString()}
-              </span>,
-            )}
-            <div className="sm:col-span-2">
-              {field(
-                "Lead notes",
-                <textarea
-                  defaultValue={lead.notes ?? ""}
-                  onBlur={(e) => saveLead({ notes: e.target.value })}
-                  rows={3}
-                  className={inputClass}
-                />,
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-fg">Pipeline stage history</h2>
-          <Link href="/dashboard/leads?view=board" className="text-xs text-fg-muted hover:underline">
-            View pipeline board →
-          </Link>
         </div>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {pipelineEvents && pipelineEvents.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">
-              No stage changes yet — this lead has been {lead.status.replace("_", " ")} since it was created.
-            </li>
-          )}
-          {pipelineEvents?.map((event) => (
-            <li key={event.id} className="px-3 py-2 text-sm">
-              <span className="text-fg">{event.summary ?? event.kind}</span>
-              <span className="ml-2 text-xs text-fg-muted">{new Date(event.created_at).toLocaleString()}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
 
-      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold text-fg">Proposal / quote</h2>
-          <p className="mt-1 text-xs text-fg-muted">
-            Log the quote you sent so it shows up as pipeline value on the Sales page. Logging one moves this lead to
-            Proposal.
-          </p>
-
-          <ul className="mt-3 divide-y divide-border border border-border">
-            {opportunities && opportunities.length === 0 && (
-              <li className="px-3 py-3 text-sm text-fg-muted">No proposal logged yet.</li>
-            )}
-            {opportunities?.map((op) => (
-              <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
-                <span className="text-fg">
-                  {op.proposed_price_cents != null
-                    ? `$${(op.proposed_price_cents / 100).toLocaleString()}`
-                    : "No price recorded"}
-                  {op.tier ? ` · ${op.tier}` : ""}
-                  <span className="ml-2 text-xs text-fg-muted">
-                    {op.status === "open" ? "Open" : op.status === "won" ? "Won" : "Lost"} ·{" "}
-                    {new Date(op.created_at).toLocaleDateString()}
-                  </span>
-                </span>
-                {op.status === "open" && (
-                  <button
-                    onClick={() => handleMarkOpportunityLost(op.id)}
-                    disabled={opportunityActionId === op.id}
-                    className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
-                  >
-                    Mark lost
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          {!opportunities?.some((o) => o.status === "open") && lead.status !== "won" && lead.status !== "lost" && (
-            <form onSubmit={handleLogProposal} className="mt-3 flex flex-wrap items-end gap-2">
-              <input
-                value={proposalTier}
-                onChange={(e) => setProposalTier(e.target.value)}
-                placeholder="Package (e.g. Core)"
-                className="input w-40"
-              />
-              <input
-                value={proposalPrice}
-                onChange={(e) => setProposalPrice(e.target.value)}
-                inputMode="decimal"
-                placeholder="Quoted price, AUD"
-                className="input w-40"
-              />
-              <button
-                type="submit"
-                disabled={loggingProposal}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-              >
-                {loggingProposal ? "Logging…" : "Log proposal"}
-              </button>
-            </form>
-          )}
-          {proposalError && <p className="mt-2 text-error">{proposalError}</p>}
-        </section>
-      )}
-
-      {(() => {
-        const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
-        const clientProjects = existingClient
-          ? projects.filter((p) => p.client_id === existingClient.id)
-          : [];
-        const activeProject =
-          clientProjects.find((p) => p.stage !== "maintenance" && p.stage !== "complete") ??
-          clientProjects[0] ??
-          null;
-        if (lead.archived_at) return null;
-        return (
-          <section className="mt-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-fg">
-                {existingClient ? "Client & delivery" : "Convert to client"}
-              </h2>
-              {!existingClient && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleQuickConvert}
-                    disabled={converting}
-                    className="btn btn-primary btn-sm"
-                  >
-                    {converting ? "Creating…" : "Start website project →"}
-                  </button>
-                  <button
-                    onClick={() => setShowConvertForm((v) => !v)}
-                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-                  >
-                    {showConvertForm ? "Cancel" : "Convert with details"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {existingClient ? (
-              <div className="mt-2 space-y-1.5 text-sm">
-                <p className="text-fg-muted">
-                  Won and converted.{" "}
-                  <Link href={`/dashboard/clients/${existingClient.id}`} className="text-fg hover:underline">
-                    Client record ↗
-                  </Link>
-                </p>
-                {activeProject ? (
-                  <p className="text-fg-muted">
-                    Project{" "}
-                    <Link href={`/dashboard/projects/${activeProject.id}`} className="text-fg hover:underline">
-                      {activeProject.name}
-                    </Link>{" "}
-                    · <span className="text-fg">{PROJECT_STAGE_LABELS[activeProject.stage]}</span>
-                    {" · "}
-                    <Link
-                      href={`/dashboard/projects/${activeProject.id}/website`}
-                      className="text-fg-muted hover:underline"
-                    >
-                      Website
-                    </Link>
-                    {clientProjects.length > 1 && (
-                      <span className="text-fg-subtle"> (+{clientProjects.length - 1} more)</span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-fg-subtle">No project yet — start intake from the client record.</p>
-                )}
-              </div>
-            ) : (
-              <p className="mt-1 text-sm text-fg-muted">
-                Creates the client record and an INTAKE-stage project (with starter tasks) in one step, and
-                preserves this lead&apos;s full history — audits, outreach, and notes stay attached to it.
-              </p>
-            )}
-
-            {showConvertForm && !existingClient && (
-              <form
-                onSubmit={handleConvert}
-                className="mt-3 max-w-2xl space-y-3 border border-border p-4"
-              >
-                <input
-                  placeholder="Project name (defaults to “{business} Website”)"
-                  value={convertProjectName}
-                  onChange={(e) => setConvertProjectName(e.target.value)}
-                  className={inputClass}
-                />
-                <div className="flex gap-3">
-                  <input
-                    placeholder="Package (e.g. Core, $899)"
-                    value={convertPackage}
-                    onChange={(e) => setConvertPackage(e.target.value)}
-                    className={inputClass}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Agreed price, AUD"
-                    value={convertPrice}
-                    onChange={(e) => setConvertPrice(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="text-xs uppercase tracking-wide text-fg-muted">
-                      Agreed deadline
-                    </label>
-                    <input
-                      type="date"
-                      value={convertDeadline}
-                      onChange={(e) => setConvertDeadline(e.target.value)}
-                      className={`${inputClass} mt-1`}
-                    />
-                  </div>
-                  <input
-                    placeholder="Billing email (optional)"
-                    value={convertBillingEmail}
-                    onChange={(e) => setConvertBillingEmail(e.target.value)}
-                    className={`${inputClass} mt-5`}
-                  />
-                </div>
-                <select
-                  value={convertAssignedUserId}
-                  onChange={(e) => setConvertAssignedUserId(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">Unassigned</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-                {convertError && <p className="text-error">{convertError}</p>}
-                <button
-                  type="submit"
-                  disabled={converting}
-                  className="btn btn-primary"
-                >
-                  {converting ? "Converting…" : "Convert to client"}
-                </button>
-              </form>
-            )}
-          </section>
-        );
-      })()}
-
-      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Sales audit</h2>
-            <button
-              onClick={handleGenerateSalesAudit}
-              disabled={generatingAudit}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-            >
-              {generatingAudit ? "Generating…" : "Generate sales audit"}
-            </button>
+        <div className="card p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Status</h2>
+          <div className="mt-2 space-y-1.5">
+            {summaryRow("Stage", LEAD_STATUS_LABEL[lead.status])}
+            {summaryRow("Priority", <span className="capitalize">{lead.priority}</span>)}
+            {summaryRow("Score", lead.score ?? "—")}
+            {summaryRow("Assigned", lead.assigned_user_name ?? "Unassigned")}
+            {summaryRow("Source", lead.source ?? "—")}
           </div>
-          {generatingAudit && (
-            <p className="mt-2 text-sm text-fg-muted">
-              Auditing the website, checking public info, and writing the report — this can take up to a
-              minute.
-            </p>
-          )}
-          {generateAuditError && <p className="mt-2 text-error">{generateAuditError}</p>}
+        </div>
 
-          <ul className="mt-3 divide-y divide-border border border-border">
-            {salesAudits && salesAudits.length === 0 && !generatingAudit && (
-              <li className="px-3 py-3 text-sm text-fg-muted">No sales audits generated yet.</li>
-            )}
-            {salesAudits?.map((report) => {
-              const expanded = expandedAuditId === report.id;
-              return (
-                <li key={report.id} className="px-3 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => setExpandedAuditId(expanded ? null : report.id)}
-                      className="text-left text-fg hover:underline"
-                    >
-                      {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
-                    </button>
-                    <div className="flex items-center gap-3">
-                      {report.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Flagged for review
-                        </span>
-                      )}
-                      <Link
-                        href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
-                        className="text-xs text-fg-muted hover:underline"
-                      >
-                        Open full view
-                      </Link>
-                    </div>
-                  </div>
-                  {expanded && (
-                    <div className="mt-3">
-                      <SalesAuditReportView report={report} />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at && (
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Outreach</h2>
-            <div className="flex gap-2">
-              {OUTREACH_CHANNELS.map((channel) => (
-                <button
-                  key={channel}
-                  onClick={() => handleGenerateOutreach(channel)}
-                  disabled={generatingChannel !== null}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-                >
-                  {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
-                </button>
-              ))}
-              {outreachMessages && outreachMessages.length > 0 && (
-                <button
-                  onClick={() => handleGenerateOutreach("follow_up")}
-                  disabled={generatingChannel !== null}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-                  title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
-                >
-                  {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
-                </button>
-              )}
-            </div>
-          </div>
-          {outreachError && <p className="mt-2 text-error">{outreachError}</p>}
-
-          <ul className="mt-3 divide-y divide-border border border-border">
-            {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
-              <li className="px-3 py-3 text-sm text-fg-muted">No outreach drafted yet.</li>
-            )}
-            {outreachMessages?.map((message) => {
-              const expanded = expandedOutreachId === message.id;
-              const busy = outreachActionId === message.id;
-              const messageSends = (emailSends ?? []).filter((s) => s.outreach_message_id === message.id);
-              return (
-                <li key={message.id} className="px-3 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => setExpandedOutreachId(expanded ? null : message.id)}
-                      className="text-left text-fg hover:underline"
-                    >
-                      {expanded ? "▾" : "▸"} {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
-                      {new Date(message.generated_at).toLocaleString()}
-                    </button>
-                    <div className="flex items-center gap-2">
-                      {message.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
-                      )}
-                      <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
-                        {OUTREACH_STATUS_LABELS[message.status]}
-                      </span>
-                    </div>
-                  </div>
-                  {expanded && editingOutreachId === message.id && (
-                    <div className="mt-3">
-                      {message.channel === "email" || message.channel === "follow_up" ? (
-                        <div className="space-y-2">
-                          <input
-                            value={editSubject}
-                            onChange={(e) => setEditSubject(e.target.value)}
-                            placeholder="Subject"
-                            className={inputClass}
-                          />
-                          <textarea
-                            value={editBody}
-                            onChange={(e) => setEditBody(e.target.value)}
-                            placeholder="Body"
-                            rows={6}
-                            className={inputClass}
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <input
-                            value={editOpeningLine}
-                            onChange={(e) => setEditOpeningLine(e.target.value)}
-                            placeholder="Opening line"
-                            className={inputClass}
-                          />
-                          <textarea
-                            value={editKeyPoints}
-                            onChange={(e) => setEditKeyPoints(e.target.value)}
-                            placeholder="Key points — one per line"
-                            rows={4}
-                            className={inputClass}
-                          />
-                          <textarea
-                            value={editObjectionHandling}
-                            onChange={(e) => setEditObjectionHandling(e.target.value)}
-                            placeholder="Objection handling — one per line"
-                            rows={3}
-                            className={inputClass}
-                          />
-                          <input
-                            value={editSuggestedClose}
-                            onChange={(e) => setEditSuggestedClose(e.target.value)}
-                            placeholder="Suggested close"
-                            className={inputClass}
-                          />
-                        </div>
-                      )}
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => handleSaveOutreachEdit(message)}
-                          disabled={savingOutreachEdit}
-                          className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
-                        >
-                          {savingOutreachEdit ? "Saving…" : "Save"}
-                        </button>
-                        <button
-                          onClick={cancelEditOutreach}
-                          disabled={savingOutreachEdit}
-                          className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {expanded && editingOutreachId !== message.id && (
-                    <div className="mt-3">
-                      <OutreachMessageView message={message} />
-                      <div className="mt-3 flex gap-2">
-                        {(message.status === "drafted" || message.status === "approved") && (
-                          <button
-                            onClick={() => startEditOutreach(message)}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-                          >
-                            Edit
-                          </button>
-                        )}
-                        {message.status === "drafted" && (
-                          <button
-                            onClick={() => handleOutreachAction(message.id, "approve")}
-                            disabled={busy}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                        )}
-                        {message.channel === "email" && message.status === "approved" && (
-                          <button
-                            onClick={() => handleSendEmail(message.id)}
-                            disabled={sendingEmailId === message.id}
-                            className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
-                            title="Dispatches this approved email through the configured provider and records the attempt."
-                          >
-                            {sendingEmailId === message.id
-                              ? "Sending…"
-                              : messageSends.some((s) => s.status === "failed")
-                                ? "Retry send"
-                                : "Send email"}
-                          </button>
-                        )}
-                        {(message.status === "drafted" || message.status === "approved") && (
-                          <button
-                            onClick={() => handleOutreachAction(message.id, "mark-sent")}
-                            disabled={busy}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
-                            title={
-                              message.channel === "email"
-                                ? "Records that this went out by hand, without dispatching it from the app."
-                                : undefined
-                            }
-                          >
-                            Mark sent
-                          </button>
-                        )}
-                        {(message.status === "sent" || message.status === "follow_up_due") && (
-                          <button
-                            onClick={() => handleOutreachAction(message.id, "mark-replied")}
-                            disabled={busy}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
-                          >
-                            Mark replied
-                          </button>
-                        )}
-                        {message.status !== "closed" && (
-                          <button
-                            onClick={() => handleOutreachAction(message.id, "close")}
-                            disabled={busy}
-                            className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
-                          >
-                            Close
-                          </button>
-                        )}
-                      </div>
-                      {messageSends.length > 0 && (
-                        <ul className="mt-3 space-y-1 border-t border-border pt-2 text-xs">
-                          {messageSends.map((send) => (
-                            <li key={send.id} className="flex flex-wrap items-baseline gap-x-2">
-                              <span
-                                className={
-                                  send.status === "sent"
-                                    ? "font-medium text-emerald-800 dark:text-emerald-300"
-                                    : "font-medium text-error"
-                                }
-                              >
-                                {send.status === "sent" ? "Sent" : "Failed"}
-                              </span>
-                              <span className="text-fg-muted">
-                                {new Date(send.created_at).toLocaleString()} · to {send.to_email}
-                                {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
-                              </span>
-                              {send.error_message && (
-                                <span className="w-full text-error">{send.error_message}</span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-
-          <div className="mt-4 flex items-center gap-3">
+        <div className="card p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Next</h2>
+          <p className="mt-2 text-sm text-fg">{nextLine}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               onClick={handleGenerateFollowUp}
               disabled={generatingFollowUp}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+              className="btn btn-secondary btn-sm"
             >
-              {generatingFollowUp ? "Generating…" : "Generate follow-up"}
+              {generatingFollowUp ? "Generating…" : scheduledFollowUp ? "Regenerate follow-up" : "Generate follow-up"}
             </button>
             <Link href="/dashboard/follow-ups" className="text-xs text-fg-muted hover:underline">
-              View all follow-ups
+              All follow-ups
             </Link>
           </div>
           {followUpError && <p className="mt-2 text-error">{followUpError}</p>}
-          {latestFollowUp && (
-            <div className="mt-3 rounded-md border border-border px-3 py-2 text-sm">
-              <p className="text-fg">
-                Follow up via {latestFollowUp.channel.replace("_", " ")} by{" "}
-                {new Date(latestFollowUp.due_date).toLocaleDateString()}
+        </div>
+      </div>
+
+      {/* Google review intelligence — read-only projection from Lead
+          Intelligence discovery; the full analysis lives on the
+          discovered business's own page, not duplicated here. */}
+      {(lead.google_rating !== null || lead.review_summary !== null) && (
+        <div className="card mt-4 p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Google reviews</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+            <span className="text-fg">
+              {lead.google_rating !== null ? `${lead.google_rating.toFixed(1)}★` : "No rating"}
+              {lead.google_review_count !== null && (
+                <span className="text-fg-muted"> ({lead.google_review_count} reviews)</span>
+              )}
+            </span>
+            {lead.review_health_score !== null && (
+              <span className="text-fg-muted">Health {lead.review_health_score}/100</span>
+            )}
+            {lead.review_activity_level && lead.review_activity_level !== "unknown" && (
+              <span className="text-fg-muted">
+                Activity {lead.review_activity_level.toUpperCase()}
+                {lead.review_frequency_per_month !== null && ` (~${lead.review_frequency_per_month}/month)`}
+              </span>
+            )}
+            {lead.review_sentiment_trend && lead.review_sentiment_trend !== "insufficient_data" && (
+              <span className="text-fg-muted capitalize">Trend: {lead.review_sentiment_trend}</span>
+            )}
+          </div>
+          {(lead.positive_review_themes.length > 0 || lead.negative_review_themes.length > 0) && (
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">
+              {lead.positive_review_themes.length > 0 && (
+                <span>Praise: {lead.positive_review_themes.join(", ")}</span>
+              )}
+              {lead.negative_review_themes.length > 0 && (
+                <span>Friction: {lead.negative_review_themes.join(", ")}</span>
+              )}
+            </div>
+          )}
+          {lead.review_summary && <p className="mt-2 text-sm text-fg-muted">{lead.review_summary}</p>}
+        </div>
+      )}
+
+      {/* Project & website — the one forward action */}
+      {!lead.archived_at && (
+        <section className="mt-8">
+          <h2 className="section-title">Project &amp; website</h2>
+          {existingClient ? (
+            <div className="mt-2 space-y-1.5 text-sm">
+              <p className="text-fg-muted">
+                Won and converted.{" "}
+                <Link href={`/dashboard/clients/${existingClient.id}`} className="text-fg hover:underline">
+                  Client record ↗
+                </Link>
               </p>
-              <p className="mt-1 text-fg-muted">{latestFollowUp.suggested_next_action}</p>
+              {activeProject ? (
+                <p className="text-fg-muted">
+                  Project{" "}
+                  <Link href={`/dashboard/projects/${activeProject.id}`} className="text-fg hover:underline">
+                    {activeProject.name}
+                  </Link>{" "}
+                  · <span className="text-fg">{PROJECT_STAGE_LABELS[activeProject.stage]}</span>
+                  {" · "}
+                  <Link
+                    href={`/dashboard/projects/${activeProject.id}/website`}
+                    className="text-fg-muted hover:underline"
+                  >
+                    Open website workspace →
+                  </Link>
+                  {clientProjects.length > 1 && (
+                    <span className="text-fg-subtle"> (+{clientProjects.length - 1} more)</span>
+                  )}
+                </p>
+              ) : (
+                <p className="text-fg-subtle">No project yet — start intake from the client record.</p>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2">
+              <p className="text-sm text-fg-muted">
+                Create the website project now — you build and show the site before the business has committed. Marks
+                the lead WON, creates the client and an intake-stage project, and keeps this lead&apos;s history
+                attached.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button onClick={handleStartProject} disabled={converting} className="btn btn-primary">
+                  {converting ? "Starting…" : "Start website project →"}
+                </button>
+                <button
+                  onClick={() => setShowConvertForm((v) => !v)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {showConvertForm ? "Cancel" : "Convert with full details"}
+                </button>
+              </div>
+              {convertError && <p className="mt-2 text-error">{convertError}</p>}
+
+              {showConvertForm && (
+                <form onSubmit={handleConvert} className="mt-3 max-w-2xl space-y-3 border border-border p-4">
+                  <input
+                    placeholder="Project name (defaults to “{business} Website”)"
+                    value={convertProjectName}
+                    onChange={(e) => setConvertProjectName(e.target.value)}
+                    className={inputClass}
+                  />
+                  <div className="flex gap-3">
+                    <input
+                      placeholder="Package (e.g. Core, $899)"
+                      value={convertPackage}
+                      onChange={(e) => setConvertPackage(e.target.value)}
+                      className={inputClass}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Agreed price, AUD"
+                      value={convertPrice}
+                      onChange={(e) => setConvertPrice(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs uppercase tracking-wide text-fg-muted">Agreed deadline</label>
+                      <input
+                        type="date"
+                        value={convertDeadline}
+                        onChange={(e) => setConvertDeadline(e.target.value)}
+                        className={`${inputClass} mt-1`}
+                      />
+                    </div>
+                    <input
+                      placeholder="Billing email (optional)"
+                      value={convertBillingEmail}
+                      onChange={(e) => setConvertBillingEmail(e.target.value)}
+                      className={`${inputClass} mt-5`}
+                    />
+                  </div>
+                  <select
+                    value={convertAssignedUserId}
+                    onChange={(e) => setConvertAssignedUserId(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="submit" disabled={converting} className="btn btn-primary">
+                    {converting ? "Converting…" : "Convert to client"}
+                  </button>
+                </form>
+              )}
             </div>
           )}
         </section>
       )}
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-fg">Meetings</h2>
-          <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
-            Schedule on calendar →
-          </Link>
-        </div>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {meetings && meetings.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
-          )}
-          {meetings?.map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="text-fg">
-                {m.title}
-                <span className="ml-2 text-xs text-fg-muted">
-                  {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
-                  {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
-                </span>
-              </span>
-              {m.outcome && <span className="shrink-0 text-xs text-fg-muted">{m.outcome}</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Editable detail — collapsed by default */}
+      <div className="mt-8">
+        <Disclosure title="Business & lead details" hint="Contact info, location, status, priority, score, notes">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
+            <section>
+              <h3 className="text-sm font-semibold text-fg">Business</h3>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {field(
+                  "Name",
+                  <input
+                    defaultValue={business.name}
+                    onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Industry",
+                  <input
+                    defaultValue={business.industry ?? ""}
+                    onBlur={(e) => saveBusiness({ industry: e.target.value })}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Website",
+                  <input
+                    defaultValue={business.website_url ?? ""}
+                    onBlur={(e) => saveBusiness({ website_url: e.target.value })}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Phone",
+                  <input
+                    defaultValue={business.phone ?? ""}
+                    onBlur={(e) => saveBusiness({ phone: e.target.value })}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Email",
+                  <input
+                    defaultValue={business.email ?? ""}
+                    onBlur={(e) => saveBusiness({ email: e.target.value })}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Location",
+                  <div className="flex gap-2">
+                    <input
+                      placeholder="Suburb"
+                      defaultValue={business.suburb ?? ""}
+                      onBlur={(e) => saveBusiness({ suburb: e.target.value })}
+                      className={inputClass}
+                    />
+                    <input
+                      placeholder="State"
+                      defaultValue={business.state ?? ""}
+                      onBlur={(e) => saveBusiness({ state: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>,
+                )}
+                {field(
+                  "Social links",
+                  <textarea
+                    defaultValue={business.social_links ?? ""}
+                    onBlur={(e) => saveBusiness({ social_links: e.target.value })}
+                    placeholder="One URL per line"
+                    rows={2}
+                    className={inputClass}
+                  />,
+                )}
+                <div className="sm:col-span-2">
+                  {field(
+                    "Business notes",
+                    <textarea
+                      defaultValue={business.notes ?? ""}
+                      onBlur={(e) => saveBusiness({ notes: e.target.value })}
+                      rows={3}
+                      className={inputClass}
+                    />,
+                  )}
+                </div>
+              </div>
+            </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
-          )}
-          {activity?.map((item) => (
-            <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-fg">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-fg-muted">
-                {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+            <section>
+              <h3 className="text-sm font-semibold text-fg">Lead</h3>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {field(
+                  "Status",
+                  <select
+                    value={lead.status}
+                    onChange={(e) => saveLead({ status: e.target.value as LeadStatus })}
+                    className={inputClass}
+                  >
+                    {LEAD_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {LEAD_STATUS_LABEL[s]}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                {field(
+                  "Priority",
+                  <select
+                    value={lead.priority}
+                    onChange={(e) => saveLead({ priority: e.target.value as LeadPriority })}
+                    className={inputClass}
+                  >
+                    {LEAD_PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                {field(
+                  "Score",
+                  <input
+                    type="number"
+                    defaultValue={lead.score ?? ""}
+                    onBlur={(e) => {
+                      const parsed = e.target.value === "" ? undefined : Number(e.target.value);
+                      if (parsed === undefined || !Number.isNaN(parsed)) saveLead({ score: parsed });
+                    }}
+                    className={inputClass}
+                  />,
+                )}
+                {field(
+                  "Assigned to",
+                  <select
+                    value={lead.assigned_user_id ?? ""}
+                    onChange={(e) => saveLead({ assigned_user_id: e.target.value || null })}
+                    className={inputClass}
+                  >
+                    <option value="">Unassigned</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                {field("Source", <span className="text-sm text-fg-muted">{lead.source ?? "—"}</span>)}
+                {field(
+                  "Created",
+                  <span className="text-sm text-fg-muted">
+                    {new Date(lead.created_at).toLocaleDateString()}
+                  </span>,
+                )}
+                <div className="sm:col-span-2">
+                  {field(
+                    "Lead notes",
+                    <textarea
+                      defaultValue={lead.notes ?? ""}
+                      onBlur={(e) => saveLead({ notes: e.target.value })}
+                      rows={3}
+                      className={inputClass}
+                    />,
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        </Disclosure>
+      </div>
+
+      {/* Sales prep & outreach — collapsed; only once the lead is worth working */}
+      {salesEligible && (
+        <div className="mt-4">
+          <Disclosure
+            title="Sales prep & outreach"
+            hint="Proposal / quote, sales audit, and outreach drafts"
+          >
+            <section>
+              <h3 className="text-sm font-semibold text-fg">Proposal / quote</h3>
+              <p className="mt-1 text-xs text-fg-muted">
+                Log the quote you sent so it shows up as pipeline value on the Sales page. Logging one moves this lead
+                to Proposal.
+              </p>
+
+              <ul className="mt-3 divide-y divide-border border border-border">
+                {opportunities && opportunities.length === 0 && (
+                  <li className="px-3 py-3 text-sm text-fg-muted">No proposal logged yet.</li>
+                )}
+                {opportunities?.map((op) => (
+                  <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
+                    <span className="text-fg">
+                      {op.proposed_price_cents != null
+                        ? `$${(op.proposed_price_cents / 100).toLocaleString()}`
+                        : "No price recorded"}
+                      {op.tier ? ` · ${op.tier}` : ""}
+                      <span className="ml-2 text-xs text-fg-muted">
+                        {op.status === "open" ? "Open" : op.status === "won" ? "Won" : "Lost"} ·{" "}
+                        {new Date(op.created_at).toLocaleDateString()}
+                      </span>
+                    </span>
+                    {op.status === "open" && (
+                      <button
+                        onClick={() => handleMarkOpportunityLost(op.id)}
+                        disabled={opportunityActionId === op.id}
+                        className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
+                      >
+                        Mark lost
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {!opportunities?.some((o) => o.status === "open") && lead.status !== "won" && lead.status !== "lost" && (
+                <form onSubmit={handleLogProposal} className="mt-3 flex flex-wrap items-end gap-2">
+                  <input
+                    value={proposalTier}
+                    onChange={(e) => setProposalTier(e.target.value)}
+                    placeholder="Package (e.g. Core)"
+                    className="input w-40"
+                  />
+                  <input
+                    value={proposalPrice}
+                    onChange={(e) => setProposalPrice(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="Quoted price, AUD"
+                    className="input w-40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loggingProposal}
+                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                  >
+                    {loggingProposal ? "Logging…" : "Log proposal"}
+                  </button>
+                </form>
+              )}
+              {proposalError && <p className="mt-2 text-error">{proposalError}</p>}
+            </section>
+
+            <section className="mt-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-fg">Sales audit</h3>
+                <button
+                  onClick={handleGenerateSalesAudit}
+                  disabled={generatingAudit}
+                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                >
+                  {generatingAudit ? "Generating…" : "Generate sales audit"}
+                </button>
+              </div>
+              {generatingAudit && (
+                <p className="mt-2 text-sm text-fg-muted">
+                  Auditing the website, checking public info, and writing the report — this can take up to a minute.
+                </p>
+              )}
+              {generateAuditError && <p className="mt-2 text-error">{generateAuditError}</p>}
+
+              <ul className="mt-3 divide-y divide-border border border-border">
+                {salesAudits && salesAudits.length === 0 && !generatingAudit && (
+                  <li className="px-3 py-3 text-sm text-fg-muted">No sales audits generated yet.</li>
+                )}
+                {salesAudits?.map((report) => {
+                  const expanded = expandedAuditId === report.id;
+                  return (
+                    <li key={report.id} className="px-3 py-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => setExpandedAuditId(expanded ? null : report.id)}
+                          className="text-left text-fg hover:underline"
+                        >
+                          {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
+                        </button>
+                        <div className="flex items-center gap-3">
+                          {report.flagged_for_review && (
+                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                              Flagged for review
+                            </span>
+                          )}
+                          <Link
+                            href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
+                            className="text-xs text-fg-muted hover:underline"
+                          >
+                            Open full view
+                          </Link>
+                        </div>
+                      </div>
+                      {expanded && (
+                        <div className="mt-3">
+                          <SalesAuditReportView report={report} />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            <section className="mt-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-fg">Outreach</h3>
+                <div className="flex gap-2">
+                  {OUTREACH_CHANNELS.map((channel) => (
+                    <button
+                      key={channel}
+                      onClick={() => handleGenerateOutreach(channel)}
+                      disabled={generatingChannel !== null}
+                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                    >
+                      {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
+                    </button>
+                  ))}
+                  {outreachMessages && outreachMessages.length > 0 && (
+                    <button
+                      onClick={() => handleGenerateOutreach("follow_up")}
+                      disabled={generatingChannel !== null}
+                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                      title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
+                    >
+                      {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {outreachError && <p className="mt-2 text-error">{outreachError}</p>}
+
+              <ul className="mt-3 divide-y divide-border border border-border">
+                {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
+                  <li className="px-3 py-3 text-sm text-fg-muted">No outreach drafted yet.</li>
+                )}
+                {outreachMessages?.map((message) => {
+                  const expanded = expandedOutreachId === message.id;
+                  const busy = outreachActionId === message.id;
+                  const messageSends = (emailSends ?? []).filter((s) => s.outreach_message_id === message.id);
+                  return (
+                    <li key={message.id} className="px-3 py-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => setExpandedOutreachId(expanded ? null : message.id)}
+                          className="text-left text-fg hover:underline"
+                        >
+                          {expanded ? "▾" : "▸"} {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
+                          {new Date(message.generated_at).toLocaleString()}
+                        </button>
+                        <div className="flex items-center gap-2">
+                          {message.flagged_for_review && (
+                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
+                          )}
+                          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
+                            {OUTREACH_STATUS_LABELS[message.status]}
+                          </span>
+                        </div>
+                      </div>
+                      {expanded && editingOutreachId === message.id && (
+                        <div className="mt-3">
+                          {message.channel === "email" || message.channel === "follow_up" ? (
+                            <div className="space-y-2">
+                              <input
+                                value={editSubject}
+                                onChange={(e) => setEditSubject(e.target.value)}
+                                placeholder="Subject"
+                                className={inputClass}
+                              />
+                              <textarea
+                                value={editBody}
+                                onChange={(e) => setEditBody(e.target.value)}
+                                placeholder="Body"
+                                rows={6}
+                                className={inputClass}
+                              />
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <input
+                                value={editOpeningLine}
+                                onChange={(e) => setEditOpeningLine(e.target.value)}
+                                placeholder="Opening line"
+                                className={inputClass}
+                              />
+                              <textarea
+                                value={editKeyPoints}
+                                onChange={(e) => setEditKeyPoints(e.target.value)}
+                                placeholder="Key points — one per line"
+                                rows={4}
+                                className={inputClass}
+                              />
+                              <textarea
+                                value={editObjectionHandling}
+                                onChange={(e) => setEditObjectionHandling(e.target.value)}
+                                placeholder="Objection handling — one per line"
+                                rows={3}
+                                className={inputClass}
+                              />
+                              <input
+                                value={editSuggestedClose}
+                                onChange={(e) => setEditSuggestedClose(e.target.value)}
+                                placeholder="Suggested close"
+                                className={inputClass}
+                              />
+                            </div>
+                          )}
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              onClick={() => handleSaveOutreachEdit(message)}
+                              disabled={savingOutreachEdit}
+                              className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                            >
+                              {savingOutreachEdit ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              onClick={cancelEditOutreach}
+                              disabled={savingOutreachEdit}
+                              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {expanded && editingOutreachId !== message.id && (
+                        <div className="mt-3">
+                          <OutreachMessageView message={message} />
+                          <div className="mt-3 flex gap-2">
+                            {(message.status === "drafted" || message.status === "approved") && (
+                              <button
+                                onClick={() => startEditOutreach(message)}
+                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {message.status === "drafted" && (
+                              <button
+                                onClick={() => handleOutreachAction(message.id, "approve")}
+                                disabled={busy}
+                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {message.channel === "email" && message.status === "approved" && (
+                              <button
+                                onClick={() => handleSendEmail(message.id)}
+                                disabled={sendingEmailId === message.id}
+                                className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                                title="Dispatches this approved email through the configured provider and records the attempt."
+                              >
+                                {sendingEmailId === message.id
+                                  ? "Sending…"
+                                  : messageSends.some((s) => s.status === "failed")
+                                    ? "Retry send"
+                                    : "Send email"}
+                              </button>
+                            )}
+                            {(message.status === "drafted" || message.status === "approved") && (
+                              <button
+                                onClick={() => handleOutreachAction(message.id, "mark-sent")}
+                                disabled={busy}
+                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                title={
+                                  message.channel === "email"
+                                    ? "Records that this went out by hand, without dispatching it from the app."
+                                    : undefined
+                                }
+                              >
+                                Mark sent
+                              </button>
+                            )}
+                            {(message.status === "sent" || message.status === "follow_up_due") && (
+                              <button
+                                onClick={() => handleOutreachAction(message.id, "mark-replied")}
+                                disabled={busy}
+                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                              >
+                                Mark replied
+                              </button>
+                            )}
+                            {message.status !== "closed" && (
+                              <button
+                                onClick={() => handleOutreachAction(message.id, "close")}
+                                disabled={busy}
+                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                              >
+                                Close
+                              </button>
+                            )}
+                          </div>
+                          {messageSends.length > 0 && (
+                            <ul className="mt-3 space-y-1 border-t border-border pt-2 text-xs">
+                              {messageSends.map((send) => (
+                                <li key={send.id} className="flex flex-wrap items-baseline gap-x-2">
+                                  <span
+                                    className={
+                                      send.status === "sent"
+                                        ? "font-medium text-emerald-800 dark:text-emerald-300"
+                                        : "font-medium text-error"
+                                    }
+                                  >
+                                    {send.status === "sent" ? "Sent" : "Failed"}
+                                  </span>
+                                  <span className="text-fg-muted">
+                                    {new Date(send.created_at).toLocaleString()} · to {send.to_email}
+                                    {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
+                                  </span>
+                                  {send.error_message && (
+                                    <span className="w-full text-error">{send.error_message}</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          </Disclosure>
+        </div>
+      )}
+
+      {/* History — meetings, stage changes, activity */}
+      <div className="mt-4">
+        <Disclosure title="History" hint="Meetings, pipeline stage changes, and the full activity log">
+          <section>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-fg">Meetings</h3>
+              <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
+                Schedule on calendar →
+              </Link>
+            </div>
+            <ul className="mt-3 divide-y divide-border border border-border">
+              {meetings && meetings.length === 0 && (
+                <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
+              )}
+              {meetings?.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="text-fg">
+                    {m.title}
+                    <span className="ml-2 text-xs text-fg-muted">
+                      {new Date(m.scheduled_at).toLocaleString()} · {m.status.replace("_", " ")}
+                      {m.assigned_user_name ? ` · ${m.assigned_user_name}` : ""}
+                    </span>
+                  </span>
+                  {m.outcome && <span className="shrink-0 text-xs text-fg-muted">{m.outcome}</span>}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="mt-8">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-fg">Pipeline stage history</h3>
+              <Link href="/dashboard/leads?view=board" className="text-xs text-fg-muted hover:underline">
+                View pipeline board →
+              </Link>
+            </div>
+            <ul className="mt-3 divide-y divide-border border border-border">
+              {pipelineEvents && pipelineEvents.length === 0 && (
+                <li className="px-3 py-3 text-sm text-fg-muted">
+                  No stage changes yet — this lead has been {LEAD_STATUS_LABEL[lead.status].toLowerCase()} since it was
+                  created.
+                </li>
+              )}
+              {pipelineEvents?.map((event) => (
+                <li key={event.id} className="px-3 py-2 text-sm">
+                  <span className="text-fg">{event.summary ?? event.kind}</span>
+                  <span className="ml-2 text-xs text-fg-muted">{new Date(event.created_at).toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="mt-8">
+            <h3 className="text-sm font-semibold text-fg">Activity history</h3>
+            <ul className="mt-3 divide-y divide-border border border-border">
+              {activity && activity.length === 0 && (
+                <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
+              )}
+              {activity?.map((item) => (
+                <li key={item.id} className="px-3 py-2 text-sm">
+                  <span className="text-fg">{item.summary ?? item.action}</span>
+                  <span className="ml-2 text-xs text-fg-muted">
+                    {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </Disclosure>
+      </div>
     </div>
   );
 }

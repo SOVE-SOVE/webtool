@@ -9,12 +9,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.integrations.discovery.base import WebsiteStatus
+from app.modules.review_intelligence.models import ReviewActivityLevel
 
 if TYPE_CHECKING:
     from app.modules.businesses.models import Business
     from app.modules.business_research.models import BusinessResearchResult
     from app.modules.leads.models import Lead
     from app.modules.opportunity_scoring.models import OpportunityScoreResult
+    from app.modules.review_intelligence.models import ReviewIntelligenceResult
     from app.modules.users.models import User
     from app.modules.website_quality.models import WebsiteQualityAudit
     from app.modules.workspaces.models import Workspace
@@ -190,6 +192,19 @@ class DiscoveredBusiness(Base):
         Enum(OpportunityScoreCategory, name="opportunity_score_category")
     )
 
+    # Cached from the latest ReviewIntelligenceResult, same "denormalized
+    # read-model" reasoning as opportunity_score/score_category above —
+    # lets the Review Queue list Google rating/health/activity without a
+    # join per row. The review_intelligence module is the only writer;
+    # never set/edited anywhere else. All null until a Google listing has
+    # actually been analyzed (see modules/review_intelligence/service.py).
+    google_rating: Mapped[float | None] = mapped_column(Float)
+    google_review_count: Mapped[int | None] = mapped_column(Integer)
+    review_health_score: Mapped[int | None] = mapped_column(Integer)
+    review_activity_level: Mapped[ReviewActivityLevel | None] = mapped_column(
+        Enum(ReviewActivityLevel, name="review_activity_level")
+    )
+
     reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_notes: Mapped[str | None] = mapped_column(Text)
@@ -221,4 +236,7 @@ class DiscoveredBusiness(Base):
     )
     score_results: Mapped[list["OpportunityScoreResult"]] = relationship(
         back_populates="discovered_business", order_by="OpportunityScoreResult.scored_at.desc()"
+    )
+    review_intelligence_results: Mapped[list["ReviewIntelligenceResult"]] = relationship(
+        back_populates="discovered_business", order_by="ReviewIntelligenceResult.review_data_updated_at.desc()"
     )

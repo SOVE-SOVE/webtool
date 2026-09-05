@@ -153,6 +153,20 @@ export type Lead = {
   assigned_user_name: string | null;
   created_at: string;
   updated_at: string;
+
+  // Read-only projection of Google review intelligence carried over
+  // from the originating DiscoveredBusiness, when this lead came from
+  // Lead Intelligence discovery — null for a lead created directly.
+  google_rating: number | null;
+  google_review_count: number | null;
+  review_health_score: number | null;
+  review_activity_level: ReviewActivityLevel | null;
+  review_frequency_per_month: number | null;
+  review_sentiment_trend: ReviewSentimentTrend | null;
+  positive_review_themes: string[];
+  negative_review_themes: string[];
+  review_summary: string | null;
+  review_data_updated_at: string | null;
 };
 
 export type LeadCreate = {
@@ -281,6 +295,7 @@ export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
 export type Project = {
   id: string;
   client_id: string;
+  business_id: string;
   client_business_name: string;
   source_lead_id: string | null;
   name: string;
@@ -288,6 +303,7 @@ export type Project = {
   package: string | null;
   price_cents: number | null;
   deadline: string | null;
+  build_direction: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   delivered_at: string | null;
@@ -327,6 +343,7 @@ export type ProjectUpdate = {
   package?: string | null;
   price_cents?: number | null;
   deadline?: string | null;
+  build_direction?: string | null;
 };
 
 export const BRIEF_STATUSES = ["draft", "approved"] as const;
@@ -1303,6 +1320,14 @@ export type FollowUpCandidate = {
   days_quiet: number;
 };
 
+export type WebsitePipeline = {
+  building: number;
+  in_review: number;
+  ready_to_launch: number;
+  deployed: number;
+  maintenance: number;
+};
+
 export type DashboardOverview = {
   total_leads: number;
   qualified_leads: number;
@@ -1310,6 +1335,7 @@ export type DashboardOverview = {
   upcoming_meetings: number;
   won_projects: number;
   active_projects: number;
+  websites: WebsitePipeline;
   revenue_cents: number;
   tasks_needing_attention: number;
   follow_ups_due: number;
@@ -1520,6 +1546,10 @@ export type DiscoveredBusiness = {
   status: DiscoveredBusinessStatus;
   opportunity_score: number | null;
   score_category: OpportunityScoreCategory | null;
+  google_rating: number | null;
+  google_review_count: number | null;
+  review_health_score: number | null;
+  review_activity_level: ReviewActivityLevel | null;
   reviewed_by_user_id: string | null;
   reviewed_at: string | null;
   review_notes: string | null;
@@ -1553,10 +1583,26 @@ export type DiscoveredBusinessReviewItem = {
   score_category: OpportunityScoreCategory | null;
   confidence: number | null;
   recommended_sales_angle: string | null;
+  google_rating: number | null;
+  google_review_count: number | null;
+  review_health_score: number | null;
+  review_activity_level: ReviewActivityLevel | null;
 };
 
+// Approving a discovered business also adds it to the CRM in the same
+// step — see the discovery service's approve_business.
+export type ApproveResult = {
+  business: DiscoveredBusiness;
+  outcome: "imported" | "already_in_crm";
+  lead_id: string | null;
+};
+
+export type BulkApproveFailure = { id: string; name: string; reason: string };
+
 export type BulkApproveResult = {
-  approved: DiscoveredBusiness[];
+  imported: DiscoveredBusiness[];
+  already_in_crm: DiscoveredBusiness[];
+  failed: BulkApproveFailure[];
   not_found: string[];
 };
 
@@ -1624,6 +1670,76 @@ export type OpportunityScoreResult = {
   factors: ScoreFactor[];
   recommendation_reason: string;
   scored_at: string;
+};
+
+// --- Google Review Intelligence -------------------------------------------
+// Computed only from what Google Places (New) actually returns: an
+// aggregate rating/count plus at most 5 individual reviews. Every field
+// below honestly falls back to null/"unknown"/"insufficient_data" rather
+// than a fabricated value when the sample is too thin to say something
+// real — see review_data_source & data_limitations.
+
+export type ReviewDataStatus = "ok" | "unavailable" | "no_listing";
+export type ReviewActivityLevel = "high" | "medium" | "low" | "unknown";
+export type ReviewVolumeTrend = "increasing" | "stable" | "declining" | "insufficient_data";
+export type ReviewSentimentTrend = "improving" | "stable" | "declining" | "insufficient_data";
+
+export type ReviewHealthFactor = {
+  factor: string;
+  points: number;
+  direction: "positive" | "negative" | "neutral";
+  explanation: string;
+};
+
+export type ReviewTheme = {
+  theme: string;
+  occurrences: number;
+  confidence: number;
+  evidence: string[];
+};
+
+export type ReviewEvidenceItem = {
+  rating: number | null;
+  snippet: string;
+  published_at: string | null;
+  relative_time_description: string | null;
+};
+
+export type ReviewIntelligenceResult = {
+  id: string;
+  discovered_business_id: string;
+
+  data_status: ReviewDataStatus;
+  review_data_source: string;
+
+  google_rating: number | null;
+  google_review_count: number | null;
+  reviews_sampled: number;
+  reviews_with_text: number;
+
+  review_activity_level: ReviewActivityLevel;
+  review_frequency_per_month: number | null;
+  recent_review_count: number | null;
+  previous_review_count: number | null;
+  last_review_at: string | null;
+  review_volume_trend: ReviewVolumeTrend;
+  review_sentiment_trend: ReviewSentimentTrend;
+
+  rating_distribution: Record<string, number> | null;
+
+  review_health_score: number | null;
+  review_health_factors: ReviewHealthFactor[];
+
+  themes_data_sufficient: boolean;
+  positive_review_themes: ReviewTheme[];
+  negative_review_themes: ReviewTheme[];
+
+  review_summary: string | null;
+  review_summary_unavailable_reason: string | null;
+  review_evidence: ReviewEvidenceItem[];
+
+  data_limitations: string | null;
+  review_data_updated_at: string;
 };
 
 export const api = {
@@ -1937,13 +2053,22 @@ export const api = {
     request<OpportunityScoreResult>(`/api/v1/discovered-businesses/${discoveredBusinessId}/scores`, {
       method: "POST",
     }),
+  listReviewIntelligence: (discoveredBusinessId: string) =>
+    request<ReviewIntelligenceResult[]>(
+      `/api/v1/discovered-businesses/${discoveredBusinessId}/review-intelligence`,
+    ),
+  runReviewIntelligence: (discoveredBusinessId: string) =>
+    request<ReviewIntelligenceResult>(
+      `/api/v1/discovered-businesses/${discoveredBusinessId}/review-intelligence`,
+      { method: "POST" },
+    ),
 
   listReviewItems: (opts?: { includeArchived?: boolean }) =>
     request<DiscoveredBusinessReviewItem[]>(
       `/api/v1/discovered-businesses${opts?.includeArchived ? "?include_archived=true" : ""}`,
     ),
   approveDiscoveredBusiness: (id: string) =>
-    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
+    request<ApproveResult>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
   rejectDiscoveredBusiness: (id: string, notes?: string) =>
     request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/reject`, {
       method: "POST",

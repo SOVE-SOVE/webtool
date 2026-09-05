@@ -35,6 +35,7 @@ from app.modules.jobs.job_types import (
     JOB_OPPORTUNITY_SCORE,
     JOB_OUTREACH_DRAFT,
     JOB_QA_REPORT,
+    JOB_REVIEW_INTELLIGENCE,
     JOB_WEBSITE_GENERATE,
     JOB_WEBSITE_QUALITY_AUDIT,
 )
@@ -95,6 +96,19 @@ def handle_business_research(db: Session, job: Job) -> dict:
     business_id = uuid.UUID(job.payload["discovered_business_id"])
     result = business_research_service.run_research(db, job.workspace_id, job.created_by_user_id, business_id)
     return {"discovered_business_id": str(business_id), "researched": result is not None}
+
+
+def handle_review_intelligence(db: Session, job: Job) -> dict:
+    from app.modules.review_intelligence import service as review_intelligence_service
+
+    business_id = uuid.UUID(job.payload["discovered_business_id"])
+    result = review_intelligence_service.run_review_intelligence(
+        db, job.workspace_id, job.created_by_user_id, business_id
+    )
+    return {
+        "discovered_business_id": str(business_id),
+        "data_status": result.data_status.value if result else None,
+    }
 
 
 def handle_website_quality_audit(db: Session, job: Job) -> dict:
@@ -184,6 +198,7 @@ def handle_qa_report(db: Session, job: Job) -> dict:
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
+    JOB_REVIEW_INTELLIGENCE: handle_review_intelligence,
     JOB_WEBSITE_QUALITY_AUDIT: handle_website_quality_audit,
     JOB_OPPORTUNITY_SCORE: handle_opportunity_score,
     JOB_OUTREACH_DRAFT: handle_outreach_draft,
