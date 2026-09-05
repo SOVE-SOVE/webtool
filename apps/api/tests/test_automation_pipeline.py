@@ -197,7 +197,12 @@ def test_full_pipeline_discovery_to_deployment_with_automation(authed_client, db
     assert authed_client.get(f"/api/v1/discovered-businesses/{business_id}").json()["status"] == "new"
 
     jobs_run = _drain_jobs()
-    assert jobs_run == 3  # business_research -> website_quality_audit -> opportunity_score
+    # business_research + review_intelligence fire in parallel off discovery
+    # (this business was found via the Brave-search provider, not Google
+    # Places, so review_intelligence resolves immediately to "no listing" —
+    # see modules/review_intelligence/service.py); business_research then
+    # chains into website_quality_audit -> opportunity_score.
+    assert jobs_run == 4
 
     scored = authed_client.get(f"/api/v1/discovered-businesses/{business_id}").json()
     assert scored["status"] == "scored"

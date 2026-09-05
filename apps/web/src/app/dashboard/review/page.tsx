@@ -20,6 +20,30 @@ const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
   review: "bg-surface-hover text-fg-muted",
 };
 
+const ACTIVITY_LABEL: Record<string, string> = { high: "HIGH", medium: "MEDIUM", low: "LOW", unknown: "UNKNOWN" };
+
+function GoogleReviewsCell({ item }: { item: DiscoveredBusinessReviewItem }) {
+  if (item.google_rating === null && item.google_review_count === null) {
+    return <span className="text-fg-subtle">—</span>;
+  }
+  return (
+    <div>
+      <div className="text-fg">
+        {item.google_rating !== null ? `${item.google_rating.toFixed(1)}★` : "No rating"}
+        {item.google_review_count !== null && (
+          <span className="text-fg-muted"> ({item.google_review_count})</span>
+        )}
+      </div>
+      <div className="text-xs text-fg-muted">
+        {item.review_health_score !== null ? `Health ${item.review_health_score}` : "Health n/a"}
+        {item.review_activity_level && item.review_activity_level !== "unknown" && (
+          <> · {ACTIVITY_LABEL[item.review_activity_level]}</>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Truncated({ text }: { text: string | null }) {
   if (!text) return <span className="text-fg-subtle">—</span>;
   return (
@@ -218,6 +242,7 @@ export default function ReviewPage() {
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Website</th>
                 <th className="px-3 py-2">Score</th>
+                <th className="px-3 py-2">Google reviews</th>
                 <th className="px-3 py-2">Why review</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
@@ -275,6 +300,9 @@ export default function ReviewPage() {
                       ) : (
                         <span className="text-fg-subtle">Not scored</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <GoogleReviewsCell item={item} />
                     </td>
                     <td className="px-3 py-2 align-top text-fg-muted">
                       <Truncated text={whyReview(item)} />
