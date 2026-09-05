@@ -13,6 +13,7 @@ import uuid
 
 from app.agents import opportunity_score as opportunity_score_agent
 from app.agents.opportunity_score import OpportunityScoreInput
+from app.integrations.discovery.base import InstagramWebsiteStatus
 from app.modules.business_research.models import BusinessResearchResult
 from app.modules.discovery.models import (
     DiscoveredBusiness,
@@ -254,6 +255,112 @@ def test_score_for_business_with_no_website(authed_client, db_session, workspace
     body = res.json()
     assert body["overall_score"] == 85
     assert body["category"] == "hot"
+
+
+
+
+
+# --- Phase 1 of Instagram Discovery: contactability + confirmed
+# Instagram-only-presence bonuses on the *existing* engine ------------------
+
+
+def test_no_bonuses_when_neither_signal_present_matches_prior_behavior():
+    """A business with no phone/email on record and not Instagram-sourced
+    (both new fields default False) must score exactly as it did before
+    these bonuses existed — no regression for every existing Brave/Places row."""
+    result = opportunity_score_agent.run(OpportunityScoreInput(has_website_on_record=False))
+    assert result.output.overall_score == 85
+    assert len(result.output.factors) == 1
+
+
+def test_contactable_no_website_business_scores_higher():
+    result = opportunity_score_agent.run(
+        OpportunityScoreInput(has_website_on_record=False, has_contact_info=True)
+    )
+    assert result.output.overall_score == 90  # 85 + 5
+    factor_names = {f.factor for f in result.output.factors}
+    assert "contactable" in factor_names
+    assert "Contactable via phone or email" in result.output.positive_signals
+
+
+def test_confirmed_instagram_only_presence_scores_higher():
+    result = opportunity_score_agent.run(
+        OpportunityScoreInput(has_website_on_record=False, confirmed_instagram_only_presence=True)
+    )
+    assert result.output.overall_score == 90  # 85 + 5
+    factor_names = {f.factor for f in result.output.factors}
+    assert "instagram_only_presence" in factor_names
+    assert "Confirmed to operate with no owned website" in result.output.positive_signals
+
+
+def test_both_phase1_bonuses_combine_and_cap_at_100():
+    # Unreachable-website base (90) + both bonuses (5 + 5) lands exactly
+    # on the cap — a real boundary case, not just headroom that's never hit.
+    result = opportunity_score_agent.run(
+        OpportunityScoreInput(
+            has_website_on_record=True,
+            website_reachable=False,
+            has_contact_info=True,
+            confirmed_instagram_only_presence=True,
+        )
+    )
+    assert result.output.overall_score == opportunity_score_agent.OVERALL_CAP == 100
+
+
+def test_clean_site_issue_summary_excludes_phase1_bonuses():
+    """The 'N concrete issue(s)' summary is about site problems, not the
+    phase-1 bonuses — a site with zero real issues but a contactable
+    business must still say it passed every check."""
+    result = opportunity_score_agent.run(
+        OpportunityScoreInput(
+            has_website_on_record=True,
+            website_reachable=True,
+            https=True,
+            mobile_viewport_present=True,
+            load_time_ms=900,
+            contact_cta_present=True,
+            page_title="Real Business",
+            meta_description="A real description",
+            social_presence_count=2,
+            has_contact_info=True,
+        )
+    )
+    assert "passed every check" in result.output.recommendation_reason
+    assert len(result.output.factors) == 1  # only the contactability bonus, no "issues"
+
+
+def test_run_opportunity_score_picks_up_contact_info_and_instagram_status(
+    authed_client, db_session, workspace
+):
+    search = _make_search(db_session, workspace, provider="instagram_import")
+    business = _make_discovered_business(
+        db_session,
+        search,
+        website_url=None,
+        phone="0400 000 000",
+        instagram_website_status=InstagramWebsiteStatus.LINK_IN_BIO_ONLY,
+        source_provider="instagram_import",
+    )
+    _make_research(
+        db_session,
+        business,
+        official_website_url=None,
+        website_reachable=None,
+        https=None,
+        mobile_viewport_present=None,
+        contact_cta_present=None,
+        page_title=None,
+        meta_description=None,
+        social_presence=None,
+    )
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business.id}/scores")
+
+    assert res.status_code == 201
+    body = res.json()
+    assert body["overall_score"] == 95  # 85 + contactable(5) + instagram_only_presence(5)
+    factor_names = {f["factor"] for f in body["factors"]}
+    assert {"contactable", "instagram_only_presence"} <= factor_names
 
 
 def test_list_scores_workspace_scoped(authed_client, other_authed_client, db_session, workspace):

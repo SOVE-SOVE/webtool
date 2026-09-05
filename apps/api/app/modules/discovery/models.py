@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.integrations.discovery.base import WebsiteStatus
+from app.integrations.discovery.base import InstagramWebsiteStatus, LocationConfidence, WebsiteStatus
 from app.modules.review_intelligence.models import ReviewActivityLevel
 
 if TYPE_CHECKING:
@@ -158,8 +158,28 @@ class DiscoveredBusiness(Base):
     # pin. Both set together or both null.
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    # How much to trust the location fields above — see
+    # LocationConfidence. Null when there's no location at all.
+    location_confidence: Mapped[LocationConfidence | None] = mapped_column(
+        Enum(LocationConfidence, name="location_confidence")
+    )
     # Newline-separated, same convention as businesses.social_links.
     social_links: Mapped[str | None] = mapped_column(Text)
+
+    # Instagram-only fields (Phase 1: instagram_import.py) — null for
+    # every other provider. See InstagramWebsiteStatus's docstring for
+    # why this is a second, separate status from `website_status` above
+    # rather than added values on that enum.
+    instagram_handle: Mapped[str | None] = mapped_column(String(100))
+    instagram_profile_url: Mapped[str | None] = mapped_column(String(500))
+    instagram_profile_image_url: Mapped[str | None] = mapped_column(String(500))
+    instagram_bio: Mapped[str | None] = mapped_column(Text)
+    instagram_follower_count: Mapped[int | None] = mapped_column(Integer)
+    instagram_last_post_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    instagram_bio_link_url: Mapped[str | None] = mapped_column(String(500))
+    instagram_website_status: Mapped[InstagramWebsiteStatus | None] = mapped_column(
+        Enum(InstagramWebsiteStatus, name="instagram_website_status")
+    )
 
     # Source tracking — which provider found this, what it searched for,
     # and the provider's own id/url for the result (when it has one),

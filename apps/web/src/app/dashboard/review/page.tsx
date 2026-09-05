@@ -6,6 +6,7 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_WEBSITE_STATUS_LABEL,
   type DiscoveredBusinessReviewItem,
   type OpportunityScoreCategory,
 } from "@/lib/api";
@@ -269,7 +270,12 @@ export default function ReviewPage() {
                       >
                         {item.name}
                       </Link>
-                      {item.industry && <div className="text-xs text-fg-muted">{item.industry}</div>}
+                      {(item.business_category || item.industry) && (
+                        <div className="text-xs text-fg-muted">{item.business_category || item.industry}</div>
+                      )}
+                      {item.instagram_handle && (
+                        <div className="text-xs text-fg-subtle">@{item.instagram_handle}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top text-fg-muted">
                       {[item.suburb, item.state].filter(Boolean).join(", ") || "—"}
@@ -286,7 +292,9 @@ export default function ReviewPage() {
                         </a>
                       ) : (
                         <span className="text-fg-subtle">
-                          {DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}
+                          {item.instagram_website_status
+                            ? INSTAGRAM_WEBSITE_STATUS_LABEL[item.instagram_website_status]
+                            : DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}
                         </span>
                       )}
                     </td>

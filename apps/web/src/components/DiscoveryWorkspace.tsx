@@ -7,10 +7,14 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_WEBSITE_STATUSES,
   type DiscoveredBusiness,
   type DiscoverySearch,
+  type InstagramImportResult,
 } from "@/lib/api";
 import {
+  ACTIVE_RECENTLY_DAYS,
   filterDiscoveredBusinesses,
   hasCoordinates,
   sortDiscoveredBusinesses,
@@ -20,11 +24,20 @@ import {
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
+import { InstagramImportModal } from "@/components/InstagramImportModal";
 
 // Leaflet touches `window` on import — client-only, no SSR.
 const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
 
-const NO_FILTERS: DiscoveredBusinessFilters = { search: "", website: "", mappedOnly: false };
+const NO_FILTERS: DiscoveredBusinessFilters = {
+  search: "",
+  website: "",
+  mappedOnly: false,
+  instagramStatus: "",
+  contactableOnly: false,
+  activeRecentlyOnly: false,
+  minFollowers: null,
+};
 
 const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], string> = {
   found: "bg-surface-subtle text-fg-muted",
@@ -72,6 +85,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
+  const [showImportModal, setShowImportModal] = useState(false);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   // Search form
@@ -209,6 +223,14 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     }
   }
 
+  async function handleImported(result: InstagramImportResult) {
+    // Deliberately doesn't close the modal — it stays open showing the
+    // "Added N candidates" summary until the operator clicks Done
+    // (InstagramImportModal's onClose), so that summary is never skipped.
+    await loadSearches();
+    selectSearch(result.search.id);
+  }
+
   async function handleAddLead(business: DiscoveredBusiness) {
     setImportingId(business.id);
     setError(null);
@@ -230,6 +252,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   return (
     <div className="p-6">
       <PageHeader
+        actions={
+          <button onClick={() => setShowImportModal(true)} className="btn btn-secondary">
+            Import from Instagram
+          </button>
+        }
         title="Discovery"
         description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
       />
@@ -396,6 +423,60 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
             </label>
           </div>
 
+          {/* Instagram-only filters — shown only once there's at least one
+              Instagram-sourced result to filter, so an ordinary Places/Brave
+              search doesn't clutter its filter row with controls that would
+              never match anything. */}
+          {activeResults.some((b) => b.instagram_handle) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                value={filters.instagramStatus}
+                onChange={(e) =>
+                  setFilters((f) => ({
+                    ...f,
+                    instagramStatus: e.target.value as DiscoveredBusinessFilters["instagramStatus"],
+                  }))
+                }
+                className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                aria-label="Filter by Instagram website status"
+              >
+                <option value="">Any Instagram status</option>
+                {INSTAGRAM_WEBSITE_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {INSTAGRAM_WEBSITE_STATUS_LABEL[status]}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-1.5 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={filters.contactableOnly}
+                  onChange={(e) => setFilters((f) => ({ ...f, contactableOnly: e.target.checked }))}
+                />
+                Contactable only
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={filters.activeRecentlyOnly}
+                  onChange={(e) => setFilters((f) => ({ ...f, activeRecentlyOnly: e.target.checked }))}
+                />
+                Active in last {ACTIVE_RECENTLY_DAYS} days
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={filters.minFollowers ?? ""}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, minFollowers: e.target.value === "" ? null : Number(e.target.value) }))
+                }
+                placeholder="Min followers"
+                className={`${inputCls} w-32`}
+                aria-label="Minimum follower count"
+              />
+            </div>
+          )}
+
           <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
 
           {visible.length === 0 ? (
@@ -453,6 +534,17 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                               {business.business_category || business.industry}
                             </div>
                           )}
+                          {business.instagram_handle && (
+                            <a
+                              href={business.instagram_profile_url ?? undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-fg-subtle hover:underline"
+                            >
+                              @{business.instagram_handle}
+                            </a>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-fg-muted">
                           <span className="block max-w-[220px] truncate" title={location}>
@@ -476,7 +568,9 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                           <span
                             className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${WEBSITE_BADGE[business.website_status]}`}
                           >
-                            {DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
+                            {business.instagram_website_status
+                              ? INSTAGRAM_WEBSITE_STATUS_LABEL[business.instagram_website_status]
+                              : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
                           </span>
                           {business.website_status === "found" && business.website_url && (
                             <a
@@ -538,6 +632,10 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
             )}
           </div>
         </>
+      )}
+
+      {showImportModal && (
+        <InstagramImportModal onClose={() => setShowImportModal(false)} onImported={handleImported} />
       )}
     </div>
   );

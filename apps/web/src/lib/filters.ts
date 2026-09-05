@@ -5,7 +5,7 @@
  * unassigned) is unit-testable without a DOM.
  */
 
-import type { Client, DiscoveredBusiness, Project, ProjectStage } from "@/lib/api";
+import type { Client, DiscoveredBusiness, InstagramWebsiteStatus, Project, ProjectStage } from "@/lib/api";
 
 export const UNASSIGNED = "__unassigned__";
 
@@ -57,12 +57,26 @@ export function filterClients(clients: Client[], filters: ClientFilters): Client
   });
 }
 
+// A business's most recent Instagram post within this many days counts
+// as "active recently" — see the activeRecentlyOnly filter below. A
+// fixed, documented threshold rather than a free-form day picker, to
+// keep the filter row simple; change this one constant if 30 days turns
+// out to be the wrong bar.
+export const ACTIVE_RECENTLY_DAYS = 30;
+
 // Results filtering for the Lead Discovery search page — the same list
 // the map draws its markers from, so filtering the table filters the map.
 export type DiscoveredBusinessFilters = {
   search: string;
   website: "" | "has" | "no";
   mappedOnly: boolean;
+  // Phase 1 of Instagram Discovery — each is a no-op unless the operator
+  // has actually turned it on / picked a value, so these never affect
+  // non-Instagram (Brave/Places) results.
+  instagramStatus: "" | InstagramWebsiteStatus;
+  contactableOnly: boolean;
+  activeRecentlyOnly: boolean;
+  minFollowers: number | null;
 };
 
 export type LocatedBusiness = DiscoveredBusiness & { latitude: number; longitude: number };
@@ -75,12 +89,23 @@ export function filterDiscoveredBusinesses(
   businesses: DiscoveredBusiness[],
   filters: DiscoveredBusinessFilters,
 ): DiscoveredBusiness[] {
+  const activeRecentlyCutoff = Date.now() - ACTIVE_RECENTLY_DAYS * 24 * 60 * 60 * 1000;
   return businesses.filter((business) => {
     if (filters.website === "has" && business.website_status !== "found") return false;
     if (filters.website === "no" && business.website_status !== "none") return false;
     if (filters.mappedOnly && !hasCoordinates(business)) return false;
+    if (filters.instagramStatus && business.instagram_website_status !== filters.instagramStatus) return false;
+    if (filters.contactableOnly && !business.phone && !business.email) return false;
+    if (filters.activeRecentlyOnly) {
+      if (!business.instagram_last_post_at) return false;
+      if (new Date(business.instagram_last_post_at).getTime() < activeRecentlyCutoff) return false;
+    }
+    if (filters.minFollowers !== null) {
+      if (business.instagram_follower_count === null) return false;
+      if (business.instagram_follower_count < filters.minFollowers) return false;
+    }
     return matchesSearch(
-      [business.name, business.industry, business.address, business.suburb, business.website_url],
+      [business.name, business.industry, business.address, business.suburb, business.website_url, business.instagram_handle],
       filters.search,
     );
   });

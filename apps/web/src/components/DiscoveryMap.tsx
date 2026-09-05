@@ -6,7 +6,7 @@ import "leaflet.markercluster";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
-import type { DiscoveredBusiness } from "@/lib/api";
+import { INSTAGRAM_WEBSITE_STATUS_LABEL, type DiscoveredBusiness } from "@/lib/api";
 import { hasCoordinates, type LocatedBusiness } from "@/lib/filters";
 
 // Leaflet's default marker asset paths break under a bundler, so every
@@ -31,16 +31,19 @@ const esc = (s: string) =>
 function popupHtml(b: Located): string {
   const category = b.business_category || b.industry;
   const cat = category ? ` · ${esc(category)}` : "";
+  const handle = b.instagram_handle
+    ? `<br/><a href="${esc(b.instagram_profile_url ?? `https://instagram.com/${b.instagram_handle}`)}" target="_blank" rel="noreferrer">@${esc(b.instagram_handle)}</a>`
+    : "";
   const addr = b.address ? `<br/>${esc(b.address)}` : b.suburb ? `<br/>${esc(b.suburb)}` : "";
   const phone = b.phone ? `<br/><a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : "";
   const site =
     b.website_status === "found" && b.website_url
       ? `<br/><a href="${esc(b.website_url)}" target="_blank" rel="noreferrer">${esc(b.website_url)}</a>`
       : b.website_status === "none"
-        ? "<br/><em>No website</em>"
+        ? `<br/><em>${b.instagram_website_status ? esc(INSTAGRAM_WEBSITE_STATUS_LABEL[b.instagram_website_status]) : "No website"}</em>`
         : "";
   const details = `<br/><a href="/dashboard/discovered-businesses/${b.id}">View details &rarr;</a>`;
-  return `<strong>${esc(b.name)}</strong>${cat}${addr}${phone}${site}${details}`;
+  return `<strong>${esc(b.name)}</strong>${cat}${handle}${addr}${phone}${site}${details}`;
 }
 
 const noWebsite = (b: Located) => b.website_status === "none";

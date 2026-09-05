@@ -199,7 +199,15 @@ describe("filterClients", () => {
 });
 
 describe("filterDiscoveredBusinesses", () => {
-  const NONE = { search: "", website: "" as const, mappedOnly: false };
+  const NONE = {
+    search: "",
+    website: "" as const,
+    mappedOnly: false,
+    instagramStatus: "" as const,
+    contactableOnly: false,
+    activeRecentlyOnly: false,
+    minFollowers: null,
+  };
 
   it("returns everything with no filters", () => {
     const rows = [discovered({ id: "a" }), discovered({ id: "b" })];
@@ -222,6 +230,51 @@ describe("filterDiscoveredBusinesses", () => {
       discovered({ id: "nopin", latitude: null, longitude: null }),
     ];
     expect(filterDiscoveredBusinesses(rows, { ...NONE, mappedOnly: true }).map((b) => b.id)).toEqual(["pin"]);
+  });
+
+  it("filters by Instagram website status", () => {
+    const rows = [
+      discovered({ id: "no-site", instagram_website_status: "no_website" }),
+      discovered({ id: "bio", instagram_website_status: "link_in_bio_only" }),
+      discovered({ id: "none", instagram_website_status: null }),
+    ];
+    expect(
+      filterDiscoveredBusinesses(rows, { ...NONE, instagramStatus: "link_in_bio_only" }).map((b) => b.id),
+    ).toEqual(["bio"]);
+  });
+
+  it("filters to contactable businesses only", () => {
+    const rows = [
+      discovered({ id: "phone", phone: "0400111222", email: null }),
+      discovered({ id: "email", phone: null, email: "a@example.com" }),
+      discovered({ id: "neither", phone: null, email: null }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, contactableOnly: true }).map((b) => b.id).sort()).toEqual([
+      "email",
+      "phone",
+    ]);
+  });
+
+  it("filters to businesses active recently", () => {
+    const recent = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const stale = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = [
+      discovered({ id: "recent", instagram_last_post_at: recent }),
+      discovered({ id: "stale", instagram_last_post_at: stale }),
+      discovered({ id: "unknown", instagram_last_post_at: null }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, activeRecentlyOnly: true }).map((b) => b.id)).toEqual([
+      "recent",
+    ]);
+  });
+
+  it("filters by minimum follower count", () => {
+    const rows = [
+      discovered({ id: "big", instagram_follower_count: 5000 }),
+      discovered({ id: "small", instagram_follower_count: 50 }),
+      discovered({ id: "none", instagram_follower_count: null }),
+    ];
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, minFollowers: 1000 }).map((b) => b.id)).toEqual(["big"]);
   });
 
   it("searches name, industry, address and website", () => {

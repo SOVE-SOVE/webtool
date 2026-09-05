@@ -17,6 +17,8 @@ from app.modules.discovery.schemas import (
     DiscoveredBusinessReviewRead,
     DiscoverySearchCreate,
     DiscoverySearchRead,
+    InstagramImportRequest,
+    InstagramImportResult,
     ScheduledSearchRead,
     ScheduleRecurringSearchRequest,
 )
@@ -52,6 +54,25 @@ def create_discovery_search(
     except service.InvalidSearchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except UnknownProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/instagram-import", response_model=InstagramImportResult, status_code=201)
+def import_instagram_candidates(
+    data: InstagramImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> InstagramImportResult:
+    """
+    Phase 1 of Instagram Discovery — turns operator-provided CSV text
+    into a discovery search + its candidates, same review/score/CRM-
+    import path as every other provider. Not rate-limited like
+    `create_discovery_search`: this makes no external API call itself
+    (see service.import_instagram_candidates).
+    """
+    try:
+        return service.import_instagram_candidates(db, current_user.workspace_id, current_user.id, data)
+    except service.InvalidSearchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

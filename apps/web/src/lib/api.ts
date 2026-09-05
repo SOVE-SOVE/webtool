@@ -1485,6 +1485,34 @@ export const DISCOVERED_WEBSITE_STATUS_LABEL: Record<DiscoveredWebsiteStatus, st
   unknown: "Website status unknown",
 };
 
+// A finer classification than DiscoveredWebsiteStatus above, specific to
+// an Instagram-sourced candidate (Phase 1 of Instagram Discovery — see
+// the API's integrations/discovery/base.py::InstagramWebsiteStatus for
+// why this is a second, separate status rather than more values on the
+// generic tri-state). Every non-Instagram business leaves this null.
+export const INSTAGRAM_WEBSITE_STATUSES = [
+  "no_website",
+  "link_in_bio_only",
+  "instagram_shop_only",
+  "proper_website",
+  "unknown_needs_review",
+] as const;
+export type InstagramWebsiteStatus = (typeof INSTAGRAM_WEBSITE_STATUSES)[number];
+
+export const INSTAGRAM_WEBSITE_STATUS_LABEL: Record<InstagramWebsiteStatus, string> = {
+  no_website: "No website",
+  link_in_bio_only: "Link-in-bio only",
+  instagram_shop_only: "Instagram Shop only",
+  proper_website: "Proper website found",
+  unknown_needs_review: "Unknown — needs review",
+};
+
+// How much to trust a candidate's location fields — a places API's
+// coordinates are CONFIRMED; a CSV-imported address is only
+// APPROXIMATE; no location evidence at all is UNKNOWN (never guessed).
+export const LOCATION_CONFIDENCES = ["confirmed", "approximate", "unknown"] as const;
+export type LocationConfidence = (typeof LOCATION_CONFIDENCES)[number];
+
 export type DiscoverySearchCreate = {
   query_label?: string;
   location?: string;
@@ -1537,6 +1565,7 @@ export type DiscoveredBusiness = {
   business_category: string | null;
   latitude: number | null;
   longitude: number | null;
+  location_confidence: LocationConfidence | null;
   social_links: string | null;
   source_provider: string;
   source_query: string | null;
@@ -1556,6 +1585,17 @@ export type DiscoveredBusiness = {
   imported_lead_id: string | null;
   discovered_at: string;
   updated_at: string;
+
+  // Instagram-only — null for every business found via another
+  // provider. See InstagramWebsiteStatus above.
+  instagram_handle: string | null;
+  instagram_profile_url: string | null;
+  instagram_profile_image_url: string | null;
+  instagram_bio: string | null;
+  instagram_follower_count: number | null;
+  instagram_last_post_at: string | null;
+  instagram_bio_link_url: string | null;
+  instagram_website_status: InstagramWebsiteStatus | null;
 };
 
 // One row of the dedicated review interface (Phase 2 checkpoint) — the
@@ -1567,6 +1607,7 @@ export type DiscoveredBusinessReviewItem = {
   industry: string | null;
   suburb: string | null;
   state: string | null;
+  business_category: string | null;
   website_url: string | null;
   website_status: DiscoveredWebsiteStatus;
   status: DiscoveredBusinessStatus;
@@ -1575,6 +1616,8 @@ export type DiscoveredBusinessReviewItem = {
   imported_lead_id: string | null;
   reviewed_by_user_name: string | null;
   reviewed_at: string | null;
+  instagram_handle: string | null;
+  instagram_website_status: InstagramWebsiteStatus | null;
   researched_at: string | null;
   research_error: string | null;
   quality_summary: string | null;
@@ -1604,6 +1647,24 @@ export type BulkApproveResult = {
   already_in_crm: DiscoveredBusiness[];
   failed: BulkApproveFailure[];
   not_found: string[];
+};
+
+// Phase 1 of Instagram Discovery — a batch of manually-collected
+// candidates as CSV text. Not a live search: there's nothing to
+// "load more" of, so this always fully completes in one request.
+export type InstagramImportRequest = {
+  query_label?: string;
+  csv_text: string;
+};
+
+export type InstagramImportRowError = { row_number: number; reason: string };
+
+export type InstagramImportResult = {
+  search: DiscoverySearch;
+  created_count: number;
+  duplicate_count: number;
+  skipped_rows: InstagramImportRowError[];
+  truncated: boolean;
 };
 
 export type BusinessResearchResult = {
@@ -2032,6 +2093,11 @@ export const api = {
   getDiscoverySearch: (id: string) => request<DiscoverySearch>(`/api/v1/discovery-searches/${id}`),
   loadMoreDiscoverySearch: (id: string) =>
     request<DiscoverySearch>(`/api/v1/discovery-searches/${id}/load-more`, { method: "POST" }),
+  importInstagramCandidates: (data: InstagramImportRequest) =>
+    request<InstagramImportResult>("/api/v1/discovery-searches/instagram-import", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   listDiscoveredBusinesses: (searchId: string) =>
     request<DiscoveredBusiness[]>(`/api/v1/discovery-searches/${searchId}/results`),
   getDiscoveredBusiness: (id: string) => request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}`),
