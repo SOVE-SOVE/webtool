@@ -8,6 +8,81 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-05 — Instagram Discovery: manual/CSV import for Phase 1, no Meta API, one scoring engine
+
+**Decision:** Added "Instagram Discovery" as a new Lead Discovery
+source, entirely through the existing provider-agnostic pipeline
+(`DiscoveryProvider`/`NormalizedBusinessResult`/`DiscoveredBusiness`/
+`_ingest_page`) rather than a parallel system. Three specific calls:
+
+1. **Candidate source: manual/CSV import only, no live provider.**
+   Meta's Instagram Graph API has a "Business Discovery" endpoint, but
+   it only *enriches* a profile you already know the handle of — it
+   cannot search by location or category. There is no compliant Meta
+   API path to "find Instagram businesses near me." Rather than build
+   toward a scraper (real ToS/legal exposure) or defer the whole
+   feature, Phase 1 ships `modules/discovery/instagram_import.py`: pure
+   CSV parsing into the same `NormalizedBusinessResult` shape every
+   other provider produces, handed to the existing `_ingest_page` — so
+   an Instagram-imported business gets the exact same dedup, review
+   queue, scoring, and CRM-import path as one found via Google Places,
+   with zero special-casing downstream. No `DiscoveryProvider` was
+   registered for it (there's no `discover()` to call); the new route
+   (`POST /discovery-searches/instagram-import`) calls the ingest path
+   directly.
+
+2. **A second, separate website-status classification, not more values
+   on the existing tri-state.** `WebsiteStatus` (FOUND/NONE/UNKNOWN)
+   already exists and is load-bearing for every existing provider,
+   filter, and scoring branch. Instagram needs a richer answer (no
+   website / link-in-bio only / Instagram Shop only / proper website /
+   unknown) — added as `InstagramWebsiteStatus`, a genuinely separate
+   enum, with a documented one-way mapping down to the generic
+   tri-state (`NO_WEBSITE`/`LINK_IN_BIO_ONLY`/`INSTAGRAM_SHOP_ONLY` →
+   `NONE`) so every existing map-pin-color/filter/scoring path that
+   only understands the generic status keeps working unchanged, while
+   the richer value stays queryable for Instagram-specific filtering
+   and display. Postgres enums are awkward to extend in place, and
+   `discovery/service.py`'s `_apply_website_status` already hard-assumes
+   exactly three generic values — folding a fourth+ concept into it
+   would have meant auditing every existing caller, for no benefit over
+   a second field.
+
+3. **Scoring stays one engine — two new factors, nothing new
+   scored on follower count or post recency.** Per the operator's
+   explicit instruction, `agents/opportunity_score.py` gained
+   `contactable` (+5) and `instagram_only_presence` (+5, only set when
+   a source that can actually confirm "no owned website" says so — see
+   #2), with a new `OVERALL_CAP = 100`. Follower count and last-post
+   timestamp are stored and filterable but **not** scored — no
+   defensible weighting exists yet for what follower range or posting
+   cadence actually predicts about lead quality, and the only way to
+   guarantee a missing value can never lower a score is to not score it
+   at all. Matches this file's own standing principle (see the
+   "industry suitability" note in `opportunity_score.py`'s docstring):
+   don't invent a weighting the app has no real data to defend.
+
+Caught during this session's own visual QA, not designed in from the
+start: a CSV row with only a text address never gets a map pin (no
+geocoding in Phase 1) — added optional `latitude`/`longitude` CSV
+columns so an operator who already has coordinates isn't structurally
+blocked from ever seeing a pin; and the Review queue page had not been
+updated to show Instagram fields at all (only Discovery's own results
+table and the detail page had), fixed by adding `business_category` to
+`DiscoveredBusinessReviewRead`.
+
+**Why:** All three keep "one system, extended" true rather than
+aspirational — a second scorer, more generic-enum values, or a
+fake/no-op provider registration would each have left something to
+keep in sync for the life of the feature, for a problem (real Instagram
+discovery-by-location) that engineering can't actually solve without a
+decision about where candidates come from (see the "future discovery-
+provider integration" boundary in the original plan — deliberately not
+decided here). See [[07_SESSION_LOG]] 2026-09-05 for the full file list
+and test results.
+
+---
+
 ## 2026-08-27 — Phase 7 Part 3: connecting the automation systems — what stayed manual and why
 
 **Decision:** Wired the previously-inert job queue (`apps/api/app/jobs/`,

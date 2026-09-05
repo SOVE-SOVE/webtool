@@ -16,6 +16,7 @@ from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
 from app.modules.businesses.models import Business
 from app.modules.discovery import dedup
+from app.modules.discovery.instagram_import import parse_instagram_csv
 from app.modules.discovery.models import (
     DiscoveredBusiness,
     DiscoveredBusinessStatus,
@@ -31,6 +32,9 @@ from app.modules.discovery.schemas import (
     DiscoveredBusinessReviewRead,
     DiscoverySearchCreate,
     DiscoverySearchRead,
+    InstagramImportRequest,
+    InstagramImportResult,
+    InstagramImportRowError,
 )
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import (
@@ -219,6 +223,7 @@ def _ingest_page(
             business_category=result.business_category,
             latitude=result.latitude,
             longitude=result.longitude,
+            location_confidence=result.location_confidence,
             social_links="\n".join(result.social_links) or None,
             source_provider=search.provider,
             source_query=query_sent,
@@ -227,6 +232,14 @@ def _ingest_page(
             duplicate_of_business_id=duplicate_of_business.id if duplicate_of_business else None,
             duplicate_of_discovered_business_id=duplicate_of_discovered.id if duplicate_of_discovered else None,
             status=DiscoveredBusinessStatus.NEW,
+            instagram_handle=result.instagram_handle,
+            instagram_profile_url=result.instagram_profile_url,
+            instagram_profile_image_url=result.instagram_profile_image_url,
+            instagram_bio=result.instagram_bio,
+            instagram_follower_count=result.instagram_follower_count,
+            instagram_last_post_at=result.instagram_last_post_at,
+            instagram_bio_link_url=result.instagram_bio_link_url,
+            instagram_website_status=result.instagram_website_status,
         )
         db.add(business)
         created.append(business)
@@ -365,6 +378,69 @@ def load_more_search(
     db.refresh(search)
     _enqueue_research(db, workspace_id, actor_id, created)
     return DiscoverySearchRead.model_validate(search)
+
+
+INSTAGRAM_IMPORT_PROVIDER = "instagram_import"
+
+
+def import_instagram_candidates(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: InstagramImportRequest
+) -> InstagramImportResult:
+    """
+    Phase 1 of Instagram Discovery: turns operator-provided CSV text
+    into a `DiscoverySearch` (provider="instagram_import") plus its
+    `DiscoveredBusiness` rows, through the exact same `_ingest_page` path
+    a live provider's page goes through — same dedup, same
+    website-status normalization, same automatic research/audit/score
+    hand-off (`_enqueue_research`). No live `discover()` call exists for
+    this provider (see instagram_import.py's module docstring), so this
+    bypasses the registry entirely rather than registering a fake
+    `DiscoveryProvider` that would have to pretend to support pagination
+    it doesn't have.
+    """
+    parsed = parse_instagram_csv(data.csv_text)
+    if not parsed.results and not parsed.errors:
+        raise InvalidSearchError("No rows found in the CSV — check it has a header row plus at least one data row")
+
+    search = DiscoverySearch(
+        workspace_id=workspace_id,
+        created_by_user_id=actor_id,
+        query_label=data.query_label or "Instagram import",
+        provider=INSTAGRAM_IMPORT_PROVIDER,
+        status=DiscoverySearchStatus.RUNNING,
+    )
+    db.add(search)
+    db.flush()
+
+    page = DiscoveryPage(results=parsed.results, has_more=False)
+    created = _ingest_page(db, workspace_id, actor_id, search, page, offset=0)
+    duplicate_count = len(parsed.results) - len(created)
+
+    search.status = DiscoverySearchStatus.COMPLETED
+    search.completed_at = datetime.now(timezone.utc)
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="discovery_search",
+        entity_id=search.id,
+        action="completed",
+        summary=f"Instagram import added {len(created)} candidate(s)"
+        + (f", skipped {len(parsed.errors)} row(s)" if parsed.errors else ""),
+    )
+
+    db.commit()
+    db.refresh(search)
+    _enqueue_research(db, workspace_id, actor_id, created)
+
+    return InstagramImportResult(
+        search=DiscoverySearchRead.model_validate(search),
+        created_count=len(created),
+        duplicate_count=duplicate_count,
+        skipped_rows=[InstagramImportRowError(row_number=e.row_number, reason=e.reason) for e in parsed.errors],
+        truncated=parsed.truncated,
+    )
 
 
 def schedule_recurring_search(
@@ -529,6 +605,7 @@ def list_review_items(
                 id=business.id,
                 name=business.name,
                 industry=business.industry,
+                business_category=business.business_category,
                 suburb=business.suburb,
                 state=business.state,
                 website_url=business.website_url,
@@ -537,6 +614,8 @@ def list_review_items(
                 source_provider=business.source_provider,
                 discovered_at=business.discovered_at,
                 imported_lead_id=business.imported_lead_id,
+                instagram_handle=business.instagram_handle,
+                instagram_website_status=business.instagram_website_status,
                 reviewed_by_user_name=business.reviewed_by_user.name if business.reviewed_by_user else None,
                 reviewed_at=business.reviewed_at,
                 researched_at=research.researched_at if research else None,

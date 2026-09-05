@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.integrations.discovery.base import WebsiteStatus
+from app.integrations.discovery.base import InstagramWebsiteStatus, LocationConfidence, WebsiteStatus
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
 
 
@@ -89,6 +89,7 @@ class DiscoveredBusinessRead(BaseModel):
     business_category: str | None
     latitude: float | None
     longitude: float | None
+    location_confidence: LocationConfidence | None
     social_links: str | None
     source_provider: str
     source_query: str | None
@@ -104,6 +105,17 @@ class DiscoveredBusinessRead(BaseModel):
     imported_lead_id: uuid.UUID | None
     discovered_at: datetime
     updated_at: datetime
+
+    # Instagram-only — null for every business found via another
+    # provider. See InstagramWebsiteStatus's docstring.
+    instagram_handle: str | None
+    instagram_profile_url: str | None
+    instagram_profile_image_url: str | None
+    instagram_bio: str | None
+    instagram_follower_count: int | None
+    instagram_last_post_at: datetime | None
+    instagram_bio_link_url: str | None
+    instagram_website_status: InstagramWebsiteStatus | None
 
 
 class DiscoveredBusinessReviewRead(BaseModel):
@@ -122,6 +134,7 @@ class DiscoveredBusinessReviewRead(BaseModel):
     id: uuid.UUID
     name: str
     industry: str | None
+    business_category: str | None
     suburb: str | None
     state: str | None
     website_url: str | None
@@ -132,6 +145,9 @@ class DiscoveredBusinessReviewRead(BaseModel):
     imported_lead_id: uuid.UUID | None
     reviewed_by_user_name: str | None
     reviewed_at: datetime | None
+
+    instagram_handle: str | None
+    instagram_website_status: InstagramWebsiteStatus | None
 
     researched_at: datetime | None
     research_error: str | None
@@ -180,3 +196,32 @@ class BulkApproveResult(BaseModel):
     already_in_crm: list[DiscoveredBusinessRead]
     failed: list[BulkApproveFailure]
     not_found: list[uuid.UUID]
+
+
+class InstagramImportRequest(BaseModel):
+    """Phase 1 of Instagram Discovery — a batch of manually-collected
+    candidates as CSV text (see modules/discovery/instagram_import.py
+    for the accepted columns). Not a `DiscoveryProvider` search: there's
+    no live query to re-run, so this is a one-shot import rather than
+    something `load_more` ever applies to."""
+
+    query_label: str | None = None
+    csv_text: str
+
+
+class InstagramImportRowError(BaseModel):
+    row_number: int
+    reason: str
+
+
+class InstagramImportResult(BaseModel):
+    """The outcome of one CSV import — a `DiscoverySearch` was still
+    created (provider="instagram_import") so the batch shows up
+    everywhere a search does (map, results list, "load more" correctly
+    disabled), plus how many rows succeeded/were skipped and why."""
+
+    search: DiscoverySearchRead
+    created_count: int
+    duplicate_count: int
+    skipped_rows: list[InstagramImportRowError]
+    truncated: bool

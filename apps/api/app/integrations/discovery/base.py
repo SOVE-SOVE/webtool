@@ -12,6 +12,7 @@ service-layer change.
 
 import enum
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol
 
 
@@ -36,6 +37,60 @@ class WebsiteStatus(str, enum.Enum):
 
     FOUND = "found"
     NONE = "none"
+    UNKNOWN = "unknown"
+
+
+class InstagramWebsiteStatus(str, enum.Enum):
+    """
+    A finer-grained classification than `WebsiteStatus` above, specific
+    to an Instagram-sourced candidate (see modules/discovery/instagram_import.py)
+    — "does this business have a website" isn't a yes/no for a business
+    that primarily operates through Instagram; it matters *what* they
+    have instead. Deliberately a separate enum rather than adding values
+    to `WebsiteStatus`: every existing provider's logic
+    (modules/discovery/service.py's `_apply_website_status`) assumes
+    exactly the three generic values, and Postgres enum types are
+    awkward to extend in place. An Instagram row still gets a generic
+    `WebsiteStatus` too (mapped down — see
+    modules/discovery/instagram_import.py's `_generic_status_for`), so
+    every existing map/filter/scoring path that only knows the generic
+    tri-state keeps working unchanged.
+
+    - NO_WEBSITE            — nothing beyond the Instagram profile itself.
+    - LINK_IN_BIO_ONLY      — a Linktree/Beacons/etc. page, not an owned domain.
+    - INSTAGRAM_SHOP_ONLY   — Meta's own commerce surface, no owned site.
+    - PROPER_WEBSITE        — an owned domain was found and confirmed.
+    - UNKNOWN_NEEDS_REVIEW  — can't classify confidently from what's on
+                              record. Never guessed into one of the above.
+    """
+
+    NO_WEBSITE = "no_website"
+    LINK_IN_BIO_ONLY = "link_in_bio_only"
+    INSTAGRAM_SHOP_ONLY = "instagram_shop_only"
+    PROPER_WEBSITE = "proper_website"
+    UNKNOWN_NEEDS_REVIEW = "unknown_needs_review"
+
+
+# Instagram statuses that mean "no owned website" for every existing
+# map/filter/scoring path that only understands the generic tri-state —
+# see WebsiteStatus and modules/discovery/instagram_import.py.
+INSTAGRAM_NO_OWNED_SITE_STATUSES = frozenset(
+    {
+        InstagramWebsiteStatus.NO_WEBSITE,
+        InstagramWebsiteStatus.LINK_IN_BIO_ONLY,
+        InstagramWebsiteStatus.INSTAGRAM_SHOP_ONLY,
+    }
+)
+
+
+class LocationConfidence(str, enum.Enum):
+    """How much to trust `latitude`/`longitude`/`address` on a
+    candidate. A places API's coordinates are CONFIRMED; a location tag
+    or an address typed into a CSV import is only APPROXIMATE; no
+    location evidence at all is UNKNOWN (never guessed/geocoded)."""
+
+    CONFIRMED = "confirmed"
+    APPROXIMATE = "approximate"
     UNKNOWN = "unknown"
 
 
@@ -94,6 +149,22 @@ class NormalizedBusinessResult:
     # What the provider actually said, verbatim — traceability, same
     # reasoning as SalesAuditReport.sources_note.
     raw_snippet: str | None = None
+    # How much to trust the location fields above — see
+    # LocationConfidence. None for a provider that has no concept of
+    # this (Places/Brave always give real coordinates or nothing).
+    location_confidence: LocationConfidence | None = None
+
+    # Instagram-only fields (see modules/discovery/instagram_import.py) —
+    # every other provider leaves all of these None, same "only set what
+    # was actually observed" principle as everything else here.
+    instagram_handle: str | None = None
+    instagram_profile_url: str | None = None
+    instagram_profile_image_url: str | None = None
+    instagram_bio: str | None = None
+    instagram_follower_count: int | None = None
+    instagram_last_post_at: datetime | None = None
+    instagram_bio_link_url: str | None = None
+    instagram_website_status: InstagramWebsiteStatus | None = None
 
 
 @dataclass

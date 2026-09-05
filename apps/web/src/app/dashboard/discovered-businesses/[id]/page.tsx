@@ -7,6 +7,7 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_WEBSITE_STATUS_LABEL,
   type BusinessResearchResult,
   type DiscoveredBusiness,
   type OpportunityScoreCategory,
@@ -53,6 +54,81 @@ function ListSection({ title, items, tone }: { title: string; items: string[]; t
           <li key={i}>{item}</li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const LOCATION_CONFIDENCE_LABEL: Record<string, string> = {
+  confirmed: "Confirmed",
+  approximate: "Approximate",
+  unknown: "Unknown",
+};
+
+/** Phase 1 of Instagram Discovery — shown only for a business with an
+ * Instagram handle on record (see modules/discovery/instagram_import.py). */
+function InstagramCard({ business }: { business: DiscoveredBusiness }) {
+  return (
+    <div className="mt-6 max-w-2xl border border-border p-4">
+      <div className="flex items-start gap-3">
+        {business.instagram_profile_image_url && (
+          // eslint-disable-next-line @next/next/no-img-element -- an arbitrary external URL from imported data, not a local/optimizable asset
+          <img
+            src={business.instagram_profile_image_url}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="h-14 w-14 shrink-0 rounded-full border border-border object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-fg">Instagram</h2>
+          <a
+            href={business.instagram_profile_url ?? `https://instagram.com/${business.instagram_handle}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-fg-muted hover:underline"
+          >
+            @{business.instagram_handle}
+          </a>
+          {business.instagram_bio && <p className="mt-1 text-sm text-fg-muted">{business.instagram_bio}</p>}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <Fact
+          label="Followers"
+          value={business.instagram_follower_count !== null ? String(business.instagram_follower_count) : null}
+        />
+        <Fact
+          label="Last post"
+          value={
+            business.instagram_last_post_at ? new Date(business.instagram_last_post_at).toLocaleDateString() : null
+          }
+        />
+        <Fact
+          label="Website status"
+          value={
+            business.instagram_website_status
+              ? INSTAGRAM_WEBSITE_STATUS_LABEL[business.instagram_website_status]
+              : null
+          }
+        />
+        <Fact
+          label="Location confidence"
+          value={business.location_confidence ? LOCATION_CONFIDENCE_LABEL[business.location_confidence] : null}
+        />
+      </div>
+
+      {business.instagram_bio_link_url && (
+        <p className="mt-2 text-sm">
+          <span className="text-fg-muted">Bio link: </span>
+          <a href={business.instagram_bio_link_url} target="_blank" rel="noreferrer" className="hover:underline">
+            {business.instagram_bio_link_url}
+          </a>
+        </p>
+      )}
     </div>
   );
 }
@@ -210,6 +286,8 @@ export default function DiscoveredBusinessDetailPage() {
           </div>
         </div>
       )}
+
+      {business?.instagram_handle && <InstagramCard business={business} />}
 
       {error && (
         <div className="mt-4">

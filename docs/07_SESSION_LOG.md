@@ -11,6 +11,110 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-05 — Instagram Discovery Phase 1: manual/CSV import, no-website-only scoring signals, map/list/review integration
+**Mode:** same session, direct to `main`.
+**Merge to main after:** yes — pending review
+**Scope touched:** apps/api/app/integrations/discovery/base.py,
+apps/api/app/modules/discovery/ (models/schemas/service/routes,
+instagram_import.py new), apps/api/app/agents/opportunity_score.py,
+apps/api/app/modules/opportunity_scoring/service.py,
+apps/api/alembic/versions/c75024f11eba_instagram_discovery_fields.py
+(new), apps/api/tests/test_instagram_import.py (new),
+apps/api/tests/test_opportunity_scoring.py, apps/web/src/lib/api.ts,
+apps/web/src/lib/filters.ts + filters.test.ts,
+apps/web/src/components/InstagramImportModal.tsx (new),
+apps/web/src/components/DiscoveryWorkspace.tsx,
+apps/web/src/components/DiscoveryMap.tsx,
+apps/web/src/app/dashboard/discovered-businesses/[id]/page.tsx,
+apps/web/src/app/dashboard/review/page.tsx.
+
+**What happened:** Built Phase 1 of Instagram Discovery exactly per the
+approved plan (see [[05_DECISIONS]]) — a new lead source for businesses
+found on Instagram, with no live provider yet (Meta has no "search
+Instagram businesses by location" API — see that decision entry).
+Extended `discovered_businesses` with nullable Instagram-only columns
+(handle, profile URL/image, bio, follower count, last-post date, bio
+link, a new 5-state `instagram_website_status`) and a `location_confidence`
+tri-state, both new Postgres enums. New
+`modules/discovery/instagram_import.py`: parses operator CSV text
+(stdlib `csv`, handles quoted fields, tolerant header matching, skips
+bad rows with a reason rather than failing the batch) into the existing
+`NormalizedBusinessResult` shape, so the new
+`POST /discovery-searches/instagram-import` route hands the parsed
+batch straight to the existing `_ingest_page` — same dedup, same
+website-status normalization, same automatic research → audit → score
+job hand-off every other provider gets, for free. A CSV row only gets a
+map pin if it explicitly supplies `latitude`/`longitude` (no geocoding
+in Phase 1 — caught this gap myself during visual QA, when the first
+import correctly produced zero map pins from address-only rows, and
+fixed it before finishing rather than shipping a "map" feature that
+could never show an Instagram pin).
+
+Scoring: extended the *existing* deterministic `agents/opportunity_score.py`
+(no second scoring system) with two new factors — `contactable` (+5,
+phone or email on record) and `instagram_only_presence` (+5, only set
+when a source that can actually confirm it — Instagram import — reports
+`NO_WEBSITE`/`LINK_IN_BIO_ONLY`) — plus a new `OVERALL_CAP = 100`. Per
+the operator's explicit phase-1 instruction, follower count and
+last-post recency are stored/filterable but deliberately **not** wired
+into scoring yet — no defensible weighting exists for them, and the
+only way to guarantee a missing value can never lower a score is to not
+score it at all.
+
+Frontend: `InstagramImportModal.tsx` (paste CSV or choose a file,
+sample format + column docs inline, shows a per-row skipped/duplicate
+summary before closing — a real bug caught in QA: the parent was
+closing the modal the instant import succeeded, before that summary
+could ever render), four new filters on `DiscoveryWorkspace.tsx`
+(Instagram website status, contactable-only, active-in-30-days,
+min-followers — shown only once a result set actually has an Instagram
+row, so an ordinary Places/Brave search isn't cluttered), a handle
+shown under the business name and Instagram-aware website-status label
+in both the Discovery results table and the Review queue (the latter
+also missed on the first pass — caught via a visual-QA screenshot
+showing blank categories/generic labels for Instagram rows — fixed by
+adding `business_category` to `DiscoveredBusinessReviewRead`), and a
+new Instagram card on the discovered-business detail page.
+
+**Testing:** 27 new backend tests (CSV parsing edge cases — quoted
+commas, missing name+handle, status/date/follower parsing, one-sided
+coordinate rejection, truncation at `MAX_ROWS_PER_IMPORT` — plus
+service/route integration through review → approve → CRM import) and 5
+new scoring-bonus tests, all passing alongside the full existing suite
+(918 passed). Frontend: 26 new filter tests, full suite 111 passed,
+`next build`/`tsc --noEmit`/`eslint` all clean (0 new lint issues vs. a
+pre-existing baseline of 1 error + 2 warnings on unrelated pages).
+Manual: real browser visual QA (Playwright, both 1440px desktop and
+375px mobile) against a throwaway QA user account created and deleted
+for this purpose — imported a 3-row CSV, confirmed pins/clustering,
+filters, the review queue, and the detail page's Instagram card and
+score breakdown all render correctly and match what the automated tests
+assert (the 95-point score with all three factors), with zero console
+errors on the final clean run. One real dev-environment gotcha hit
+along the way: the job-runner process doesn't hot-reload, so a score
+computed mid-session (before a server restart) reflected stale scoring
+logic (85 instead of 95) even though the file on disk was already
+correct — resolved with a full `stop-mac.sh`/`start-mac.sh` cycle, not
+a code fix; worth remembering next time scoring logic changes mid-session.
+
+**Blockers/issues:** None outstanding. CSV-imported rows without an
+explicit `latitude`/`longitude` never get a map pin (by design — no
+geocoding in Phase 1); the Discovery results table doesn't get a mobile
+card layout (pre-existing behavior for every provider, not something
+this pass changed).
+
+**Next up:** Phase 2 (deferred, per the operator's explicit boundary
+for this pass) is real Meta Graph API enrichment — Business Discovery
+can validate/enrich a *known* handle's follower count, bio, and recent
+activity, but still can't search by location/category, so a real
+discovery-provider path still needs a candidate source decided
+separately (see [[05_DECISIONS]]'s three-layer boundary). If follower
+count/recency thresholds are ever decided, wiring them into
+`agents/opportunity_score.py`'s bonus factors is a small, isolated
+change — the fields are already on the model and already filterable.
+
+---
+
 ## 2026-09-04 — Project page: kill the giant intake form, auto-carry business details, add a build-direction paste area
 **Mode:** same session, direct to `main`.
 **Scope touched:** `apps/web/src/app/dashboard/projects/[id]/page.tsx`

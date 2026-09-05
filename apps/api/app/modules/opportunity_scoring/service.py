@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import opportunity_score as opportunity_score_agent
 from app.agents.opportunity_score import OpportunityScoreInput
+from app.integrations.discovery.base import INSTAGRAM_NO_OWNED_SITE_STATUSES
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research.models import BusinessResearchResult
 from app.modules.discovery.models import (
@@ -108,6 +109,8 @@ def run_opportunity_score(
             meta_description=research.meta_description,
             social_presence_count=_social_presence_count(research),
             evidence_completeness=_evidence_completeness(research),
+            has_contact_info=bool(business.phone or business.email),
+            confirmed_instagram_only_presence=business.instagram_website_status in INSTAGRAM_NO_OWNED_SITE_STATUSES,
         )
     )
     output = result.output
