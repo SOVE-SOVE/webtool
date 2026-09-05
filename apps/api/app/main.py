@@ -27,6 +27,7 @@ from app.modules.pipeline.routes import router as pipeline_router
 from app.modules.previews.routes import router as previews_router
 from app.modules.projects.routes import router as projects_router
 from app.modules.qa_reports.routes import router as qa_reports_router
+from app.modules.review_intelligence.routes import router as review_intelligence_router
 from app.modules.sales_audits.routes import router as sales_audits_router
 from app.modules.sales_dashboard.routes import router as sales_dashboard_router
 from app.modules.sales_opportunities.routes import router as sales_opportunities_router
@@ -125,6 +126,7 @@ app.include_router(approvals_router)
 app.include_router(discovery_router)
 app.include_router(discovered_businesses_router)
 app.include_router(business_research_router)
+app.include_router(review_intelligence_router)
 app.include_router(website_quality_router)
 app.include_router(opportunity_scoring_router)
 app.include_router(pipeline_router)

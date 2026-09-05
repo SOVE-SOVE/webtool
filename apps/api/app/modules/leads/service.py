@@ -6,13 +6,32 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
+from app.modules.discovery.models import DiscoveredBusiness
 from app.modules.leads.models import Lead, LeadPriority, LeadStatus
 from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate
 from app.modules.pipeline import service as pipeline_service
+from app.modules.review_intelligence import service as review_intelligence_service
 from app.modules.users.service import require_user_in_workspace
 
 
-def _to_read(lead: Lead) -> LeadRead:
+def _to_read(db: Session, lead: Lead) -> LeadRead:
+    """
+    Review intelligence fields are a read-only projection onto the Lead
+    — never recomputed or duplicated here. A Lead imported from Lead
+    Intelligence discovery always has exactly one originating
+    DiscoveredBusiness (`imported_lead_id` is set at most once, see
+    modules/discovery/service.py::_import_discovered_business); this
+    looks that row back up and reads its latest ReviewIntelligenceResult
+    straight off it. A lead created directly in the CRM (no discovery
+    origin) simply has no review data to show.
+    """
+    discovered_business = db.scalar(
+        select(DiscoveredBusiness.id).where(DiscoveredBusiness.imported_lead_id == lead.id)
+    )
+    review_summary = (
+        review_intelligence_service.get_review_summary(db, discovered_business) if discovered_business else None
+    )
+
     return LeadRead(
         id=lead.id,
         business_id=lead.business_id,
@@ -33,6 +52,16 @@ def _to_read(lead: Lead) -> LeadRead:
         assigned_user_name=lead.assigned_user.name if lead.assigned_user else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
+        google_rating=review_summary.google_rating if review_summary else None,
+        google_review_count=review_summary.google_review_count if review_summary else None,
+        review_health_score=review_summary.review_health_score if review_summary else None,
+        review_activity_level=review_summary.review_activity_level if review_summary else None,
+        review_frequency_per_month=review_summary.review_frequency_per_month if review_summary else None,
+        review_sentiment_trend=review_summary.review_sentiment_trend if review_summary else None,
+        positive_review_themes=review_summary.positive_review_themes if review_summary else [],
+        negative_review_themes=review_summary.negative_review_themes if review_summary else [],
+        review_summary=review_summary.review_summary if review_summary else None,
+        review_data_updated_at=review_summary.review_data_updated_at if review_summary else None,
     )
 
 
@@ -50,12 +79,12 @@ def list_leads(db: Session, workspace_id: uuid.UUID, include_archived: bool = Fa
     if not include_archived:
         query = query.where(Lead.archived_at.is_(None))
     leads = db.scalars(query.order_by(Lead.created_at.desc()))
-    return [_to_read(lead) for lead in leads]
+    return [_to_read(db, lead) for lead in leads]
 
 
 def get_lead(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> LeadRead | None:
     lead = db.scalar(_base_query(workspace_id).where(Lead.id == lead_id))
-    return _to_read(lead) if lead else None
+    return _to_read(db, lead) if lead else None
 
 
 def create_lead(
@@ -98,7 +127,7 @@ def create_lead(
     db.commit()
     db.refresh(lead)
     lead.business = business
-    return _to_read(lead)
+    return _to_read(db, lead)
 
 
 def update_lead(
@@ -154,7 +183,7 @@ def update_lead(
 
     db.commit()
     db.refresh(lead)
-    return _to_read(lead)
+    return _to_read(db, lead)
 
 
 def archive_lead(
@@ -175,7 +204,7 @@ def archive_lead(
         )
         db.commit()
         db.refresh(lead)
-    return _to_read(lead)
+    return _to_read(db, lead)
 
 
 def mark_researched(db: Session, *, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, lead: Lead) -> None:
@@ -330,4 +359,4 @@ def unarchive_lead(
         )
         db.commit()
         db.refresh(lead)
-    return _to_read(lead)
+    return _to_read(db, lead)

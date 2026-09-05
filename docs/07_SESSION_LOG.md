@@ -11,6 +11,74 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-05 — Google Review Intelligence: a reputation snapshot for Discovery, sourced only from what Google Places actually gives us
+**Mode:** background job, isolated worktree (`google-review-intelligence`), merged/pushed at session end.
+**Scope touched:** new `apps/api/app/modules/review_intelligence/` (models,
+schemas, service, routes), new `apps/api/app/agents/review_intelligence.py`
++ `agents/prompts/review_intelligence.md`, `apps/api/app/integrations/places.py`
+(added `get_place_details`), `apps/api/app/modules/discovery/{models,schemas,service}.py`
+(cached rating/health/activity columns + fields), `apps/api/app/modules/jobs/job_types.py`,
+`apps/api/app/jobs/handlers.py`, `apps/api/app/modules/leads/{schemas,service}.py`
+(read-only projection, no engine duplication), `apps/api/app/main.py`,
+new migration `b1d9f4a7c283_google_review_intelligence.py`, new
+`apps/api/tests/test_review_intelligence.py` (29 tests), one assertion
+fix in `test_automation_pipeline.py` (job count 3→4 — review_intelligence
+now fires in parallel with business_research off discovery); frontend:
+`apps/web/src/lib/api.ts` (types + 2 endpoints), Discovery detail page
+(new "Google reviews" section + button), Review Queue (2 new columns),
+Lead detail page (compact read-only review section).
+
+**Problem:** Discovery had no visibility into a business's Google
+reputation — rating, review volume/recency, or what customers actually
+say — despite the Google Places integration already existing (Text
+Search only; no Place Details/reviews fetch).
+
+**Key constraint that shaped the whole design:** Google Places API (New)
+never exposes a business's full review history — only an aggregate
+`rating` + `userRatingCount`, plus at most 5 individual reviews (Google's
+own pick, not guaranteed recent). So `rating_distribution` is *always*
+null for this provider (never reconstructed from the average — explicit
+anti-fabrication requirement), and every frequency/trend/theme
+calculation has documented minimum-sample thresholds in
+`agents/review_intelligence.py` that fall back to
+unknown/insufficient_data rather than a fabricated confident answer —
+expected to fire in most real cases given the 5-review cap, not a bug.
+
+**Change:**
+- `ReviewIntelligenceResult` — a sibling table to
+  `business_research_results`/`opportunity_score_results` (history kept,
+  newest first). JSON columns for structured lists (health factors,
+  themes, evidence), same precedent as `OpportunityScoreResult.factors`.
+- Review Health Score (0-100): Bayesian-smoothed rating (prior mean 4.0,
+  weight 10 "virtual" reviews) + volume/activity/recency/sentiment-
+  consistency/trend factors — verified by test that "5.0★/4 reviews"
+  never outscores "4.8★/400 reviews".
+- Theme extraction: a keyword lexicon scoped separately for
+  rating≥4 (positive) vs rating≤2 (negative) reviews, requiring ≥2
+  independent reviews before a theme counts as "recurring"; a distinct
+  `themes_data_sufficient` flag separates "no complaints found" from
+  "not enough data to say."
+- AI summary: one LLM call (`generate_structured`, existing Claude
+  adapter) fed only the already-computed facts + verbatim snippets —
+  skipped entirely (deterministic fallback text) when there's nothing to
+  synthesize; failure degrades to `review_summary_unavailable_reason`
+  without blocking the deterministic fields.
+- Service: `REVIEW_INTELLIGENCE_FRESHNESS` (24h) avoids re-hitting
+  Google; a transient Google outage serves the last good cached result
+  rather than clobbering it with a blank "unavailable" row.
+- Enqueued from `discovery/service.py::_enqueue_research` alongside
+  `business_research` (independent of website research — reviews don't
+  need a website); cheap no-op for non-Google-Places discoveries.
+- CRM Lead: read-only projection via reverse lookup
+  (`DiscoveredBusiness.imported_lead_id == lead.id`) — discovery remains
+  the sole analysis engine, nothing recomputed in the CRM.
+
+**Verification:** 916+29 backend tests passing (`pytest tests/`), `tsc
+--noEmit` clean, `next build` clean, `eslint` clean on touched files
+(3 pre-existing warnings/errors elsewhere, untouched).
+
+---
+
 ## 2026-09-05 — Instagram Discovery Phase 1: manual/CSV import, no-website-only scoring signals, map/list/review integration
 **Mode:** same session, direct to `main`.
 **Merge to main after:** yes — pending review
