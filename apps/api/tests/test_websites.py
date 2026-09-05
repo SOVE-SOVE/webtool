@@ -408,3 +408,131 @@ class TestClientApproveWebsite:
         assert body["client_approved"] is True
         assert body["client_approved_by_user_name"] == "Ada Admin"
         assert body["client_approval_notes"] == "Client signed off via email"
+
+
+class TestGenerateInitialWebsite:
+    """The "initial / prospect demo" website — the primary project
+    workflow. Seeds a starter sitemap + brief from the business info on
+    file, then runs the normal generator (see
+    modules/websites/service.py::generate_initial_website)."""
+
+    def test_unknown_project_404s(self, authed_client):
+        res = authed_client.post("/api/v1/projects/00000000-0000-0000-0000-000000000000/initial-website")
+        assert res.status_code == 404
+
+    def test_seeds_sitemap_and_brief_then_generates(self, authed_client):
+        client = authed_client.post(
+            "/api/v1/clients", json={"business_name": "Harbour Electrical", "industry": "Electrical"}
+        ).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Harbour Electrical website"}
+        ).json()
+
+        # No sitemap yet — the plain generate route still refuses.
+        assert authed_client.post(f"/api/v1/projects/{project['id']}/websites").status_code == 400
+
+        res = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+        assert res.status_code == 201
+        website = res.json()
+        page_names = [p["name"] for p in website["pages"]]
+        assert page_names == ["Home", "About", "Services", "Contact"]
+        # Labelled as an intentional demo, not a broken generation.
+        assert website["sources_note"].startswith("Initial demo website")
+
+        # A real DRAFT sitemap now exists with those four pages.
+        sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
+        assert len(sitemaps) == 1
+        assert sitemaps[0]["status"] == "draft"
+        assert len(sitemaps[0]["pages"]) == 4
+
+        # The brief was pre-filled from the business — no re-keying.
+        brief = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()
+        assert brief["business"]["fields"]["business_name"] == "Harbour Electrical"
+        assert brief["business"]["fields"]["industry"] == "Electrical"
+        assert "Business name" not in brief["missing_fields"]
+
+        # A pre-sale demo nudges the project to DESIGN, not DEVELOPMENT.
+        assert authed_client.get(f"/api/v1/projects/{project['id']}").json()["stage"] == "design"
+
+    def test_offering_page_follows_the_industry(self, authed_client):
+        def pages_for(industry):
+            client = authed_client.post(
+                "/api/v1/clients", json={"business_name": f"{industry} Co", "industry": industry}
+            ).json()
+            project = authed_client.post(
+                "/api/v1/projects", json={"client_id": client["id"], "name": f"{industry} site"}
+            ).json()
+            website = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website").json()
+            return [p["name"] for p in website["pages"]]
+
+        assert pages_for("Cafe") == ["Home", "About", "Menu", "Contact"]
+        assert pages_for("Retail clothing") == ["Home", "About", "Products", "Contact"]
+        assert pages_for("Plumbing") == ["Home", "About", "Services", "Contact"]
+
+    def test_brief_description_is_factual_not_a_bracketed_placeholder(self, authed_client):
+        client = authed_client.post(
+            "/api/v1/clients",
+            json={"business_name": "Reef Plumbing", "industry": "Plumbing", "suburb": "Cairns", "state": "QLD"},
+        ).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Reef site"}
+        ).json()
+        authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+
+        desc = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"][
+            "business_description"
+        ]
+        assert "[" not in desc and "DRAFT" not in desc
+        assert "Reef Plumbing" in desc and "Cairns" in desc
+
+    def test_second_call_reuses_seeded_sources_and_adds_a_version(self, authed_client):
+        client = authed_client.post("/api/v1/clients", json={"business_name": "Peak Roofing"}).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Peak Roofing website"}
+        ).json()
+
+        authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+        authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+
+        assert len(authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()) == 1
+        assert len(authed_client.get(f"/api/v1/projects/{project['id']}/websites").json()) == 2
+
+    def test_does_not_overwrite_an_existing_sitemap(self, authed_client, monkeypatch):
+        project, sitemap = _create_project_with_sitemap(authed_client, monkeypatch, _REAL_BRIEF)
+
+        res = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+        assert res.status_code == 201
+
+        sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
+        assert [s["id"] for s in sitemaps] == [sitemap["id"]]
+
+    def test_does_not_overwrite_operator_entered_brief_fields(self, authed_client):
+        client = authed_client.post(
+            "/api/v1/clients", json={"business_name": "Delta Landscaping", "industry": "Landscaping"}
+        ).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Delta website"}
+        ).json()
+        _set_brief(authed_client, project["id"], business_description="Family-run since 1994.")
+
+        authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+
+        brief = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()
+        assert brief["business"]["fields"]["business_description"] == "Family-run since 1994."
+
+    def test_generated_content_survives_an_edit_and_regenerate(self, authed_client):
+        client = authed_client.post("/api/v1/clients", json={"business_name": "Vista Cleaning"}).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"client_id": client["id"], "name": "Vista website"}
+        ).json()
+        website = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website").json()
+
+        home = next(p for p in website["pages"] if p["name"] == "Home")
+        hero = next(s for s in home["sections"] if s["type"] == "hero")
+        edited = authed_client.patch(
+            f"/api/v1/websites/{website['id']}/sections/{hero['id']}",
+            json={"config": {"heading": "Vista Cleaning — Newcastle"}},
+        ).json()
+        edited_home = next(p for p in edited["pages"] if p["name"] == "Home")
+        edited_hero = next(s for s in edited_home["sections"] if s["type"] == "hero")
+        assert edited_hero["config"]["heading"] == "Vista Cleaning — Newcastle"

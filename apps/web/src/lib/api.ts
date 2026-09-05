@@ -1960,6 +1960,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data ?? {}),
     }),
+  // Seeds a starter sitemap + brief from the business info on file (first
+  // run only), then generates — the "show the owner something before
+  // they've done anything" entry point.
+  generateInitialWebsite: (projectId: string) =>
+    request<Website>(`/api/v1/projects/${projectId}/initial-website`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
   listWebsites: (projectId: string) => request<WebsiteSummary[]>(`/api/v1/projects/${projectId}/websites`),
   getWebsite: (id: string) => request<Website>(`/api/v1/websites/${id}`),
   regenerateWebsiteSection: (websiteId: string, sectionId: string) =>

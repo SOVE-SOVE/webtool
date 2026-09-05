@@ -735,6 +735,110 @@ instruction to change nothing if everything already works.
 **Next up:** none outstanding from T1/T2/T3. (See the entry above for
 a follow-up dev-environment issue reported by the operator right after
 this review closed out.)
+## 2026-09-01 — Initial ("prospect / demo") website as the primary project workflow
+**Mode:** new session
+**Merge to main after:** yes
+**Scope touched:** `apps/api/app/modules/websites/{service,routes}.py`,
+`apps/api/app/modules/discovery/service.py`,
+`apps/web/src/lib/api.ts`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/website/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/review/page.tsx`,
+`apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`
+
+**What happened:** Made "generate a convincing demo site before contacting
+the business" a real one-path workflow, reusing the existing generator
+rather than building a second one.
+
+Existing website-generation functionality found (unchanged):
+`agents/website_generator.py` is deterministic (no LLM) and already
+takes flat inputs — business name, a `BriefContent`, a
+`CreativeDirectionContent`, and a list of sitemap pages. The DB-row
+requirement ("needs an approved sitemap with pages") lived only in
+`websites/service.py::generate_website` via `_resolve_sitemap`. Full
+generation is gated behind approved brief → creative direction →
+sitemap; `approve_website` / QA / workflow-transition / deploy gates
+are all downstream of that and were left exactly as they were.
+
+Workflow changes:
+1. **`generate_initial_website()`** (new, `websites/service.py`) +
+   `POST /api/v1/projects/{id}/initial-website`. On first run it seeds a
+   starter DRAFT `Sitemap` — Home / About / **an offering page picked to
+   fit the industry** (Menu for food/hospitality, Products for retail,
+   Work for trades/creative, else Services) / Contact — and pre-fills the
+   project's `DesignBrief` from real data already on file. The home
+   description is the business's existing site's own meta description
+   (via the originating lead's `WebsiteAudit`), else a **plain factual
+   sentence built only from known facts** (name, industry, location) —
+   no bracketed lorem, no invented claim; everything with no source is
+   left for the generator to report in `missing_information`. Then it
+   calls the unchanged `generate_website()` with `advance_to_stage=DESIGN`
+   (a pre-sale demo hasn't reached development) and a `sources_note` that
+   labels the version an intentional demo. Seeded artifacts are ordinary
+   editable DRAFT rows — idempotent: an existing sitemap or an
+   operator-filled brief field is never overwritten. The plain
+   `POST /websites` route, its 400, and its `advance_to_stage=DEVELOPMENT`
+   default are untouched.
+2. **Discovery approve → auto-CRM.** `approve_business` /
+   `bulk_approve` now chain into `import_to_lead` (best-effort: a
+   business that already has a lead stays APPROVED, not an error).
+   Matches docs/00_VISION.md's "approve → automatically add to CRM".
+   Supersedes the "import stays manual" half of the 2026-08-27 decision
+   for the approve action (approve *is* the human review) — see
+   docs/05_DECISIONS.md.
+3. **Frontend.** Project page "Build & delivery" leads with a
+   "Generate initial website →" button when no version exists. Website
+   workspace: first build calls the initial-website endpoint, jumps to
+   the Preview tab; empty-state copy no longer tells the operator to
+   approve a sitemap/brief/creative-direction first. `WebsiteView` now
+   renders `sources_note` as a bordered callout (so the "this is a demo"
+   note reads as context, not a broken generation). Lead page gains a
+   one-click "Start website project →". Review page: "Approve" →
+   "Approve & add to CRM".
+
+Files changed: `apps/api/app/modules/websites/{service,routes}.py`,
+`discovery/service.py`; `apps/web/src/lib/api.ts`,
+`app/dashboard/{projects/[id]/page,projects/[id]/website/page,leads/[id]/page,review/page}.tsx`,
+`components/WebsiteView.tsx`; `apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file + `docs/05_DECISIONS.md`. **No migration** (no schema change).
+
+**Tests performed:** `apps/api` — new `TestGenerateInitialWebsite`
+(8 cases: 404, seeds+generates+DESIGN-stage+demo-label, industry
+offering page, factual-not-bracketed description, idempotent re-run,
+existing sitemap respected, operator brief fields preserved, edit
+survives). Updated the discovery tests that assumed the old
+approve-then-import two-step + added "approve when a lead already exists
+stays APPROVED". Full `apps/api` suite: **889 passed, 2 deselected** —
+run against a private throwaway `webdesignos_test_iw` DB (temp one-line
+`conftest.py` DB-name patch, reverted) because the shared
+`webdesignos_test` was unusable under concurrent-session load (900+
+setup ERRORs). The 2 deselected are the pre-existing `test_dashboard.py`
+`upcoming_meetings` time-of-day flakes (hardcoded `2026-09-01T10:00:00Z`
+meetings; identical failures on clean `main`). `apps/web` — `tsc`,
+`eslint` (1 pre-existing warning), `vitest` 102 passed, `next build`
+all clean.
+**Live end-to-end smoke** (throwaway `webdesignos_iwdemo` DB on the
+native Homebrew Postgres, API on :8071, no LLM key needed — the
+generator is deterministic): real Brave discovery search → approve
+(→ imported, lead created, re-import 400s) → one-click convert (INTAKE
+project) → initial-website (Cafe → **Menu** page, seeded 4-page DRAFT
+sitemap, brief pre-filled "Espressohead Cafe is a cafe business.",
+project → **design**, `sources_note` "Initial demo website…", flagged
+for review with 4 missing-info items) → GET website (full config, nav,
+hero) → PATCH+approve the home hero → plain regenerate (approved edit
+preserved, `sources_note` recomputed to the normal summary, project →
+development, 2 versions). Instance + DB torn down after.
+
+**Blockers/issues:** The local shared `webdesignos_test` Postgres is
+contended by other sessions — a whole test file sometimes shows ~45
+setup ERRORs from cross-session `create_all`/`drop_all` races (recurring,
+see prior entries); passes clean when the DB is quiet. A real
+`GOOGLE_PLACES_API_KEY` in `apps/api/.env` makes 4 `test_business_discovery`
+tests hit the live API — pre-existing, run with the key unset.
+
+**Next up:** Nothing required. If wanted: the industry→offering-page map
+is a short keyword list in `websites/service.py` and easy to extend.
 
 ---
 
