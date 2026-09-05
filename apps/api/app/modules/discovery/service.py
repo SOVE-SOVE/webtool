@@ -37,6 +37,7 @@ from app.modules.jobs.job_types import (
     DEFAULT_DISCOVERY_INTERVAL_HOURS,
     JOB_BUSINESS_RESEARCH,
     JOB_DISCOVERY_SEARCH,
+    JOB_REVIEW_INTELLIGENCE,
 )
 from app.modules.jobs.models import Job, JobStatus
 from app.modules.leads.models import Lead, LeadPriority
@@ -251,6 +252,19 @@ def _enqueue_research(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID,
             db,
             workspace_id=workspace_id,
             job_type=JOB_BUSINESS_RESEARCH,
+            payload={"discovered_business_id": str(business.id)},
+            actor_id=actor_id,
+        )
+        # Review intelligence reads the Google Places listing directly —
+        # unlike website research, it doesn't depend on the business
+        # having a site, so it runs independently and in parallel rather
+        # than waiting on the research stage. The service itself is a
+        # cheap no-op (no external call) for a business with no Google
+        # Places source, so this is safe to enqueue unconditionally.
+        jobs_service.enqueue(
+            db,
+            workspace_id=workspace_id,
+            job_type=JOB_REVIEW_INTELLIGENCE,
             payload={"discovered_business_id": str(business.id)},
             actor_id=actor_id,
         )
@@ -547,6 +561,10 @@ def list_review_items(
                 score_category=business.score_category,
                 confidence=score.confidence if score else None,
                 recommended_sales_angle=score.recommendation_reason if score else None,
+                google_rating=business.google_rating,
+                google_review_count=business.google_review_count,
+                review_health_score=business.review_health_score,
+                review_activity_level=business.review_activity_level,
             )
         )
     return items

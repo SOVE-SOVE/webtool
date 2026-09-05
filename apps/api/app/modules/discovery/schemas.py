@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.integrations.discovery.base import WebsiteStatus
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
+from app.modules.review_intelligence.models import ReviewActivityLevel
 
 
 class DiscoverySearchCreate(BaseModel):
@@ -98,6 +99,10 @@ class DiscoveredBusinessRead(BaseModel):
     status: DiscoveredBusinessStatus
     opportunity_score: int | None
     score_category: OpportunityScoreCategory | None
+    google_rating: float | None
+    google_review_count: int | None
+    review_health_score: int | None
+    review_activity_level: ReviewActivityLevel | None
     reviewed_by_user_id: uuid.UUID | None
     reviewed_at: datetime | None
     review_notes: str | None
@@ -143,6 +148,11 @@ class DiscoveredBusinessReviewRead(BaseModel):
     score_category: OpportunityScoreCategory | None
     confidence: float | None
     recommended_sales_angle: str | None
+
+    google_rating: float | None
+    google_review_count: int | None
+    review_health_score: int | None
+    review_activity_level: ReviewActivityLevel | None
 
 
 class ApproveResult(BaseModel):

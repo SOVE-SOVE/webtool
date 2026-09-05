@@ -548,6 +548,46 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
+      {/* Google review intelligence — read-only projection from Lead
+          Intelligence discovery; the full analysis lives on the
+          discovered business's own page, not duplicated here. */}
+      {(lead.google_rating !== null || lead.review_summary !== null) && (
+        <div className="card mt-4 p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Google reviews</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+            <span className="text-fg">
+              {lead.google_rating !== null ? `${lead.google_rating.toFixed(1)}★` : "No rating"}
+              {lead.google_review_count !== null && (
+                <span className="text-fg-muted"> ({lead.google_review_count} reviews)</span>
+              )}
+            </span>
+            {lead.review_health_score !== null && (
+              <span className="text-fg-muted">Health {lead.review_health_score}/100</span>
+            )}
+            {lead.review_activity_level && lead.review_activity_level !== "unknown" && (
+              <span className="text-fg-muted">
+                Activity {lead.review_activity_level.toUpperCase()}
+                {lead.review_frequency_per_month !== null && ` (~${lead.review_frequency_per_month}/month)`}
+              </span>
+            )}
+            {lead.review_sentiment_trend && lead.review_sentiment_trend !== "insufficient_data" && (
+              <span className="text-fg-muted capitalize">Trend: {lead.review_sentiment_trend}</span>
+            )}
+          </div>
+          {(lead.positive_review_themes.length > 0 || lead.negative_review_themes.length > 0) && (
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">
+              {lead.positive_review_themes.length > 0 && (
+                <span>Praise: {lead.positive_review_themes.join(", ")}</span>
+              )}
+              {lead.negative_review_themes.length > 0 && (
+                <span>Friction: {lead.negative_review_themes.join(", ")}</span>
+              )}
+            </div>
+          )}
+          {lead.review_summary && <p className="mt-2 text-sm text-fg-muted">{lead.review_summary}</p>}
+        </div>
+      )}
+
       {/* Project & website — the one forward action */}
       {!lead.archived_at && (
         <section className="mt-8">
