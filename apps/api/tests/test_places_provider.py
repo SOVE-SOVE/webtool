@@ -193,4 +193,4 @@ def test_default_provider_prefers_google_places_when_configured(monkeypatch):
 def test_registry_still_serves_both_providers():
     from app.integrations.discovery import registry
 
-    assert set(registry.available_providers()) == {"brave_search", "google_places"}
+    assert set(registry.available_providers()) == {"brave_search", "google_places", "instagram_search"}

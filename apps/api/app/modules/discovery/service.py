@@ -1,17 +1,22 @@
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.integrations.discovery import registry
+from app.integrations import search as search_integration
+from app.integrations.discovery import registry, result_classifier
 from app.integrations.discovery.base import (
+    MAX_SUBURBS_PER_SEARCH,
     DiscoveryCriteria,
     DiscoveryPage,
+    InstagramWebsiteStatus,
     NormalizedBusinessResult,
     ProviderUnavailableError,
     WebsiteStatus,
 )
+from app.integrations.discovery.result_classifier import ResultCategory
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
 from app.modules.businesses.models import Business
@@ -96,6 +101,13 @@ class InvalidSearchError(ValueError):
     """No usable criteria on the request — see create_and_run_search."""
 
 
+class NotInstagramCandidateError(ValueError):
+    """Raised by check_instagram_website for a business with no Instagram
+    handle on record — the manual "check for website" action only
+    applies to an Instagram-sourced candidate (instagram_search or
+    instagram_import)."""
+
+
 class SearchNotFoundError(ValueError):
     """load_more_search: the search id isn't in this workspace."""
 
@@ -112,6 +124,9 @@ def _criteria_for(search: DiscoverySearch, offset: int) -> DiscoveryCriteria:
         keywords=search.keywords,
         limit=MAX_RESULTS_PER_SEARCH,
         offset=offset,
+        # instagram_search only — every other provider's criteria carries
+        # None here and keeps using `location` above.
+        locations=search.suburbs,
     )
 
 
@@ -160,19 +175,26 @@ def _ingest_page(
     results = _filter_by_website(page.results, search.has_website)
 
     # No duplicate results across pages of one search: a provider can and
-    # does re-surface the same listing on a later page. Key on a stable
-    # identifier the result actually carries — the provider's own id or
-    # the website URL. A name+location key is only safe when the result
-    # has real location context (see dedup.py: a provider that never
-    # fills suburb/state collides genuinely different same-named
-    # businesses), so it's used only then.
+    # does re-surface the same listing on a later page (for
+    # instagram_search specifically, the same handle can turn up under
+    # more than one suburb query). Key on a stable identifier the result
+    # actually carries — the provider's own id, the website URL, or (for
+    # an Instagram-sourced result) the normalized handle, checked
+    # case-insensitively since a CSV import and a search-discovered
+    # candidate may capitalize the same handle differently. A
+    # name+location key is only safe when the result has real location
+    # context (see dedup.py: a provider that never fills suburb/state
+    # collides genuinely different same-named businesses), so it's used
+    # only then.
     existing = db.execute(
         select(
             DiscoveredBusiness.source_external_id,
             DiscoveredBusiness.website_url,
+            DiscoveredBusiness.instagram_handle,
         ).where(DiscoveredBusiness.discovery_search_id == search.id)
     ).all()
-    seen_keys: set[str] = {k for row in existing for k in row if k}
+    seen_keys: set[str] = {k for row in existing for k in (row[0], row[1]) if k}
+    seen_handles: set[str] = {h for row in existing if (h := dedup.normalize_instagram_handle(row[2]))}
     seen_located_keys: set[str] = {
         b.dedup_key
         for b in db.scalars(
@@ -186,7 +208,7 @@ def _ingest_page(
     def _keys_for(result: NormalizedBusinessResult) -> list[str]:
         return [k for k in (result.source_external_id, result.website_url) if k]
 
-    query_sent = " ".join(
+    query_sent_base = " ".join(
         p for p in (search.industry, search.business_type, search.keywords, search.location) if p
     )
 
@@ -194,12 +216,28 @@ def _ingest_page(
     for result in results:
         dedup_key = dedup.compute_dedup_key(result.name, result.suburb, result.state)
         keys = _keys_for(result)
+        handle = dedup.normalize_instagram_handle(result.instagram_handle)
         has_location = bool((result.suburb or "").strip() or (result.state or "").strip())
-        if any(k in seen_keys for k in keys) or (has_location and dedup_key in seen_located_keys):
+        if (
+            any(k in seen_keys for k in keys)
+            or (handle and handle in seen_handles)
+            or (has_location and dedup_key in seen_located_keys)
+        ):
             continue
         seen_keys.update(keys)
+        if handle:
+            seen_handles.add(handle)
         if has_location:
             seen_located_keys.add(dedup_key)
+
+        # instagram_search runs one query per suburb rather than one for
+        # the whole search (see search.location vs search.suburbs) — fold
+        # the specific suburb this candidate actually matched into its
+        # own source_query rather than leaving every row on the search
+        # identically labeled with no suburb at all.
+        query_sent = query_sent_base
+        if result.suburb and result.suburb not in query_sent_base:
+            query_sent = f"{query_sent_base} — {result.suburb}".strip(" —")
 
         duplicate_of_business = dedup.find_existing_business_match(db, workspace_id, result)
         duplicate_of_discovered = (
@@ -248,6 +286,11 @@ def _ingest_page(
     search.result_count += len(created)
     search.next_offset = offset + 1
     search.has_more = bool(page.has_more) and search.next_offset < MAX_PAGES_PER_SEARCH
+    # Query/cache-spend visibility (instagram_search only — every other
+    # provider's page carries 0/0, a no-op here). See DiscoveryPage's
+    # docstring.
+    search.queries_used += page.queries_used
+    search.cache_hits += page.cache_hits
     return created
 
 
@@ -283,6 +326,26 @@ def _enqueue_research(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID,
         )
 
 
+def _validate_instagram_search_suburbs(data: DiscoverySearchCreate) -> list[str]:
+    """instagram_search needs a niche (already covered by the generic
+    "at least one of industry/business_type/keywords" check below, since
+    `location` alone never satisfies it for this provider — see
+    instagram_search_provider.py's `_niche_phrase`) plus 1-
+    MAX_SUBURBS_PER_SEARCH suburb/city strings to search it against.
+    Raises InvalidSearchError with a specific reason; returns the
+    cleaned suburb list otherwise."""
+    suburbs = [s.strip() for s in (data.suburbs or []) if s and s.strip()]
+    if not suburbs:
+        raise InvalidSearchError("instagram_search requires at least one suburb or city")
+    if len(suburbs) > MAX_SUBURBS_PER_SEARCH:
+        raise InvalidSearchError(f"instagram_search supports at most {MAX_SUBURBS_PER_SEARCH} suburbs per run")
+    if not any([data.industry, data.business_type, data.keywords]):
+        raise InvalidSearchError(
+            "instagram_search requires a niche (industry, business type, or keywords) in addition to suburbs"
+        )
+    return suburbs
+
+
 def create_and_run_search(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: DiscoverySearchCreate
 ) -> DiscoverySearchRead:
@@ -293,6 +356,7 @@ def create_and_run_search(
 
     provider_name = data.provider or registry.default_provider()
     provider = registry.get_provider(provider_name)  # raises UnknownProviderError if invalid
+    suburbs = _validate_instagram_search_suburbs(data) if provider_name == registry.INSTAGRAM_SEARCH else None
 
     search = DiscoverySearch(
         workspace_id=workspace_id,
@@ -307,13 +371,14 @@ def create_and_run_search(
         has_website=data.has_website,
         website_outdated=data.website_outdated,
         provider=provider_name,
+        suburbs=suburbs,
         status=DiscoverySearchStatus.RUNNING,
     )
     db.add(search)
     db.flush()
 
     try:
-        page = provider.discover(_criteria_for(search, offset=0))
+        page = provider.discover(_criteria_for(search, offset=0), db=db)
     except ProviderUnavailableError as exc:
         search.status = DiscoverySearchStatus.FAILED
         search.error_message = str(exc)
@@ -366,7 +431,7 @@ def load_more_search(
     offset = search.next_offset
 
     try:
-        page = provider.discover(_criteria_for(search, offset=offset))
+        page = provider.discover(_criteria_for(search, offset=offset), db=db)
     except ProviderUnavailableError as exc:
         # Leave the existing results intact; surface the failure without
         # flipping the whole search to FAILED (it already has results).
@@ -630,6 +695,7 @@ def list_review_items(
                 imported_lead_id=business.imported_lead_id,
                 instagram_handle=business.instagram_handle,
                 instagram_website_status=business.instagram_website_status,
+                instagram_website_checked_at=business.instagram_website_checked_at,
                 reviewed_by_user_name=business.reviewed_by_user.name if business.reviewed_by_user else None,
                 reviewed_at=business.reviewed_at,
                 researched_at=research.researched_at if research else None,
@@ -988,4 +1054,115 @@ def import_to_lead(
     _import_discovered_business(db, workspace_id, actor_id, business)
     db.commit()
     db.refresh(business)
+    return DiscoveredBusinessRead.model_validate(business)
+
+
+# Domains that are a business's link-in-bio page, not an owned domain —
+# checked by check_instagram_website below. A hit here is a positive
+# LINK_IN_BIO_ONLY signal, distinct from a genuine owned-domain match.
+_LINK_IN_BIO_DOMAINS = frozenset(
+    {"linktr.ee", "beacons.ai", "linkin.bio", "campsite.bio", "milkshake.app", "lnk.bio", "solo.to", "koji.to"}
+)
+
+
+def _hostname(url: str) -> str:
+    try:
+        host = urlparse(url if "//" in url else f"//{url}").netloc.lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def check_instagram_website(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
+) -> DiscoveredBusinessRead | None:
+    """
+    The manual "check for website" action — an on-demand secondary Brave
+    search for a business's own domain, run only when an operator
+    explicitly asks for it (never automatically for every Instagram
+    candidate, and not part of automated discovery itself). Applies to
+    any candidate with an Instagram handle on record, from either
+    instagram_search or instagram_import — reuses the exact same web-
+    search wrapper and result classifier as every discovery provider,
+    plus the existing business-research pipeline
+    (business_research_service.run_research) to actually fetch and
+    confirm a domain once one is found, rather than trusting a search
+    snippet's mere existence.
+
+    A search that finds nothing is not evidence of "no website" — see
+    InstagramWebsiteStatus's docstring — so a miss only records that a
+    check happened (instagram_website_checked_at) and leaves the
+    candidate's status exactly as it was; only a positive signal (a
+    BUSINESS-classified result, or a known link-in-bio domain) moves it
+    off UNKNOWN_NEEDS_REVIEW. Returns None when the business doesn't
+    exist in this workspace, so the route can 404. Raises
+    NotInstagramCandidateError for a business with no Instagram handle.
+    """
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    if not business.instagram_handle:
+        raise NotInstagramCandidateError(
+            f"{business.name} has no Instagram handle on record — nothing to check"
+        )
+
+    query = " ".join(p for p in (business.name, business.suburb, business.state) if p).strip()
+    results = search_integration.search_business(query, count=5)
+    business.instagram_website_checked_at = datetime.now(timezone.utc)
+
+    found_url: str | None = None
+    found_link_in_bio = False
+    if results is not None:
+        for result in results:
+            if not result.url:
+                continue
+            host = _hostname(result.url)
+            if host in _LINK_IN_BIO_DOMAINS:
+                found_url = result.url
+                found_link_in_bio = True
+                break
+            classification = result_classifier.classify_result(result)
+            if classification.category == ResultCategory.BUSINESS:
+                found_url = result.url
+                break
+
+    outcome = "no_signal"
+    if found_url and found_link_in_bio:
+        business.instagram_bio_link_url = found_url
+        business.instagram_website_status = InstagramWebsiteStatus.LINK_IN_BIO_ONLY
+        business.website_status = WebsiteStatus.NONE
+        outcome = "link_in_bio_found"
+    elif found_url:
+        business.website_url = found_url
+        business.website_status = WebsiteStatus.FOUND
+        business.instagram_website_status = InstagramWebsiteStatus.PROPER_WEBSITE
+        outcome = "website_found"
+    # else: no positive signal — status is left exactly as it was
+    # (never downgraded to NO_WEBSITE from a search miss).
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="discovered_business",
+        entity_id=business.id,
+        action="checked_instagram_website",
+        summary=f"{business.name}: website check — "
+        + {
+            "website_found": f"found {found_url}",
+            "link_in_bio_found": f"found a link-in-bio page ({found_url})",
+            "no_signal": "no owned website found; still needs review",
+        }[outcome],
+    )
+    db.commit()
+    db.refresh(business)
+
+    if outcome == "website_found":
+        # Confirm the found domain is real and fetch its actual signals
+        # through the existing research pipeline, rather than trusting a
+        # search snippet's mere existence — same "confirmed vs inferred"
+        # standard as every other research path in this app.
+        business_research_service.run_research(db, workspace_id, actor_id, business.id)
+        db.refresh(business)
+
     return DiscoveredBusinessRead.model_validate(business)

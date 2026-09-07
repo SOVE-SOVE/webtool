@@ -9,13 +9,16 @@ from app.core.settings import settings
 from app.integrations.discovery.base import DiscoveryProvider
 from app.integrations.discovery.brave_search_provider import BraveSearchDiscoveryProvider
 from app.integrations.discovery.google_places_provider import GooglePlacesDiscoveryProvider
+from app.integrations.discovery.instagram_search_provider import InstagramSearchDiscoveryProvider
 
 BRAVE_SEARCH = "brave_search"
 GOOGLE_PLACES = "google_places"
+INSTAGRAM_SEARCH = "instagram_search"
 
 _PROVIDERS: dict[str, DiscoveryProvider] = {
     BRAVE_SEARCH: BraveSearchDiscoveryProvider(),
     GOOGLE_PLACES: GooglePlacesDiscoveryProvider(),
+    INSTAGRAM_SEARCH: InstagramSearchDiscoveryProvider(),
 }
 
 

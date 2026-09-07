@@ -24,6 +24,10 @@ class DiscoverySearchCreate(BaseModel):
     has_website: bool | None = None
     website_outdated: bool | None = None
     provider: str | None = None
+    # instagram_search only — up to base.py::MAX_SUBURBS_PER_SEARCH
+    # suburb/city strings, one query generated per suburb. Every other
+    # provider ignores this and keeps using `location` above.
+    suburbs: list[str] | None = None
 
 
 class ScheduleRecurringSearchRequest(DiscoverySearchCreate):
@@ -59,11 +63,17 @@ class DiscoverySearchRead(BaseModel):
     has_website: bool | None
     website_outdated: bool | None
     provider: str
+    suburbs: list[str] | None
     status: DiscoverySearchStatus
     result_count: int
     # Whether a "load more" would fetch further results — see the
     # discovery service's pagination bookkeeping.
     has_more: bool
+    # Live-query / cache-hit spend for this search (instagram_search
+    # only — every other provider leaves both at 0). See
+    # DiscoveryPage's docstring.
+    queries_used: int
+    cache_hits: int
     error_message: str | None
     created_by_user_id: uuid.UUID | None
     created_at: datetime
@@ -121,6 +131,9 @@ class DiscoveredBusinessRead(BaseModel):
     instagram_last_post_at: datetime | None
     instagram_bio_link_url: str | None
     instagram_website_status: InstagramWebsiteStatus | None
+    # When the manual "check for website" action last ran — null if it
+    # never has. See modules/discovery/service.py::check_instagram_website.
+    instagram_website_checked_at: datetime | None
 
 
 class DiscoveredBusinessReviewRead(BaseModel):
@@ -153,6 +166,7 @@ class DiscoveredBusinessReviewRead(BaseModel):
 
     instagram_handle: str | None
     instagram_website_status: InstagramWebsiteStatus | None
+    instagram_website_checked_at: datetime | None
 
     researched_at: datetime | None
     research_error: str | None

@@ -24,6 +24,7 @@ everything it can't confidently rule out is kept.
 """
 
 import re
+from typing import TYPE_CHECKING
 
 from app.integrations import search as search_integration
 from app.integrations.discovery import result_classifier
@@ -35,6 +36,9 @@ from app.integrations.discovery.base import (
     ProviderUnavailableError,
     WebsiteStatus,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 _TITLE_SPLIT_RE = re.compile(r"\s+[|–—-]\s+|:\s+")
 MAX_NAME_LENGTH = 255
@@ -73,7 +77,10 @@ def _build_query(criteria: DiscoveryCriteria) -> str:
 class BraveSearchDiscoveryProvider:
     name = "brave_search"
 
-    def discover(self, criteria: DiscoveryCriteria) -> DiscoveryPage:
+    def discover(self, criteria: DiscoveryCriteria, db: "Session | None" = None) -> DiscoveryPage:
+        # `db` is part of the shared DiscoveryProvider contract (see
+        # base.py) but unused here — a Brave call has nothing DB-backed
+        # to do.
         query = _build_query(criteria)
         offset = max(0, min(criteria.offset, _MAX_OFFSET))
         count = max(1, min(criteria.limit, _PAGE_SIZE))

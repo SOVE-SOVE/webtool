@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +86,23 @@ class DiscoverySearch(Base):
     # None = don't care either way; True/False = filter for/against.
     has_website: Mapped[bool | None] = mapped_column(Boolean)
     website_outdated: Mapped[bool | None] = mapped_column(Boolean)
+
+    # Instagram Search Discovery only (provider="instagram_search"): the
+    # suburb/city list the operator entered — up to
+    # base.py::MAX_SUBURBS_PER_SEARCH. `location` above stays unused for
+    # this provider (it searches N suburbs, not one). Every other
+    # provider leaves this null. A plain JSON array (not ARRAY(String))
+    # so nothing provider-specific leaks into the column type — this
+    # table already holds several nullable, provider-specific fields.
+    suburbs: Mapped[list[str] | None] = mapped_column(JSON)
+    # How many live provider queries this search has actually issued vs.
+    # how many were answered from the 24h search cache (see
+    # modules/discovery/search_cache.py) — accumulated across every page/
+    # "load more" call. Zero for every non-instagram_search provider,
+    # where a discover() call is always exactly one live request and
+    # isn't worth surfacing separately from result_count.
+    queries_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    cache_hits: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     provider: Mapped[str] = mapped_column(String(50))
     status: Mapped[DiscoverySearchStatus] = mapped_column(
@@ -180,6 +197,15 @@ class DiscoveredBusiness(Base):
     instagram_website_status: Mapped[InstagramWebsiteStatus | None] = mapped_column(
         Enum(InstagramWebsiteStatus, name="instagram_website_status")
     )
+    # When the manual "check for website" action (service.py's
+    # check_instagram_website — an on-demand secondary Brave search, not
+    # part of automated discovery) last ran against this candidate. Null
+    # until an operator triggers it at least once. Distinguishes "never
+    # checked" from "checked, found nothing" in the UI — both leave
+    # instagram_website_status at UNKNOWN_NEEDS_REVIEW, since a search
+    # miss is never treated as a confirmed "no website" (see
+    # InstagramWebsiteStatus's docstring).
+    instagram_website_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Source tracking — which provider found this, what it searched for,
     # and the provider's own id/url for the result (when it has one),
@@ -260,3 +286,28 @@ class DiscoveredBusiness(Base):
     review_intelligence_results: Mapped[list["ReviewIntelligenceResult"]] = relationship(
         back_populates="discovered_business", order_by="ReviewIntelligenceResult.review_data_updated_at.desc()"
     )
+
+
+class DiscoverySearchCache(Base):
+    """
+    A 24h cache of raw Brave Search results, keyed on the exact query
+    text sent — see modules/discovery/search_cache.py. Deliberately not
+    workspace-scoped: BRAVE_SEARCH_API_KEY (core/settings.py) is one
+    account-wide credential shared by every workspace in this
+    deployment, so the quota it protects is shared too — two operators
+    in different workspaces running the same niche+suburb search within
+    the TTL window should not double-spend it. This table exists purely
+    to avoid a redundant Brave call; it is never read by the review
+    queue, map, or any operator-facing list.
+    """
+
+    __tablename__ = "discovery_search_cache"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    query_text: Mapped[str] = mapped_column(String(1000), unique=True, index=True)
+    # JSON-serialized list of app.integrations.search.SearchResult
+    # dataclasses (see search_cache.py's _serialize/_deserialize) — the
+    # exact shape callers of search_business() already get, so a cache
+    # hit is indistinguishable from a live call to the provider code.
+    results_json: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

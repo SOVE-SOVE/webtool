@@ -8,12 +8,12 @@ Joe's Plumbing,joesplumbing,Plumbing,0400 111 222,,12 Smith St,Gold Coast,QLD,42
 `;
 
 /**
- * Phase 1 of Instagram Discovery (docs/05_DECISIONS.md) — the only way
- * candidates enter the system today: operator-collected CSV text (typed,
- * pasted, or a file), turned into a discovery search through
- * POST /discovery-searches/instagram-import. No live provider exists yet
- * (Meta has no "search Instagram businesses by location" API) — see that
- * route's docstring.
+ * Phase 1 of Instagram Discovery (docs/05_DECISIONS.md) — operator-
+ * collected CSV text (typed, pasted, or a file), turned into a discovery
+ * search through POST /discovery-searches/instagram-import. This is for
+ * candidates already found by hand (e.g. browsing Instagram directly);
+ * for an automated search, use "Instagram Search Discovery" in the
+ * search form instead — see instagram_search_provider.py.
  */
 export function InstagramImportModal({
   onClose,
@@ -66,8 +66,9 @@ export function InstagramImportModal({
           Import Instagram candidates
         </h2>
         <p className="mt-1 text-sm text-fg-muted">
-          Paste businesses you&apos;ve already found on Instagram, or choose a CSV file. There&apos;s no
-          automatic Instagram search yet — see the format below for what a row needs.
+          Paste businesses you&apos;ve already found on Instagram, or choose a CSV file. For an automated
+          search instead, close this and pick &ldquo;Instagram Search Discovery&rdquo; in the search form —
+          see the format below for what a row needs here.
         </p>
 
         {!result && (

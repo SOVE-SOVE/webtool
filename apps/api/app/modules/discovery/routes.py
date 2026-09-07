@@ -240,3 +240,25 @@ def import_to_lead(
     if business is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return business
+
+
+@discovered_businesses_router.post("/{business_id}/check-instagram-website", response_model=DiscoveredBusinessRead)
+def check_instagram_website(
+    business_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> DiscoveredBusinessRead:
+    """
+    The manual "check for website" action for an Instagram-sourced
+    candidate — an on-demand secondary Brave search for the business's
+    own domain, never run automatically. Rate-limited like every other
+    endpoint that spends a paid search-API call. 400 if the business has
+    no Instagram handle on record.
+    """
+    try:
+        business = service.check_instagram_website(db, current_user.workspace_id, current_user.id, business_id)
+    except service.NotInstagramCandidateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business

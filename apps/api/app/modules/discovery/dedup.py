@@ -119,6 +119,20 @@ def find_existing_business_match(
     return None
 
 
+def normalize_instagram_handle(handle: str | None) -> str | None:
+    """Lowercased, `@`-stripped — the same handle found via a CSV import
+    (Phase 1, arbitrary operator capitalization) and via Instagram Search
+    Discovery (Phase 2, always lowercased at extraction — see
+    instagram_search_provider.py's `_extract_handle`) must collide here
+    regardless of source, even though the two providers use different
+    `source_external_id` schemes (`instagram:<handle>` vs a full profile
+    URL) and so would never match on that field alone."""
+    if not handle:
+        return None
+    cleaned = handle.strip().lstrip("@").lower()
+    return cleaned or None
+
+
 def find_duplicate_discovered_business(
     db: Session, workspace_id: uuid.UUID, result: NormalizedBusinessResult, dedup_key: str
 ) -> DiscoveredBusiness | None:
@@ -133,11 +147,14 @@ def find_duplicate_discovered_business(
     normalized_phone = normalize_phone(result.phone)
     result_name_address_key = _name_address_key(result.name, result.address)
     result_external_id = (result.source_external_id or "").strip() or None
+    result_handle = normalize_instagram_handle(result.instagram_handle)
 
     for business in candidates:
         # The provider's own id for the same place — the strongest signal
         # a places-style provider gives (a Google place id, etc.).
         if result_external_id and (business.source_external_id or "").strip() == result_external_id:
+            return business
+        if result_handle and normalize_instagram_handle(business.instagram_handle) == result_handle:
             return business
         if normalized_website and normalize_website(business.website_url) == normalized_website:
             return business

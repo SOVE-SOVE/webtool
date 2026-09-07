@@ -385,7 +385,7 @@ class _StubProvider:
     def __init__(self, pages):
         self._pages = pages
 
-    def discover(self, criteria):
+    def discover(self, criteria, db=None):
         offset = criteria.offset
         results = list(self._pages[offset]) if offset < len(self._pages) else []
         return DiscoveryPage(results=results, has_more=offset + 1 < len(self._pages))
@@ -619,7 +619,7 @@ def test_load_more_provider_outage_keeps_existing_results(authed_client, monkeyp
         def __init__(self):
             self.calls = 0
 
-        def discover(self, criteria):
+        def discover(self, criteria, db=None):
             self.calls += 1
             if criteria.offset == 0:
                 return DiscoveryPage(results=[_biz("Page1", "https://p1.example")], has_more=True)

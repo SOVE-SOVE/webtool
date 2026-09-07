@@ -13,7 +13,10 @@ service-layer change.
 import enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class ProviderUnavailableError(Exception):
@@ -94,6 +97,19 @@ class LocationConfidence(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+
+# Instagram Search Discovery (Phase 2 of Instagram Discovery —
+# docs/05_DECISIONS.md): the hard cap on how many suburb/city queries one
+# search run can generate, enforced both by
+# modules/discovery/service.py's request validation and by
+# instagram_search_provider.py's own pagination. Lives here (not in the
+# provider module) so the service layer can validate against it without
+# importing a concrete provider — see that module's docstring on why a
+# validation-only import would otherwise be the one exception to "service
+# never depends on a concrete provider".
+MAX_SUBURBS_PER_SEARCH = 10
+
+
 @dataclass
 class DiscoveryCriteria:
     location: str | None = None
@@ -106,6 +122,12 @@ class DiscoveryCriteria:
     # via DiscoveryPage.has_more.
     limit: int = 20
     offset: int = 0
+    # Instagram Search Discovery only: one query per suburb, up to
+    # MAX_SUBURBS_PER_SEARCH — `offset` above indexes into this list
+    # (one provider page = one suburb's query), reusing the existing
+    # has_more/next_offset pagination bookkeeping unchanged. Every other
+    # provider ignores this and keeps using the single `location` field.
+    locations: list[str] | None = None
 
 
 @dataclass
@@ -175,17 +197,34 @@ class DiscoveryPage:
 
     results: list[NormalizedBusinessResult]
     has_more: bool = False
+    # Instagram Search Discovery only: how many live Brave queries this
+    # page actually issued vs. how many were answered from the 24h search
+    # cache (see modules/discovery/search_cache.py) — surfaced on
+    # DiscoverySearch so the operator can see real API spend, not just
+    # result count. Every other provider leaves both at 0 (a Brave/Places
+    # discover() call is always exactly one live request, not worth
+    # tracking here).
+    queries_used: int = 0
+    cache_hits: int = 0
 
 
 class DiscoveryProvider(Protocol):
     name: str
 
-    def discover(self, criteria: DiscoveryCriteria) -> DiscoveryPage:
+    def discover(self, criteria: DiscoveryCriteria, db: "Session | None" = None) -> DiscoveryPage:
         """
         Runs one discovery query for the page described by `criteria`
         (limit + offset) and returns normalized results (possibly empty —
         a real query that found nothing is not an error) plus whether a
         further page is available. Raises `ProviderUnavailableError` if
         the provider can't run at all.
+
+        `db` is optional and unused by every provider except
+        instagram_search_provider.py, which needs it to read/write the
+        24h search cache (see search_cache.py) — a provider that has
+        nothing DB-backed to do (Brave, Places) simply ignores it. Passed
+        through unconditionally by modules/discovery/service.py so the
+        service layer stays provider-agnostic (never checks *which*
+        provider it's calling before deciding whether to pass a session).
         """
         ...

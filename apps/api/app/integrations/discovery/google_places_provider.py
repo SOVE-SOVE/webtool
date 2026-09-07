@@ -13,6 +13,8 @@ Plugs into the same adapter contract as every other provider
 directly — see registry.py.
 """
 
+from typing import TYPE_CHECKING
+
 from app.integrations import places
 from app.integrations.discovery.base import (
     DiscoveryCriteria,
@@ -21,6 +23,9 @@ from app.integrations.discovery.base import (
     ProviderUnavailableError,
     WebsiteStatus,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # Google Places Text Search returns at most 20 per page and 3 pages
 # total (~60 results) — the ceiling this provider paginates within.
@@ -53,7 +58,10 @@ def _page_at(query: str, offset: int) -> places.PlacesPage | None:
 class GooglePlacesDiscoveryProvider:
     name = "google_places"
 
-    def discover(self, criteria: DiscoveryCriteria) -> DiscoveryPage:
+    def discover(self, criteria: DiscoveryCriteria, db: "Session | None" = None) -> DiscoveryPage:
+        # `db` is part of the shared DiscoveryProvider contract (see
+        # base.py) but unused here — a Places call has nothing DB-backed
+        # to do.
         query = _build_query(criteria)
         if not query:
             return DiscoveryPage(results=[], has_more=False)

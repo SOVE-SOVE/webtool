@@ -68,6 +68,7 @@ export default function ReviewPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [checkingWebsiteId, setCheckingWebsiteId] = useState<string | null>(null);
 
   function load() {
     api
@@ -114,6 +115,19 @@ export default function ReviewPage() {
       setError(err instanceof ApiError ? err.message : "Couldn't reject that.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleCheckWebsite(item: DiscoveredBusinessReviewItem) {
+    setCheckingWebsiteId(item.id);
+    setError(null);
+    try {
+      await api.checkInstagramWebsite(item.id);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Couldn't check a website for ${item.name}.`);
+    } finally {
+      setCheckingWebsiteId(null);
     }
   }
 
@@ -296,6 +310,17 @@ export default function ReviewPage() {
                             ? INSTAGRAM_WEBSITE_STATUS_LABEL[item.instagram_website_status]
                             : DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}
                         </span>
+                      )}
+                      {item.instagram_handle && item.instagram_website_status === "unknown_needs_review" && (
+                        <div>
+                          <button
+                            onClick={() => handleCheckWebsite(item)}
+                            disabled={checkingWebsiteId === item.id}
+                            className="text-xs text-fg-muted hover:underline disabled:opacity-50"
+                          >
+                            {checkingWebsiteId === item.id ? "Checking…" : "Check for website"}
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">

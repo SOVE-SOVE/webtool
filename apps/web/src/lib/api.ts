@@ -1513,6 +1513,12 @@ export const INSTAGRAM_WEBSITE_STATUS_LABEL: Record<InstagramWebsiteStatus, stri
 export const LOCATION_CONFIDENCES = ["confirmed", "approximate", "unknown"] as const;
 export type LocationConfidence = (typeof LOCATION_CONFIDENCES)[number];
 
+// instagram_search only — up to MAX_SUBURBS_PER_SEARCH suburb/city
+// strings, one site:instagram.com query generated per suburb. Every
+// other provider (brave_search, google_places) ignores this and keeps
+// using `location` below instead.
+export const MAX_SUBURBS_PER_SEARCH = 10;
+
 export type DiscoverySearchCreate = {
   query_label?: string;
   location?: string;
@@ -1524,6 +1530,7 @@ export type DiscoverySearchCreate = {
   has_website?: boolean;
   website_outdated?: boolean;
   provider?: string;
+  suburbs?: string[];
 };
 
 export type DiscoverySearch = {
@@ -1538,9 +1545,15 @@ export type DiscoverySearch = {
   has_website: boolean | null;
   website_outdated: boolean | null;
   provider: string;
+  suburbs: string[] | null;
   status: DiscoverySearchStatus;
   result_count: number;
   has_more: boolean;
+  // Live Brave queries vs. cache hits this search has spent — 0/0 for
+  // every provider except instagram_search. See the API's
+  // integrations/discovery/base.py::DiscoveryPage.
+  queries_used: number;
+  cache_hits: number;
   error_message: string | null;
   created_by_user_id: string | null;
   created_at: string;
@@ -1596,6 +1609,9 @@ export type DiscoveredBusiness = {
   instagram_last_post_at: string | null;
   instagram_bio_link_url: string | null;
   instagram_website_status: InstagramWebsiteStatus | null;
+  // When the manual "check for website" action last ran — null if it
+  // never has. See api.checkInstagramWebsite.
+  instagram_website_checked_at: string | null;
 };
 
 // One row of the dedicated review interface (Phase 2 checkpoint) — the
@@ -1618,6 +1634,7 @@ export type DiscoveredBusinessReviewItem = {
   reviewed_at: string | null;
   instagram_handle: string | null;
   instagram_website_status: InstagramWebsiteStatus | null;
+  instagram_website_checked_at: string | null;
   researched_at: string | null;
   research_error: string | null;
   quality_summary: string | null;
@@ -2093,6 +2110,13 @@ export const api = {
   listDiscoveredBusinesses: (searchId: string) =>
     request<DiscoveredBusiness[]>(`/api/v1/discovery-searches/${searchId}/results`),
   getDiscoveredBusiness: (id: string) => request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}`),
+  // The manual "check for website" action — an on-demand secondary
+  // Brave search for an Instagram candidate's own domain, never run
+  // automatically. 400 if the business has no Instagram handle on record.
+  checkInstagramWebsite: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/check-instagram-website`, {
+      method: "POST",
+    }),
   listBusinessResearch: (discoveredBusinessId: string) =>
     request<BusinessResearchResult[]>(`/api/v1/discovered-businesses/${discoveredBusinessId}/research`),
   runBusinessResearch: (discoveredBusinessId: string) =>
