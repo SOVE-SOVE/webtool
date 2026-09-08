@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,6 +103,11 @@ class DiscoverySearch(Base):
     # isn't worth surfacing separately from result_count.
     queries_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     cache_hits: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # How many raw Brave results have been examined across every page/
+    # query-variation fetched so far for this search — shown next to
+    # result_count so the operator sees "checked N, kept M", not just the
+    # kept count. Zero for every non-instagram_search provider.
+    raw_results_checked: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     provider: Mapped[str] = mapped_column(String(50))
     status: Mapped[DiscoverySearchStatus] = mapped_column(
@@ -116,6 +121,20 @@ class DiscoverySearch(Base):
     # the provider served said further results exist. One search grows in
     # place as more pages are pulled — see modules/discovery/service.py.
     next_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # Instagram Search Discovery only: which suburb (index into `suburbs`
+    # above) the next "load more" targets, once the current suburb's own
+    # pages (bounded by instagram_search_provider.py's
+    # MAX_PAGES_PER_SUBURB) are exhausted — see DiscoveryPage's
+    # `next_suburb_index`. Zero and unused for every other provider,
+    # which only ever has one axis of pagination (`next_offset` above).
+    next_suburb_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # One per `_ingest_page` call ("load more" click), for every
+    # provider — the generic ceiling modules/discovery/service.py's
+    # MAX_PAGES_PER_SEARCH checks against. Deliberately not the same
+    # thing as queries_used above: a single instagram_search page-0
+    # fetch can itself cost multiple live Brave queries (fallback
+    # widening) while still counting as exactly one page here.
+    pages_fetched: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     has_more: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -299,20 +318,26 @@ class DiscoveredBusiness(Base):
 class DiscoverySearchCache(Base):
     """
     A 24h cache of raw Brave Search results, keyed on the exact query
-    text sent — see modules/discovery/search_cache.py. Deliberately not
-    workspace-scoped: BRAVE_SEARCH_API_KEY (core/settings.py) is one
-    account-wide credential shared by every workspace in this
-    deployment, so the quota it protects is shared too — two operators
-    in different workspaces running the same niche+suburb search within
-    the TTL window should not double-spend it. This table exists purely
-    to avoid a redundant Brave call; it is never read by the review
-    queue, map, or any operator-facing list.
+    text *and* Brave `offset` sent — see modules/discovery/search_cache.py.
+    The offset is part of the key (not folded into query_text) because
+    the same query text at offset 0 vs. offset 1 is a genuinely different
+    Brave API call returning different results — collapsing them onto one
+    cache row would silently serve page-0 results back for a page-1
+    request. Deliberately not workspace-scoped: BRAVE_SEARCH_API_KEY
+    (core/settings.py) is one account-wide credential shared by every
+    workspace in this deployment, so the quota it protects is shared too
+    — two operators in different workspaces running the same niche+
+    suburb+page combination within the TTL window should not double-spend
+    it. This table exists purely to avoid a redundant Brave call; it is
+    never read by the review queue, map, or any operator-facing list.
     """
 
     __tablename__ = "discovery_search_cache"
+    __table_args__ = (UniqueConstraint("query_text", "brave_offset", name="uq_discovery_search_cache_query_offset"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    query_text: Mapped[str] = mapped_column(String(1000), unique=True, index=True)
+    query_text: Mapped[str] = mapped_column(String(1000), index=True)
+    brave_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     # JSON-serialized list of app.integrations.search.SearchResult
     # dataclasses (see search_cache.py's _serialize/_deserialize) — the
     # exact shape callers of search_business() already get, so a cache

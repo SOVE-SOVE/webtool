@@ -64,6 +64,11 @@ class DiscoverySearchRead(BaseModel):
     website_outdated: bool | None
     provider: str
     suburbs: list[str] | None
+    # Instagram Search Discovery only: index into `suburbs` the next
+    # "load more" will fetch from (0 for every other provider, and once
+    # a search has no more suburbs left) — lets the UI show precise
+    # "suburb N of M" progress rather than just a plain has_more flag.
+    next_suburb_index: int
     status: DiscoverySearchStatus
     result_count: int
     # Whether a "load more" would fetch further results — see the
@@ -74,6 +79,10 @@ class DiscoverySearchRead(BaseModel):
     # DiscoveryPage's docstring.
     queries_used: int
     cache_hits: int
+    # How many raw Brave results have been examined vs. how many turned
+    # into candidates (result_count) — instagram_search only; 0 for
+    # every other provider. See DiscoveryPage.raw_results_checked.
+    raw_results_checked: int
     error_message: str | None
     created_by_user_id: uuid.UUID | None
     created_at: datetime

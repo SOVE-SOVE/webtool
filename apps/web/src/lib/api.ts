@@ -1546,6 +1546,9 @@ export type DiscoverySearch = {
   website_outdated: boolean | null;
   provider: string;
   suburbs: string[] | null;
+  // instagram_search only — index into `suburbs` the next "load more"
+  // will fetch from; 0 for every other provider.
+  next_suburb_index: number;
   status: DiscoverySearchStatus;
   result_count: number;
   has_more: boolean;
@@ -1554,6 +1557,9 @@ export type DiscoverySearch = {
   // integrations/discovery/base.py::DiscoveryPage.
   queries_used: number;
   cache_hits: number;
+  // Raw Brave results examined vs. result_count (candidates actually
+  // created) — instagram_search only; 0 for every other provider.
+  raw_results_checked: number;
   error_message: string | null;
   created_by_user_id: string | null;
   created_at: string;

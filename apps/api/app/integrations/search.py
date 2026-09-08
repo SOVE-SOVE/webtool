@@ -8,6 +8,8 @@ report generation — it just means that evidence isn't available this
 time.
 """
 
+import html
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -43,6 +45,21 @@ class SearchResult:
     result_subtype: str | None = None
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _clean_snippet(text: str) -> str:
+    """Brave bolds matched keywords in `title`/`description` with raw
+    `<strong>` tags and HTML-entity-encodes punctuation (`&quot;`,
+    `&#x27;`, `&amp;`) — found via a live QA run where a candidate's
+    "source evidence" showed literal `<strong>Nail</strong>` and
+    `&quot;` to the operator instead of readable text. Strips tags and
+    decodes entities so every caller (discovery's raw_snippet, sales
+    audit) gets plain, readable text without needing to know about
+    Brave's markup."""
+    return html.unescape(_HTML_TAG_RE.sub("", text))
+
+
 def _host_from_url(url: str) -> str | None:
     try:
         netloc = urlparse(url).netloc.lower()
@@ -58,9 +75,9 @@ def _parse_result(raw: dict) -> SearchResult:
     if hostname and hostname.startswith("www."):
         hostname = hostname[4:]
     return SearchResult(
-        title=raw.get("title", ""),
+        title=_clean_snippet(raw.get("title", "")),
         url=raw.get("url", ""),
-        description=raw.get("description", ""),
+        description=_clean_snippet(raw.get("description", "")),
         hostname=hostname or None,
         profile_name=profile.get("name") or profile.get("long_name") or None,
         page_age=raw.get("page_age") or raw.get("age") or None,

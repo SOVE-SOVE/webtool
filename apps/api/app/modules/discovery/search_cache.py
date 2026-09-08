@@ -36,7 +36,7 @@ def _deserialize(raw: str) -> list[search_integration.SearchResult]:
 
 
 def cached_search(
-    db: Session | None, query: str, count: int
+    db: Session | None, query: str, count: int, offset: int = 0
 ) -> tuple[list[search_integration.SearchResult] | None, bool]:
     """
     Returns `(results, cache_hit)`. `results` is `None` only when Brave
@@ -45,24 +45,37 @@ def cached_search(
     unavailable" contract, so a caller can raise `ProviderUnavailableError`
     exactly as it would for a direct call.
 
+    Cached and looked up on the `(query, offset)` pair, not `query`
+    alone — Brave's own `offset` param changes what a query actually
+    returns (it's a different page of results), so a page-1 fetch must
+    never be served page-0's cached response.
+
     `db=None` (e.g. a unit test constructing the provider directly, with
     no database in scope) skips caching entirely rather than raising —
     every call is a live Brave request in that case, same as before this
     cache existed.
     """
     if db is not None:
-        cached = db.scalar(select(DiscoverySearchCache).where(DiscoverySearchCache.query_text == query))
+        cached = db.scalar(
+            select(DiscoverySearchCache).where(
+                DiscoverySearchCache.query_text == query, DiscoverySearchCache.brave_offset == offset
+            )
+        )
         if cached is not None and datetime.now(timezone.utc) - cached.fetched_at < CACHE_TTL:
             return _deserialize(cached.results_json), True
 
-    results = search_integration.search_business(query, count=count)
+    results = search_integration.search_business(query, count=count, offset=offset)
     if results is None:
         return None, False
 
     if db is not None:
-        row = db.scalar(select(DiscoverySearchCache).where(DiscoverySearchCache.query_text == query))
+        row = db.scalar(
+            select(DiscoverySearchCache).where(
+                DiscoverySearchCache.query_text == query, DiscoverySearchCache.brave_offset == offset
+            )
+        )
         if row is None:
-            row = DiscoverySearchCache(query_text=query, results_json=_serialize(results))
+            row = DiscoverySearchCache(query_text=query, brave_offset=offset, results_json=_serialize(results))
             db.add(row)
         else:
             row.results_json = _serialize(results)

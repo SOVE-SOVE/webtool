@@ -56,11 +56,16 @@ from app.modules.website_quality.models import WebsiteQualityAudit
 
 MAX_RESULTS_PER_SEARCH = 20
 
-# A search that has pulled this many provider pages stops offering "load
-# more" regardless of what the provider reports — a guard against a
-# provider that always claims has_more. Ten pages of ~20 is well past
-# what an operator reviews by hand.
-MAX_PAGES_PER_SEARCH = 10
+# A search that has pulled this many provider pages (one per
+# _ingest_page call, regardless of provider) stops offering "load more"
+# regardless of what the provider reports — a guard against a provider
+# that always claims has_more. Brave/Places naturally exhaust their own
+# offset ceiling well before this (≤10 and ≤3 pages respectively — see
+# their own _MAX_OFFSET constants), so this never actually triggers for
+# them; it's sized for instagram_search's own natural ceiling instead —
+# up to MAX_SUBURBS_PER_SEARCH (10) suburbs ×
+# instagram_search_provider.MAX_PAGES_PER_SUBURB (3) pages each = 30.
+MAX_PAGES_PER_SEARCH = 30
 
 # Terminal states a business shouldn't move out of via approve/reject/
 # archive — a decision already made stands until import (or a future
@@ -125,8 +130,10 @@ def _criteria_for(search: DiscoverySearch, offset: int) -> DiscoveryCriteria:
         limit=MAX_RESULTS_PER_SEARCH,
         offset=offset,
         # instagram_search only — every other provider's criteria carries
-        # None here and keeps using `location` above.
+        # None/0 here and keeps using `location` + `offset` alone as its
+        # single axis of pagination.
         locations=search.suburbs,
+        suburb_index=search.next_suburb_index,
     )
 
 
@@ -285,13 +292,28 @@ def _ingest_page(
         created.append(business)
 
     search.result_count += len(created)
-    search.next_offset = offset + 1
-    search.has_more = bool(page.has_more) and search.next_offset < MAX_PAGES_PER_SEARCH
-    # Query/cache-spend visibility (instagram_search only — every other
-    # provider's page carries 0/0, a no-op here). See DiscoveryPage's
-    # docstring.
+    # A provider with more than one axis of pagination (instagram_search:
+    # suburb + page-within-suburb) reports exactly where the next fetch
+    # should resume via `next_offset`/`next_suburb_index`; a provider
+    # with only one axis (Brave, Places) leaves both None and keeps the
+    # original "just advance by one" behavior.
+    search.next_offset = page.next_offset if page.next_offset is not None else offset + 1
+    if page.next_suburb_index is not None:
+        search.next_suburb_index = page.next_suburb_index
+    # Generic "load more" click ceiling, independent of how many axes a
+    # provider's own pagination has (a single instagram_search page-0
+    # fetch can itself cost up to 3 live Brave queries via fallback
+    # widening — see instagram_search_provider.py — so queries_used is
+    # the wrong thing to cap this on). One _ingest_page call = one
+    # fetched page, always, for every provider.
+    search.pages_fetched += 1
+    search.has_more = bool(page.has_more) and search.pages_fetched < MAX_PAGES_PER_SEARCH
+    # Query/cache-spend and raw-vs-valid visibility (instagram_search
+    # only — every other provider's page carries 0s, a no-op here). See
+    # DiscoveryPage's docstring.
     search.queries_used += page.queries_used
     search.cache_hits += page.cache_hits
+    search.raw_results_checked += page.raw_results_checked
     return created
 
 

@@ -122,12 +122,14 @@ class DiscoveryCriteria:
     # via DiscoveryPage.has_more.
     limit: int = 20
     offset: int = 0
-    # Instagram Search Discovery only: one query per suburb, up to
-    # MAX_SUBURBS_PER_SEARCH — `offset` above indexes into this list
-    # (one provider page = one suburb's query), reusing the existing
-    # has_more/next_offset pagination bookkeeping unchanged. Every other
-    # provider ignores this and keeps using the single `location` field.
+    # Instagram Search Discovery only: up to MAX_SUBURBS_PER_SEARCH
+    # suburb/city strings. `suburb_index` below selects which one this
+    # call targets; `offset` above is that suburb's OWN page depth (a
+    # Brave `offset` — 0, 1, 2… — not a suburb index). Every other
+    # provider ignores both fields and keeps using the single `location`
+    # field with `offset` as its own single-axis page counter.
     locations: list[str] | None = None
+    suburb_index: int = 0
 
 
 @dataclass
@@ -206,6 +208,20 @@ class DiscoveryPage:
     # tracking here).
     queries_used: int = 0
     cache_hits: int = 0
+    # Instagram Search Discovery only: how many raw Brave results were
+    # examined to produce `results` (across every query variation tried
+    # for this call) — surfaced next to result_count so the operator can
+    # see "checked N, kept M" rather than just the kept count. 0 for
+    # every other provider (not worth tracking for a single-query page).
+    raw_results_checked: int = 0
+    # Explicit "what to fetch next" coordinates — when a provider needs
+    # more than one axis of pagination (Instagram Search Discovery: a
+    # suburb index *and* a page depth within it), it sets these instead
+    # of relying on modules/discovery/service.py's default `offset + 1`.
+    # None means "use the default" — every single-axis provider (Brave,
+    # Places) leaves both None and is completely unaffected.
+    next_offset: int | None = None
+    next_suburb_index: int | None = None
 
 
 class DiscoveryProvider(Protocol):

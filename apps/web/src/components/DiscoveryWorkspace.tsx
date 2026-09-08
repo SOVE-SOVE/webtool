@@ -409,15 +409,28 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               : ""}
           </p>
           {activeSearch.provider === "instagram_search" && (
-            <p className="mt-0.5 text-xs text-fg-subtle">
-              {activeSearch.queries_used} live search{activeSearch.queries_used === 1 ? "" : "es"} used
-              {activeSearch.cache_hits > 0 && (
-                <> · {activeSearch.cache_hits} served from the 24h cache</>
-              )}
+            <div className="mt-1 rounded-md border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-fg-muted">
+              <p>
+                Checked {activeSearch.raw_results_checked} raw result
+                {activeSearch.raw_results_checked === 1 ? "" : "s"} → {activeSearch.result_count} valid
+                candidate{activeSearch.result_count === 1 ? "" : "s"} imported
+              </p>
+              <p className="mt-0.5">
+                {activeSearch.queries_used} live search{activeSearch.queries_used === 1 ? "" : "es"} used
+                {activeSearch.cache_hits > 0 && (
+                  <> · {activeSearch.cache_hits} served from the 24h cache</>
+                )}
+              </p>
               {activeSearch.suburbs && activeSearch.suburbs.length > 0 && (
-                <> · suburbs: {activeSearch.suburbs.join(", ")}</>
+                <p className="mt-0.5">
+                  {activeSearch.has_more
+                    ? `Suburb ${Math.min(activeSearch.next_suburb_index + 1, activeSearch.suburbs.length)} of ${activeSearch.suburbs.length}`
+                    : `All ${activeSearch.suburbs.length} suburb${activeSearch.suburbs.length === 1 ? "" : "s"} checked`}
+                  {" · "}
+                  {activeSearch.suburbs.join(", ")}
+                </p>
               )}
-            </p>
+            </div>
           )}
         </div>
       )}
