@@ -349,22 +349,36 @@ def _enqueue_research(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID,
         )
 
 
-def _validate_instagram_search_suburbs(data: DiscoverySearchCreate) -> list[str]:
-    """instagram_search needs a niche (already covered by the generic
-    "at least one of industry/business_type/keywords" check below, since
-    `location` alone never satisfies it for this provider — see
+def _parse_instagram_search_suburbs(data: DiscoverySearchCreate) -> list[str]:
+    """
+    instagram_search takes its suburb list from the same `location`
+    field every other provider uses — comma-separated when more than
+    one is needed — rather than a dedicated request field, so the
+    search form never has to change shape between providers (see
+    docs/05_DECISIONS.md: the earlier version had a separate suburbs
+    textarea that replaced the Location field, which was confusing
+    enough to be reverted). "Gold Coast" is one suburb; "Surfers
+    Paradise, Broadbeach" is two.
+
+    Needs a niche too (already covered by the generic "at least one of
+    industry/business_type/keywords" check below, since `location`
+    alone never satisfies it for this provider — see
     instagram_search_provider.py's `_niche_phrase`) plus 1-
-    MAX_SUBURBS_PER_SEARCH suburb/city strings to search it against.
-    Raises InvalidSearchError with a specific reason; returns the
-    cleaned suburb list otherwise."""
-    suburbs = [s.strip() for s in (data.suburbs or []) if s and s.strip()]
+    MAX_SUBURBS_PER_SEARCH suburb/city strings. Raises
+    InvalidSearchError with a specific reason; returns the cleaned
+    suburb list otherwise.
+    """
+    suburbs = [s.strip() for s in (data.location or "").split(",") if s.strip()]
     if not suburbs:
-        raise InvalidSearchError("instagram_search requires at least one suburb or city")
+        raise InvalidSearchError("instagram_search requires at least one suburb or city in the location field")
     if len(suburbs) > MAX_SUBURBS_PER_SEARCH:
-        raise InvalidSearchError(f"instagram_search supports at most {MAX_SUBURBS_PER_SEARCH} suburbs per run")
+        raise InvalidSearchError(
+            f"instagram_search supports at most {MAX_SUBURBS_PER_SEARCH} suburbs per run — "
+            "separate them with commas in the location field"
+        )
     if not any([data.industry, data.business_type, data.keywords]):
         raise InvalidSearchError(
-            "instagram_search requires a niche (industry, business type, or keywords) in addition to suburbs"
+            "instagram_search requires a niche (industry, business type, or keywords) in addition to a location"
         )
     return suburbs
 
@@ -379,7 +393,7 @@ def create_and_run_search(
 
     provider_name = data.provider or registry.default_provider()
     provider = registry.get_provider(provider_name)  # raises UnknownProviderError if invalid
-    suburbs = _validate_instagram_search_suburbs(data) if provider_name == registry.INSTAGRAM_SEARCH else None
+    suburbs = _parse_instagram_search_suburbs(data) if provider_name == registry.INSTAGRAM_SEARCH else None
 
     search = DiscoverySearch(
         workspace_id=workspace_id,

@@ -1513,10 +1513,12 @@ export const INSTAGRAM_WEBSITE_STATUS_LABEL: Record<InstagramWebsiteStatus, stri
 export const LOCATION_CONFIDENCES = ["confirmed", "approximate", "unknown"] as const;
 export type LocationConfidence = (typeof LOCATION_CONFIDENCES)[number];
 
-// instagram_search only — up to MAX_SUBURBS_PER_SEARCH suburb/city
-// strings, one site:instagram.com query generated per suburb. Every
-// other provider (brave_search, google_places) ignores this and keeps
-// using `location` below instead.
+// instagram_search only — the max number of suburbs `location` can
+// carry (comma-separated), one site:instagram.com query generated per
+// suburb; parsed server-side (see the API's
+// modules/discovery/service.py::_parse_instagram_search_suburbs). Every
+// other provider (brave_search, google_places) uses `location` as
+// plain free text instead.
 export const MAX_SUBURBS_PER_SEARCH = 10;
 
 export type DiscoverySearchCreate = {
@@ -1530,7 +1532,6 @@ export type DiscoverySearchCreate = {
   has_website?: boolean;
   website_outdated?: boolean;
   provider?: string;
-  suburbs?: string[];
 };
 
 export type DiscoverySearch = {
@@ -1545,6 +1546,8 @@ export type DiscoverySearch = {
   has_website: boolean | null;
   website_outdated: boolean | null;
   provider: string;
+  // instagram_search only — `location` split on commas at request time;
+  // null for every other provider.
   suburbs: string[] | null;
   // instagram_search only — index into `suburbs` the next "load more"
   // will fetch from; 0 for every other provider.

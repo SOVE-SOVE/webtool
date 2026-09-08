@@ -89,13 +89,18 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const [showImportModal, setShowImportModal] = useState(false);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
-  // Search form
+  // Search form — identical fields/layout for every provider (see
+  // docs/05_DECISIONS.md: an earlier version swapped the Location field
+  // for a dedicated suburbs textarea when Instagram Search was picked,
+  // which changed the form's shape between providers and was reverted).
+  // instagram_search takes multiple suburbs as a comma-separated list
+  // in this same `location` field — parsed server-side, same field
+  // every other provider already uses as free text.
   const [provider, setProvider] = useState<"" | "instagram_search">("");
   const [industry, setIndustry] = useState("");
   const [location, setLocation] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [keywords, setKeywords] = useState("");
-  const [suburbsText, setSuburbsText] = useState("");
   const [hasWebsite, setHasWebsite] = useState<"" | "true" | "false">("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -103,11 +108,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const isInstagramSearch = provider === "instagram_search";
   const parsedSuburbs = useMemo(
     () =>
-      suburbsText
-        .split(/[\n,]/)
+      location
+        .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
-    [suburbsText],
+    [location],
   );
 
   const loadSearches = useCallback(() => {
@@ -198,7 +203,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     e.preventDefault();
     setFormError(null);
     if (isInstagramSearch && parsedSuburbs.length === 0) {
-      setFormError("Enter at least one suburb or city for Instagram Search Discovery.");
+      setFormError("Enter at least one suburb or city in the location field for Instagram Search Discovery.");
       return;
     }
     if (isInstagramSearch && parsedSuburbs.length > MAX_SUBURBS_PER_SEARCH) {
@@ -210,20 +215,16 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
       const created = await api.createDiscoverySearch({
         provider: provider || undefined,
         industry: industry || undefined,
-        location: isInstagramSearch ? undefined : location || undefined,
+        location: location || undefined,
         business_type: businessType || undefined,
         keywords: keywords || undefined,
-        suburbs: isInstagramSearch ? parsedSuburbs : undefined,
         has_website: hasWebsite === "" ? undefined : hasWebsite === "true",
-        query_label:
-          [industry, isInstagramSearch ? parsedSuburbs.join(", ") : location].filter(Boolean).join(" — ") ||
-          undefined,
+        query_label: [industry, location].filter(Boolean).join(" — ") || undefined,
       });
       setIndustry("");
       setLocation("");
       setBusinessType("");
       setKeywords("");
-      setSuburbsText("");
       setHasWebsite("");
       await loadSearches();
       selectSearch(created.id);
@@ -304,14 +305,12 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
           onChange={(e) => setIndustry(e.target.value)}
           className={`${inputCls} w-44`}
         />
-        {!isInstagramSearch && (
-          <input
-            placeholder="Location (e.g. Gold Coast)"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className={`${inputCls} w-44`}
-          />
-        )}
+        <input
+          placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          className={`${inputCls} w-44`}
+        />
         <input
           placeholder="Business type"
           value={businessType}
@@ -324,46 +323,28 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
           onChange={(e) => setKeywords(e.target.value)}
           className={`${inputCls} w-40`}
         />
-        {!isInstagramSearch && (
-          <select
-            value={hasWebsite}
-            onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className={inputCls}
-            aria-label="Website filter"
-          >
-            <option value="">Any website status</option>
-            <option value="true">Has a website</option>
-            <option value="false">No website</option>
-          </select>
-        )}
+        <select
+          value={hasWebsite}
+          onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
+          className={inputCls}
+          aria-label="Website filter"
+        >
+          <option value="">Any website status</option>
+          <option value="true">Has a website</option>
+          <option value="false">No website</option>
+        </select>
         <button type="submit" disabled={saving} className="btn btn-primary">
           {saving ? "Searching…" : "Run search"}
         </button>
 
         {isInstagramSearch && (
-          <div className="mt-1 w-full">
-            <label htmlFor="instagram-suburbs" className="text-xs text-fg-muted">
-              Suburbs / cities to search (one per line or comma-separated, up to {MAX_SUBURBS_PER_SEARCH})
-            </label>
-            <textarea
-              id="instagram-suburbs"
-              value={suburbsText}
-              onChange={(e) => setSuburbsText(e.target.value)}
-              placeholder={"Surfers Paradise\nBroadbeach\nSouthport"}
-              rows={3}
-              className={`${inputCls} mt-1 block w-full`}
-            />
-            <p className="mt-1 text-xs text-fg-subtle">
-              {parsedSuburbs.length} suburb{parsedSuburbs.length === 1 ? "" : "s"} ={" "}
-              {parsedSuburbs.length} search{parsedSuburbs.length === 1 ? "" : "es"} (one
-              site:instagram.com query per suburb, cached for 24h).
-            </p>
-          </div>
+          <p className="w-full text-xs text-fg-subtle">
+            For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).
+          </p>
         )}
-
         <p className="w-full text-xs text-fg-muted">
           {isInstagramSearch
-            ? "A niche (industry, business type, or keywords) plus at least one suburb is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
+            ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
             : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
         </p>
         {formError && <p className="w-full text-error">{formError}</p>}

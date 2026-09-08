@@ -24,10 +24,6 @@ class DiscoverySearchCreate(BaseModel):
     has_website: bool | None = None
     website_outdated: bool | None = None
     provider: str | None = None
-    # instagram_search only — up to base.py::MAX_SUBURBS_PER_SEARCH
-    # suburb/city strings, one query generated per suburb. Every other
-    # provider ignores this and keeps using `location` above.
-    suburbs: list[str] | None = None
 
 
 class ScheduleRecurringSearchRequest(DiscoverySearchCreate):
@@ -63,6 +59,10 @@ class DiscoverySearchRead(BaseModel):
     has_website: bool | None
     website_outdated: bool | None
     provider: str
+    # Instagram Search Discovery only: `location` split on commas at
+    # request time (see service.py's _parse_instagram_search_suburbs) —
+    # up to base.py::MAX_SUBURBS_PER_SEARCH entries. Null for every
+    # other provider, which only ever uses `location` as free text.
     suburbs: list[str] | None
     # Instagram Search Discovery only: index into `suburbs` the next
     # "load more" will fetch from (0 for every other provider, and once

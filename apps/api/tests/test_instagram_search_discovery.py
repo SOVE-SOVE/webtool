@@ -686,7 +686,7 @@ def test_create_search_requires_suburbs_for_instagram_search(authed_client):
 def test_create_search_requires_a_niche_for_instagram_search(authed_client):
     res = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"provider": "instagram_search", "suburbs": ["Surfers Paradise"]},
+        json={"provider": "instagram_search", "location": "Surfers Paradise"},
     )
     assert res.status_code == 400
 
@@ -697,10 +697,54 @@ def test_create_search_rejects_more_than_ten_suburbs(authed_client):
         json={
             "industry": "Nail Salon",
             "provider": "instagram_search",
-            "suburbs": [f"Suburb{i}" for i in range(11)],
+            "location": ", ".join(f"Suburb{i}" for i in range(11)),
         },
     )
     assert res.status_code == 400
+
+
+def test_instagram_search_location_field_accepts_a_single_suburb_with_no_comma(authed_client, monkeypatch):
+    """The location field works exactly like every other provider's when
+    only one suburb is entered — no comma required."""
+    _mock_instagram_search(
+        monkeypatch,
+        {"Surfers Paradise": [SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")]},
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    assert res.status_code == 201
+    assert res.json()["suburbs"] == ["Surfers Paradise"]
+
+
+def test_instagram_search_location_field_trims_whitespace_around_commas(authed_client, monkeypatch):
+    _mock_instagram_search(
+        monkeypatch,
+        {
+            "Surfers Paradise": [SearchResult(title="A", url="https://instagram.com/a", description="")],
+            "Broadbeach": [SearchResult(title="B", url="https://instagram.com/b", description="")],
+        },
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "  Surfers Paradise ,  Broadbeach  "},
+    )
+    assert res.status_code == 201
+    assert res.json()["suburbs"] == ["Surfers Paradise", "Broadbeach"]
+
+
+def test_instagram_search_location_field_ignores_empty_entries_between_commas(authed_client, monkeypatch):
+    _mock_instagram_search(
+        monkeypatch,
+        {"Surfers Paradise": [SearchResult(title="A", url="https://instagram.com/a", description="")]},
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise,,"},
+    )
+    assert res.status_code == 201
+    assert res.json()["suburbs"] == ["Surfers Paradise"]
 
 
 def test_create_search_instagram_search_end_to_end(authed_client, monkeypatch):
@@ -717,7 +761,7 @@ def test_create_search_instagram_search_end_to_end(authed_client, monkeypatch):
         json={
             "industry": "Nail Salon",
             "provider": "instagram_search",
-            "suburbs": ["Surfers Paradise"],
+            "location": "Surfers Paradise",
             "query_label": "GC nail salons",
         },
     )
@@ -765,7 +809,7 @@ def test_create_search_batch_imports_every_valid_profile_from_one_response(authe
     )
     res = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Surfers Paradise"]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
     )
     assert res.status_code == 201
     body = res.json()
@@ -808,7 +852,7 @@ def test_create_search_does_not_collapse_distinct_businesses_with_generic_profil
 
     res = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Broadbeach"]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Broadbeach"},
     )
     body = res.json()
     assert body["result_count"] == 2  # both survive — not collapsed to 1
@@ -838,7 +882,7 @@ def test_load_more_advances_through_suburbs_and_dedups_across_them(authed_client
         json={
             "industry": "Nail Salon",
             "provider": "instagram_search",
-            "suburbs": ["Southport", "Broadbeach"],
+            "location": "Southport, Broadbeach",
         },
     ).json()
     assert created["result_count"] == 1
@@ -883,7 +927,7 @@ def test_load_more_pages_deeper_into_one_suburb_before_moving_to_the_next(authed
 
     created = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Surfers Paradise", "Broadbeach"]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise, Broadbeach"},
     ).json()
     assert created["result_count"] == 20
     assert created["has_more"] is True
@@ -921,7 +965,7 @@ def test_second_search_reuses_cache_for_same_niche_and_suburb(authed_client, mon
     monkeypatch.setattr(search_integration, "search_business", fake_search)
     monkeypatch.setattr(InstagramSearchDiscoveryProvider, "fallback_min_valid_results", 1)
 
-    payload = {"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Surfers Paradise"]}
+    payload = {"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"}
     first = authed_client.post("/api/v1/discovery-searches", json=payload).json()
     assert first["queries_used"] == 1
     assert first["cache_hits"] == 0
@@ -956,7 +1000,7 @@ def test_instagram_search_candidate_cross_search_dedup_by_handle(authed_client, 
     )
     search = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Surfers Paradise"]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
     ).json()
     assert search["result_count"] == 1
     row = authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]
@@ -967,7 +1011,7 @@ def test_instagram_search_provider_unavailable_marks_search_failed(authed_client
     monkeypatch.setattr(search_integration, "search_business", lambda query, count=None, offset=None: None)
     res = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": ["Surfers Paradise"]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
     )
     assert res.status_code == 201
     body = res.json()
@@ -985,7 +1029,7 @@ def _create_instagram_search_business(authed_client, monkeypatch, handle="joesna
     )
     search = authed_client.post(
         "/api/v1/discovery-searches",
-        json={"industry": "Nail Salon", "provider": "instagram_search", "suburbs": [suburb]},
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": suburb},
     ).json()
     return authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]
 
