@@ -332,6 +332,13 @@ function InstagramCard({
           </a>
         </p>
       )}
+
+      {business.raw_snippet && (
+        <p className="mt-3 border-t border-border pt-2 text-xs text-fg-subtle">
+          <span className="font-medium text-fg-muted">Source evidence: </span>
+          &ldquo;{business.raw_snippet}&rdquo;
+        </p>
+      )}
     </div>
   );
 }

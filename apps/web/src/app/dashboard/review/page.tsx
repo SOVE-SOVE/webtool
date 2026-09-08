@@ -56,7 +56,9 @@ function Truncated({ text }: { text: string | null }) {
 
 /** The single line that tells the operator why this prospect is worth a look. */
 function whyReview(item: DiscoveredBusinessReviewItem): string | null {
-  return item.recommended_sales_angle || item.quality_summary || item.key_problems[0] || null;
+  return (
+    item.recommended_sales_angle || item.quality_summary || item.key_problems[0] || item.raw_snippet || null
+  );
 }
 
 export default function ReviewPage() {

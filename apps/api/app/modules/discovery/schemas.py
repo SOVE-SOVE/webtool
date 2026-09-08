@@ -105,6 +105,7 @@ class DiscoveredBusinessRead(BaseModel):
     source_provider: str
     source_query: str | None
     source_external_id: str | None
+    raw_snippet: str | None
     duplicate_of_business_id: uuid.UUID | None
     duplicate_of_discovered_business_id: uuid.UUID | None
     status: DiscoveredBusinessStatus
@@ -167,6 +168,7 @@ class DiscoveredBusinessReviewRead(BaseModel):
     instagram_handle: str | None
     instagram_website_status: InstagramWebsiteStatus | None
     instagram_website_checked_at: datetime | None
+    raw_snippet: str | None
 
     researched_at: datetime | None
     research_error: str | None

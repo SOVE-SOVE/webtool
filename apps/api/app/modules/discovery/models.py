@@ -214,6 +214,14 @@ class DiscoveredBusiness(Base):
     source_provider: Mapped[str] = mapped_column(String(50))
     source_query: Mapped[str | None] = mapped_column(String(500))
     source_external_id: Mapped[str | None] = mapped_column(String(500))
+    # What the provider's result actually said, verbatim (a Brave/
+    # site:instagram.com result's description) — the evidence backing
+    # this candidate's name/category guess, kept for operator review.
+    # Was already on NormalizedBusinessResult for every provider but
+    # never persisted until Instagram Search Discovery needed it —
+    # fixed here rather than only for that one provider, since this is
+    # the one shared ingestion path every provider's results go through.
+    raw_snippet: Mapped[str | None] = mapped_column(Text)
     # Normalized name+location, computed at creation — see
     # app/modules/discovery/dedup.py — indexed for fast duplicate lookup.
     dedup_key: Mapped[str] = mapped_column(String(500), index=True)

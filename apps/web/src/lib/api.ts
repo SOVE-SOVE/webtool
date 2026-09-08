@@ -1583,6 +1583,9 @@ export type DiscoveredBusiness = {
   source_provider: string;
   source_query: string | null;
   source_external_id: string | null;
+  // What the provider's result actually said, verbatim (e.g. a Brave
+  // search-result description) — the evidence behind this candidate.
+  raw_snippet: string | null;
   duplicate_of_business_id: string | null;
   duplicate_of_discovered_business_id: string | null;
   status: DiscoveredBusinessStatus;
@@ -1635,6 +1638,7 @@ export type DiscoveredBusinessReviewItem = {
   instagram_handle: string | null;
   instagram_website_status: InstagramWebsiteStatus | null;
   instagram_website_checked_at: string | null;
+  raw_snippet: string | null;
   researched_at: string | null;
   research_error: string | null;
   quality_summary: string | null;

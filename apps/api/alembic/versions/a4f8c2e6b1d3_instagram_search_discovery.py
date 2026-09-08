@@ -17,6 +17,11 @@ site:instagram.com-search-based sibling of Phase 1's manual CSV import
 - `discovered_businesses.instagram_website_checked_at`: when the manual
   "check for website" action last ran against this candidate (null if
   never).
+- `discovered_businesses.raw_snippet`: the provider's result text,
+  verbatim — was already collected by every provider
+  (NormalizedBusinessResult.raw_snippet) but never persisted before this
+  feature needed it for evidence retention; fixed at the shared
+  ingestion layer, not just for instagram_search.
 - `discovery_search_cache`: the 24h cache backing instagram_search's
   queries — see modules/discovery/search_cache.py.
 
@@ -50,6 +55,7 @@ def upgrade() -> None:
         "discovered_businesses",
         sa.Column("instagram_website_checked_at", sa.DateTime(timezone=True), nullable=True),
     )
+    op.add_column("discovered_businesses", sa.Column("raw_snippet", sa.Text(), nullable=True))
 
     op.create_table(
         "discovery_search_cache",
@@ -68,6 +74,7 @@ def downgrade() -> None:
     op.drop_index("ix_discovery_search_cache_query_text", table_name="discovery_search_cache")
     op.drop_table("discovery_search_cache")
 
+    op.drop_column("discovered_businesses", "raw_snippet")
     op.drop_column("discovered_businesses", "instagram_website_checked_at")
     op.drop_column("discovery_searches", "cache_hits")
     op.drop_column("discovery_searches", "queries_used")

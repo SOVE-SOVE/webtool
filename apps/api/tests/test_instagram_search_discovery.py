@@ -354,6 +354,8 @@ def test_create_search_instagram_search_end_to_end(authed_client, monkeypatch):
     assert row["website_url"] is None
     assert row["location_confidence"] == "approximate"
     assert row["latitude"] is None and row["longitude"] is None  # never geocoded
+    assert row["raw_snippet"] == "Nail salon"  # search-result evidence retained
+    assert row["source_external_id"] == "https://instagram.com/joesnails"  # source URL retained
 
 
 def test_load_more_advances_through_suburbs_and_dedups_across_them(authed_client, monkeypatch):
