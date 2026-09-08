@@ -16,12 +16,17 @@ cap, case-insensitive handle dedup (within one page, across fallback
 variations, across suburb pages, across suburbs, and against existing
 DiscoveredBusiness records from either provider), the 24h search cache
 (now offset-aware), query/cache-hit/raw-results-checked bookkeeping, the
-never-claim-no-website default, and the manual "check for website"
-action.
+manual "check for website" action and its automatic background
+counterpart (JOB_CHECK_INSTAGRAM_WEBSITE — auto-enqueued once per new
+instagram_search candidate, never for instagram_import, never for a
+duplicate of an existing business, rate-limit-aware, and idempotent
+against a manual check beating it to the same row).
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
+from app.core import rate_limit
 from app.integrations import search as search_integration
 from app.integrations.discovery.base import (
     DiscoveryCriteria,
@@ -38,8 +43,13 @@ from app.integrations.discovery.instagram_search_provider import (
     build_query_variations,
 )
 from app.integrations.search import SearchResult
+from app.jobs import runner
+from app.jobs.handlers import HANDLERS, handle_check_instagram_website
 from app.modules.discovery import dedup, search_cache, service
 from app.modules.discovery.models import DiscoveredBusiness, DiscoverySearch, DiscoverySearchCache
+from app.modules.jobs import service as jobs_service
+from app.modules.jobs.job_types import JOB_CHECK_INSTAGRAM_WEBSITE
+from app.modules.jobs.models import JobStatus
 
 
 def _simple_provider(**overrides) -> InstagramSearchDiscoveryProvider:
@@ -551,8 +561,6 @@ def test_cached_search_reuses_result_within_ttl(db_session, monkeypatch):
 
 
 def test_cached_search_expires_after_ttl(db_session, monkeypatch):
-    from datetime import datetime, timedelta, timezone
-
     monkeypatch.setattr(
         search_integration,
         "search_business",
@@ -1063,6 +1071,34 @@ def test_check_website_finds_a_real_business_website_and_confirms_via_research(a
     assert str(recorded["called_with"]) == business["id"]
 
 
+def test_check_website_never_treats_a_directory_listing_as_an_owned_website(authed_client, monkeypatch):
+    """Regression test — found via live QA: a general business-directory
+    listing (yell.com, which crawls AU businesses too, not just UK ones)
+    must never be presented as the business's own owned domain. Reuses
+    result_classifier's DIRECTORY category, same as every other
+    provider's noise filtering."""
+    business = _create_instagram_search_business(authed_client, monkeypatch)
+
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(
+                title="Joe's Nails Southport",
+                url="https://www.yell.com/s/joes-nails-southport.html",
+                description="",
+            ),
+        ],
+    )
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/check-instagram-website")
+    assert res.status_code == 200
+    body = res.json()
+    # A directory hit is not a positive signal — same as finding
+    # nothing at all: a completed, honest "no credible owned domain".
+    assert body["instagram_website_status"] == "no_website"
+    assert body["website_url"] is None
+
+
 def test_check_website_finds_link_in_bio_page(authed_client, monkeypatch):
     business = _create_instagram_search_business(authed_client, monkeypatch)
 
@@ -1081,21 +1117,29 @@ def test_check_website_finds_link_in_bio_page(authed_client, monkeypatch):
     assert body["instagram_bio_link_url"] == "https://linktr.ee/joesnails"
 
 
-def test_check_website_miss_never_downgrades_to_no_website(authed_client, monkeypatch):
+def test_check_website_completed_miss_sets_no_website_found(authed_client, monkeypatch):
+    """A *completed* check (Brave actually answered) that finds no
+    credible owned domain is real, honest evidence — it now moves the
+    candidate to NO_WEBSITE, distinct from "never checked" or "the check
+    couldn't run". This is not an unconditional claim: the frontend
+    labels this state as search-based, not proof (see
+    lib/api.ts::instagramCheckDisplayState)."""
     business = _create_instagram_search_business(authed_client, monkeypatch)
 
     monkeypatch.setattr(search_integration, "search_business", lambda query, count=None, offset=None: [])
     res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/check-instagram-website")
     assert res.status_code == 200
     body = res.json()
-    # Still needs review — a miss is not evidence of "no website".
-    assert body["instagram_website_status"] == "unknown_needs_review"
-    assert body["website_status"] == "unknown"
+    assert body["instagram_website_status"] == "no_website"
+    assert body["website_status"] == "none"
     assert body["website_url"] is None
-    assert body["instagram_website_checked_at"] is not None  # but the attempt is recorded
+    assert body["instagram_website_checked_at"] is not None
 
 
-def test_check_website_miss_when_brave_unavailable_still_records_attempt(authed_client, monkeypatch):
+def test_check_website_brave_unavailable_leaves_needs_review_but_records_attempt(authed_client, monkeypatch):
+    """Distinct from a completed miss: Brave itself didn't answer, so
+    nothing was actually learned — status must stay UNKNOWN_NEEDS_REVIEW
+    (never NO_WEBSITE), even though the attempt is recorded."""
     business = _create_instagram_search_business(authed_client, monkeypatch)
     monkeypatch.setattr(search_integration, "search_business", lambda query, count=None, offset=None: None)
     res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/check-instagram-website")
@@ -1103,6 +1147,29 @@ def test_check_website_miss_when_brave_unavailable_still_records_attempt(authed_
     body = res.json()
     assert body["instagram_website_status"] == "unknown_needs_review"
     assert body["instagram_website_checked_at"] is not None
+
+
+def test_check_website_force_retry_reruns_even_after_a_completed_check(authed_client, monkeypatch):
+    """The manual button is a genuine retry: it must re-run (force=True)
+    even though the row already has instagram_website_checked_at set
+    from an earlier check — unlike the background job's force=False,
+    which would no-op here."""
+    business = _create_instagram_search_business(authed_client, monkeypatch)
+    monkeypatch.setattr(search_integration, "search_business", lambda query, count=None, offset=None: [])
+    first = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/check-instagram-website").json()
+    assert first["instagram_website_status"] == "no_website"
+
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(title="Real Site", url="https://joesnails.example", description="")
+        ],
+    )
+    monkeypatch.setattr(service.business_research_service, "run_research", lambda *a, **kw: None)
+    second = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/check-instagram-website").json()
+    assert second["instagram_website_status"] == "proper_website"
+    assert second["website_url"] == "https://joesnails.example"
 
 
 def test_check_website_on_business_without_instagram_handle_is_rejected(authed_client, monkeypatch):
@@ -1123,3 +1190,280 @@ def test_check_website_on_business_without_instagram_handle_is_rejected(authed_c
 def test_check_website_on_missing_business_returns_404(authed_client):
     res = authed_client.post(f"/api/v1/discovered-businesses/{uuid.uuid4()}/check-instagram-website")
     assert res.status_code == 404
+
+
+# --- Automatic background website check (JOB_CHECK_INSTAGRAM_WEBSITE) --------
+
+
+def _mock_discovery_and_check(monkeypatch, discovery_results, check_results):
+    """`discovery_results` answers the site:instagram.com discovery
+    query; `check_results` (a fixed list, or a callable of the query
+    text) answers the *secondary* check-for-website query — the two are
+    told apart by query shape (only the discovery query is a
+    site:instagram.com search), mirroring how the real handler and
+    provider build genuinely different query strings for each."""
+
+    def fake_search(query, count=None, offset=None):
+        if "site:instagram.com" in query:
+            return discovery_results
+        return check_results(query) if callable(check_results) else check_results
+
+    monkeypatch.setattr(search_integration, "search_business", fake_search)
+
+
+def test_create_search_enqueues_one_background_check_per_candidate_and_does_not_block_results(
+    authed_client, db_session, workspace, monkeypatch
+):
+    _mock_discovery_and_check(
+        monkeypatch,
+        discovery_results=[
+            SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description=""),
+            SearchResult(title="Glow Nails", url="https://instagram.com/glownails", description=""),
+        ],
+        check_results=[],
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    assert res.status_code == 201
+    search_id = res.json()["id"]
+
+    # The batch is visible immediately, before any check has run —
+    # "do not block the initial results from appearing while checks run".
+    results = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()
+    assert len(results) == 2
+    for row in results:
+        assert row["instagram_website_status"] == "unknown_needs_review"
+        assert row["instagram_website_checked_at"] is None
+
+    jobs = [
+        j
+        for j in jobs_service.list_jobs(db_session, workspace.id, job_type=JOB_CHECK_INSTAGRAM_WEBSITE)
+        if j.status == JobStatus.PENDING
+    ]
+    assert len(jobs) == 2
+    assert {j.payload["discovered_business_id"] for j in jobs} == {r["id"] for r in results}
+
+
+def test_background_check_not_enqueued_for_instagram_import_candidates(authed_client, db_session, workspace):
+    """Scoped to instagram_search only — a CSV-imported (Phase 1) row is
+    operator-curated already and never gets an automatic check."""
+    csv_text = "name,instagram_handle\nJoe's Nails,joesnails\n"
+    res = authed_client.post("/api/v1/discovery-searches/instagram-import", json={"csv_text": csv_text})
+    assert res.status_code == 201
+
+    jobs = jobs_service.list_jobs(db_session, workspace.id, job_type=JOB_CHECK_INSTAGRAM_WEBSITE)
+    assert jobs == []
+
+
+def test_background_check_not_enqueued_for_a_duplicate_of_an_existing_business(
+    authed_client, db_session, workspace, monkeypatch
+):
+    """Same "skip a duplicate" rule already applied to research/review-
+    intelligence — the original row this duplicates already has (or
+    will get) its own check."""
+    csv_text = "name,instagram_handle\nJoe's Nails,JoesNails\n"
+    authed_client.post("/api/v1/discovery-searches/instagram-import", json={"csv_text": csv_text})
+
+    _mock_discovery_and_check(
+        monkeypatch,
+        discovery_results=[SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")],
+        check_results=[],
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    search_id = res.json()["id"]
+    row = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()[0]
+    assert row["duplicate_of_discovered_business_id"] is not None  # sanity: it did dedupe
+
+    jobs = jobs_service.list_jobs(db_session, workspace.id, job_type=JOB_CHECK_INSTAGRAM_WEBSITE)
+    assert jobs == []
+
+
+def test_background_job_finds_a_website_and_confirms_via_research(authed_client, db_session, workspace, monkeypatch):
+    _mock_discovery_and_check(
+        monkeypatch,
+        discovery_results=[SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")],
+        check_results=[SearchResult(title="Joe's Nails — Official Site", url="https://joesnails.example", description="")],
+    )
+    monkeypatch.setattr(service.business_research_service, "run_research", lambda *a, **kw: None)
+
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    search_id = res.json()["id"]
+
+    # Drain the job queue — same pattern as test_automation_pipeline.py.
+    while runner.run_once(HANDLERS):
+        pass
+
+    row = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()[0]
+    assert row["instagram_website_status"] == "proper_website"
+    assert row["website_url"] == "https://joesnails.example"
+    assert row["instagram_website_checked_at"] is not None
+
+
+def test_background_job_sets_no_website_found_when_check_completes_with_nothing(
+    authed_client, db_session, workspace, monkeypatch
+):
+    _mock_discovery_and_check(
+        monkeypatch,
+        discovery_results=[SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")],
+        check_results=[],
+    )
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    search_id = res.json()["id"]
+
+    while runner.run_once(HANDLERS):
+        pass
+
+    row = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()[0]
+    assert row["instagram_website_status"] == "no_website"
+    assert row["website_status"] == "none"
+    assert row["instagram_website_checked_at"] is not None
+
+
+def test_background_job_leaves_needs_review_when_brave_is_unavailable_for_the_check(
+    authed_client, db_session, workspace, monkeypatch
+):
+    """The discovery search itself succeeds (it already has its own
+    results cached/live); only the *secondary* check call fails."""
+    call_state = {"discovery_done": False}
+
+    def fake_search(query, count=None, offset=None):
+        if "site:instagram.com" in query:
+            call_state["discovery_done"] = True
+            return [SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")]
+        return None  # the secondary check call fails
+
+    monkeypatch.setattr(search_integration, "search_business", fake_search)
+
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    search_id = res.json()["id"]
+    assert call_state["discovery_done"] is True
+
+    while runner.run_once(HANDLERS):
+        pass
+
+    row = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()[0]
+    assert row["instagram_website_status"] == "unknown_needs_review"
+    assert row["instagram_website_checked_at"] is not None  # the attempt was still recorded
+
+
+def test_background_job_is_a_no_op_if_a_manual_check_already_ran(authed_client, db_session, workspace, monkeypatch):
+    """Duplicate-prevention: if the operator's manual retry beat the
+    background job to this row, the job (force=False) must not spend a
+    second live query re-checking it."""
+    calls = {"n": 0}
+
+    def fake_search(query, count=None, offset=None):
+        if "site:instagram.com" in query:
+            return [SearchResult(title="Joe's Nails", url="https://instagram.com/joesnails", description="")]
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(search_integration, "search_business", fake_search)
+
+    res = authed_client.post(
+        "/api/v1/discovery-searches",
+        json={"industry": "Nail Salon", "provider": "instagram_search", "location": "Surfers Paradise"},
+    )
+    search_id = res.json()["id"]
+    business_id = authed_client.get(f"/api/v1/discovery-searches/{search_id}/results").json()[0]["id"]
+
+    # Operator clicks "Check for website" before the job runs.
+    authed_client.post(f"/api/v1/discovered-businesses/{business_id}/check-instagram-website")
+    assert calls["n"] == 1
+
+    # Now the background job runs — must see instagram_website_checked_at
+    # already set and skip re-checking entirely.
+    while runner.run_once(HANDLERS):
+        pass
+    assert calls["n"] == 1  # unchanged — no second live query
+
+
+def test_background_job_reschedules_itself_when_over_the_shared_rate_limit(db_session, workspace, monkeypatch):
+    search = DiscoverySearch(
+        workspace_id=workspace.id, industry="Nail Salon", provider="instagram_search", suburbs=["Broadbeach"]
+    )
+    db_session.add(search)
+    db_session.commit()
+    business = DiscoveredBusiness(
+        discovery_search_id=search.id,
+        name="Joe's Nails",
+        source_provider="instagram_search",
+        source_external_id="https://instagram.com/joesnails",
+        instagram_handle="joesnails",
+        dedup_key="joes nails|broadbeach|",
+        suburb="Broadbeach",
+    )
+    db_session.add(business)
+    db_session.commit()
+
+    calls = {"n": 0}
+    monkeypatch.setattr(search_integration, "search_business", lambda *a, **kw: (calls.__setitem__("n", calls["n"] + 1), [])[1])
+    monkeypatch.setattr(rate_limit, "background_brave_call_allowed", lambda key: False)
+
+    job = jobs_service.enqueue(
+        db_session,
+        workspace_id=workspace.id,
+        job_type=JOB_CHECK_INSTAGRAM_WEBSITE,
+        payload={"discovered_business_id": str(business.id)},
+    )
+    result = handle_check_instagram_website(db_session, job)
+
+    assert result["rescheduled"] is True
+    assert calls["n"] == 0  # never actually spent a live query
+
+    pending = jobs_service.list_jobs(db_session, workspace.id, job_type=JOB_CHECK_INSTAGRAM_WEBSITE)
+    rescheduled = [j for j in pending if j.id != job.id]
+    assert len(rescheduled) == 1
+    assert rescheduled[0].status == JobStatus.PENDING
+    assert rescheduled[0].run_after > datetime.now(timezone.utc)
+    assert rescheduled[0].payload == job.payload
+
+
+def test_background_job_records_a_live_call_against_the_shared_budget(db_session, workspace, monkeypatch):
+    search = DiscoverySearch(
+        workspace_id=workspace.id, industry="Nail Salon", provider="instagram_search", suburbs=["Broadbeach"]
+    )
+    db_session.add(search)
+    db_session.commit()
+    business = DiscoveredBusiness(
+        discovery_search_id=search.id,
+        name="Joe's Nails",
+        source_provider="instagram_search",
+        source_external_id="https://instagram.com/joesnails",
+        instagram_handle="joesnails",
+        dedup_key="joes nails|broadbeach|",
+        suburb="Broadbeach",
+    )
+    db_session.add(business)
+    db_session.commit()
+
+    monkeypatch.setattr(search_integration, "search_business", lambda *a, **kw: [])
+    recorded = {"keys": []}
+    monkeypatch.setattr(rate_limit, "background_brave_call_allowed", lambda key: True)
+    monkeypatch.setattr(rate_limit, "record_background_brave_call", lambda key: recorded["keys"].append(key))
+
+    job = jobs_service.enqueue(
+        db_session,
+        workspace_id=workspace.id,
+        job_type=JOB_CHECK_INSTAGRAM_WEBSITE,
+        payload={"discovered_business_id": str(business.id)},
+    )
+    result = handle_check_instagram_website(db_session, job)
+
+    assert result["checked"] is True
+    assert result["instagram_website_status"] == "no_website"
+    assert recorded["keys"] == ["instagram_website_check"]

@@ -6,7 +6,9 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_CHECK_STATE_BADGE,
+  INSTAGRAM_CHECK_STATE_LABEL,
+  instagramCheckDisplayState,
   type DiscoveredBusinessReviewItem,
   type OpportunityScoreCategory,
 } from "@/lib/api";
@@ -269,6 +271,7 @@ export default function ReviewPage() {
                 const busy = busyId === item.id;
                 const settled =
                   item.status === "imported" || item.status === "rejected" || item.status === "archived";
+                const igState = instagramCheckDisplayState(item);
                 return (
                   <tr key={item.id} className={item.status === "archived" ? "opacity-50" : undefined}>
                     <td className="px-2 py-2 align-top">
@@ -304,23 +307,29 @@ export default function ReviewPage() {
                           rel="noreferrer"
                           className="text-fg-muted hover:underline"
                         >
-                          Website found
+                          {item.website_url}
                         </a>
-                      ) : (
-                        <span className="text-fg-subtle">
-                          {item.instagram_website_status
-                            ? INSTAGRAM_WEBSITE_STATUS_LABEL[item.instagram_website_status]
-                            : DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}
+                      ) : igState ? (
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${INSTAGRAM_CHECK_STATE_BADGE[igState]}`}
+                        >
+                          {INSTAGRAM_CHECK_STATE_LABEL[igState]}
                         </span>
+                      ) : (
+                        <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}</span>
                       )}
-                      {item.instagram_handle && item.instagram_website_status === "unknown_needs_review" && (
+                      {igState && igState !== "website_found" && (
                         <div>
                           <button
                             onClick={() => handleCheckWebsite(item)}
                             disabled={checkingWebsiteId === item.id}
                             className="text-xs text-fg-muted hover:underline disabled:opacity-50"
                           >
-                            {checkingWebsiteId === item.id ? "Checking…" : "Check for website"}
+                            {checkingWebsiteId === item.id
+                              ? "Checking…"
+                              : igState === "check_pending"
+                                ? "Check now"
+                                : "Check for website"}
                           </button>
                         </div>
                       )}

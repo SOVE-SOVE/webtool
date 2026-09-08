@@ -251,12 +251,18 @@ def check_instagram_website(
     """
     The manual "check for website" action for an Instagram-sourced
     candidate — an on-demand secondary Brave search for the business's
-    own domain, never run automatically. Rate-limited like every other
-    endpoint that spends a paid search-API call. 400 if the business has
-    no Instagram handle on record.
+    own domain. For instagram_search candidates this also runs
+    automatically in the background once (see
+    jobs/handlers.py::handle_check_instagram_website); this route always
+    passes `force=True` so it still works as an explicit retry even if
+    that background check already completed. Rate-limited like every
+    other endpoint that spends a paid search-API call. 400 if the
+    business has no Instagram handle on record.
     """
     try:
-        business = service.check_instagram_website(db, current_user.workspace_id, current_user.id, business_id)
+        business = service.check_instagram_website(
+            db, current_user.workspace_id, current_user.id, business_id, force=True
+        )
     except service.NotInstagramCandidateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if business is None:

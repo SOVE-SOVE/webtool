@@ -45,6 +45,7 @@ from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import (
     DEFAULT_DISCOVERY_INTERVAL_HOURS,
     JOB_BUSINESS_RESEARCH,
+    JOB_CHECK_INSTAGRAM_WEBSITE,
     JOB_DISCOVERY_SEARCH,
     JOB_REVIEW_INTELLIGENCE,
 )
@@ -347,6 +348,26 @@ def _enqueue_research(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID,
             payload={"discovered_business_id": str(business.id)},
             actor_id=actor_id,
         )
+        # instagram_search only: automatically run the same secondary
+        # "does this business have an owned website" check the manual
+        # "Check for website" button triggers, so an operator never has
+        # to click it by hand just to move a fresh batch off "unknown" —
+        # see check_instagram_website and
+        # jobs/handlers.py::handle_check_instagram_website. Scoped to
+        # this one provider (not instagram_import's manually-curated
+        # CSV rows, which the operator may have already annotated) via
+        # source_provider, matching how every other provider-specific
+        # branch in this module is gated. Exactly one job per candidate,
+        # ever — check_instagram_website's own `force=False` no-op guard
+        # is the second line of defense if this were ever double-called.
+        if business.source_provider == registry.INSTAGRAM_SEARCH and business.instagram_handle:
+            jobs_service.enqueue(
+                db,
+                workspace_id=workspace_id,
+                job_type=JOB_CHECK_INSTAGRAM_WEBSITE,
+                payload={"discovered_business_id": str(business.id)},
+                actor_id=actor_id,
+            )
 
 
 def _parse_instagram_search_suburbs(data: DiscoverySearchCreate) -> list[str]:
@@ -1112,29 +1133,60 @@ def _hostname(url: str) -> str:
 
 
 def check_instagram_website(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    business_id: uuid.UUID,
+    *,
+    force: bool = False,
 ) -> DiscoveredBusinessRead | None:
     """
-    The manual "check for website" action — an on-demand secondary Brave
-    search for a business's own domain, run only when an operator
-    explicitly asks for it (never automatically for every Instagram
-    candidate, and not part of automated discovery itself). Applies to
-    any candidate with an Instagram handle on record, from either
-    instagram_search or instagram_import — reuses the exact same web-
-    search wrapper and result classifier as every discovery provider,
-    plus the existing business-research pipeline
+    The "check for website" action — a secondary Brave search for a
+    business's own domain. Runs two ways:
+
+    - Automatically in the background, once, for every new
+      instagram_search candidate (`force=False` — see
+      jobs/handlers.py::handle_check_instagram_website and this
+      module's `_enqueue_research`).
+    - On demand as a manual retry from the review queue or detail page
+      (`force=True` — the route always passes this), which re-runs even
+      if a background check already completed, since a retry is
+      explicitly asking "check again".
+
+    `force=False` is a no-op (returns the business as-is) once
+    `instagram_website_checked_at` is already set — this is what
+    prevents a duplicate background check: the job is only ever enqueued
+    once per candidate, but this guard also covers the case where an
+    operator's manual retry beat the background job to it, so the job
+    doesn't redundantly spend a second live query when it does run.
+
+    Applies to any candidate with an Instagram handle on record, from
+    either instagram_search or instagram_import — reuses the exact same
+    web-search wrapper and result classifier as every discovery
+    provider, plus the existing business-research pipeline
     (business_research_service.run_research) to actually fetch and
     confirm a domain once one is found, rather than trusting a search
     snippet's mere existence.
 
-    A search that finds nothing is not evidence of "no website" — see
-    InstagramWebsiteStatus's docstring — so a miss only records that a
-    check happened (instagram_website_checked_at) and leaves the
-    candidate's status exactly as it was; only a positive signal (a
-    BUSINESS-classified result, or a known link-in-bio domain) moves it
-    off UNKNOWN_NEEDS_REVIEW. Returns None when the business doesn't
-    exist in this workspace, so the route can 404. Raises
-    NotInstagramCandidateError for a business with no Instagram handle.
+    Three possible completed outcomes, each a distinct, honestly-labeled
+    state (see InstagramWebsiteStatus and the frontend's
+    instagramCheckDisplayState):
+    - PROPER_WEBSITE — a real business result found; confirmed via
+      research.
+    - LINK_IN_BIO_ONLY — a known link-in-bio domain found.
+    - NO_WEBSITE — the search *completed* (Brave actually answered) and
+      found no credible owned domain. This is evidence of absence, not
+      proof — the UI must present it as a search-based result, never as
+      an unconditional "this business definitely has no website".
+
+    A FOURTH case — Brave itself unavailable, so no search actually
+    ran — leaves the status at UNKNOWN_NEEDS_REVIEW (checked_at is still
+    set, recording the attempt, but nothing was actually learned).
+    That's the "the check could not run" half of "Needs review".
+
+    Returns None when the business doesn't exist in this workspace, so
+    the route can 404. Raises NotInstagramCandidateError for a business
+    with no Instagram handle.
     """
     business = _get_discovered_business_orm(db, workspace_id, business_id)
     if business is None:
@@ -1143,6 +1195,8 @@ def check_instagram_website(
         raise NotInstagramCandidateError(
             f"{business.name} has no Instagram handle on record — nothing to check"
         )
+    if not force and business.instagram_website_checked_at is not None:
+        return DiscoveredBusinessRead.model_validate(business)
 
     query = " ".join(p for p in (business.name, business.suburb, business.state) if p).strip()
     results = search_integration.search_business(query, count=5)
@@ -1164,7 +1218,6 @@ def check_instagram_website(
                 found_url = result.url
                 break
 
-    outcome = "no_signal"
     if found_url and found_link_in_bio:
         business.instagram_bio_link_url = found_url
         business.instagram_website_status = InstagramWebsiteStatus.LINK_IN_BIO_ONLY
@@ -1175,8 +1228,20 @@ def check_instagram_website(
         business.website_status = WebsiteStatus.FOUND
         business.instagram_website_status = InstagramWebsiteStatus.PROPER_WEBSITE
         outcome = "website_found"
-    # else: no positive signal — status is left exactly as it was
-    # (never downgraded to NO_WEBSITE from a search miss).
+    elif results is not None:
+        # Brave actually answered and nothing credible turned up — a
+        # completed, negative result, distinct from "couldn't check at
+        # all". Still never absolute proof (see the docstring above),
+        # which is why the UI hedges this one, but it's real enough
+        # evidence to move off UNKNOWN_NEEDS_REVIEW.
+        business.instagram_website_status = InstagramWebsiteStatus.NO_WEBSITE
+        business.website_status = WebsiteStatus.NONE
+        outcome = "no_website_found"
+    else:
+        # Brave itself unavailable — no search actually ran, so nothing
+        # was learned. Status stays UNKNOWN_NEEDS_REVIEW; only the
+        # attempt (checked_at) is recorded.
+        outcome = "check_unavailable"
 
     activity_service.record(
         db,
@@ -1189,7 +1254,8 @@ def check_instagram_website(
         + {
             "website_found": f"found {found_url}",
             "link_in_bio_found": f"found a link-in-bio page ({found_url})",
-            "no_signal": "no owned website found; still needs review",
+            "no_website_found": "no owned website found (search-based, not proof)",
+            "check_unavailable": "Brave Search was unavailable — could not run the check",
         }[outcome],
     )
     db.commit()

@@ -7,7 +7,8 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_CHECK_STATE_LABEL,
+  instagramCheckDisplayState,
   type BusinessResearchResult,
   type DiscoveredBusiness,
   type OpportunityScoreCategory,
@@ -251,6 +252,7 @@ function InstagramCard({
   onCheckWebsite: () => void;
   checking: boolean;
 }) {
+  const igState = instagramCheckDisplayState(business);
   return (
     <div className="mt-6 max-w-2xl border border-border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -280,13 +282,13 @@ function InstagramCard({
             {business.instagram_bio && <p className="mt-1 text-sm text-fg-muted">{business.instagram_bio}</p>}
           </div>
         </div>
-        {business.instagram_website_status === "unknown_needs_review" && (
+        {igState && igState !== "website_found" && (
           <button
             onClick={onCheckWebsite}
             disabled={checking}
             className="shrink-0 rounded-md border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
           >
-            {checking ? "Checking…" : "Check for website"}
+            {checking ? "Checking…" : igState === "check_pending" ? "Check now" : "Check for website"}
           </button>
         )}
       </div>
@@ -302,14 +304,16 @@ function InstagramCard({
             business.instagram_last_post_at ? new Date(business.instagram_last_post_at).toLocaleDateString() : null
           }
         />
-        <Fact
-          label="Website status"
-          value={
-            business.instagram_website_status
-              ? INSTAGRAM_WEBSITE_STATUS_LABEL[business.instagram_website_status]
-              : null
-          }
-        />
+        {igState === "website_found" && business.website_url ? (
+          <div className="flex justify-between border-b border-border py-1.5 text-sm">
+            <span className="text-fg-muted">Website status</span>
+            <a href={business.website_url} target="_blank" rel="noreferrer" className="text-fg hover:underline">
+              {business.website_url}
+            </a>
+          </div>
+        ) : (
+          <Fact label="Website status" value={igState ? INSTAGRAM_CHECK_STATE_LABEL[igState] : null} />
+        )}
         <Fact
           label="Location confidence"
           value={business.location_confidence ? LOCATION_CONFIDENCE_LABEL[business.location_confidence] : null}

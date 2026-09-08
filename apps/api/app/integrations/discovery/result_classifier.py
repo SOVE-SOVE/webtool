@@ -64,6 +64,12 @@ _DIRECTORY_DOMAINS = frozenset(
         "yelp.com.au",
         "yellowpages.com.au",
         "yellowpages.com",
+        # UK/international general-business directory — found via live
+        # QA on Instagram Search Discovery's "check for website" action:
+        # a directory listing for an AU business (yell.com crawls
+        # globally, not just UK listings) was misclassified as the
+        # business's own owned domain.
+        "yell.com",
         "whitepages.com.au",
         "truelocal.com.au",
         "localsearch.com.au",
@@ -76,6 +82,12 @@ _DIRECTORY_DOMAINS = frozenset(
         "hipages.com.au",
         "serviceseeking.com.au",
         "airtasker.com",
+        # A booking marketplace for hair/beauty businesses — found via
+        # the same live QA pass as yell.com above: its category/location
+        # landing pages (e.g. "/lp/en/bt/hair-salons/in/...") list many
+        # businesses and are not any single business's own site, but
+        # were being returned as one.
+        "fresha.com",
         "tripadvisor.com",
         "tripadvisor.com.au",
         "zomato.com",

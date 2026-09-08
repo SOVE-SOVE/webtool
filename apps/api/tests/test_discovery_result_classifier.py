@@ -76,6 +76,11 @@ def test_social_profiles_classified_social_and_kept(url):
         (_r("Old thread", url="https://old.reddit.com/r/brisbane/abc"), ResultCategory.FORUM, "reddit.com"),
         (_r("Plumbing - Wikipedia", url="https://en.wikipedia.org/wiki/Plumbing"), ResultCategory.ARTICLE, "wikipedia.org"),
         (_r("Gold Coast plumbers", url="https://www.yellowpages.com.au/search/listings"), ResultCategory.DIRECTORY, "yellowpages.com.au"),
+        # Found via live QA on Instagram Search Discovery's "check for
+        # website" action: yell.com crawls AU businesses too, not just
+        # UK ones, and was being misclassified as an owned domain.
+        (_r("Hairdressers Southport", url="https://www.yell.com/s/hairdressers-southport.html"), ResultCategory.DIRECTORY, "yell.com"),
+        (_r("Hair salons in Southport", url="https://www.fresha.com/lp/en/bt/hair-salons/in/au-gold-coast/southport"), ResultCategory.DIRECTORY, "fresha.com"),
         (_r("Sydney cafes", url="https://www.tripadvisor.com.au/Restaurants-g255060"), ResultCategory.DIRECTORY, "tripadvisor"),
         (_r("A cafe review", url="https://someblog.medium.com/a-cafe-review-123"), ResultCategory.ARTICLE, "medium.com"),
         (_r("News piece", url="https://www.abc.net.au/news/2024-01-01/story"), ResultCategory.NEWS, "abc.net.au"),

@@ -24,12 +24,14 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core import rate_limit
 from app.modules.discovery import service as discovery_service
 from app.modules.discovery.schemas import DiscoverySearchCreate
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import (
     DEFAULT_DISCOVERY_INTERVAL_HOURS,
     JOB_BUSINESS_RESEARCH,
+    JOB_CHECK_INSTAGRAM_WEBSITE,
     JOB_DISCOVERY_SEARCH,
     JOB_FOLLOW_UP_DRAFT,
     JOB_OPPORTUNITY_SCORE,
@@ -40,6 +42,16 @@ from app.modules.jobs.job_types import (
     JOB_WEBSITE_QUALITY_AUDIT,
 )
 from app.modules.jobs.models import Job
+
+# Shared bucket name for the background rate limiter (core/rate_limit.py)
+# — one process-wide budget for this job type, not per-workspace, since
+# BRAVE_SEARCH_API_KEY is one account-wide credential regardless of
+# which workspace's search triggered the check.
+_INSTAGRAM_WEBSITE_CHECK_BUCKET = "instagram_website_check"
+# How long to wait before retrying a check that was deferred for budget
+# reasons — short enough that a batch of new candidates finishes
+# checking within a couple of minutes, long enough not to just spin.
+_RATE_LIMIT_RETRY_DELAY_SECONDS = 15
 
 
 def handle_discovery_search(db: Session, job: Job) -> dict:
@@ -108,6 +120,47 @@ def handle_review_intelligence(db: Session, job: Job) -> dict:
     return {
         "discovered_business_id": str(business_id),
         "data_status": result.data_status.value if result else None,
+    }
+
+
+def handle_check_instagram_website(db: Session, job: Job) -> dict:
+    """
+    The automatic background half of "check for website" — enqueued
+    once per new instagram_search candidate by
+    discovery/service.py::_enqueue_research. Calls the exact same
+    service function the manual retry button does, with `force=False`
+    so it's a safe no-op if a manual check already ran first (see
+    check_instagram_website's own docstring for why that's the
+    duplicate-prevention guard, not anything job-queue-specific).
+
+    Rate-limit-aware: a background job has no HTTP caller to hand a 429
+    to, so instead of failing when the shared Brave budget
+    (core/rate_limit.py) is spent, it re-enqueues itself a short delay
+    later and returns normally — this doesn't count as a failed attempt,
+    and the job stays visible as still-pending (not stuck or lost) the
+    whole time it's waiting for budget.
+    """
+    business_id = uuid.UUID(job.payload["discovered_business_id"])
+
+    if not rate_limit.background_brave_call_allowed(_INSTAGRAM_WEBSITE_CHECK_BUCKET):
+        jobs_service.enqueue(
+            db,
+            workspace_id=job.workspace_id,
+            job_type=JOB_CHECK_INSTAGRAM_WEBSITE,
+            payload=job.payload,
+            actor_id=job.created_by_user_id,
+            run_after=datetime.now(timezone.utc) + timedelta(seconds=_RATE_LIMIT_RETRY_DELAY_SECONDS),
+        )
+        return {"discovered_business_id": str(business_id), "rescheduled": True}
+
+    rate_limit.record_background_brave_call(_INSTAGRAM_WEBSITE_CHECK_BUCKET)
+    result = discovery_service.check_instagram_website(db, job.workspace_id, job.created_by_user_id, business_id)
+    return {
+        "discovered_business_id": str(business_id),
+        "checked": result is not None,
+        "instagram_website_status": result.instagram_website_status.value
+        if result and result.instagram_website_status
+        else None,
     }
 
 
@@ -199,6 +252,7 @@ HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
     JOB_REVIEW_INTELLIGENCE: handle_review_intelligence,
+    JOB_CHECK_INSTAGRAM_WEBSITE: handle_check_instagram_website,
     JOB_WEBSITE_QUALITY_AUDIT: handle_website_quality_audit,
     JOB_OPPORTUNITY_SCORE: handle_opportunity_score,
     JOB_OUTREACH_DRAFT: handle_outreach_draft,

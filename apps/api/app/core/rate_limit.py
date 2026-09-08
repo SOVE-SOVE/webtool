@@ -94,6 +94,29 @@ def clear_login_failures(email: str, client_ip: str) -> None:
     _login_limiter.clear(_login_keys(email, client_ip)[0])
 
 
+# Background jobs that spend a live Brave query (see
+# jobs/handlers.py::handle_check_instagram_website) aren't attributable
+# to one HTTP request/user the way enforce_generation_rate_limit's
+# per-user budget is, and a job has no caller to 429 — it just waits.
+# A separate, coarse, process-wide limiter for exactly that shape of
+# work, distinct from the per-user HTTP budget above.
+_background_job_limiter = _InMemoryRateLimiter()
+MAX_BACKGROUND_BRAVE_CALLS_PER_MINUTE = 20
+
+
+def background_brave_call_allowed(key: str) -> bool:
+    """True if `key` (a bucket name, e.g. "instagram_website_check") has
+    room in this minute's budget. Does not consume it — call
+    `record_background_brave_call` only once the caller actually spends
+    a live request, so a cache-hit or an early-exit never counts against
+    the budget."""
+    return not _background_job_limiter.over_limit(key, MAX_BACKGROUND_BRAVE_CALLS_PER_MINUTE, _WINDOW_SECONDS)
+
+
+def record_background_brave_call(key: str) -> None:
+    _background_job_limiter.record(key)
+
+
 def enforce_generation_rate_limit(current_user: User = Depends(get_current_user)) -> User:
     """
     Drop-in replacement for `Depends(get_current_user)` on any route

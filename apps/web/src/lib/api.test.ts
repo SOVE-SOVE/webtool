@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError } from "./api";
+import { api, ApiError, instagramCheckDisplayState, type InstagramWebsiteStatus } from "./api";
 
 describe("api", () => {
   afterEach(() => {
@@ -371,5 +371,84 @@ describe("api", () => {
         expect.anything(),
       );
     });
+  });
+});
+
+describe("instagramCheckDisplayState", () => {
+  function candidate(overrides: {
+    source_provider?: string;
+    instagram_handle?: string | null;
+    instagram_website_status?: InstagramWebsiteStatus | null;
+    instagram_website_checked_at?: string | null;
+    website_status?: "found" | "none" | "unknown";
+  }) {
+    return {
+      source_provider: "instagram_search",
+      instagram_handle: "joesnails",
+      instagram_website_status: null,
+      instagram_website_checked_at: null,
+      website_status: "unknown" as const,
+      ...overrides,
+    };
+  }
+
+  it("returns null for a non-Instagram row", () => {
+    expect(instagramCheckDisplayState(candidate({ instagram_handle: null }))).toBeNull();
+  });
+
+  it("is website_found only when both the Instagram status and the generic status agree", () => {
+    expect(
+      instagramCheckDisplayState(
+        candidate({ instagram_website_status: "proper_website", website_status: "found" }),
+      ),
+    ).toBe("website_found");
+    // Instagram status says proper_website but the generic status
+    // disagrees (shouldn't happen in practice, but must not be
+    // presented as confidently "found" if it does).
+    expect(
+      instagramCheckDisplayState(
+        candidate({ instagram_website_status: "proper_website", website_status: "unknown" }),
+      ),
+    ).not.toBe("website_found");
+  });
+
+  it("is link_in_bio_only from the Instagram status alone", () => {
+    expect(instagramCheckDisplayState(candidate({ instagram_website_status: "link_in_bio_only" }))).toBe(
+      "link_in_bio_only",
+    );
+  });
+
+  it("is no_website_found from the Instagram status alone", () => {
+    expect(instagramCheckDisplayState(candidate({ instagram_website_status: "no_website" }))).toBe(
+      "no_website_found",
+    );
+  });
+
+  it("is check_pending only for an unchecked instagram_search candidate", () => {
+    expect(
+      instagramCheckDisplayState(
+        candidate({ source_provider: "instagram_search", instagram_website_checked_at: null }),
+      ),
+    ).toBe("check_pending");
+  });
+
+  it("is needs_review for an unchecked instagram_import candidate (no background check is ever queued for it)", () => {
+    expect(
+      instagramCheckDisplayState(
+        candidate({ source_provider: "instagram_import", instagram_website_checked_at: null }),
+      ),
+    ).toBe("needs_review");
+  });
+
+  it("is needs_review once checked but inconclusive (e.g. Brave was unavailable)", () => {
+    expect(
+      instagramCheckDisplayState(
+        candidate({
+          source_provider: "instagram_search",
+          instagram_website_checked_at: "2026-09-08T00:00:00Z",
+          instagram_website_status: "unknown_needs_review",
+        }),
+      ),
+    ).toBe("needs_review");
   });
 });

@@ -7,9 +7,12 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
+  INSTAGRAM_CHECK_STATE_BADGE,
+  INSTAGRAM_CHECK_STATE_LABEL,
   INSTAGRAM_WEBSITE_STATUS_LABEL,
   INSTAGRAM_WEBSITE_STATUSES,
   MAX_SUBURBS_PER_SEARCH,
+  instagramCheckDisplayState,
   type DiscoveredBusiness,
   type DiscoverySearch,
   type InstagramImportResult,
@@ -198,6 +201,49 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     if (activeSelectionId)
       rowRefs.current.get(activeSelectionId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeSelectionId]);
+
+  // Background website-check progress for this search — only
+  // instagram_search candidates ever get an automatic check (see
+  // instagramCheckDisplayState), and a duplicate-of-existing-business
+  // row never gets one enqueued at all (modules/discovery/service.py's
+  // _enqueue_research), so both are excluded from the denominator.
+  const websiteCheckProgress = useMemo(() => {
+    if (!activeResults) return null;
+    const checkable = activeResults.filter(
+      (b) => b.instagram_handle && b.source_provider === "instagram_search" && !b.duplicate_of_discovered_business_id,
+    );
+    if (checkable.length === 0) return null;
+    const completed = checkable.filter((b) => b.instagram_website_checked_at !== null).length;
+    return { completed, total: checkable.length };
+  }, [activeResults]);
+  const pendingWebsiteChecks = websiteCheckProgress ? websiteCheckProgress.total - websiteCheckProgress.completed : 0;
+
+  // Poll while any check is outstanding, so the operator sees statuses
+  // resolve without a manual refresh — "do not block the initial
+  // results from appearing while checks run" means the checks finish
+  // asynchronously, so something has to notice when they do. Capped at
+  // a bounded number of polls: if the background job poller isn't
+  // running at all, this stops trying rather than polling forever.
+  const pollCountRef = useRef(0);
+  useEffect(() => {
+    pollCountRef.current = 0;
+  }, [activeId]);
+  useEffect(() => {
+    if (!activeId || pendingWebsiteChecks <= 0) return;
+    const MAX_POLLS = 40; // ~2.5 minutes at 4s apart
+    const timer = setInterval(() => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > MAX_POLLS) {
+        clearInterval(timer);
+        return;
+      }
+      api
+        .listDiscoveredBusinesses(activeId)
+        .then((rows) => setResults(rows))
+        .catch(() => {});
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [activeId, pendingWebsiteChecks]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -411,6 +457,13 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                   {activeSearch.suburbs.join(", ")}
                 </p>
               )}
+              {websiteCheckProgress && (
+                <p className="mt-0.5">
+                  {pendingWebsiteChecks > 0
+                    ? `Checking websites: ${websiteCheckProgress.completed} of ${websiteCheckProgress.total}`
+                    : `Website checks complete: ${websiteCheckProgress.total} of ${websiteCheckProgress.total}`}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -571,6 +624,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                       business.address ||
                       [business.suburb, business.state].filter(Boolean).join(", ") ||
                       "—";
+                    const igState = instagramCheckDisplayState(business);
                     return (
                       <tr
                         key={business.id}
@@ -633,11 +687,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                         </td>
                         <td className="px-3 py-2">
                           <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${WEBSITE_BADGE[business.website_status]}`}
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                              igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]
+                            }`}
                           >
-                            {business.instagram_website_status
-                              ? INSTAGRAM_WEBSITE_STATUS_LABEL[business.instagram_website_status]
-                              : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
+                            {igState ? INSTAGRAM_CHECK_STATE_LABEL[igState] : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
                           </span>
                           {business.website_status === "found" && business.website_url && (
                             <a

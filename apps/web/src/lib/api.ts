@@ -1507,6 +1507,79 @@ export const INSTAGRAM_WEBSITE_STATUS_LABEL: Record<InstagramWebsiteStatus, stri
   unknown_needs_review: "Unknown — needs review",
 };
 
+// The operator-facing website-check state for one Instagram candidate —
+// a display-level refinement of InstagramWebsiteStatus that also knows
+// about *whether a check has happened at all* (instagram_website_status
+// alone can't tell "never checked" apart from "checked, inconclusive").
+// See instagramCheckDisplayState below for how each is derived, and the
+// API's modules/discovery/service.py::check_instagram_website for where
+// the underlying fields get set.
+export const INSTAGRAM_CHECK_STATES = [
+  "website_found",
+  "no_website_found",
+  "link_in_bio_only",
+  "check_pending",
+  "needs_review",
+] as const;
+export type InstagramCheckState = (typeof INSTAGRAM_CHECK_STATES)[number];
+
+export const INSTAGRAM_CHECK_STATE_LABEL: Record<InstagramCheckState, string> = {
+  website_found: "Website found",
+  // Deliberately hedged — a completed search that found nothing is real
+  // evidence, but never proof a business has no website at all.
+  no_website_found: "No website found (search-based, not proof)",
+  link_in_bio_only: "Link-in-bio only",
+  check_pending: "Check pending",
+  needs_review: "Needs review",
+};
+
+type InstagramCheckCandidate = {
+  source_provider: string;
+  instagram_handle: string | null;
+  instagram_website_status: InstagramWebsiteStatus | null;
+  instagram_website_checked_at: string | null;
+  website_status: DiscoveredWebsiteStatus;
+};
+
+/**
+ * Derives the honest, human-facing website-check state for one
+ * candidate. `null` for a non-Instagram row (nothing to show). The two
+ * states that don't map 1:1 from `instagram_website_status` alone:
+ *
+ * - "check_pending": only for an instagram_search candidate that has
+ *   never been checked (checked_at null) — that's the one case where a
+ *   background job (modules/discovery/service.py's `_enqueue_research`)
+ *   is known to have been queued. An instagram_import (CSV) row with no
+ *   handle-driven auto-check instead falls through to "needs_review",
+ *   since nothing is actually pending for it.
+ * - "needs_review": checked_at is set but nothing conclusive came of it
+ *   (Brave was unavailable), or checked_at is null for a non-
+ *   instagram_search row (never checked, and never will be
+ *   automatically).
+ */
+export function instagramCheckDisplayState(business: InstagramCheckCandidate): InstagramCheckState | null {
+  if (!business.instagram_handle) return null;
+  if (business.instagram_website_status === "proper_website" && business.website_status === "found") {
+    return "website_found";
+  }
+  if (business.instagram_website_status === "link_in_bio_only") return "link_in_bio_only";
+  if (business.instagram_website_status === "no_website") return "no_website_found";
+  if (business.instagram_website_checked_at === null && business.source_provider === "instagram_search") {
+    return "check_pending";
+  }
+  return "needs_review";
+}
+
+// Shared badge styling for INSTAGRAM_CHECK_STATE_LABEL, used everywhere
+// the state renders (discovery results table, review queue).
+export const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, string> = {
+  website_found: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+  no_website_found: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
+  link_in_bio_only: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
+  check_pending: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  needs_review: "bg-surface-subtle text-fg-subtle",
+};
+
 // How much to trust a candidate's location fields — a places API's
 // coordinates are CONFIRMED; a CSV-imported address is only
 // APPROXIMATE; no location evidence at all is UNKNOWN (never guessed).

@@ -60,11 +60,26 @@ class InstagramWebsiteStatus(str, enum.Enum):
     tri-state keeps working unchanged.
 
     - NO_WEBSITE            — nothing beyond the Instagram profile itself.
+                              Set two ways, both real evidence, never a
+                              blind default: a human said so directly
+                              (instagram_import.py's CSV column), or a
+                              completed secondary search
+                              (modules/discovery/service.py::check_instagram_website)
+                              found no credible owned domain. The two
+                              are told apart by whether
+                              `instagram_website_checked_at` is set (the
+                              latter always sets it; CSV import never
+                              does) — the UI hedges the search-based
+                              case as "not absolute proof" rather than
+                              presenting both with equal confidence.
     - LINK_IN_BIO_ONLY      — a Linktree/Beacons/etc. page, not an owned domain.
     - INSTAGRAM_SHOP_ONLY   — Meta's own commerce surface, no owned site.
     - PROPER_WEBSITE        — an owned domain was found and confirmed.
     - UNKNOWN_NEEDS_REVIEW  — can't classify confidently from what's on
-                              record. Never guessed into one of the above.
+                              record — never checked yet, or the check
+                              itself couldn't run (e.g. Brave was
+                              unavailable). Never guessed into one of
+                              the above from a mere absence of evidence.
     """
 
     NO_WEBSITE = "no_website"
