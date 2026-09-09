@@ -316,12 +316,14 @@ through silently. Prompt templates live in `agents/prompts/` as their
 own files (not inline strings), so they can be iterated without a code
 change and so a stored result can be traced back to the prompt version
 that produced it, per [[03_AGENT_RULES]]'s traceability requirement.
-All agents call the LLM through one `integrations/llm.py` adapter —
-no per-agent API client code. `integrations/llm.py` always uses the
-premium/Anthropic path, as it always has; none of the 9 existing agents
-have been migrated off it.
+Most agents still call the LLM through `integrations/llm.py`, which
+always uses the premium/Anthropic path. Two — `agents/review_intelligence.py`
+(the review-summary field) and `agents/follow_up.py` — have been
+migrated onto `integrations/ai/router.py` instead, routing to a local
+model by default (they were the two clearest LOCAL candidates in the
+AI-call audit: bounded, fact-constrained summarization/classification
+with code-level clamping downstream regardless of what generated them).
 
-A second, parallel path now exists for future migration:
 `integrations/ai/router.py` routes an explicit `AITask` to either the
 Anthropic provider or a local Ollama provider
 (`integrations/ai/providers/`), based on `AI_LOCAL_*` / `AI_PREMIUM_*`

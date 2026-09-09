@@ -30,6 +30,7 @@ LOCAL_TASKS: frozenset[AITask] = frozenset(
         AITask.PROPOSAL_GENERATION,
         AITask.CLIENT_SUMMARY,
         AITask.PROJECT_SUMMARY,
+        AITask.FOLLOW_UP_RECOMMENDATION,
     }
 )
 

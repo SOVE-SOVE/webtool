@@ -1,7 +1,10 @@
 """
 Follow-up scheduling role — docs/02_ARCHITECTURE.md §6, roadmap M3.
 Recommends the next touch (channel, timing, what to cover) considering
-the lead's full outreach history so far, via integrations/llm.py. See
+the lead's full outreach history so far, via integrations/ai/router.py
+(AITask.FOLLOW_UP_RECOMMENDATION — routed to a local model by default,
+per the T1 audit: a bounded classification + numeric estimate that
+run() clamps regardless of what the model returns). See
 agents/prompts/follow_up.md for the actual instructions given to the
 model. The model reasons in relative days, not an absolute date —
 `run()` converts and clamps that itself so a hallucinated or malformed
@@ -15,7 +18,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "follow_up-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "follow_up.md"
@@ -92,6 +96,7 @@ def _build_user_message(input: FollowUpInput) -> str:
 
 def run(input: FollowUpInput) -> AgentResult[FollowUpOutput]:
     raw = generate_structured(
+        task=AITask.FOLLOW_UP_RECOMMENDATION,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=_RawFollowUpOutput.model_json_schema(),

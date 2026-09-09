@@ -180,3 +180,45 @@ def test_no_agent_module_imports_a_provider_directly():
         if "app.integrations.ai.providers" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_review_intelligence_and_follow_up_are_migrated_onto_the_router():
+    """First two agents migrated off the legacy llm.py path (both were
+    the strongest LOCAL candidates in the T1 audit) — a regression here
+    would silently route them back onto the always-premium legacy path."""
+    agents_dir = pathlib.Path(__file__).parent.parent / "app" / "agents"
+
+    review_intelligence_src = (agents_dir / "review_intelligence.py").read_text(encoding="utf-8")
+    assert "from app.integrations.ai.router import generate_structured" in review_intelligence_src
+    assert "AITask.REVIEW_SUMMARY" in review_intelligence_src
+
+    follow_up_src = (agents_dir / "follow_up.py").read_text(encoding="utf-8")
+    assert "from app.integrations.ai.router import generate_structured" in follow_up_src
+    assert "AITask.FOLLOW_UP_RECOMMENDATION" in follow_up_src
+
+
+def test_follow_up_agent_calls_router_with_follow_up_task(monkeypatch):
+    from app.agents import follow_up as follow_up_agent
+
+    captured = {}
+
+    def fake_generate_structured(*, task, system, user, schema, max_tokens=4096):
+        captured["task"] = task
+        return {"channel": "email", "due_in_days": 5, "suggested_next_action": "Send a short check-in email."}
+
+    monkeypatch.setattr(follow_up_agent, "generate_structured", fake_generate_structured)
+
+    result = follow_up_agent.run(
+        follow_up_agent.FollowUpInput(
+            business_name="Acme Plumbing",
+            industry="trade",
+            suburb="Ballarat",
+            state="VIC",
+            lead_status="contacted",
+            lead_score=60,
+            prior_outreach=[],
+        )
+    )
+
+    assert captured["task"] == AITask.FOLLOW_UP_RECOMMENDATION
+    assert result.output.channel == "email"
