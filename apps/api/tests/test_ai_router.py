@@ -196,6 +196,46 @@ def test_review_intelligence_and_follow_up_are_migrated_onto_the_router():
     assert "from app.integrations.ai.router import generate_structured" in follow_up_src
     assert "AITask.FOLLOW_UP_RECOMMENDATION" in follow_up_src
 
+    meeting_brief_src = (agents_dir / "meeting_brief.py").read_text(encoding="utf-8")
+    assert "from app.integrations.ai.router import generate_structured" in meeting_brief_src
+    assert "AITask.MEETING_BRIEF" in meeting_brief_src
+
+
+def test_meeting_brief_agent_calls_router_with_meeting_brief_task(monkeypatch):
+    from app.agents import meeting_brief as meeting_brief_agent
+
+    captured = {}
+
+    def fake_generate_structured(*, task, system, user, schema, max_tokens=4096):
+        captured["task"] = task
+        return {"questions_to_ask": ["What's the timeline?"], "likely_requirements": ["Booking form"]}
+
+    monkeypatch.setattr(meeting_brief_agent, "generate_structured", fake_generate_structured)
+
+    result = meeting_brief_agent.run(
+        meeting_brief_agent.MeetingBriefDiscoveryInput(
+            business_name="Acme Plumbing",
+            industry="trade",
+            lead_status="qualified",
+            lead_priority="high",
+            lead_score=70,
+            lead_notes=None,
+            meeting_title="Discovery call",
+            meeting_type="discovery_call",
+            scheduled_at="2026-09-15T10:00:00Z",
+            website_strengths=[],
+            website_weaknesses=["no online booking"],
+            website_opportunities=["online booking widget"],
+            objections=[],
+            possible_package="Starter site",
+            prior_outreach=[],
+            prior_interactions=[],
+        )
+    )
+
+    assert captured["task"] == AITask.MEETING_BRIEF
+    assert result.output.questions_to_ask == ["What's the timeline?"]
+
 
 def test_follow_up_agent_calls_router_with_follow_up_task(monkeypatch):
     from app.agents import follow_up as follow_up_agent
