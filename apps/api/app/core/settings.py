@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
 
+    # AI task routing (see app/integrations/ai/router.py) — routine
+    # business-intelligence tasks (summaries, scoring, extraction) go to
+    # a cheap local model; creative/website-generation tasks stay on the
+    # premium Claude model above. Only "ollama" / "anthropic" are
+    # implemented today; an unrecognized value fails loudly rather than
+    # silently picking one.
+    ai_local_provider: str = "ollama"
+    ai_local_model: str = "qwen3:30b-a3b"
+    ai_premium_provider: str = "anthropic"
+    # Blank = use llm_model above, so operators don't have to configure
+    # the same Claude model in two places.
+    ai_premium_model: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_timeout_seconds: float = 120.0
+    # Cost-control default: OFF. If the local provider is unavailable, a
+    # local task fails loudly (LlmUnavailableError -> 503) rather than
+    # silently and automatically running on the much more expensive
+    # premium model. Set true only as a deliberate, known-cost choice.
+    ai_local_fallback_to_premium: bool = False
+
     # brave search — optional. When unset, the sales-audit search step is
     # skipped (not faked) rather than the app failing to start.
     brave_search_api_key: str | None = None
