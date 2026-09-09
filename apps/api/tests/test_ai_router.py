@@ -182,23 +182,25 @@ def test_no_agent_module_imports_a_provider_directly():
     assert offenders == []
 
 
-def test_review_intelligence_and_follow_up_are_migrated_onto_the_router():
-    """First two agents migrated off the legacy llm.py path (both were
-    the strongest LOCAL candidates in the T1 audit) — a regression here
-    would silently route them back onto the always-premium legacy path."""
+# Agents migrated off the legacy always-premium llm.py path onto the
+# router, and the AITask each one must be routing on. Extend this dict
+# (not a new bespoke test) as more agents migrate — a regression here
+# would silently route an agent back onto the legacy path, or a LOCAL
+# task onto the wrong lane, without any single call site noticing.
+MIGRATED_AGENTS: dict[str, str] = {
+    "review_intelligence.py": "AITask.REVIEW_SUMMARY",
+    "follow_up.py": "AITask.FOLLOW_UP_RECOMMENDATION",
+    "meeting_brief.py": "AITask.MEETING_BRIEF",
+    "creative_director.py": "AITask.CREATIVE_DIRECTION",
+}
+
+
+@pytest.mark.parametrize("filename,expected_task", MIGRATED_AGENTS.items())
+def test_agent_is_migrated_onto_the_router(filename, expected_task):
     agents_dir = pathlib.Path(__file__).parent.parent / "app" / "agents"
-
-    review_intelligence_src = (agents_dir / "review_intelligence.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in review_intelligence_src
-    assert "AITask.REVIEW_SUMMARY" in review_intelligence_src
-
-    follow_up_src = (agents_dir / "follow_up.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in follow_up_src
-    assert "AITask.FOLLOW_UP_RECOMMENDATION" in follow_up_src
-
-    meeting_brief_src = (agents_dir / "meeting_brief.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in meeting_brief_src
-    assert "AITask.MEETING_BRIEF" in meeting_brief_src
+    src = (agents_dir / filename).read_text(encoding="utf-8")
+    assert "from app.integrations.ai.router import generate_structured" in src
+    assert expected_task in src
 
 
 def test_meeting_brief_agent_calls_router_with_meeting_brief_task(monkeypatch):
@@ -235,6 +237,62 @@ def test_meeting_brief_agent_calls_router_with_meeting_brief_task(monkeypatch):
 
     assert captured["task"] == AITask.MEETING_BRIEF
     assert result.output.questions_to_ask == ["What's the timeline?"]
+
+
+def test_creative_director_agent_calls_router_with_creative_direction_task(monkeypatch):
+    from app.agents import creative_director as creative_director_agent
+
+    captured = {}
+    fake_output = {
+        "facts": ["Business is a plumber based in Ballarat."],
+        "assumptions": [],
+        "creative_concept": "Trustworthy local trade, fast response",
+        "visual_direction": "Clean, high-contrast, trade-blue palette",
+        "brand_personality": ["reliable", "prompt"],
+        "colour_direction": "Blue and white, high contrast",
+        "typography_direction": "Bold sans-serif headings",
+        "image_direction": "Real job-site photos",
+        "layout_direction": "Single-page, phone-first",
+        "ux_direction": "Click-to-call prominent",
+        "tone_of_voice": "Direct, no-nonsense",
+        "visual_hierarchy": "Phone number first",
+        "cta_strategy": "Call now, repeated",
+        "things_to_avoid": ["stock photos"],
+        "references_inspiration": [],
+    }
+
+    def fake_generate_structured(*, task, system, user, schema, max_tokens=4096):
+        captured["task"] = task
+        return dict(fake_output)
+
+    monkeypatch.setattr(creative_director_agent, "generate_structured", fake_generate_structured)
+
+    result = creative_director_agent.run(
+        creative_director_agent.CreativeDirectorInput(
+            business_name="Riverside Plumbing",
+            industry="trade",
+            suburb="Ballarat",
+            state="VIC",
+            website_url=None,
+            social_links=None,
+            business_notes=None,
+            project_name="Riverside Plumbing site",
+            project_stage="creative_direction",
+            website_audit=None,
+            prior_research_summary=None,
+            prior_website_strengths=None,
+            prior_top_problems=None,
+            prior_suggested_structure=None,
+            prior_suggested_offer=None,
+            target_audience="Homeowners needing urgent plumbing repairs",
+            business_goals="Get more emergency call-outs",
+            additional_notes=None,
+            intake_notes=None,
+        )
+    )
+
+    assert captured["task"] == AITask.CREATIVE_DIRECTION
+    assert result.output.creative_concept == fake_output["creative_concept"]
 
 
 def test_follow_up_agent_calls_router_with_follow_up_task(monkeypatch):
