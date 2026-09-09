@@ -9,6 +9,7 @@ import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
 import { DoThisNext } from "@/components/ui/DoThisNext";
 import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 function NavLink({
   link,
@@ -182,6 +183,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <ConfirmProvider>
+    <ToastProvider>
       <div className="flex min-h-screen bg-canvas">
         {/* Mobile / tablet top bar */}
         <div className="fixed inset-x-0 top-0 z-30 flex h-12 items-center justify-between border-b border-border bg-surface px-3 lg:hidden">
@@ -234,6 +236,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <DoThisNext />
         </main>
       </div>
+    </ToastProvider>
     </ConfirmProvider>
   );
 }

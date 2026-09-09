@@ -5,11 +5,12 @@ a lead's existing website (never a guessed/estimated number) per the
 "no unsupported claims" requirement on the Sales Audit feature.
 """
 
+import base64
 import ipaddress
 import json
 import re
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from playwright.async_api import Error as PlaywrightError
@@ -386,10 +387,63 @@ class JsonLdLocation:
     category: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    # Every raw @type string seen while walking the document (lowercased),
+    # kept alongside the humanised `category` above so callers that need
+    # to test for a specific schema.org type family (e.g. "is this
+    # LocalBusiness or one of its subtypes") don't have to re-walk the
+    # JSON-LD themselves.
+    raw_types: set[str] = field(default_factory=set)
 
     @property
     def complete(self) -> bool:
         return self.address is not None and self.latitude is not None
+
+
+# schema.org's LocalBusiness and its common subtypes — used to answer
+# "does this page identify itself as a local business" for Planning's
+# SEO/local-readiness signal. Not exhaustive (schema.org has hundreds of
+# LocalBusiness subtypes); covers the ones a small local business site
+# is realistically marked up with.
+_LOCAL_BUSINESS_SCHEMA_TYPES = frozenset(
+    {
+        "localbusiness",
+        "store",
+        "restaurant",
+        "foodestablishment",
+        "cafeorcoffeeshop",
+        "bakery",
+        "bar",
+        "professionalservice",
+        "homeandconstructionbusiness",
+        "generalcontractor",
+        "electrician",
+        "plumber",
+        "roofingcontractor",
+        "housepainter",
+        "autorepair",
+        "automotivebusiness",
+        "dentist",
+        "physician",
+        "medicalbusiness",
+        "lawyer",
+        "legalservice",
+        "beautysalon",
+        "hairsalon",
+        "healthclub",
+        "gymorfitnesscenter",
+        "realestateagent",
+        "travelagency",
+        "financialservice",
+        "accountingservice",
+        "insuranceagency",
+        "veterinarycare",
+        "childcare",
+        "florist",
+        "movingcompany",
+        "landscaping",
+        "drycleaningorlaundry",
+    }
+)
 
 
 def _coerce_coord(value, lo: float, hi: float) -> float | None:
@@ -482,6 +536,11 @@ def _walk_jsonld(node, found: JsonLdLocation) -> None:
             found.country = _address_country(node["address"])
     if found.category is None:
         found.category = _node_category(node)
+
+    raw = node.get("@type")
+    for t in raw if isinstance(raw, list) else [raw]:
+        if isinstance(t, str) and t.strip():
+            found.raw_types.add(t.strip().lower())
 
     geo = node.get("geo")
     if isinstance(geo, dict) and found.latitude is None:
@@ -601,3 +660,266 @@ async def fetch_research_signals(url: str) -> ResearchPageSignals:
         return ResearchPageSignals(error=str(exc))
     except Exception as exc:
         return ResearchPageSignals(error=str(exc))
+
+
+_MAX_LINKS_CHECKED = 8
+
+# Same needle list as agents/business_research.py's placeholder check —
+# duplicated rather than imported because agents/* imports from this
+# module, not the other way around.
+_PLACEHOLDER_NEEDLES = (
+    "lorem ipsum",
+    "your company name",
+    "your business name",
+    "sample text",
+    "placeholder text",
+    "this is a sample",
+)
+
+
+def _has_placeholder_text(body_text: str | None) -> bool:
+    if not body_text:
+        return False
+    lowered = body_text.lower()
+    return any(needle in lowered for needle in _PLACEHOLDER_NEEDLES)
+
+
+@dataclass
+class PlanningAuditSignals:
+    """
+    Real, measured signals for Planning's Website Summary / Key Points
+    (agents/planning_audit.py) — one browser session gathering the
+    technical, SEO, accessibility and usability signals listed under
+    "Website Audit Inputs", plus a desktop and mobile screenshot for the
+    visual review step. Deliberately one function rather than three
+    separate page loads: every check below reuses a helper already
+    written for fetch_research_signals / fetch_qa_signals (the JSON-LD
+    walker, the contrast sampler, the overflow check), just gathered
+    together against an arbitrary external target in a single pass.
+    """
+
+    final_url: str | None = None
+    https: bool | None = None
+    http_status: int | None = None
+    title: str | None = None
+    meta_description: str | None = None
+    viewport_meta_present: bool | None = None
+    desktop_overflow: bool | None = None
+    tablet_overflow: bool | None = None
+    mobile_overflow: bool | None = None
+    load_time_ms: int | None = None
+    total_transfer_bytes: int | None = None
+    console_error_count: int | None = None
+    broken_internal_links: list[str] | None = None
+    min_contrast_ratio: float | None = None
+    duplicate_ids: list[str] | None = None
+    html_lang_present: bool | None = None
+    h1_count: int | None = None
+    canonical_present: bool | None = None
+    meta_robots_noindex: bool | None = None
+    robots_txt_reachable: bool | None = None
+    sitemap_xml_reachable: bool | None = None
+    has_local_business_schema: bool | None = None
+    postal_address: str | None = None
+    business_category: str | None = None
+    contact_cta_present: bool | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+    social_links: list[str] | None = None
+    generator_meta: str | None = None
+    appears_template_or_placeholder: bool | None = None
+    # PNG bytes, base64-encoded — this app has no blob/file storage, so
+    # these are persisted directly on the audit row rather than to a new
+    # storage layer, per "smallest clean extension".
+    screenshot_desktop_base64: str | None = None
+    screenshot_mobile_base64: str | None = None
+    error: str | None = None
+
+
+async def fetch_planning_audit_signals(url: str) -> PlanningAuditSignals:
+    """Same navigation/SSRF-guard shape as the other fetch_* functions."""
+    try:
+        _check_url_is_public(url)
+        parsed = urlparse(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+
+        console_error_count = 0
+        transfer_bytes = 0
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                page = await browser.new_page(viewport=DESKTOP_VIEWPORT)
+
+                def _on_console(msg):
+                    nonlocal console_error_count
+                    if msg.type == "error":
+                        console_error_count += 1
+
+                page.on("console", _on_console)
+
+                async def _on_response(response):
+                    nonlocal transfer_bytes
+                    try:
+                        length = response.headers.get("content-length")
+                        if length:
+                            transfer_bytes += int(length)
+                    except Exception:
+                        pass
+
+                page.on("response", _on_response)
+
+                response = await page.goto(url, wait_until="load", timeout=NAVIGATION_TIMEOUT_MS)
+                final_url = page.url
+
+                title = await page.title()
+                meta_description = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"description\"]')?.content ?? null"
+                )
+                viewport_meta_present = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"viewport\"]') !== null"
+                )
+                generator_meta = await page.evaluate(
+                    "() => document.querySelector('meta[name=\"generator\"]')?.content ?? null"
+                )
+                contact_cta_present = await page.evaluate(
+                    "() => !!document.querySelector('a[href^=\"mailto:\"], a[href^=\"tel:\"], form')"
+                )
+                contact_phone = await page.evaluate(
+                    "() => { const a = document.querySelector('a[href^=\"tel:\"]'); if (!a) return null; "
+                    "const raw = a.getAttribute('href').slice(4); "
+                    "try { return decodeURIComponent(raw).trim(); } catch { return raw.trim(); } }"
+                )
+                contact_email = await page.evaluate(
+                    "() => { const a = document.querySelector('a[href^=\"mailto:\"]'); if (!a) return null; "
+                    "const raw = a.getAttribute('href').slice(7).split('?')[0]; "
+                    "try { return decodeURIComponent(raw).trim(); } catch { return raw.trim(); } }"
+                )
+                social_links = await page.evaluate(
+                    "() => Array.from(document.querySelectorAll('a[href]'))"
+                    ".map(a => a.href)"
+                    ".filter(href => /facebook\\.com|instagram\\.com|linkedin\\.com|(?:twitter|x)\\.com|tiktok\\.com/i.test(href))"
+                )
+                body_text = await page.evaluate("() => document.body ? document.body.innerText : null")
+                canonical_present = await page.evaluate(
+                    "() => document.querySelector('link[rel=\"canonical\"]') !== null"
+                )
+                meta_robots_noindex = await page.evaluate(
+                    "() => /noindex/i.test(document.querySelector('meta[name=\"robots\"]')?.content || '')"
+                )
+                h1_count = await page.evaluate("() => document.querySelectorAll('h1').length")
+                html_lang_present = await page.evaluate(
+                    "() => !!(document.documentElement.getAttribute('lang') || '').trim()"
+                )
+                duplicate_ids = await page.evaluate(
+                    "() => { const seen = new Map(); "
+                    "for (const el of document.querySelectorAll('[id]')) { "
+                    "seen.set(el.id, (seen.get(el.id) || 0) + 1); } "
+                    "return Array.from(seen.entries()).filter(([, n]) => n > 1).map(([id]) => id); }"
+                )
+                min_contrast_ratio = await page.evaluate(_CONTRAST_SAMPLE_JS)
+                desktop_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+                internal_links = await page.evaluate(
+                    f"""() => Array.from(document.querySelectorAll('a[href]'))
+                    .map(a => a.href)
+                    .filter(href => href.startsWith({origin!r}))
+                    .slice(0, {_MAX_LINKS_CHECKED * 3})"""
+                )
+                jsonld_blocks = await page.evaluate(
+                    "() => Array.from(document.querySelectorAll('script[type=\"application/ld+json\"]'))"
+                    ".map(s => s.textContent).filter(Boolean)"
+                )
+                load_time_ms = await page.evaluate(
+                    "() => { const nav = performance.getEntriesByType('navigation')[0]; "
+                    "return nav ? Math.round(nav.duration) : null; }"
+                )
+
+                screenshot_desktop = await page.screenshot(type="png")
+
+                broken_links: list[str] = []
+                seen_paths: set[str] = set()
+                for link in internal_links:
+                    path = urlparse(link).path or "/"
+                    if path in seen_paths or link == final_url:
+                        continue
+                    seen_paths.add(path)
+                    if len(seen_paths) > _MAX_LINKS_CHECKED:
+                        break
+                    try:
+                        link_response = await page.request.get(link, timeout=NAVIGATION_TIMEOUT_MS)
+                        if link_response.status >= 400:
+                            broken_links.append(path)
+                    except Exception:
+                        broken_links.append(path)
+
+                robots_txt_reachable = None
+                sitemap_xml_reachable = None
+                try:
+                    r = await page.request.get(f"{origin}/robots.txt", timeout=NAVIGATION_TIMEOUT_MS)
+                    robots_txt_reachable = r.status < 400
+                except Exception:
+                    robots_txt_reachable = False
+                try:
+                    r = await page.request.get(f"{origin}/sitemap.xml", timeout=NAVIGATION_TIMEOUT_MS)
+                    sitemap_xml_reachable = r.status < 400
+                except Exception:
+                    sitemap_xml_reachable = False
+
+                await page.set_viewport_size(TABLET_VIEWPORT)
+                tablet_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+
+                await page.set_viewport_size(MOBILE_VIEWPORT)
+                mobile_overflow = await page.evaluate(
+                    "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"
+                )
+                screenshot_mobile = await page.screenshot(type="png")
+
+                loc = _extract_location_from_jsonld(jsonld_blocks)
+                has_local_business_schema = bool(loc.raw_types & _LOCAL_BUSINESS_SCHEMA_TYPES) or None
+
+                return PlanningAuditSignals(
+                    final_url=final_url,
+                    https=final_url.startswith("https://"),
+                    http_status=response.status if response else None,
+                    title=title or None,
+                    meta_description=meta_description,
+                    viewport_meta_present=viewport_meta_present,
+                    desktop_overflow=desktop_overflow,
+                    tablet_overflow=tablet_overflow,
+                    mobile_overflow=mobile_overflow,
+                    load_time_ms=load_time_ms,
+                    total_transfer_bytes=transfer_bytes or None,
+                    console_error_count=console_error_count,
+                    broken_internal_links=broken_links,
+                    min_contrast_ratio=min_contrast_ratio,
+                    duplicate_ids=duplicate_ids,
+                    html_lang_present=html_lang_present,
+                    h1_count=h1_count,
+                    canonical_present=canonical_present,
+                    meta_robots_noindex=meta_robots_noindex,
+                    robots_txt_reachable=robots_txt_reachable,
+                    sitemap_xml_reachable=sitemap_xml_reachable,
+                    has_local_business_schema=has_local_business_schema,
+                    postal_address=loc.address,
+                    business_category=loc.category,
+                    contact_cta_present=contact_cta_present,
+                    contact_phone=contact_phone or None,
+                    contact_email=contact_email or None,
+                    social_links=sorted(set(social_links)) if social_links else [],
+                    generator_meta=generator_meta,
+                    appears_template_or_placeholder=_has_placeholder_text(body_text) or None,
+                    screenshot_desktop_base64=base64.b64encode(screenshot_desktop).decode("ascii"),
+                    screenshot_mobile_base64=base64.b64encode(screenshot_mobile).decode("ascii"),
+                )
+            finally:
+                await browser.close()
+    except PlaywrightError as exc:
+        return PlanningAuditSignals(error=str(exc))
+    except UrlNotAllowedError as exc:
+        return PlanningAuditSignals(error=str(exc))
+    except Exception as exc:
+        return PlanningAuditSignals(error=str(exc))

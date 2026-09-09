@@ -23,6 +23,7 @@ export type IconName =
   | "pipeline"
   | "sales"
   | "followups"
+  | "planning"
   | "projects"
   | "clients"
   | "settings";
@@ -93,7 +94,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "build",
     label: "Build",
-    links: [{ href: "/dashboard/projects", label: "Projects", icon: "projects" }],
+    links: [
+      { href: "/dashboard/planning", label: "Planning", icon: "planning" },
+      { href: "/dashboard/projects", label: "Projects", icon: "projects" },
+    ],
   },
 ];
 

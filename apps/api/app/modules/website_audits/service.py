@@ -31,6 +31,42 @@ def create_from_agent_output(db: Session, lead_id: uuid.UUID, output: WebsiteAud
     return audit
 
 
+def create_planning_audit(
+    db: Session,
+    lead_id: uuid.UUID,
+    output: WebsiteAuditOutput,
+    findings: list[dict],
+    extended_signals: dict | None,
+    screenshot_desktop_base64: str | None,
+    screenshot_mobile_base64: str | None,
+) -> WebsiteAudit:
+    """
+    modules/planning's counterpart to create_from_agent_output — same
+    lead_id scoping, plus the richer findings/screenshots/signal columns
+    only Planning's analysis populates. Stages the row without
+    committing; the caller (planning.service) commits as part of its own
+    transaction.
+    """
+    audit = WebsiteAudit(
+        lead_id=lead_id,
+        has_existing_site=output.has_existing_site,
+        mobile_friendly=output.mobile_friendly,
+        https=output.https,
+        load_time_ms=output.load_time_ms,
+        title=output.title,
+        meta_description=output.meta_description,
+        viewport_meta_present=output.viewport_meta_present,
+        audit_error=output.audit_error,
+        findings=findings,
+        extended_signals=extended_signals,
+        screenshot_desktop_base64=screenshot_desktop_base64,
+        screenshot_mobile_base64=screenshot_mobile_base64,
+    )
+    db.add(audit)
+    db.flush()
+    return audit
+
+
 def list_website_audits(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> list[WebsiteAudit]:
     query = (
         select(WebsiteAudit)

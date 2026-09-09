@@ -87,3 +87,70 @@ def test_update_lead_not_found(authed_client):
         "/api/v1/leads/00000000-0000-0000-0000-000000000000", json={"status": "won"}
     )
     assert res.status_code == 404
+
+
+def test_archive_lead_is_idempotent_and_logs_activity_once(authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
+
+    authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    authed_client.post(f"/api/v1/leads/{lead['id']}/archive")  # re-archiving is a no-op, not an error
+
+    activity = authed_client.get(
+        "/api/v1/activity", params={"entity_type": "lead", "entity_id": lead["id"]}
+    ).json()
+    assert sum(1 for a in activity if a["action"] == "archived") == 1
+
+
+def test_unarchive_lead_is_idempotent(authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
+    authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+
+    authed_client.post(f"/api/v1/leads/{lead['id']}/unarchive")
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/unarchive")  # already unarchived — still a no-op
+
+    assert res.status_code == 200
+    assert res.json()["archived_at"] is None
+    activity = authed_client.get(
+        "/api/v1/activity", params={"entity_type": "lead", "entity_id": lead["id"]}
+    ).json()
+    assert sum(1 for a in activity if a["action"] == "unarchived") == 1
+
+
+def test_archiving_a_converted_lead_preserves_client_and_project(authed_client):
+    """Archiving is a Lead-list visibility state — it must never cascade
+    into hiding or altering a Client/Project that already exists for the
+    same business (downstream-data protection)."""
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Riverside Plumbing"}).json()
+    client = authed_client.post("/api/v1/clients", json={"from_lead_id": lead["id"]}).json()
+    projects = authed_client.get("/api/v1/projects").json()
+    project = next(p for p in projects if p["client_id"] == client["id"])
+
+    res = authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    assert res.status_code == 200
+    assert res.json()["archived_at"] is not None
+    assert res.json()["status"] == "won"  # unchanged by archiving
+
+    client_after = authed_client.get(f"/api/v1/clients/{client['id']}").json()
+    assert client_after["id"] == client["id"]
+    project_after = authed_client.get(f"/api/v1/projects/{project['id']}").json()
+    assert project_after["id"] == project["id"]
+    assert project_after["source_lead_id"] == lead["id"]
+
+
+def test_archived_leads_excluded_from_sales_dashboard_counts(authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
+    authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+
+    body = authed_client.get("/api/v1/dashboard/sales").json()
+    assert body["new_leads_count"] == 0
+
+
+def test_archive_lead_is_workspace_scoped(authed_client, other_authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
+
+    res = other_authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    assert res.status_code == 404
+
+    # Untouched from the owning workspace's point of view.
+    still_active = authed_client.get(f"/api/v1/leads/{lead['id']}").json()
+    assert still_active["archived_at"] is None

@@ -11,10 +11,12 @@ import {
   type PipelineStage,
   type User,
 } from "@/lib/api";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/ToastProvider";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
 import {
@@ -47,6 +49,9 @@ function nextFollowUpByLead(
 }
 
 export default function LeadsPage() {
+  const confirm = useConfirm();
+  const showToast = useToast();
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [stages, setStages] = useState<PipelineStage[] | null>(null);
@@ -155,6 +160,43 @@ export default function LeadsPage() {
   async function handleStatusChange(id: string, status: LeadStatus) {
     await api.updateLead(id, { status });
     load();
+  }
+
+  async function handleArchiveLead(lead: Lead) {
+    const ok = await confirm({
+      title: `Archive ${lead.business_name}?`,
+      description:
+        "The lead will be removed from the active Leads list and workflow counts, but nothing is deleted — its " +
+        "history, any client, and any project stay exactly as they are. You can restore it later from \"Show " +
+        "archived\".",
+      confirmLabel: "Archive lead",
+      danger: true,
+    });
+    if (!ok) return;
+
+    setArchivingId(lead.id);
+    try {
+      await api.archiveLead(lead.id);
+      load();
+      showToast(`${lead.business_name} archived.`);
+    } catch {
+      showToast(`Couldn't archive ${lead.business_name}.`, "error");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
+  async function handleRestoreLead(lead: Lead) {
+    setArchivingId(lead.id);
+    try {
+      await api.unarchiveLead(lead.id);
+      load();
+      showToast(`${lead.business_name} restored.`);
+    } catch {
+      showToast(`Couldn't restore ${lead.business_name}.`, "error");
+    } finally {
+      setArchivingId(null);
+    }
   }
 
   const filteredLeads = useMemo(() => {
@@ -330,27 +372,46 @@ export default function LeadsPage() {
           {/* Mobile cards */}
           <div className="mt-4 space-y-2 md:hidden">
             {visibleLeads.map((lead) => (
-              <Link
-                key={lead.id}
-                href={`/dashboard/leads/${lead.id}`}
-                className={`card block p-3 ${lead.archived_at ? "opacity-50" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-fg">{lead.business_name}</div>
-                    <div className="text-xs text-fg-muted">
-                      {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
+              <div key={lead.id} className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
+                <Link href={`/dashboard/leads/${lead.id}`} className="block">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-fg">{lead.business_name}</div>
+                      <div className="text-xs text-fg-muted">
+                        {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </div>
                     </div>
+                    <LeadStatusBadge status={lead.status} className="shrink-0" />
                   </div>
-                  <LeadStatusBadge status={lead.status} className="shrink-0" />
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
+                    <span>{lead.website_url ? "Has a website" : "No website"}</span>
+                    <span className="text-fg">{leadNextAction(lead, followUpMap.get(lead.id))}</span>
+                  </div>
+                </Link>
+                <div className="mt-2 flex items-center justify-end border-t border-border pt-2">
+                  {lead.archived_at ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreLead(lead)}
+                      disabled={archivingId === lead.id}
+                      className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
+                    >
+                      {archivingId === lead.id ? "Restoring…" : "Restore"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveLead(lead)}
+                      disabled={archivingId === lead.id}
+                      className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                    >
+                      {archivingId === lead.id ? "Archiving…" : "Archive"}
+                    </button>
+                  )}
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
-                  <span>{lead.website_url ? "Has a website" : "No website"}</span>
-                  <span className="text-fg">{leadNextAction(lead, followUpMap.get(lead.id))}</span>
-                </div>
-              </Link>
+              </div>
             ))}
           </div>
 
@@ -363,6 +424,7 @@ export default function LeadsPage() {
                   <th className="px-3 py-2">Website</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Next</th>
+                  <th className="px-3 py-2"></th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -395,6 +457,27 @@ export default function LeadsPage() {
                       >
                         Open lead →
                       </Link>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {lead.archived_at ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreLead(lead)}
+                          disabled={archivingId === lead.id}
+                          className="text-sm font-medium text-fg hover:underline disabled:opacity-50"
+                        >
+                          {archivingId === lead.id ? "Restoring…" : "Restore"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveLead(lead)}
+                          disabled={archivingId === lead.id}
+                          className="text-sm text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                        >
+                          {archivingId === lead.id ? "Archiving…" : "Archive"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

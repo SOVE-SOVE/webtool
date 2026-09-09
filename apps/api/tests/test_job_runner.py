@@ -18,6 +18,7 @@ from app.modules.jobs.job_types import (
     JOB_FOLLOW_UP_DRAFT,
     JOB_OPPORTUNITY_SCORE,
     JOB_OUTREACH_DRAFT,
+    JOB_PLANNING_ANALYSIS,
     JOB_QA_REPORT,
     JOB_WEBSITE_GENERATE,
     JOB_WEBSITE_QUALITY_AUDIT,
@@ -38,6 +39,7 @@ def test_every_pipeline_job_type_has_a_registered_handler():
         JOB_FOLLOW_UP_DRAFT,
         JOB_WEBSITE_GENERATE,
         JOB_QA_REPORT,
+        JOB_PLANNING_ANALYSIS,
     }
     assert expected <= HANDLERS.keys()
 

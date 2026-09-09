@@ -699,6 +699,64 @@ export type CreativeDirectionUpdate = {
   references_inspiration?: string[];
 };
 
+export type PlanningKeyPoint = {
+  area: string;
+  category: string;
+  severity: string;
+  message: string;
+  evidence: string;
+  confidence: number;
+};
+
+export const PLANNING_STATUSES = ["ready_to_analyse", "analysing", "completed", "needs_review", "failed"] as const;
+export type PlanningStatus = (typeof PLANNING_STATUSES)[number];
+
+export const PLANNING_STATUS_LABELS: Record<PlanningStatus, string> = {
+  ready_to_analyse: "Ready to analyse",
+  analysing: "Analysing…",
+  completed: "Completed",
+  needs_review: "Needs review",
+  failed: "Failed",
+};
+
+export type Planning = {
+  id: string;
+  lead_id: string;
+  website_url: string | null;
+  website_audit_id: string | null;
+  status: PlanningStatus;
+  website_summary: string | null;
+  key_points: PlanningKeyPoint[];
+  operator_notes: string | null;
+  error_message: string | null;
+  created_at: string;
+  analysed_at: string | null;
+  updated_at: string;
+  has_existing_site: boolean | null;
+  screenshot_desktop_base64: string | null;
+  screenshot_mobile_base64: string | null;
+  detected_technology: string | null;
+};
+
+export type PlanningListItem = {
+  id: string;
+  lead_id: string;
+  lead_business_name: string;
+  website_url: string | null;
+  status: PlanningStatus;
+  created_at: string;
+  analysed_at: string | null;
+};
+
+export type AnalysePlanningRequest = {
+  website_url?: string;
+};
+
+export type UpdatePlanningRequest = {
+  website_summary?: string;
+  operator_notes?: string;
+};
+
 export const SITEMAP_STATUSES = ["draft", "approved"] as const;
 export type SitemapStatus = (typeof SITEMAP_STATUSES)[number];
 
@@ -2006,6 +2064,28 @@ export const api = {
   listSalesAudits: (leadId: string) =>
     request<SalesAuditReport[]>(`/api/v1/leads/${leadId}/sales-audits`),
   getSalesAudit: (id: string) => request<SalesAuditReport>(`/api/v1/sales-audits/${id}`),
+
+  // "Start Planning" — opens (or creates) the lead's one Planning
+  // workspace. Never runs an audit; see analysePlanning for that.
+  startPlanning: (leadId: string) => request<Planning>(`/api/v1/leads/${leadId}/planning`, { method: "POST" }),
+  getPlanningForLead: (leadId: string) => request<Planning | null>(`/api/v1/leads/${leadId}/planning`),
+  listPlanning: () => request<PlanningListItem[]>("/api/v1/planning"),
+  getPlanningItem: (id: string) => request<Planning>(`/api/v1/planning/${id}`),
+  // "Analyse Website" — the explicit trigger that enqueues the real
+  // background audit pipeline.
+  analysePlanning: (id: string, data?: AnalysePlanningRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/analyse`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  updatePlanning: (id: string, data: UpdatePlanningRequest) =>
+    request<Planning>(`/api/v1/planning/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  createProjectFromPlanning: (id: string) =>
+    request<Project>(`/api/v1/planning/${id}/create-project`, { method: "POST" }),
+  deletePlanning: (id: string) => request<void>(`/api/v1/planning/${id}`, { method: "DELETE" }),
 
   generateCreativeDirection: (projectId: string, data?: GenerateCreativeDirectionRequest) =>
     request<CreativeDirectionBrief>(`/api/v1/projects/${projectId}/creative-directions`, {

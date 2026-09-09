@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,16 @@ class WebsiteAudit(Base):
     viewport_meta_present: Mapped[bool | None] = mapped_column(Boolean)
     audit_error: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+    # Populated by modules/planning's Lead-scoped analysis (in addition
+    # to the plain Sales Audit flow, which leaves these null): `findings`
+    # holds agents/planning_audit.Finding + agents/planning_visual_review
+    # .Finding entries, already evidence-checked; `extended_signals` is
+    # the raw PlanningAuditSignals dump, kept for traceability back to
+    # exactly what was measured.
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    extended_signals: Mapped[dict | None] = mapped_column(JSON)
+    screenshot_desktop_base64: Mapped[str | None] = mapped_column(Text)
+    screenshot_mobile_base64: Mapped[str | None] = mapped_column(Text)
     audited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     lead: Mapped["Lead"] = relationship(back_populates="website_audits")

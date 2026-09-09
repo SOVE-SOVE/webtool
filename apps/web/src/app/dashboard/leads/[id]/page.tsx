@@ -33,6 +33,7 @@ import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useToast } from "@/components/ui/ToastProvider";
 import { LEAD_STATUS_LABEL, leadNextAction } from "@/lib/leads";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
@@ -88,6 +89,7 @@ export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const confirm = useConfirm();
+  const showToast = useToast();
   const leadId = params.id;
 
   const [lead, setLead] = useState<Lead | null>(null);
@@ -143,6 +145,9 @@ export default function LeadDetailPage() {
   const [converting, setConverting] = useState(false);
   const [convertError, setConvertError] = useState<string | null>(null);
   const [convertedClient, setConvertedClient] = useState<Client | null>(null);
+
+  const [startingPlanning, setStartingPlanning] = useState(false);
+  const [startPlanningError, setStartPlanningError] = useState<string | null>(null);
 
   function load() {
     api
@@ -201,9 +206,22 @@ export default function LeadDetailPage() {
 
   async function handleArchiveToggle() {
     if (!lead) return;
+    if (!lead.archived_at) {
+      const ok = await confirm({
+        title: `Archive ${lead.business_name}?`,
+        description:
+          "The lead will be removed from the active Leads list and workflow counts, but nothing is deleted — its " +
+          "history, any client, and any project stay exactly as they are. You can restore it any time from the " +
+          "Leads list.",
+        confirmLabel: "Archive lead",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     const updated = lead.archived_at ? await api.unarchiveLead(lead.id) : await api.archiveLead(lead.id);
     setLead(updated);
     refreshActivity();
+    showToast(updated.archived_at ? `${lead.business_name} archived.` : `${lead.business_name} restored.`);
   }
 
   async function handleGenerateSalesAudit() {
@@ -218,6 +236,18 @@ export default function LeadDetailPage() {
       setGenerateAuditError(err instanceof ApiError ? err.message : "Couldn't generate the sales audit.");
     } finally {
       setGeneratingAudit(false);
+    }
+  }
+
+  async function handleStartPlanning() {
+    setStartingPlanning(true);
+    setStartPlanningError(null);
+    try {
+      const planning = await api.startPlanning(leadId);
+      router.push(`/dashboard/planning/${planning.id}`);
+    } catch (err) {
+      setStartPlanningError(err instanceof ApiError ? err.message : "Couldn't open Planning for this lead.");
+      setStartingPlanning(false);
     }
   }
 
@@ -586,6 +616,23 @@ export default function LeadDetailPage() {
           )}
           {lead.review_summary && <p className="mt-2 text-sm text-fg-muted">{lead.review_summary}</p>}
         </div>
+      )}
+
+      {/* Planning — the only bridge from this lead to its Planning workspace */}
+      {!lead.archived_at && (
+        <section className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface p-4">
+          <div>
+            <h2 className="section-title">Planning</h2>
+            <p className="mt-0.5 text-sm text-fg-muted">
+              Understand this lead&apos;s existing website before building — analysis, findings, and the
+              create-project decision all happen in Planning.
+            </p>
+            {startPlanningError && <p className="mt-2 text-error">{startPlanningError}</p>}
+          </div>
+          <button onClick={handleStartPlanning} disabled={startingPlanning} className="btn btn-primary shrink-0">
+            {startingPlanning ? "Opening…" : "Start Planning →"}
+          </button>
+        </section>
       )}
 
       {/* Project & website — the one forward action */}

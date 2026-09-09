@@ -36,6 +36,7 @@ from app.modules.jobs.job_types import (
     JOB_FOLLOW_UP_DRAFT,
     JOB_OPPORTUNITY_SCORE,
     JOB_OUTREACH_DRAFT,
+    JOB_PLANNING_ANALYSIS,
     JOB_QA_REPORT,
     JOB_REVIEW_INTELLIGENCE,
     JOB_WEBSITE_GENERATE,
@@ -248,6 +249,21 @@ def handle_qa_report(db: Session, job: Job) -> dict:
     }
 
 
+def handle_planning_analysis(db: Session, job: Job) -> dict:
+    """
+    The background half of a Lead's "Analyse Website" action
+    (modules/planning) — calls the same pipeline the old synchronous
+    route used to run inline, now off the request. Status transitions
+    (analysing -> completed/needs_review/failed) are written onto the
+    LeadPlanning row itself by planning_service.run_analysis_job, not
+    just the Job row, since that's what the Lead/Planning pages read.
+    """
+    from app.modules.planning import service as planning_service
+
+    planning_id = uuid.UUID(job.payload["planning_id"])
+    return planning_service.run_analysis_job(db, planning_id)
+
+
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
@@ -259,4 +275,5 @@ HANDLERS = {
     JOB_FOLLOW_UP_DRAFT: handle_follow_up_draft,
     JOB_WEBSITE_GENERATE: handle_website_generate,
     JOB_QA_REPORT: handle_qa_report,
+    JOB_PLANNING_ANALYSIS: handle_planning_analysis,
 }

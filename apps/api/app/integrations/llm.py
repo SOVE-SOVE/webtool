@@ -27,12 +27,18 @@ def generate_structured(
     schema: dict,
     model: str | None = None,
     max_tokens: int = 4096,
+    images_base64: list[str] | None = None,
 ) -> dict:
     """
     Calls Claude with a forced tool-call matching `schema`, so the result
     is parsed JSON rather than something regex'd out of markdown. Every
     failure mode surfaces as `LlmUnavailableError` — nothing is faked or
     partially stored, per docs/03_AGENT_RULES.md.
+
+    `images_base64`, when given, attaches each image (PNG) to the user
+    message ahead of the text — used by agents/planning_visual_review.py
+    so the model's findings are grounded in what's actually visible in
+    the screenshot, not inferred from the text description alone.
     """
     if not settings.llm_api_key:
         raise LlmUnavailableError(
@@ -40,13 +46,20 @@ def generate_structured(
             "Nothing was generated or saved."
         )
 
+    content: str | list[dict] = user
+    if images_base64:
+        content = [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}}
+            for img in images_base64
+        ] + [{"type": "text", "text": user}]
+
     client = anthropic.Anthropic(api_key=settings.llm_api_key)
     try:
         response = client.messages.create(
             model=model or settings.llm_model,
             max_tokens=max_tokens,
             system=system,
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": content}],
             tools=[
                 {
                     "name": _TOOL_NAME,

@@ -730,3 +730,31 @@ def test_places_results_dedupe_across_searches_on_place_id(authed_client, monkey
     first_id = authed_client.get(f"/api/v1/discovery-searches/{first['id']}/results").json()[0]["id"]
     second_row = authed_client.get(f"/api/v1/discovery-searches/{second['id']}/results").json()[0]
     assert second_row["duplicate_of_discovered_business_id"] == first_id
+
+
+def test_archived_lead_still_blocks_duplicate_discovery_import(authed_client, monkeypatch):
+    """Archiving a lead is a workflow state (docs/05_DECISIONS.md), not a
+    delete — the CRM business (and its one-lead-per-business invariant)
+    is untouched, so Discovery must keep refusing to import a second
+    lead for the same business even after its existing lead is archived."""
+    lead = authed_client.post(
+        "/api/v1/leads", json={"business_name": "Gold Coast Plumbing Co"}
+    ).json()
+    authed_client.patch(
+        f"/api/v1/businesses/{lead['business_id']}", json={"website_url": "https://gcplumbing.example"}
+    )
+    archive_res = authed_client.post(f"/api/v1/leads/{lead['id']}/archive")
+    assert archive_res.json()["archived_at"] is not None
+
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(title="Gold Coast Plumbing Co", url="https://gcplumbing.example", description="")
+        ],
+    )
+    search = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"}).json()
+    business_id = authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]["id"]
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import")
+    assert res.status_code == 409

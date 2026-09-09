@@ -58,6 +58,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M10 19a2 2 0 0 0 4 0" />
     </>
   ),
+  planning: (
+    <>
+      <rect x="5" y="3.5" width="14" height="17" rx="2" />
+      <path d="M9 3.5V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v.5M8.5 11l2 2 4-4.5M8.5 16.5h7" />
+    </>
+  ),
   projects: (
     <>
       <path d="m13.5 6.5 4 4M3.5 20.5l1-4L15 6a2 2 0 0 1 3 0l.5.5a2 2 0 0 1 0 3L8 20l-4.5.5Z" />
