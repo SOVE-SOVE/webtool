@@ -9,6 +9,11 @@ questions to ask and likely requirements. Keeping the fact sections
 outside the LLM's reach is a structural guarantee against invented
 figures, not just a prompting guardrail. See agents/prompts/
 meeting_brief.md for the model instructions.
+
+Routed via integrations/ai/router.py (AITask.MEETING_BRIEF — local
+model by default): the T1 audit classified this "MIXED, lean LOCAL"
+since it's bounded synthesis over facts already supplied, not open
+creative work.
 """
 
 from pathlib import Path
@@ -16,7 +21,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "meeting_brief-v2"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "meeting_brief.md"
@@ -121,6 +127,7 @@ def _build_user_message(input: MeetingBriefDiscoveryInput) -> str:
 def run(input: MeetingBriefDiscoveryInput) -> AgentResult[MeetingBriefDiscoveryOutput]:
     schema = MeetingBriefDiscoveryOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.MEETING_BRIEF,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,
