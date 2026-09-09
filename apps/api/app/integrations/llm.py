@@ -1,24 +1,25 @@
 """
 The one Claude adapter — every agent calls the LLM through here, never
 through its own client code, per docs/02_ARCHITECTURE.md §6.
+
+As of the AI provider/task-routing work (T3), the actual Anthropic
+call lives in app.integrations.ai.providers.anthropic_provider —
+this module is now a thin, behavior-preserving wrapper around it, so
+none of the existing agent call sites or their tests (which monkeypatch
+`generate_structured` at each agent's own import site) need to change.
+New/migrated features should prefer app.integrations.ai.router instead,
+which chooses Anthropic vs. a local model per task; this module always
+uses the premium/Anthropic path, as it always has.
 """
 
-import anthropic
-
 from app.core.settings import settings
+from app.integrations.ai.errors import AIProviderError
+from app.integrations.ai.providers.anthropic_provider import AnthropicProvider
+from app.integrations.errors import LlmUnavailableError
 
-_TOOL_NAME = "emit_result"
+__all__ = ["LlmUnavailableError", "generate_structured"]
 
-
-class LlmUnavailableError(RuntimeError):
-    """
-    The generation could not happen at all — no API key configured, no
-    credit/quota left, the API refused or was unreachable, or it
-    answered with something unusable. Distinct from an ordinary bug so
-    app/main.py can turn it into a 503 the operator can act on instead
-    of an opaque "Internal server error": the honest answer is "this
-    couldn't be generated, here's why", never a fabricated result.
-    """
+_provider = AnthropicProvider()
 
 
 def generate_structured(
@@ -40,49 +41,17 @@ def generate_structured(
     so the model's findings are grounded in what's actually visible in
     the screenshot, not inferred from the text description alone.
     """
-    if not settings.llm_api_key:
-        raise LlmUnavailableError(
-            "AI generation is unavailable — no Claude API key is configured (set LLM_API_KEY). "
-            "Nothing was generated or saved."
-        )
-
-    content: str | list[dict] = user
-    if images_base64:
-        content = [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}}
-            for img in images_base64
-        ] + [{"type": "text", "text": user}]
-
-    client = anthropic.Anthropic(api_key=settings.llm_api_key)
     try:
-        response = client.messages.create(
+        return _provider.generate_structured(
+            system=system,
+            user=user,
+            schema=schema,
             model=model or settings.llm_model,
             max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": content}],
-            tools=[
-                {
-                    "name": _TOOL_NAME,
-                    "description": "Return the result in this exact structure.",
-                    "input_schema": schema,
-                }
-            ],
-            tool_choice={"type": "tool", "name": _TOOL_NAME},
+            images_base64=images_base64,
         )
-    except anthropic.APIStatusError as exc:
-        raise LlmUnavailableError(
-            f"AI generation is unavailable — the Claude API returned {exc.status_code} "
-            f"(check the API key, credit balance, and rate limits). Nothing was generated or saved."
-        ) from exc
-    except anthropic.APIError as exc:
-        raise LlmUnavailableError(
-            f"AI generation is unavailable — couldn't reach the Claude API ({exc}). Nothing was generated or saved."
-        ) from exc
-
-    for block in response.content:
-        if block.type == "tool_use" and block.name == _TOOL_NAME:
-            return block.input
-
-    raise LlmUnavailableError(
-        "AI generation is unavailable — the Claude API returned an unusable response. Nothing was generated or saved."
-    )
+    except AIProviderError as exc:
+        # AIProviderError already is-a LlmUnavailableError, but re-raise
+        # explicitly as the latter so `raise ... from exc` reads honestly
+        # for anyone inspecting this module in isolation.
+        raise LlmUnavailableError(str(exc)) from exc

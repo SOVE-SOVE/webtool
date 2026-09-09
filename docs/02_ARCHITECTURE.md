@@ -316,9 +316,25 @@ through silently. Prompt templates live in `agents/prompts/` as their
 own files (not inline strings), so they can be iterated without a code
 change and so a stored result can be traced back to the prompt version
 that produced it, per [[03_AGENT_RULES]]'s traceability requirement.
-All agents call the LLM through one `integrations/llm.py` adapter —
-no per-agent API client code, and no multi-provider abstraction layer
-until there's an actual second provider to support.
+Most agents still call the LLM through `integrations/llm.py`, which
+always uses the premium/Anthropic path. Two — `agents/review_intelligence.py`
+(the review-summary field) and `agents/follow_up.py` — have been
+migrated onto `integrations/ai/router.py` instead, routing to a local
+model by default (they were the two clearest LOCAL candidates in the
+AI-call audit: bounded, fact-constrained summarization/classification
+with code-level clamping downstream regardless of what generated them).
+
+`integrations/ai/router.py` routes an explicit `AITask` to either the
+Anthropic provider or a local Ollama provider
+(`integrations/ai/providers/`), based on `AI_LOCAL_*` / `AI_PREMIUM_*`
+config — see `AITask`'s docstring for which tasks are routine
+business-intelligence work (local) versus creative/website-generation
+work that stays premium. A feature adopts this by calling
+`ai.router.generate_structured(task=..., ...)` instead of
+`llm.generate_structured(...)`; provider selection never happens inside
+the feature itself. If the local provider is unavailable, this fails
+loudly rather than silently and automatically falling back to the more
+expensive premium model — cost control is the point.
 
 ### The ten potential roles, and what's actually being built
 
