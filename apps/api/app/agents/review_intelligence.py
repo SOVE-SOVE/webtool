@@ -14,8 +14,10 @@ deliberately documented constants (not tuned to always produce a
 confident-looking answer) so that's the correct, expected outcome for a
 typical small business, not a bug.
 
-The one LLM call in this module (via integrations/llm.py) only ever
-receives these already-computed facts and verbatim review snippets — it
+The one LLM call in this module (via integrations/ai/router.py,
+AITask.REVIEW_SUMMARY — routed to a local model by default, see
+docs/02_ARCHITECTURE.md §6) only ever receives these already-computed
+facts and verbatim review snippets — it
 is not shown raw, unfiltered review text to freely interpret, and it's
 explicitly instructed not to go beyond what it's given (see
 agents/prompts/review_intelligence.md).
@@ -27,7 +29,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import LlmUnavailableError, generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
+from app.integrations.errors import LlmUnavailableError
 from pathlib import Path
 
 PROMPT_VERSION = "review_intelligence-v1"
@@ -564,6 +568,7 @@ def run(input: ReviewIntelligenceInput) -> AgentResult[ReviewIntelligenceOutput]
                 "required": ["summary"],
             }
             raw = generate_structured(
+                task=AITask.REVIEW_SUMMARY,
                 system=_PROMPT_PATH.read_text(encoding="utf-8"),
                 user=_build_summary_user_message(input.business_name, output),
                 schema=schema,

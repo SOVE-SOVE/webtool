@@ -27,6 +27,7 @@ import pytest
 from app.agents import review_intelligence as review_intelligence_agent
 from app.agents.review_intelligence import ReviewInput, ReviewIntelligenceInput
 from app.integrations import places
+from app.integrations.ai.tasks import AITask
 from app.integrations.discovery.google_places_provider import GooglePlacesDiscoveryProvider
 from app.core.settings import settings
 from app.modules.discovery.models import DiscoveredBusiness, DiscoverySearch
@@ -361,8 +362,9 @@ def test_themes_insufficient_data_with_too_few_reviews_with_text():
 def test_ai_summary_uses_only_computed_facts(monkeypatch):
     captured = {}
 
-    def fake_generate_structured(*, system, user, schema, max_tokens=4096):
+    def fake_generate_structured(*, task, system, user, schema, max_tokens=4096):
         captured["user"] = user
+        captured["task"] = task
         return {"summary": "Customers consistently praise the friendly staff; a small number mention wait times."}
 
     monkeypatch.setattr("app.agents.review_intelligence.generate_structured", fake_generate_structured)
@@ -384,6 +386,8 @@ def test_ai_summary_uses_only_computed_facts(monkeypatch):
     # The prompt must be built from computed facts, not raw review text alone.
     assert "Acme Plumbing" in captured["user"]
     assert "Friendly staff" in captured["user"]
+    # And it must be routed through the AI task router as a LOCAL task.
+    assert captured["task"] == AITask.REVIEW_SUMMARY
 
 
 def test_ai_summary_unavailable_does_not_block_deterministic_results():
