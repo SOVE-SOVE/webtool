@@ -13,7 +13,8 @@ from app.agents.outreach import OutreachInput
 from app.agents.outreach import PriorOutreachSummary as OutreachPriorOutreachSummary
 from app.agents.sales_audit import SalesAuditOutput
 from app.agents.website_audit import WebsiteAuditOutput
-from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.integrations.email import EmailComposeError, compose_email, get_email_provider
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
@@ -239,7 +240,7 @@ def generate_outreach(
         status=OutreachStatus.DRAFTED,
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.OUTREACH_DRAFTING),
         prompt_version=outreach_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )
@@ -638,7 +639,7 @@ def generate_follow_up(
         status=FollowUpStatus.PENDING,
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.FOLLOW_UP_RECOMMENDATION),
         prompt_version=follow_up_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )

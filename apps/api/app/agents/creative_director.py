@@ -16,6 +16,11 @@ priority. A project with no intake brief yet — or one still missing
 those fields — falls back to whatever the operator typed in, and a
 genuine gap in both sources is flagged rather than silently producing a
 generic direction.
+
+Routed via integrations/ai/router.py (AITask.CREATIVE_DIRECTION — a
+PREMIUM task, so this still runs on Anthropic, same as before the AI
+provider routing work; the T1 audit named this one of the three LLM
+steps in the generation pipeline that should stay premium regardless).
 """
 
 from pathlib import Path
@@ -24,7 +29,8 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "creative_director-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "creative_director.md"
@@ -134,6 +140,7 @@ def _build_user_message(input: CreativeDirectorInput) -> str:
 def run(input: CreativeDirectorInput) -> AgentResult[CreativeDirectorOutput]:
     schema = CreativeDirectorOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.CREATIVE_DIRECTION,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

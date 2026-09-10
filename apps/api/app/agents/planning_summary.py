@@ -14,7 +14,8 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.planning_audit import Finding
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "planning_summary-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "planning_summary.md"
@@ -54,6 +55,7 @@ def _build_user_message(input: PlanningSummaryInput) -> str:
 def run(input: PlanningSummaryInput) -> AgentResult[PlanningSummaryOutput]:
     schema = PlanningSummaryOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.PLANNING_SUMMARY,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

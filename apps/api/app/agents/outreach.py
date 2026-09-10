@@ -28,7 +28,8 @@ from pydantic import BaseModel
 from app.agents.base import AgentResult
 from app.agents.sales_audit import SalesAuditOutput
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "outreach-v1"
 _PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -147,6 +148,7 @@ def run(input: OutreachInput) -> AgentResult[EmailDraft] | AgentResult[TalkingPo
     # A follow-up message is written text, same shape as an email.
     output_model = EmailDraft if input.channel in ("email", "follow_up") else TalkingPoints
     raw = generate_structured(
+        task=AITask.OUTREACH_DRAFTING,
         system=_load_prompt(input.channel),
         user=_build_user_message(input),
         schema=output_model.model_json_schema(),

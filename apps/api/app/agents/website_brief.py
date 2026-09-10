@@ -29,7 +29,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "website_brief-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "website_brief.md"
@@ -90,6 +91,7 @@ def _build_user_message(input: WebsiteBriefInput) -> str:
 def run(input: WebsiteBriefInput) -> AgentResult[WebsiteBriefOutput]:
     schema = WebsiteBriefOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.WEBSITE_BRIEF,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

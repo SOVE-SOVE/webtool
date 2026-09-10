@@ -13,7 +13,8 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.website_audit import WebsiteAuditOutput
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 from app.integrations.search import SearchResult
 
 PROMPT_VERSION = "sales_audit-v1"
@@ -112,6 +113,7 @@ def _build_user_message(input: SalesAuditInput) -> str:
 def run(input: SalesAuditInput) -> AgentResult[SalesAuditOutput]:
     schema = SalesAuditOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.SALES_AUDIT,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

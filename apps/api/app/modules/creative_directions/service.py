@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.agents import creative_director as creative_director_agent
 from app.agents.creative_director import CreativeDirectorInput
 from app.agents.website_audit import WebsiteAuditOutput
-from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
@@ -237,7 +238,7 @@ def generate_creative_direction(
         ),
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.CREATIVE_DIRECTION),
         prompt_version=creative_director_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )

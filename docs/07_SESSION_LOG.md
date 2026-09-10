@@ -11,6 +11,67 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-10 — T5: route every remaining agent through the AI task router; protect the premium website pipeline
+**Mode:** background job, isolated worktree (`ai-migration-t5-t8`), branch
+`t5-protect-premium-pipeline` (builds on PR #49's creative_director
+commit, cherry-picked onto current main). One PR, squash-merged to main.
+**Scope touched:** `apps/api/app/integrations/ai/tasks.py` (+6 AITask:
+SALES_AUDIT, OUTREACH_DRAFTING, PLANNING_SUMMARY / SITEMAP_PLANNING,
+WEBSITE_BRIEF, VISUAL_DESIGN_REVIEW), `.../ai/router.py` (route the 6,
+add `images_base64` passthrough for premium-only + reject on LOCAL, add
+`is_local` / `resolve_provider_and_model` / `resolve_model` helpers),
+7 agents migrated off `integrations/llm.py` onto `integrations/ai/router.py`
+(creative_director [cherry-pick], sitemap, website_brief, website_revision,
+planning_visual_review, sales_audit, planning_summary, outreach),
+`integrations/llm.py` (docstring — now dead code, kept for
+LlmUnavailableError re-export, flagged for T8 removal), 7 service files
+now record `model_used=router.resolve_model(<task>)` instead of the
+hard-coded `settings.llm_model` (creative_directions, sitemaps,
+website_briefs, sales_audits, outreach ×2 incl. follow_up, meetings),
+`apps/api/.env.example` (comments), `docs/02_ARCHITECTURE.md` §6,
+new `docs/09_AI_WEBSITE_PIPELINE.md` (full trace + premium-only rule),
+`tests/test_ai_router.py` (MIGRATED_AGENTS table +7, premium-never-local
+parametrized test, image-routing tests, legacy-llm-import guard),
+`tests/test_sales_audits.py` (one test rewritten: sales_audit is LOCAL
+now, so the "AI unavailable" case is Ollama down, not a missing Claude
+key), new `tests/test_ai_pipeline_routing.py` (real agent → real router
+→ fake provider).
+**What happened:** Before T5, the "generation pipeline" LLM steps
+(creative_director, sitemap, website_brief, website_revision,
+planning_visual_review) and the routine ones (sales_audit,
+planning_summary, outreach) all still called `integrations/llm.py`
+directly — always premium, bypassing the router entirely. T5 routes
+every one of them through `integrations/ai/router.py` with an explicit
+`AITask`: the website-creation steps as PREMIUM tasks (still Anthropic,
+same model, same prompts — nothing about the output changed), the
+routine ones as LOCAL. `website_generator.py` / `anti_slop.py` /
+`technical_qa.py` make no LLM call and were not touched. Added a hard
+test that the 8 website-pipeline PREMIUM tasks never route to the local
+model even with `AI_LOCAL_FALLBACK_TO_PREMIUM` on. Fixed the
+`model_used` columns, which were recording `settings.llm_model` for
+tasks that (post earlier migrations) already ran on Ollama —
+meeting_brief and follow_up were already wrong on main.
+**Blockers/issues:** No live Ollama/Anthropic in this environment, so
+"generate a real website" was done via the mocked end-to-end suite
+(`test_end_to_end_workflow.py`) + the new real-agent/real-router test,
+not a live call. Full `apps/api` suite: 1106 passed, 0 failed.
+Frontend untouched (no `apps/web` changes) — full frontend build
+deferred to T8's repo-wide verification.
+**Known follow-ups for T8:** (a) remove dead `llm.generate_structured`;
+(b) `modules/meetings/service.py` still gates meeting-brief generation on
+`settings.llm_api_key` even though MEETING_BRIEF is a LOCAL (Ollama)
+task — stale premium assumption, needs the gate re-expressed against
+the routed provider; (c) `planning_visual_review` sends images and so
+is premium-coupled by necessity (Ollama has no vision) — documented,
+not a defect.
+**Next up:** T6 — lightweight AI usage observability (per-execution
+usage records: task/provider/model/success/duration/tokens/retries/cost,
+configurable Anthropic pricing, local = no API cost). Then T7 (provider
+health checks + Settings UI + better error messages), then T8 (final
+repo-wide AI audit + report).
+
+---
+
 ## 2026-09-05 — Google Review Intelligence: a reputation snapshot for Discovery, sourced only from what Google Places actually gives us
 **Mode:** background job, isolated worktree (`google-review-intelligence`), merged/pushed at session end.
 **Scope touched:** new `apps/api/app/modules/review_intelligence/` (models,
