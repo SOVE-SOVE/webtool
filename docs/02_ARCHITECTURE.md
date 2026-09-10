@@ -339,6 +339,19 @@ point. `router.resolve_model(task)` / `router.resolve_provider_and_model(task)`
 report where a task would run, for recording `model_used` on generated
 rows.
 
+**AI usage observability** (`modules/ai_usage/`): the router writes one
+`ai_usage_events` row per call — task, provider, model, success, duration,
+token counts (when the provider reports them), retry count, error
+category, and an estimated `cost_usd` (0 for local inference, computed
+from `AI_ANTHROPIC_PRICING_USD_PER_MTOK` for priced Anthropic models,
+null when unknown — never guessed). No prompts, responses, business
+content, or secrets are stored. Recording is best-effort — it never
+raises into or slows a generation. Two admin-only read endpoints
+(`GET /api/v1/ai-usage/summary`, `/events`) answer "what model handled
+this / how much Anthropic usage / how many tasks on Ollama / which
+tasks are expensive / which calls are failing". It is deliberately not
+a dashboard.
+
 ### The ten potential roles, and what's actually being built
 
 Per the operator's instruction: **not all ten are being implemented

@@ -10,6 +10,7 @@ import anthropic
 
 from app.core.settings import settings
 from app.integrations.ai.errors import AIProviderError
+from app.integrations.ai.providers.base import GenerationResult
 
 _TOOL_NAME = "emit_result"
 
@@ -23,7 +24,7 @@ class AnthropicProvider:
         model: str,
         max_tokens: int = 4096,
         images_base64: list[str] | None = None,
-    ) -> dict:
+    ) -> GenerationResult:
         """
         `images_base64`, when given, attaches each image (PNG) to the
         user message ahead of the text — used by
@@ -72,9 +73,15 @@ class AnthropicProvider:
                 f"AI generation is unavailable — couldn't reach the Claude API ({exc}). Nothing was generated or saved."
             ) from exc
 
+        usage = getattr(response, "usage", None)
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+
         for block in response.content:
             if block.type == "tool_use" and block.name == _TOOL_NAME:
-                return block.input
+                return GenerationResult(
+                    data=block.input, input_tokens=input_tokens, output_tokens=output_tokens
+                )
 
         raise AIProviderError(
             "AI generation is unavailable — the Claude API returned an unusable response. Nothing was generated or saved."

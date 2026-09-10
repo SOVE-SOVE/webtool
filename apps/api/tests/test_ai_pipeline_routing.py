@@ -12,9 +12,16 @@ import pytest
 from app.agents import creative_director, planning_summary
 from app.agents.planning_audit import Finding
 from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.providers.base import GenerationResult
 
 PREMIUM_MODEL = "claude-sonnet-5"
 LOCAL_MODEL = "qwen3:30b-a3b"
+
+
+@pytest.fixture(autouse=True)
+def _stub_usage_recorder(monkeypatch):
+    monkeypatch.setattr(ai_router.recorder, "record_ai_usage", lambda **kw: None)
 
 
 class RecordingProvider:
@@ -24,7 +31,7 @@ class RecordingProvider:
 
     def generate_structured(self, system, user, schema, model, max_tokens=4096, **kwargs):
         self.calls.append({"model": model, "system": system, "user": user, **kwargs})
-        return dict(self.result)
+        return GenerationResult(data=dict(self.result))
 
 
 @pytest.fixture(autouse=True)

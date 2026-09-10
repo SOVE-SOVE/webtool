@@ -19,6 +19,7 @@ import json
 import httpx
 
 from app.integrations.ai.errors import AIProviderUnavailableError
+from app.integrations.ai.providers.base import GenerationResult
 
 
 class OllamaProvider:
@@ -33,7 +34,7 @@ class OllamaProvider:
         schema: dict,
         model: str,
         max_tokens: int = 4096,
-    ) -> dict:
+    ) -> GenerationResult:
         payload = {
             "model": model,
             "messages": [
@@ -68,7 +69,13 @@ class OllamaProvider:
         try:
             data = response.json()
             content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
+            parsed = json.loads(content)
+            usage = data.get("usage") or {}
+            return GenerationResult(
+                data=parsed,
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
+            )
         except (KeyError, IndexError, ValueError) as exc:
             raise AIProviderUnavailableError(
                 f"AI generation is unavailable — the local AI server at {self._base_url} returned "
