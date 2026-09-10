@@ -51,7 +51,7 @@ def generate_structured(
             model=model or settings.llm_model,
             max_tokens=max_tokens,
             images_base64=images_base64,
-        )
+        ).data
     except AIProviderError as exc:
         # AIProviderError already is-a LlmUnavailableError, but re-raise
         # explicitly as the latter so `raise ... from exc` reads honestly

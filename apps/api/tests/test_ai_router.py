@@ -13,6 +13,7 @@ from app.core.settings import settings
 from app.integrations import llm
 from app.integrations.ai import router
 from app.integrations.ai.errors import AIProviderUnavailableError
+from app.integrations.ai.providers.base import GenerationResult
 from app.integrations.ai.tasks import AITask
 from app.integrations.errors import LlmUnavailableError
 
@@ -20,18 +21,32 @@ SCHEMA = {"type": "object"}
 
 
 class FakeProvider:
-    def __init__(self, result=None, error=None):
-        self.result = result if result is not None else {"ok": True}
+    def __init__(self, result=None, error=None, input_tokens=None, output_tokens=None):
+        self._data = result if result is not None else {"ok": True}
         self.error = error
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
         self.calls = []
 
-    def generate_structured(self, system, user, schema, model, max_tokens=4096):
+    def generate_structured(self, system, user, schema, model, max_tokens=4096, **kwargs):
         self.calls.append(
-            {"system": system, "user": user, "schema": schema, "model": model, "max_tokens": max_tokens}
+            {"system": system, "user": user, "schema": schema, "model": model, "max_tokens": max_tokens, **kwargs}
         )
         if self.error:
             raise self.error
-        return self.result
+        return GenerationResult(
+            data=self._data, input_tokens=self.input_tokens, output_tokens=self.output_tokens
+        )
+
+
+@pytest.fixture(autouse=True)
+def _stub_usage_recorder(monkeypatch):
+    """Keep router unit tests from writing to the AI usage table — the
+    recorder itself is covered by tests/test_ai_usage.py. Collects the
+    kwargs each call would have recorded."""
+    recorded: list[dict] = []
+    monkeypatch.setattr(router.recorder, "record_ai_usage", lambda **kw: recorded.append(kw))
+    return recorded
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +144,7 @@ def test_anthropic_remains_functional_via_llm_module(monkeypatch):
     class FakeAnthropicProvider:
         def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
             assert model == "claude-sonnet-5"
-            return {"legacy": "still works"}
+            return GenerationResult(data={"legacy": "still works"})
 
     monkeypatch.setattr(llm, "_provider", FakeAnthropicProvider())
 
@@ -263,7 +278,7 @@ def test_images_on_a_premium_task_pass_through_to_anthropic(monkeypatch):
     class ImageAwareFake:
         def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
             captured["images"] = images_base64
-            return {"findings": []}
+            return GenerationResult(data={"findings": []})
 
     monkeypatch.setattr(router, "AnthropicProvider", lambda: ImageAwareFake())
 

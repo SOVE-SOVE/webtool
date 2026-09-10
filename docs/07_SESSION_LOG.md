@@ -11,6 +11,50 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-10 — T6: lightweight AI usage observability
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t6-ai-usage-observability` off main after T5 (#53). One PR, squash-merged.
+**Scope touched:** new `apps/api/app/modules/ai_usage/` (models, pricing,
+recorder, schemas, service, routes), new migration
+`f9b5ad0ab10f_ai_usage_events_observability_table.py`,
+`app/integrations/ai/providers/base.py` (new `GenerationResult`
+dataclass — providers now return parsed data + token counts, not a bare
+dict), `anthropic_provider.py` / `ollama_provider.py` (populate it),
+`app/integrations/llm.py` (`.data`), `app/integrations/ai/router.py`
+(times every call, records one usage event on success and failure,
+retries=1 on the opt-in fallback, `_error_category`),
+`app/core/settings.py` (`ai_anthropic_pricing_usd_per_mtok` — JSON from
+env, indicative defaults), `app/db/all_models.py`, `app/main.py`,
+`.env.example`, `docs/02_ARCHITECTURE.md` §6, tests:
+`test_ai_providers.py` (`.data` + token assertions), `test_ai_router.py`
+(FakeProvider → GenerationResult, recorder stubbed), new
+`test_ai_usage.py` (13 tests).
+**What happened:** Every AI task execution now writes one
+`ai_usage_events` row via the router — task, provider, model,
+success, duration_ms, input/output tokens (when the provider reports
+them — never estimated), retries, error_category, and an estimated
+`cost_usd`. Local inference records `$0` (real "no API charge", not a
+synthetic token price); Anthropic cost is computed from the configurable
+pricing map, or `null` when the model isn't priced there. NO prompts,
+responses, business content, or API keys are stored or logged — one
+structured `ai_usage ...` INFO/— line per call carries only counts and
+the routing decision, and a test asserts a planted secret never reaches
+any column or log record. Recording is best-effort: a DB failure or bad
+value is logged and swallowed, never raised into or slowing generation.
+Two admin-only endpoints — `GET /api/v1/ai-usage/summary` (rollups by
+provider and by task+model, cost-ordered, recent failures) and `/events`
+(filterable recent rows) — answer the five operator questions from the
+task. No frontend (T7 adds the small Settings status section).
+**Blockers/issues:** No live providers in this env, so both-providers-
+record and failure-records coverage is via fake providers through the
+real router + real DB. Full `apps/api` suite: 1126 passed, 0 failed.
+**Next up:** T7 — AI provider health-check system (Ollama reachable /
+model present / can generate; Anthropic configured / reachable without a
+paid call), small Settings UI status section, and replace vague "AI
+generation failed" errors with actionable ones. Then T8 (final audit).
+
+---
+
 ## 2026-09-10 — T5: route every remaining agent through the AI task router; protect the premium website pipeline
 **Mode:** background job, isolated worktree (`ai-migration-t5-t8`), branch
 `t5-protect-premium-pipeline` (builds on PR #49's creative_director

@@ -6,6 +6,7 @@ should be imported directly — import from the owning module instead.
 """
 
 from app.modules.activity_log import models as _activity_log  # noqa: F401
+from app.modules.ai_usage import models as _ai_usage  # noqa: F401
 from app.modules.business_research import models as _business_research  # noqa: F401
 from app.modules.businesses import models as _businesses  # noqa: F401
 from app.modules.calendar import models as _calendar  # noqa: F401
