@@ -187,6 +187,28 @@ if (Test-Url $WebUrl) {
         Invoke-Fail "Something else is already listening on port $WebPort. Stop it, or free the port, and try again."
     }
 
+    # Turbopack builds its dev route table from a cache under .next, and it
+    # doesn't reliably pick up route files that arrived via `git pull` or a
+    # branch switch rather than an editor save - the symptom is a new page
+    # 404ing even though its file is on disk. A leftover `next build` output
+    # (BUILD_ID) in the same .next confuses routing too. So drop the cache
+    # whenever HEAD has moved since the last web start, or a production
+    # build is present. An unchanged HEAD (a plain restart, or local edits
+    # only) keeps the cache - Turbopack handles live edits fine.
+    $NextCache = Join-Path $WebDir ".next"
+    $WebHeadFile = Join-Path $RunDir "web-head"
+    $currentHead = "unknown"
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $h = (git -C $RepoRoot rev-parse HEAD 2>$null)
+        if ($h) { $currentHead = $h.Trim() }
+    }
+    $lastHead = if (Test-Path $WebHeadFile) { (Get-Content -Raw $WebHeadFile).Trim() } else { "none" }
+    if ((Test-Path $NextCache) -and `
+        ((Test-Path (Join-Path $NextCache "BUILD_ID")) -or ($currentHead -ne $lastHead))) {
+        Write-Info "Clearing the Next.js cache (code changed since last start - prevents stale-route 404s)..."
+        Remove-Item -Recurse -Force $NextCache
+    }
+
     Write-Info "Starting the web app..."
     # cmd.exe /c wraps next.cmd: PowerShell's Start-Process needs a real
     # Win32 executable once output redirection is in play, not a .cmd
@@ -212,6 +234,7 @@ if (Test-Url $WebUrl) {
         Invoke-Fail "The web app didn't respond at $WebUrl within 60s." $WebLog
     }
     Write-Ok "Web app is ready at $WebUrl"
+    $currentHead | Out-File -Encoding ascii $WebHeadFile
 }
 
 # --- 4. Open the browser -------------------------------------------------------
