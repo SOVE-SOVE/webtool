@@ -1,8 +1,9 @@
 """
 Sales assistant role — docs/02_ARCHITECTURE.md §6, roadmap M3. Turns a
 business/lead record plus whatever real evidence was gathered (website
-audit, public search) into a 9-part sales-preparation report via
-integrations/llm.py. See agents/prompts/sales_audit.md for the actual
+audit, public search) into a 9-part sales-preparation report. Routed
+via integrations/ai/router.py as AITask.SALES_AUDIT (LOCAL). See
+agents/prompts/sales_audit.md for the actual
 instructions given to the model, including the "no unsupported claims"
 guardrails required by the Sales Audit feature.
 """

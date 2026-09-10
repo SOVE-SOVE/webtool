@@ -137,20 +137,15 @@ def test_ollama_unavailable_with_fallback_enabled_uses_anthropic(monkeypatch):
     assert len(anthropic_fake.calls) == 1
 
 
-def test_anthropic_remains_functional_via_llm_module(monkeypatch):
-    """The 9 existing agent call sites all use app.integrations.llm
-    directly — this must keep working unchanged after the refactor."""
+def test_llm_module_is_only_an_error_type_re_export_now():
+    """As of T8, app.integrations.llm carries no generate_structured —
+    every agent routes through the router. It exists only so the
+    historical `LlmUnavailableError` import path keeps working for
+    app.main's exception handler."""
+    from app.integrations.errors import LlmUnavailableError as CanonicalError
 
-    class FakeAnthropicProvider:
-        def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
-            assert model == "claude-sonnet-5"
-            return GenerationResult(data={"legacy": "still works"})
-
-    monkeypatch.setattr(llm, "_provider", FakeAnthropicProvider())
-
-    result = llm.generate_structured(system="sys", user="usr", schema=SCHEMA)
-
-    assert result == {"legacy": "still works"}
+    assert llm.LlmUnavailableError is CanonicalError
+    assert not hasattr(llm, "generate_structured")
 
 
 def test_no_api_key_appears_in_error_messages(monkeypatch):

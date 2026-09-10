@@ -3,8 +3,9 @@ Sales outreach drafting role — docs/02_ARCHITECTURE.md §6, roadmap M3,
 docs/03_AGENT_RULES.md ("draft outreach, don't send it — same for
 follow-up messages"). Turns a lead's business record, the latest
 website/sales-audit findings, and (when this isn't the first contact)
-its prior outreach history into a channel-specific draft via
-integrations/llm.py. See agents/prompts/outreach_*.md for the actual
+its prior outreach history into a channel-specific draft. Routed via
+integrations/ai/router.py as AITask.OUTREACH_DRAFTING (LOCAL). See
+agents/prompts/outreach_*.md for the actual
 instructions given to the model, including the guardrails against fake
 familiarity/urgency, exaggerated claims, spam language, and unnecessary
 compliments required by the Sales Outreach feature.
