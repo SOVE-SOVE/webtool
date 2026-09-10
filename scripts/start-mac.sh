@@ -92,6 +92,20 @@ wait_for 30 bash -c "cd '$REPO_ROOT' && docker compose exec -T postgres pg_isrea
   || fail "Postgres didn't become ready within 30s."
 ok "Postgres is ready"
 
+# --- 1b. Database migrations -----------------------------------------
+# Applied on every start so a `git pull` that brought new migrations
+# can't leave the API pointed at a stale schema — the failure mode is a
+# page 500ing with `relation "..." does not exist`. `alembic upgrade
+# head` is a no-op when the DB is already current.
+if [ -x "$API_DIR/.venv/bin/alembic" ]; then
+  info "Applying database migrations..."
+  ( cd "$API_DIR" && ./.venv/bin/alembic upgrade head ) \
+    || fail "Database migrations failed ('alembic upgrade head' — see the output above)."
+  ok "Database schema is up to date"
+else
+  info "Skipping migrations (apps/api/.venv not set up yet)"
+fi
+
 # --- 2. API -------------------------------------------------------------
 if url_up "$API_URL/health"; then
   ok "API already running at $API_URL - leaving it as is"

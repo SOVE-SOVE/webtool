@@ -22,8 +22,8 @@ once per machine first:
 
 1. `apps/api/.venv` exists and dependencies are installed.
 2. `apps/api/.env` exists and is filled in (`SESSION_SECRET`, `SEED_*`).
-3. The database has been migrated and seeded (`alembic upgrade head`,
-   `python -m app.core.seed`).
+3. The database has been seeded (`python -m app.core.seed`). Migrations
+   (`alembic upgrade head`) are re-run for you on every start.
 4. `apps/web/node_modules` exists (`npm install`).
 5. `apps/web/.env.local` exists (copied from `.env.local.example`).
 
@@ -62,11 +62,15 @@ specific to this one.)
    it's installed but not running, and waits for it).
 2. Runs `docker compose up -d postgres` and waits until Postgres
    actually accepts connections (not just "the container started").
-3. Starts the API (`uvicorn app.main:app --reload --port 8000`) and
+3. Runs `alembic upgrade head` so a `git pull` that brought new
+   migrations can't leave the API on a stale schema. It's a no-op when
+   the database is already current; if a migration fails, the script
+   stops here rather than starting the API against a half-migrated DB.
+4. Starts the API (`uvicorn app.main:app --reload --port 8000`) and
    waits for `GET /health` to return `{"status": "ok"}`.
-4. Starts the web app (`next dev --port 3000`) and waits until it
+5. Starts the web app (`next dev --port 3000`) and waits until it
    actually answers on `http://localhost:3000`.
-5. Opens `http://localhost:3000/login` in your default browser.
+6. Opens `http://localhost:3000/login` in your default browser.
 
 Before starting the API or web app, each script checks whether it's
 already running (by asking the API's `/health` endpoint, and by
