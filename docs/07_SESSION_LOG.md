@@ -11,6 +11,44 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-10 — T8: final repo-wide AI architecture audit + report
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t8-final-ai-audit` off main after T7 (#55). One PR, squash-merged.
+**Scope touched:** new `docs/10_AI_ARCHITECTURE_AUDIT.md` (the 11-section
+report), `docs/02_ARCHITECTURE.md` §6 (pointer),
+`apps/api/app/integrations/llm.py` (stripped to a 3-line
+`LlmUnavailableError` re-export — `generate_structured` removed; dead
+since T5), `apps/api/app/modules/meetings/service.py` (meeting-brief
+generation was still gated on `settings.llm_api_key` although
+`MEETING_BRIEF` is a LOCAL/Ollama task — now attempted whenever the
+routed provider needs no key, degrading gracefully),
+`apps/api/app/agents/{sales_audit,outreach}.py` (docstrings: "via
+integrations/llm.py" → "via the router"), tests:
+`test_ai_router.py` (the `llm.generate_structured` test replaced with
+one asserting the module is now only an error re-export),
+`test_end_to_end_workflow.py` (meeting-brief no-key assertion updated to
+"degrades" not "skipped").
+**Audit result:** clean. All 11 LLM-calling agents route through
+`integrations/ai/router.py`. The only direct provider/SDK/HTTP-AI calls
+are the two provider implementations, `integrations/ai/health.py` (a
+free non-generation probe), and `scripts/ai_benchmark/` (standalone).
+No hard-coded model names in code, no hard-coded provider decisions
+outside the router, no router bypasses, no duplicate AI clients (llm.py
+shim removed), no secrets or keys reachable from the frontend or in any
+log line. Full report + before/after, LOCAL/PREMIUM task tables,
+configured models, tests, build, limitations, and recommendations in
+`docs/10_AI_ARCHITECTURE_AUDIT.md`.
+**Verification:** backend `pytest` 1139 passed, 0 failed; frontend
+`vitest` 118 passed, `tsc` clean, `next build` ✓; `eslint .` = 1
+pre-existing error (`dashboard/layout.tsx:138`, unrelated, untouched) +
+4 pre-existing warnings, nothing new. Alembic single head.
+**Next up:** None — T5–T8 complete. Loose ends for a future session:
+the `layout.tsx:138` eslint error; adding a CI gate (there is none);
+running `scripts/ai_benchmark` against a real Ollama host to confirm
+`AI_LOCAL_MODEL`.
+
+---
+
 ## 2026-09-10 — T7: AI provider health checks + Settings status panel + actionable errors
 **Mode:** background job, worktree (`ai-migration-t5-t8`), branch
 `t7-ai-provider-health` off main after T6 (#54). One PR, squash-merged.

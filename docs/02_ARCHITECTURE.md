@@ -366,6 +366,10 @@ running"), "model not pulled" (`AIProviderModelMissingError` →
 "ollama pull <model>"), and "model can't do JSON-schema output" —
 never a bare "AI generation failed", never a stack trace or key.
 
+The T5–T8 migration series (every agent routed, the premium pipeline
+protected, usage observability, provider health) is audited end to end
+in [[10_AI_ARCHITECTURE_AUDIT]].
+
 ### The ten potential roles, and what's actually being built
 
 Per the operator's instruction: **not all ten are being implemented

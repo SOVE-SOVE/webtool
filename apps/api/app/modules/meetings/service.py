@@ -346,12 +346,17 @@ def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, m
     likely_requirements: list[str] = []
     flagged_for_review = True
     review_notes = (
-        "No LLM configured — discovery questions/requirements unavailable. "
+        "No AI provider configured — discovery questions/requirements unavailable. "
         "Business/website/sales facts below are accurate and unaffected."
     )
     model_used = "none"
 
-    if settings.llm_api_key:
+    # meeting_brief routes as a LOCAL task (Ollama, which needs no API
+    # key). Only require a key when it would actually route to the
+    # premium provider; otherwise attempt and let the except below turn
+    # an unreachable local server into a graceful degrade.
+    ai_configured = ai_router.is_local(AITask.MEETING_BRIEF) or bool(settings.llm_api_key)
+    if ai_configured:
         try:
             discovery_input = meeting_brief_agent.MeetingBriefDiscoveryInput(
                 business_name=facts["business_name"],
