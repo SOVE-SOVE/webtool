@@ -69,7 +69,11 @@ specific to this one.)
 4. Starts the API (`uvicorn app.main:app --reload --port 8000`) and
    waits for `GET /health` to return `{"status": "ok"}`.
 5. Starts the web app (`next dev --port 3000`) and waits until it
-   actually answers on `http://localhost:3000`.
+   actually answers on `http://localhost:3000`. If the commit has
+   changed since the last web start (a `git pull`, a branch switch),
+   or a leftover `next build` output is sitting in `.next`, it clears
+   `apps/web/.next` first — Turbopack's dev server otherwise 404s new
+   routes that arrived via git rather than an editor save.
 6. Opens `http://localhost:3000/login` in your default browser.
 
 Before starting the API or web app, each script checks whether it's
@@ -99,7 +103,9 @@ volume in place, so the next start picks up right where you left off.
 Each start writes logs to `scripts/.logs/api.log` and
 `scripts/.logs/web.log` — check these first if something's behaving
 oddly, or if a start attempt failed partway through. `scripts/.run/`
-holds the process ids the launcher is tracking. Both directories are
+holds the process ids the launcher is tracking, plus `web-head` (the
+commit the web server was last started against, used to decide whether
+to clear the Next.js cache). Both directories are
 git-ignored; delete either at any time, they're just runtime
 scratch state, not configuration.
 

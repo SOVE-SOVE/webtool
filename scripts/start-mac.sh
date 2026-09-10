@@ -160,6 +160,23 @@ else
     fail "Something else is already listening on port $WEB_PORT. Stop it, or free the port, and try again."
   fi
 
+  # Turbopack builds its dev route table from a cache under .next, and it
+  # doesn't reliably pick up route files that arrived via `git pull` or a
+  # branch switch rather than an editor save — the symptom is a new page
+  # 404ing even though its file is on disk. A leftover `next build` output
+  # (BUILD_ID) in the same .next confuses routing too. So drop the cache
+  # whenever HEAD has moved since the last web start, or a production
+  # build is present. An unchanged HEAD (a plain restart, or local edits
+  # only) keeps the cache — Turbopack handles live edits fine.
+  NEXT_CACHE="$WEB_DIR/.next"
+  WEB_HEAD_FILE="$RUN_DIR/web-head"
+  current_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [ -d "$NEXT_CACHE" ] && { [ -f "$NEXT_CACHE/BUILD_ID" ] \
+      || [ "$current_head" != "$(cat "$WEB_HEAD_FILE" 2>/dev/null || echo none)" ]; }; then
+    info "Clearing the Next.js cache (code changed since last start — prevents stale-route 404s)..."
+    rm -rf "$NEXT_CACHE"
+  fi
+
   info "Starting the web app..."
   # Calling the `next` binary directly (not `npm run dev`) so the pid we
   # capture is the real dev-server process, not an npm wrapper around it.
@@ -168,6 +185,7 @@ else
   wait_for 60 curl -fs -o /dev/null "$WEB_URL" \
     || fail "The web app didn't respond at $WEB_URL within 60s." "$WEB_LOG"
   ok "Web app is ready at $WEB_URL"
+  echo "$current_head" >"$WEB_HEAD_FILE"
 fi
 
 # --- 4. Open the browser --------------------------------------------------
