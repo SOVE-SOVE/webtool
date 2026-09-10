@@ -11,6 +11,56 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-10 — T7: AI provider health checks + Settings status panel + actionable errors
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t7-ai-provider-health` off main after T6 (#54). One PR, squash-merged.
+**Scope touched:** new `apps/api/app/integrations/ai/health.py`
+(`check_local` / `check_premium`), new
+`apps/api/app/modules/ai_health/` (schemas, routes), new
+`AIProviderModelMissingError` in `integrations/ai/errors.py`,
+`integrations/ai/providers/ollama_provider.py` (distinguish
+server-unreachable / model-not-pulled / bad-response, all with
+actionable text naming the model + `ollama pull`),
+`integrations/ai/router.py` (`_error_category` → `model_missing`),
+`app/main.py`, `docs/02_ARCHITECTURE.md` §6; frontend
+`apps/web/src/lib/api.ts` (`AiProvidersStatus` types +
+`getAiProvidersStatus`), `apps/web/src/app/dashboard/settings/page.tsx`
+(new "AI providers" section — LOCAL AI / Ollama / Connected+model,
+PREMIUM AI / Anthropic / Configured, plus a "Run live check" that
+probes); tests: `apps/api/tests/test_ai_providers.py` (message
+assertions updated + missing-model test), new
+`apps/api/tests/test_ai_health.py` (16 tests).
+**What happened:** `GET /api/v1/ai/providers/status` (any authed user)
+reports local + premium provider usability. Default check: provider
+config + Ollama's `/api/tags` model list — fast, no generation.
+`?probe=true` adds a 1-token Ollama generation and a **free** Anthropic
+`models.list` (never a paid call, and only when a key is set — a test
+asserts no client is even constructed without probe, and that the probe
+path calls only `models.list`). The app never pulls a model: a missing
+local model returns "Local AI model is not installed" + the exact
+`ollama pull <model>` command. The Ollama provider's generation errors
+now say which of "Ollama isn't running", "the model isn't pulled", or
+"the model can't do JSON-schema output" applies — no bare "AI
+generation failed", no keys, no stack traces (existing
+`main.py` handler already turns `LlmUnavailableError` into a clean 503).
+**Blockers/issues:** Pre-existing eslint `error` at
+`apps/web/src/app/dashboard/layout.tsx:138` ("Calling setState
+synchronously within an effect") — on `main` already, a recently
+tightened `react-hooks` rule, untouched here; there is no CI lint gate
+and the production build passes. Worth a separate cleanup.
+`apps/web/node_modules` had to be `npm install`ed into the worktree
+(Turbopack rejects a symlinked one). Backend suite: 1139 passed, 0
+failed. Frontend: `next build` ✓, `vitest` 118 passed, `tsc` clean (the
+`LayoutProps` error clears once `next build` generates `.next/types`).
+**Next up:** T8 — final repo-wide AI architecture audit + report
+(direct provider calls, hard-coded models, router bypasses, secrets to
+frontend, duplication), run all backend/frontend tests + TS + lint +
+build, produce the 11-section report. Also fold in the deferred T5/T6
+follow-ups: remove dead `llm.generate_structured`; fix
+`modules/meetings/service.py`'s stale `settings.llm_api_key` gate.
+
+---
+
 ## 2026-09-10 — T6: lightweight AI usage observability
 **Mode:** background job, worktree (`ai-migration-t5-t8`), branch
 `t6-ai-usage-observability` off main after T5 (#53). One PR, squash-merged.

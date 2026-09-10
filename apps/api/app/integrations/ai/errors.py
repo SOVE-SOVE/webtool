@@ -21,3 +21,12 @@ class AIProviderUnavailableError(AIProviderError):
     a different provider automatically — see router.py's one explicit,
     opt-in fallback knob.
     """
+
+
+class AIProviderModelMissingError(AIProviderUnavailableError):
+    """
+    The local (Ollama) server is reachable but the configured model has
+    not been pulled. Distinct from a plain "unavailable" so the operator
+    is told to run `ollama pull <model>` rather than "check the server" —
+    the application never downloads models itself.
+    """

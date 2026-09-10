@@ -222,8 +222,22 @@ class TestOllamaProvider:
         monkeypatch.setattr(httpx, "post", raise_connect_error)
 
         provider = OllamaProvider(base_url="http://unreachable-host:11434", timeout_seconds=5.0)
-        with pytest.raises(AIProviderUnavailableError, match="couldn't reach"):
+        with pytest.raises(AIProviderUnavailableError, match="Make sure Ollama is running"):
             provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="qwen3:30b-a3b")
+
+    def test_missing_model_raises_a_distinct_actionable_error(self, monkeypatch):
+        from app.integrations.ai.errors import AIProviderModelMissingError
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, json={"error": {"message": 'model "gpt-oss:20b" not found, try pulling it first'}})
+
+        monkeypatch.setattr(
+            httpx, "post", lambda url, json, timeout: _mock_transport(handler).post(url, json=json, timeout=timeout)
+        )
+
+        provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
+        with pytest.raises(AIProviderModelMissingError, match=r"not installed.*ollama pull gpt-oss:20b"):
+            provider.generate_structured(system="s", user="u", schema=SCHEMA, model="gpt-oss:20b")
 
     def test_non_2xx_status_raises_unavailable_error(self, monkeypatch):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -246,7 +260,7 @@ class TestOllamaProvider:
         )
 
         provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
-        with pytest.raises(AIProviderUnavailableError, match="unusable response"):
+        with pytest.raises(AIProviderUnavailableError, match="couldn't be used"):
             provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="qwen3:30b-a3b")
 
     def test_base_url_is_stripped_of_trailing_slash(self, monkeypatch):
