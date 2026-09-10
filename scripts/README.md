@@ -4,7 +4,7 @@ Starts (and stops) everything Web Design OS needs for local
 development — Postgres, the API, and the web app — with one script per
 platform. Platform-appropriate scripts on purpose: a `.sh` for macOS
 and a `.bat`/`.ps1` pair for Windows, rather than one script trying to
-paper over both shells. Both do exactly the same six things, in the
+paper over both shells. Both do the same core steps, in the
 same order, against the same repository and the same
 `docker-compose.yml` — there's no separate "Windows version" of the
 app, just two ways to start it.
@@ -68,13 +68,19 @@ specific to this one.)
    stops here rather than starting the API against a half-migrated DB.
 4. Starts the API (`uvicorn app.main:app --reload --port 8000`) and
    waits for `GET /health` to return `{"status": "ok"}`.
-5. Starts the web app (`next dev --port 3000`) and waits until it
+5. Starts the background job runner (`python -m app.jobs.runner`, macOS
+   only for now) — the poller that actually processes queued work. It
+   has no `--reload`, so the launcher restarts it whenever the commit
+   has changed since it was last started; a `git pull` that adds a job
+   handler otherwise leaves it on stale code, failing jobs with "No
+   handler registered". It also collapses a double-runner back to one.
+6. Starts the web app (`next dev --port 3000`) and waits until it
    actually answers on `http://localhost:3000`. If the commit has
    changed since the last web start (a `git pull`, a branch switch),
    or a leftover `next build` output is sitting in `.next`, it clears
    `apps/web/.next` first — Turbopack's dev server otherwise 404s new
    routes that arrived via git rather than an editor save.
-6. Opens `http://localhost:3000/login` in your default browser.
+7. Opens `http://localhost:3000/login` in your default browser.
 
 Before starting the API or web app, each script checks whether it's
 already running (by asking the API's `/health` endpoint, and by
@@ -103,9 +109,10 @@ volume in place, so the next start picks up right where you left off.
 Each start writes logs to `scripts/.logs/api.log` and
 `scripts/.logs/web.log` — check these first if something's behaving
 oddly, or if a start attempt failed partway through. `scripts/.run/`
-holds the process ids the launcher is tracking, plus `web-head` (the
-commit the web server was last started against, used to decide whether
-to clear the Next.js cache). Both directories are
+holds the process ids the launcher is tracking, plus `web-head` and
+`jobs-head` (the commit the web server and the job runner were each
+last started against — used to decide whether to clear the Next.js
+cache and whether to restart the runner). Both directories are
 git-ignored; delete either at any time, they're just runtime
 scratch state, not configuration.
 
