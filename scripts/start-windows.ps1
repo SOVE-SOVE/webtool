@@ -120,6 +120,26 @@ if (-not $pgReady) {
 }
 Write-Ok "Postgres is ready"
 
+# --- 1b. Database migrations ----------------------------------------------
+# Applied on every start so a `git pull` that brought new migrations
+# can't leave the API pointed at a stale schema - the failure mode is a
+# page 500ing with `relation "..." does not exist`. `alembic upgrade
+# head` is a no-op when the DB is already current.
+$venvAlembic = Join-Path $ApiDir ".venv\Scripts\alembic.exe"
+if (Test-Path $venvAlembic) {
+    Write-Info "Applying database migrations..."
+    Push-Location $ApiDir
+    & $venvAlembic upgrade head
+    $migrateOk = ($LASTEXITCODE -eq 0)
+    Pop-Location
+    if (-not $migrateOk) {
+        Invoke-Fail "Database migrations failed ('alembic upgrade head' - see the output above)."
+    }
+    Write-Ok "Database schema is up to date"
+} else {
+    Write-Info "Skipping migrations (apps\api\.venv not set up yet)"
+}
+
 # --- 2. API ----------------------------------------------------------------
 if (Test-Url "$ApiUrl/health") {
     Write-Ok "API already running at $ApiUrl - leaving it as is"
