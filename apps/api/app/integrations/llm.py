@@ -1,15 +1,17 @@
 """
-The one Claude adapter — every agent calls the LLM through here, never
-through its own client code, per docs/02_ARCHITECTURE.md §6.
+Legacy always-premium Claude adapter. As of T5, NO agent calls this
+module's `generate_structured` — every LLM-calling agent routes an
+AITask through app.integrations.ai.router instead, which chooses
+Anthropic vs. a local model per task. This module is kept only so
+`LlmUnavailableError` stays importable from its historical path
+(app.main and modules/planning/service.py) and for the one router test
+that pins legacy behaviour; `generate_structured` here is dead code
+pending removal in the T8 cleanup. Do not add new callers — use the
+router.
 
-As of the AI provider/task-routing work (T3), the actual Anthropic
-call lives in app.integrations.ai.providers.anthropic_provider —
-this module is now a thin, behavior-preserving wrapper around it, so
-none of the existing agent call sites or their tests (which monkeypatch
-`generate_structured` at each agent's own import site) need to change.
-New/migrated features should prefer app.integrations.ai.router instead,
-which chooses Anthropic vs. a local model per task; this module always
-uses the premium/Anthropic path, as it always has.
+The actual Anthropic call lives in
+app.integrations.ai.providers.anthropic_provider; this is a thin
+premium-only wrapper around it.
 """
 
 from app.core.settings import settings

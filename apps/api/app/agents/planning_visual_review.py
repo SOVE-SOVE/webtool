@@ -15,7 +15,8 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.agents.planning_audit import Finding
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "planning_visual_review-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "planning_visual_review.md"
@@ -45,6 +46,7 @@ def run(input: PlanningVisualReviewInput) -> AgentResult[PlanningVisualReviewOut
 
     schema = PlanningVisualReviewOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.VISUAL_DESIGN_REVIEW,
         system=_load_system_prompt(),
         user="Review the attached desktop and/or mobile screenshot(s) of this business's homepage.",
         schema=schema,

@@ -201,14 +201,31 @@ class TestLlmUnavailable:
     """Every AI generation route funnels LLM failures into an actionable
     503 — never an opaque 500, and never a partially-saved result."""
 
-    def test_missing_api_key_returns_503_with_a_readable_reason(self, authed_client, monkeypatch):
-        monkeypatch.setattr("app.core.settings.settings.llm_api_key", "")
+    def test_local_provider_unavailable_returns_503_with_a_readable_reason(self, authed_client, monkeypatch):
+        # sales_audit routes as a LOCAL task now (T5) — the meaningful
+        # "AI unavailable" case is the local model server being down, not
+        # a missing Claude key. The 503 must name what to check without
+        # leaking any secret.
+        from app.integrations.ai.errors import AIProviderUnavailableError
+
+        secret = "sk-ant-super-secret-key"
+        monkeypatch.setattr("app.core.settings.settings.llm_api_key", secret)
         monkeypatch.setattr("app.integrations.search.search_business", lambda query: None)
-        lead = authed_client.post("/api/v1/leads", json={"business_name": "No Key Co"}).json()
+
+        def _local_down(**kwargs):
+            raise AIProviderUnavailableError(
+                "AI generation is unavailable — couldn't reach the local AI server at "
+                "http://localhost:11434. Nothing was generated or saved."
+            )
+
+        monkeypatch.setattr("app.agents.sales_audit.generate_structured", _local_down)
+        lead = authed_client.post("/api/v1/leads", json={"business_name": "No Local Co"}).json()
 
         res = authed_client.post(f"/api/v1/leads/{lead['id']}/sales-audits")
         assert res.status_code == 503
-        assert "LLM_API_KEY" in res.json()["detail"]
+        detail = res.json()["detail"]
+        assert "local AI server" in detail
+        assert secret not in detail
 
     def test_api_failure_returns_503_and_saves_nothing(self, authed_client, monkeypatch):
         from app.integrations.llm import LlmUnavailableError

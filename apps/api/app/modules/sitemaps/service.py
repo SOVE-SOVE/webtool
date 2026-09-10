@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.agents import sitemap as sitemap_agent
 from app.agents.sitemap import SitemapInput
-from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
@@ -180,7 +181,7 @@ def generate_sitemap(
         sources_note=_build_sources_note(brief, creative_direction),
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.SITEMAP_PLANNING),
         prompt_version=sitemap_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )

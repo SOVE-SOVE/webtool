@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.agents import website_brief as website_brief_agent
 from app.agents.website_brief import WebsiteBriefInput
-from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
@@ -331,7 +332,7 @@ def generate_website_brief(
         sources_note=_build_sources_note(design_brief, creative_direction, sitemap, target_audience_source),
         flagged_for_review=result.flagged_for_review,
         review_notes=result.notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.WEBSITE_BRIEF),
         prompt_version=website_brief_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )

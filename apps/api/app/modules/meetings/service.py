@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 from app.agents import meeting_brief as meeting_brief_agent
 from app.core.logging import logger
 from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.integrations.calendar import registry as calendar_registry
 from app.integrations.calendar.base import CalendarEventInput
 from app.modules.activity_log import service as activity_service
@@ -374,7 +376,7 @@ def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, m
             likely_requirements = result.output.likely_requirements
             flagged_for_review = result.flagged_for_review
             review_notes = result.notes
-            model_used = settings.llm_model
+            model_used = ai_router.resolve_model(AITask.MEETING_BRIEF)
         except Exception as exc:  # noqa: BLE001 - genuinely must never break booking, see docstring
             logger.warning("Meeting brief discovery generation failed for meeting %s: %s", meeting.id, exc)
             flagged_for_review = True

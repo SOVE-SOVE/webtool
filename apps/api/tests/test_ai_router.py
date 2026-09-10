@@ -192,7 +192,86 @@ MIGRATED_AGENTS: dict[str, str] = {
     "follow_up.py": "AITask.FOLLOW_UP_RECOMMENDATION",
     "meeting_brief.py": "AITask.MEETING_BRIEF",
     "creative_director.py": "AITask.CREATIVE_DIRECTION",
+    "sitemap.py": "AITask.SITEMAP_PLANNING",
+    "website_brief.py": "AITask.WEBSITE_BRIEF",
+    "website_revision.py": "AITask.WEBSITE_REVISION",
+    "planning_visual_review.py": "AITask.VISUAL_DESIGN_REVIEW",
+    "sales_audit.py": "AITask.SALES_AUDIT",
+    "planning_summary.py": "AITask.PLANNING_SUMMARY",
+    "outreach.py": "AITask.OUTREACH_DRAFTING",
 }
+
+# No agent may still import the legacy always-premium
+# app.integrations.llm.generate_structured — every LLM call site now
+# goes through the router, so provider choice is never hard-coded in a
+# feature. (LlmUnavailableError, the error type, is still fine to import.)
+def test_no_agent_still_uses_the_legacy_llm_generate_structured():
+    agents_dir = pathlib.Path(__file__).parent.parent / "app" / "agents"
+    offenders = [
+        path.name
+        for path in agents_dir.glob("*.py")
+        if "from app.integrations.llm import generate_structured" in path.read_text(encoding="utf-8")
+        or "llm.generate_structured" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+# The website-creation pipeline: every LLM step that shapes what a
+# paying client sees must route to a PREMIUM task, so it can never run
+# on the local model. See docs/09_AI_WEBSITE_PIPELINE.md.
+WEBSITE_PIPELINE_PREMIUM_TASKS = [
+    AITask.WEBSITE_BRIEF,
+    AITask.SITEMAP_PLANNING,
+    AITask.CREATIVE_DIRECTION,
+    AITask.WEBSITE_GENERATION,
+    AITask.WEBSITE_REVISION,
+    AITask.DESIGN_REFINEMENT,
+    AITask.COMPLEX_WEBSITE_REASONING,
+    AITask.VISUAL_DESIGN_REVIEW,
+]
+
+
+@pytest.mark.parametrize("task", WEBSITE_PIPELINE_PREMIUM_TASKS)
+def test_website_pipeline_task_never_routes_to_local(task, monkeypatch):
+    ollama = FakeProvider(result={"should": "never be called"})
+    anthropic_fake = FakeProvider(result={"ok": True})
+    monkeypatch.setattr(router, "OllamaProvider", lambda base_url, timeout_seconds: ollama)
+    monkeypatch.setattr(router, "AnthropicProvider", lambda: anthropic_fake)
+    # Even with fallback ON, a premium task must not touch the local model.
+    monkeypatch.setattr(settings, "ai_local_fallback_to_premium", True)
+
+    router.generate_structured(task=task, system="s", user="u", schema=SCHEMA)
+
+    assert ollama.calls == []
+    assert len(anthropic_fake.calls) == 1
+
+
+def test_images_on_a_local_task_is_rejected(monkeypatch):
+    fake = FakeProvider()
+    monkeypatch.setattr(router, "OllamaProvider", lambda base_url, timeout_seconds: fake)
+
+    with pytest.raises(LlmUnavailableError, match="cannot process images"):
+        router.generate_structured(
+            task=AITask.LEAD_SUMMARY, system="s", user="u", schema=SCHEMA, images_base64=["Zm9v"]
+        )
+    assert fake.calls == []
+
+
+def test_images_on_a_premium_task_pass_through_to_anthropic(monkeypatch):
+    captured = {}
+
+    class ImageAwareFake:
+        def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
+            captured["images"] = images_base64
+            return {"findings": []}
+
+    monkeypatch.setattr(router, "AnthropicProvider", lambda: ImageAwareFake())
+
+    router.generate_structured(
+        task=AITask.VISUAL_DESIGN_REVIEW, system="s", user="u", schema=SCHEMA, images_base64=["Zm9v"]
+    )
+
+    assert captured["images"] == ["Zm9v"]
 
 
 @pytest.mark.parametrize("filename,expected_task", MIGRATED_AGENTS.items())

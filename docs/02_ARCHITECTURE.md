@@ -316,25 +316,28 @@ through silently. Prompt templates live in `agents/prompts/` as their
 own files (not inline strings), so they can be iterated without a code
 change and so a stored result can be traced back to the prompt version
 that produced it, per [[03_AGENT_RULES]]'s traceability requirement.
-Most agents still call the LLM through `integrations/llm.py`, which
-always uses the premium/Anthropic path. Two — `agents/review_intelligence.py`
-(the review-summary field) and `agents/follow_up.py` — have been
-migrated onto `integrations/ai/router.py` instead, routing to a local
-model by default (they were the two clearest LOCAL candidates in the
-AI-call audit: bounded, fact-constrained summarization/classification
-with code-level clamping downstream regardless of what generated them).
+
+**Every LLM-calling agent now goes through `integrations/ai/router.py`.**
+`integrations/llm.py` is a legacy always-premium shim kept only for the
+`LlmUnavailableError` re-export; no agent calls its `generate_structured`
+any more (enforced by `tests/test_ai_router.py`).
 
 `integrations/ai/router.py` routes an explicit `AITask` to either the
 Anthropic provider or a local Ollama provider
 (`integrations/ai/providers/`), based on `AI_LOCAL_*` / `AI_PREMIUM_*`
-config — see `AITask`'s docstring for which tasks are routine
-business-intelligence work (local) versus creative/website-generation
-work that stays premium. A feature adopts this by calling
-`ai.router.generate_structured(task=..., ...)` instead of
-`llm.generate_structured(...)`; provider selection never happens inside
-the feature itself. If the local provider is unavailable, this fails
-loudly rather than silently and automatically falling back to the more
-expensive premium model — cost control is the point.
+config — see `AITask`'s docstring and [[09_AI_WEBSITE_PIPELINE]] for
+which tasks are routine business-intelligence work (LOCAL: review
+intelligence, follow-up timing, meeting brief, sales audit, outreach
+draft, planning summary) versus creative/website-generation work that
+stays PREMIUM (creative direction, sitemap planning, website brief,
+website generation/revision, visual design review). A feature adopts
+this by calling `ai.router.generate_structured(task=..., ...)`; provider
+selection never happens inside the feature itself. If the local provider
+is unavailable, this fails loudly rather than silently and automatically
+falling back to the more expensive premium model — cost control is the
+point. `router.resolve_model(task)` / `router.resolve_provider_and_model(task)`
+report where a task would run, for recording `model_used` on generated
+rows.
 
 ### The ten potential roles, and what's actually being built
 

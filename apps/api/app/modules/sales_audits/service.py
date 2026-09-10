@@ -11,6 +11,8 @@ from app.agents.sales_audit import SalesAuditInput
 from app.agents.website_audit import WebsiteAuditInput
 from app.core.settings import settings
 from app.integrations import search as search_integration
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.jobs import service as jobs_service
@@ -141,7 +143,7 @@ def generate_sales_audit(
         ),
         flagged_for_review=flagged_for_review,
         review_notes=review_notes,
-        model_used=settings.llm_model,
+        model_used=ai_router.resolve_model(AITask.SALES_AUDIT),
         prompt_version=sales_audit_agent.PROMPT_VERSION,
         generated_by_user_id=actor_id,
     )
