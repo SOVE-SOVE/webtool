@@ -19,7 +19,11 @@ is strictly best-effort: it can never raise into or slow the caller.
 import time
 
 from app.core.settings import settings
-from app.integrations.ai.errors import AIProviderError, AIProviderUnavailableError
+from app.integrations.ai.errors import (
+    AIProviderError,
+    AIProviderModelMissingError,
+    AIProviderUnavailableError,
+)
 from app.integrations.ai.providers.anthropic_provider import AnthropicProvider
 from app.integrations.ai.providers.base import AIProvider, GenerationResult
 from app.integrations.ai.providers.ollama_provider import OllamaProvider
@@ -114,6 +118,8 @@ def _error_category(exc: Exception) -> str:
     """Coarse bucket for the AI usage log — enough to answer 'which
     calls are failing and roughly why', not a full taxonomy."""
     message = str(exc).lower()
+    if isinstance(exc, AIProviderModelMissingError):
+        return "model_missing"
     if "timed out" in message or "timeout" in message:
         return "timeout"
     if isinstance(exc, AIProviderUnavailableError):

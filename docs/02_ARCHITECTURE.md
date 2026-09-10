@@ -352,6 +352,20 @@ this / how much Anthropic usage / how many tasks on Ollama / which
 tasks are expensive / which calls are failing". It is deliberately not
 a dashboard.
 
+**AI provider health** (`integrations/ai/health.py`, `modules/ai_health/`):
+`GET /api/v1/ai/providers/status` reports whether the local (Ollama) and
+premium (Anthropic) providers are usable — for the Settings status
+panel and for actionable errors. The default check is config +
+Ollama's model list (fast, no generation); `?probe=true` adds a live
+reachability check — a 1-token Ollama generation and a **free**
+(unmetered, no tokens) Anthropic `models.list`. The app never downloads
+a model: a missing local model reports "not installed" and the
+`ollama pull <model>` command. When generation fails, the Ollama
+provider now distinguishes "server unreachable" ("make sure Ollama is
+running"), "model not pulled" (`AIProviderModelMissingError` →
+"ollama pull <model>"), and "model can't do JSON-schema output" —
+never a bare "AI generation failed", never a stack trace or key.
+
 ### The ten potential roles, and what's actually being built
 
 Per the operator's instruction: **not all ten are being implemented
