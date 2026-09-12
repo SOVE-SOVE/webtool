@@ -8,6 +8,63 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-10 — Google Review Insights: a Planning-scoped tool, not a second review-intelligence system
+
+**Decision:** Added "Google Review Insights" inside the standalone
+Planning workspace by extending the existing `review_intelligence`
+module rather than building a parallel Google review integration for
+Leads. `ReviewIntelligenceResult` gained a nullable `lead_id` column
+alongside the existing `discovered_business_id`, with an XOR check
+constraint (`ck_review_intelligence_discovered_business_xor_lead`)
+enforcing exactly one is set per row — mirroring the XOR pattern
+already used for `WebsiteAudit`/`lead_planning`. The deterministic
+scoring engine, theme lexicon, and health-score math in
+`agents/review_intelligence.py` are entirely reused unmodified; only a
+new `run_review_intelligence_for_lead` in
+`modules/review_intelligence/service.py` was added to resolve a Place
+ID for a Lead that never went through Discovery (reusing
+`DiscoveredBusiness.imported_lead_id` when available, else a single
+`places.text_search()` by name+suburb+state) and persist against
+`lead_id` instead of `discovered_business_id`.
+
+Of the six sections the feature specifies (Reputation Snapshot,
+Customer Themes, Website Opportunities, FAQ Opportunities,
+Review-to-Website Gaps, Neutral Review Summary), only the last three
+needed a new agent — the first three are served as-is off
+`ReviewIntelligenceResult`. The new agent
+(`agents/planning_review_insights.py`, task
+`AITask.REVIEW_WEBSITE_INSIGHTS`, routed LOCAL) only runs when there
+are recurring review themes to work with, is given only already-verified
+themes (with occurrence counts + evidence) and this workspace's own
+audit `key_points`, and is instructed never to invent a business fact,
+service, or FAQ answer — FAQ items are questions only, always flagged
+`needs_owner_confirmation=True`. "Owner-response rate" is surfaced as
+explicitly unavailable rather than estimated, since Google Places
+(New)'s field mask (`places.py::DETAILS_FIELD_MASK`) has no owner-reply
+field to compute it from.
+
+**Why:** The user's spec explicitly required inspecting and reusing the
+existing Google Review Intelligence / website-audit / Planning / job-
+queue / source-evidence architecture rather than creating a parallel
+integration, and required every theme/opportunity/FAQ to be
+evidence-backed with "never invent" discipline matching the rest of
+this codebase's agent rules.
+
+**Alternatives considered:** A standalone `/leads/{id}/review-intelligence`
+endpoint was considered but rejected in favor of bundling the
+fetch+synthesis into one Planning-level `POST
+/planning/{id}/review-insights` action, mirroring how "Analyse Website"
+already bundles fetch+findings+summary into one call — kept the new API
+surface minimal. Running the action as a background job (matching
+Planning's own audit pattern) was also considered but rejected in favor
+of staying synchronous, matching the *existing* precedent for this
+specific data source (`run_review_intelligence` for discovered
+businesses is already synchronous despite calling an external API + an
+LLM) — consistency with the established pattern for Google review data
+took priority over Planning's own async/job-queued convention.
+
+---
+
 ## 2026-09-05 — Instagram Discovery: manual/CSV import for Phase 1, no Meta API, one scoring engine
 
 **Decision:** Added "Instagram Discovery" as a new Lead Discovery

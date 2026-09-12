@@ -24,6 +24,7 @@ LOCAL_TASKS: frozenset[AITask] = frozenset(
         AITask.GOOGLE_REVIEW_ANALYSIS,
         AITask.REVIEW_SUMMARY,
         AITask.REVIEW_THEME_EXTRACTION,
+        AITask.REVIEW_WEBSITE_INSIGHTS,
         AITask.LEAD_SCORING,
         AITask.RESEARCH_SUMMARY,
         AITask.MEETING_BRIEF,

@@ -26,6 +26,12 @@ class AITask(str, Enum):
     GOOGLE_REVIEW_ANALYSIS = "google_review_analysis"
     REVIEW_SUMMARY = "review_summary"
     REVIEW_THEME_EXTRACTION = "review_theme_extraction"
+    # Turns already-verified review themes + a Planning workspace's own
+    # website-audit findings into website/FAQ recommendations and
+    # review-to-website gaps — see agents/planning_review_insights.py.
+    # Extraction/synthesis over facts already computed elsewhere, same
+    # LOCAL rationale as REVIEW_SUMMARY/REVIEW_THEME_EXTRACTION above.
+    REVIEW_WEBSITE_INSIGHTS = "review_website_insights"
     LEAD_SCORING = "lead_scoring"
     RESEARCH_SUMMARY = "research_summary"
     MEETING_BRIEF = "meeting_brief"

@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.modules.leads.models import Lead
+    from app.modules.review_intelligence.models import ReviewIntelligenceResult
     from app.modules.website_audits.models import WebsiteAudit
 
 
@@ -57,6 +58,26 @@ class LeadPlanning(Base):
     key_points: Mapped[list] = mapped_column(JSON, default=list)
     operator_notes: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
+
+    # "Google Review Insights" (docs/05_DECISIONS.md) — reuses
+    # modules/review_intelligence entirely for the reputation snapshot,
+    # customer themes, and the neutral review summary (copied here,
+    # editable, same pattern as website_summary below). Only
+    # review_website_opportunities/review_faq_opportunities/
+    # review_website_gaps are genuinely new: a synthesis step
+    # (agents/planning_review_insights.py) that cross-references the
+    # verified review themes above against this same workspace's own
+    # website-audit findings (key_points) — never run standalone, and
+    # empty whenever there are no audit findings yet to compare against.
+    review_intelligence_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("review_intelligence_results.id", ondelete="SET NULL")
+    )
+    review_summary: Mapped[str | None] = mapped_column(Text)
+    review_website_opportunities: Mapped[list] = mapped_column(JSON, default=list)
+    review_faq_opportunities: Mapped[list] = mapped_column(JSON, default=list)
+    review_website_gaps: Mapped[list] = mapped_column(JSON, default=list)
+    review_insights_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     analysed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
@@ -65,3 +86,4 @@ class LeadPlanning(Base):
 
     lead: Mapped["Lead"] = relationship()
     website_audit: Mapped["WebsiteAudit | None"] = relationship()
+    review_intelligence: Mapped["ReviewIntelligenceResult | None"] = relationship()

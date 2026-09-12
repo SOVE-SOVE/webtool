@@ -67,6 +67,21 @@ def analyse_planning(
     return planning
 
 
+@router.post("/api/v1/planning/{planning_id}/review-insights", response_model=PlanningRead)
+def run_review_insights(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """"Run Review Insights" — fetches/refreshes this Lead's Google
+    review intelligence and synthesizes it against the workspace's own
+    website audit. Rate-limited: calls Google Places and an LLM."""
+    planning = service.run_review_insights(db, current_user.workspace_id, current_user.id, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
 @router.get("/api/v1/planning", response_model=list[PlanningListItem])
 def list_planning(
     current_user: User = Depends(get_current_user),

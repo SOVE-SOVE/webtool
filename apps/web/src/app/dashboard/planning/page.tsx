@@ -2,21 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, PLANNING_STATUS_LABELS, type PlanningListItem, type PlanningStatus } from "@/lib/api";
+import { api, PLANNING_STATUS_LABELS, type PlanningListItem } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
-
-const STATUS_BADGE_CLASS: Record<PlanningStatus, string> = {
-  ready_to_analyse: "bg-surface-subtle text-fg-muted",
-  analysing: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  needs_review: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-};
+import { STATUS_BADGE_CLASS } from "./lib";
 
 export default function PlanningListPage() {
   const confirm = useConfirm();

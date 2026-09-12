@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.modules.discovery.models import DiscoveredBusiness
+    from app.modules.leads.models import Lead
 
 
 class ReviewDataStatus(str, enum.Enum):
@@ -71,11 +72,26 @@ class ReviewIntelligenceResult(Base):
     """
 
     __tablename__ = "review_intelligence_results"
+    __table_args__ = (
+        CheckConstraint(
+            "(discovered_business_id IS NOT NULL) != (lead_id IS NOT NULL)",
+            name="ck_review_intelligence_discovered_business_xor_lead",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    discovered_business_id: Mapped[uuid.UUID] = mapped_column(
+    discovered_business_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("discovered_businesses.id", ondelete="CASCADE")
     )
+    # Added for Planning's "Google Review Insights" (docs/05_DECISIONS.md)
+    # — a Lead's CRM Business may have no DiscoveredBusiness at all (a
+    # lead added by hand never went through Discovery), so Planning runs
+    # this same analysis keyed off the Lead instead. Exactly one of the
+    # two is set on any row; the deterministic scoring/theme-extraction
+    # logic in agents/review_intelligence.py is identical either way —
+    # only how the Google Place ID is resolved differs (see
+    # service._resolve_place_id_for_lead).
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
 
     data_status: Mapped[ReviewDataStatus] = mapped_column(
         Enum(ReviewDataStatus, name="review_data_status"), default=ReviewDataStatus.UNAVAILABLE
@@ -141,4 +157,5 @@ class ReviewIntelligenceResult(Base):
 
     review_data_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    discovered_business: Mapped["DiscoveredBusiness"] = relationship(back_populates="review_intelligence_results")
+    discovered_business: Mapped["DiscoveredBusiness | None"] = relationship(back_populates="review_intelligence_results")
+    lead: Mapped["Lead | None"] = relationship()

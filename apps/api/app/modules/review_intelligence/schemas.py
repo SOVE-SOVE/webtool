@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.modules.review_intelligence.models import ReviewActivityLevel, ReviewDataStatus, ReviewSentimentTrend, ReviewVolumeTrend
 
@@ -34,8 +34,19 @@ class ReviewEvidenceItem(BaseModel):
 
 
 class ReviewIntelligenceResultRead(BaseModel):
+    # from_attributes lets Planning's PlanningRead (planning/schemas.py)
+    # validate this straight off the LeadPlanning.review_intelligence
+    # ORM relationship via a plain model_validate(planning) — without
+    # this, pydantic doesn't cascade from_attributes into a nested
+    # submodel field even when the outer model has it. from_model()
+    # below is still used directly wherever a caller already has a
+    # ReviewIntelligenceResult in hand (e.g. modules/review_intelligence
+    # /service.py itself).
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
-    discovered_business_id: uuid.UUID
+    discovered_business_id: uuid.UUID | None
+    lead_id: uuid.UUID | None
 
     data_status: ReviewDataStatus
     review_data_source: str
@@ -74,6 +85,7 @@ class ReviewIntelligenceResultRead(BaseModel):
         return cls(
             id=result.id,
             discovered_business_id=result.discovered_business_id,
+            lead_id=result.lead_id,
             data_status=result.data_status,
             review_data_source=result.review_data_source,
             google_rating=result.google_rating,

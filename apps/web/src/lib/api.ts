@@ -722,6 +722,7 @@ export const PLANNING_STATUS_LABELS: Record<PlanningStatus, string> = {
 export type Planning = {
   id: string;
   lead_id: string;
+  lead_business_name: string;
   website_url: string | null;
   website_audit_id: string | null;
   status: PlanningStatus;
@@ -736,6 +737,17 @@ export type Planning = {
   screenshot_desktop_base64: string | null;
   screenshot_mobile_base64: string | null;
   detected_technology: string | null;
+
+  // "Google Review Insights" — reputation snapshot/themes/summary come
+  // straight from the latest ReviewIntelligenceResult for this Lead;
+  // the opportunities/gaps are this workspace's own synthesis. Empty
+  // until "Run Review Insights" has been used at least once.
+  review_intelligence: ReviewIntelligenceResult | null;
+  review_summary: string | null;
+  review_website_opportunities: ReviewWebsiteOpportunity[];
+  review_faq_opportunities: ReviewFaqOpportunity[];
+  review_website_gaps: ReviewWebsiteGap[];
+  review_insights_generated_at: string | null;
 };
 
 export type PlanningListItem = {
@@ -755,6 +767,7 @@ export type AnalysePlanningRequest = {
 export type UpdatePlanningRequest = {
   website_summary?: string;
   operator_notes?: string;
+  review_summary?: string;
 };
 
 export const SITEMAP_STATUSES = ["draft", "approved"] as const;
@@ -1929,7 +1942,8 @@ export type ReviewEvidenceItem = {
 
 export type ReviewIntelligenceResult = {
   id: string;
-  discovered_business_id: string;
+  discovered_business_id: string | null;
+  lead_id: string | null;
 
   data_status: ReviewDataStatus;
   review_data_source: string;
@@ -1962,6 +1976,28 @@ export type ReviewIntelligenceResult = {
 
   data_limitations: string | null;
   review_data_updated_at: string;
+};
+
+// --- Planning's "Google Review Insights" -----------------------------------
+// The reputation snapshot / customer themes / neutral summary above are
+// served as-is from ReviewIntelligenceResult; these three are this
+// workspace's own synthesis (agents/planning_review_insights.py) —
+// neutral, evidence-grounded planning notes, never fabricated facts.
+
+export type ReviewWebsiteOpportunity = {
+  recommendation: string;
+  based_on_theme: string;
+};
+
+export type ReviewFaqOpportunity = {
+  question: string;
+  based_on_theme: string;
+  needs_owner_confirmation: boolean;
+};
+
+export type ReviewWebsiteGap = {
+  gap: string;
+  based_on_theme: string;
 };
 
 export const api = {
@@ -2086,6 +2122,11 @@ export const api = {
   createProjectFromPlanning: (id: string) =>
     request<Project>(`/api/v1/planning/${id}/create-project`, { method: "POST" }),
   deletePlanning: (id: string) => request<void>(`/api/v1/planning/${id}`, { method: "DELETE" }),
+  // "Run Review Insights" — fetches/refreshes this Lead's Google review
+  // intelligence and synthesizes Website/FAQ opportunities + gaps
+  // against the existing website audit.
+  runReviewInsights: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/review-insights`, { method: "POST" }),
 
   generateCreativeDirection: (projectId: string, data?: GenerateCreativeDirectionRequest) =>
     request<CreativeDirectionBrief>(`/api/v1/projects/${projectId}/creative-directions`, {

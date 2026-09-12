@@ -198,6 +198,175 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
+# --- Lead-scoped (Planning's "Google Review Insights") ------------------------
+#
+# Same deterministic scoring/theme-extraction agent, same freshness-caching
+# and degrade-gracefully rules as the discovered_business path above — only
+# how the target business is found differs, since a Lead added by hand
+# never went through Discovery and so has no Google Place ID on record yet.
+
+
+def _get_lead_for_review(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID):
+    from app.modules.businesses.models import Business
+    from app.modules.leads.models import Lead
+
+    return db.scalar(
+        select(Lead)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id, Lead.id == lead_id)
+    )
+
+
+def _resolve_place_id_for_lead(db: Session, lead) -> str | None:
+    """
+    Reuses the exact Google Place ID already captured at Discovery time
+    when this lead's business was found via Google Places — the most
+    reliable possible match, and it costs no extra API call. Otherwise
+    falls back to a single Text Search by name + suburb/state (the same
+    call integrations/discovery/google_places_provider.py makes in bulk),
+    trusting Google's own top relevance match for a specific, named
+    business — same trust-the-provider's-ranking approach used
+    everywhere else a single best match is needed. Returns None (not an
+    error) when there's nothing to search on or Google returns nothing.
+    """
+    business = lead.business
+    discovered = db.scalar(select(DiscoveredBusiness).where(DiscoveredBusiness.imported_lead_id == lead.id))
+    if (
+        discovered is not None
+        and discovered.source_provider == GooglePlacesDiscoveryProvider.name
+        and discovered.source_external_id
+    ):
+        return discovered.source_external_id
+
+    query = " ".join(p for p in (business.name, business.suburb, business.state) if p)
+    if not query:
+        return None
+    page = places.text_search(query, page_size=1)
+    if page is None or not page.results:
+        return None
+    return page.results[0].place_id
+
+
+def get_latest_review_intelligence_for_lead(db: Session, lead_id: uuid.UUID) -> ReviewIntelligenceResult | None:
+    return db.scalar(
+        select(ReviewIntelligenceResult)
+        .where(ReviewIntelligenceResult.lead_id == lead_id)
+        .order_by(ReviewIntelligenceResult.review_data_updated_at.desc())
+        .limit(1)
+    )
+
+
+def _persist_for_lead(db: Session, lead_id: uuid.UUID, output, *, place_id: str | None) -> ReviewIntelligenceResult:
+    row = ReviewIntelligenceResult(
+        lead_id=lead_id,
+        data_status=ReviewDataStatus(output.data_status),
+        google_place_id=place_id,
+        google_rating=output.google_rating,
+        google_review_count=output.google_review_count,
+        reviews_sampled=output.reviews_sampled,
+        reviews_with_text=output.reviews_with_text,
+        review_activity_level=output.review_activity_level,
+        review_frequency_per_month=output.review_frequency_per_month,
+        recent_review_count=output.recent_review_count,
+        previous_review_count=output.previous_review_count,
+        last_review_at=output.last_review_at,
+        review_volume_trend=output.review_volume_trend,
+        review_sentiment_trend=output.review_sentiment_trend,
+        rating_distribution=output.rating_distribution,
+        review_health_score=output.review_health_score,
+        review_health_factors=[f.model_dump(mode="json") for f in output.review_health_factors],
+        themes_data_sufficient=output.themes_data_sufficient,
+        positive_review_themes=[t.model_dump(mode="json") for t in output.positive_review_themes],
+        negative_review_themes=[t.model_dump(mode="json") for t in output.negative_review_themes],
+        review_summary=output.review_summary,
+        review_summary_unavailable_reason=output.review_summary_unavailable_reason,
+        review_evidence=[e.model_dump(mode="json") for e in output.review_evidence],
+        data_limitations=output.data_limitations,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def run_review_intelligence_for_lead(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, lead_id: uuid.UUID
+) -> ReviewIntelligenceResultRead | None:
+    """Lead-scoped counterpart to run_review_intelligence. Returns None
+    when the lead doesn't exist in this workspace, so the route can 404."""
+    lead = _get_lead_for_review(db, workspace_id, lead_id)
+    if lead is None:
+        return None
+
+    latest = get_latest_review_intelligence_for_lead(db, lead.id)
+    now = datetime.now(timezone.utc)
+    if (
+        latest is not None
+        and latest.data_status == ReviewDataStatus.OK
+        and now - latest.review_data_updated_at < REVIEW_INTELLIGENCE_FRESHNESS
+    ):
+        return ReviewIntelligenceResultRead.from_model(latest)
+
+    place_id = _resolve_place_id_for_lead(db, lead)
+
+    if place_id is None:
+        result = review_intelligence_agent.run(
+            ReviewIntelligenceInput(business_name=lead.business.name, has_listing=False, api_ok=False)
+        )
+        row = _persist_for_lead(db, lead.id, result.output, place_id=None)
+    else:
+        details = places.get_place_details(place_id)
+        if details is None:
+            if latest is not None:
+                return ReviewIntelligenceResultRead.from_model(latest)
+            result = review_intelligence_agent.run(
+                ReviewIntelligenceInput(business_name=lead.business.name, has_listing=True, api_ok=False)
+            )
+            row = _persist_for_lead(db, lead.id, result.output, place_id=place_id)
+        else:
+            reviews = [
+                ReviewInput(
+                    rating=r.rating,
+                    text=r.text,
+                    author_name=r.author_name,
+                    published_at=_parse_timestamp(r.published_at),
+                    relative_time_description=r.relative_time_description,
+                )
+                for r in details.reviews
+            ]
+            result = review_intelligence_agent.run(
+                ReviewIntelligenceInput(
+                    business_name=lead.business.name,
+                    has_listing=True,
+                    api_ok=True,
+                    google_rating=details.rating,
+                    google_review_count=details.user_rating_count,
+                    reviews=reviews,
+                    now=now,
+                )
+            )
+            row = _persist_for_lead(db, lead.id, result.output, place_id=place_id)
+
+            activity_service.record(
+                db,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                entity_type="lead",
+                entity_id=lead.id,
+                action="review_analyzed",
+                summary=f"Google review analysis for {lead.business.name}: "
+                + (
+                    f"{result.output.google_rating}★ ({result.output.google_review_count} reviews), "
+                    f"health {result.output.review_health_score}"
+                    if result.output.review_health_score is not None
+                    else "no rating available"
+                ),
+            )
+
+    db.commit()
+    db.refresh(row)
+    return ReviewIntelligenceResultRead.from_model(row)
+
+
 def list_review_intelligence_results(db: Session, discovered_business_id: uuid.UUID) -> list[ReviewIntelligenceResultRead]:
     query = (
         select(ReviewIntelligenceResult)

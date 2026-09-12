@@ -6,8 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.agents import planning_audit as planning_audit_agent
+from app.agents import planning_review_insights as planning_review_insights_agent
 from app.agents import planning_summary as planning_summary_agent
 from app.agents import planning_visual_review as planning_visual_review_agent
+from app.agents.planning_review_insights import PlanningReviewInsightsInput
 from app.agents.planning_summary import PlanningSummaryInput
 from app.agents.planning_visual_review import PlanningVisualReviewInput
 from app.agents.website_audit import WebsiteAuditOutput
@@ -22,6 +24,7 @@ from app.modules.leads.models import Lead
 from app.modules.planning.models import LeadPlanning, PlanningStatus
 from app.modules.planning.schemas import PlanningListItem, PlanningRead
 from app.modules.projects.models import Project
+from app.modules.review_intelligence import service as review_intelligence_service
 from app.modules.website_audits import service as website_audits_service
 from app.modules.website_audits.models import WebsiteAudit
 
@@ -52,12 +55,17 @@ def _get_planning(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) 
         .join(Lead, LeadPlanning.lead_id == Lead.id)
         .join(Business, Lead.business_id == Business.id)
         .where(Business.workspace_id == workspace_id, LeadPlanning.id == planning_id)
-        .options(joinedload(LeadPlanning.website_audit), joinedload(LeadPlanning.lead).joinedload(Lead.business))
+        .options(
+            joinedload(LeadPlanning.website_audit),
+            joinedload(LeadPlanning.lead).joinedload(Lead.business),
+            joinedload(LeadPlanning.review_intelligence),
+        )
     )
 
 
-def _to_read(planning: LeadPlanning) -> PlanningRead:
+def _to_read(planning: LeadPlanning, lead: Lead | None = None) -> PlanningRead:
     data = PlanningRead.model_validate(planning)
+    data.lead_business_name = (lead or planning.lead).business.name
     audit = planning.website_audit
     if audit is not None:
         data.has_existing_site = audit.has_existing_site
@@ -94,7 +102,7 @@ def start_planning(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, le
 
     existing = db.scalar(select(LeadPlanning).where(LeadPlanning.lead_id == lead_id))
     if existing is not None:
-        return _to_read(existing)
+        return _to_read(existing, lead)
 
     planning = LeadPlanning(
         lead_id=lead.id, website_url=lead.business.website_url, status=PlanningStatus.READY_TO_ANALYSE
@@ -112,7 +120,7 @@ def start_planning(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, le
     )
     db.commit()
     db.refresh(planning)
-    return _to_read(planning)
+    return _to_read(planning, lead)
 
 
 def _has_pending_analysis_job(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) -> bool:
@@ -192,9 +200,9 @@ def get_planning_for_lead(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UU
     planning = db.scalar(
         select(LeadPlanning)
         .where(LeadPlanning.lead_id == lead_id)
-        .options(joinedload(LeadPlanning.website_audit))
+        .options(joinedload(LeadPlanning.website_audit), joinedload(LeadPlanning.review_intelligence))
     )
-    return _to_read(planning) if planning is not None else None
+    return _to_read(planning, lead) if planning is not None else None
 
 
 def list_planning_workspace(db: Session, workspace_id: uuid.UUID) -> list[PlanningListItem]:
@@ -225,6 +233,8 @@ def update_planning(
         planning.website_summary = updates["website_summary"]
     if "operator_notes" in updates:
         planning.operator_notes = updates["operator_notes"]
+    if "review_summary" in updates:
+        planning.review_summary = updates["review_summary"]
     db.commit()
     db.refresh(planning)
     return _to_read(planning)
@@ -304,6 +314,78 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
             db, workspace_id, actor_id, project.id, ProjectUpdate(build_direction="\n\n".join(direction_parts))
         )
     return projects_service.get_project(db, workspace_id, project.id)
+
+
+def run_review_insights(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID
+) -> PlanningRead | None:
+    """
+    "Run Review Insights" — the Google Review Insights action inside
+    Planning (docs/05_DECISIONS.md). Synchronous, matching the existing
+    precedent for this data source (review_intelligence.run_review_intelligence
+    is already synchronous despite calling Google Places + an LLM),
+    rather than Planning's own async/job-queued pattern used for
+    "Analyse Website".
+
+    Refreshes this Lead's review intelligence (modules/review_intelligence,
+    lead-scoped — reused entirely, not duplicated) for the Reputation
+    Snapshot, Customer Themes, and Neutral Review Summary. Only when
+    there are recurring themes to work with does it also run the new
+    synthesis agent (agents/planning_review_insights.py) against this
+    workspace's own audit findings, for Website Opportunities, FAQ
+    Opportunities, and Review-to-Website Gaps — a degrade-gracefully LLM
+    failure there still keeps the reputation snapshot/themes/summary
+    already saved, it just leaves the synthesis fields as they were.
+    """
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+
+    review_read = review_intelligence_service.run_review_intelligence_for_lead(
+        db, workspace_id, actor_id, planning.lead_id
+    )
+    if review_read is None:
+        return _to_read(planning)
+
+    planning.review_intelligence_id = review_read.id
+    planning.review_summary = review_read.review_summary
+    planning.review_insights_generated_at = datetime.now(timezone.utc)
+
+    if review_read.positive_review_themes or review_read.negative_review_themes:
+        audit_findings = [planning_audit_agent.Finding.model_validate(f) for f in planning.key_points]
+        try:
+            insights_result = planning_review_insights_agent.run(
+                PlanningReviewInsightsInput(
+                    business_name=planning.lead.business.name,
+                    positive_review_themes=[t.model_dump() for t in review_read.positive_review_themes],
+                    negative_review_themes=[t.model_dump() for t in review_read.negative_review_themes],
+                    audit_findings=audit_findings,
+                )
+            )
+            planning.review_website_opportunities = [
+                o.model_dump(mode="json") for o in insights_result.output.website_opportunities
+            ]
+            planning.review_faq_opportunities = [
+                f.model_dump(mode="json") for f in insights_result.output.faq_opportunities
+            ]
+            planning.review_website_gaps = [
+                g.model_dump(mode="json") for g in insights_result.output.review_website_gaps
+            ]
+        except LlmUnavailableError:
+            pass
+
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=planning.lead_id,
+        action="planning_review_insights_generated",
+        summary=f"Generated Google Review Insights for {planning.lead.business.name}",
+    )
+    db.commit()
+    db.refresh(planning)
+    return _to_read(planning)
 
 
 def _no_llm_summary_fallback(exc: LlmUnavailableError) -> str:

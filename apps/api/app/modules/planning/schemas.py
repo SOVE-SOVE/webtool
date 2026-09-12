@@ -4,6 +4,24 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.modules.review_intelligence.schemas import ReviewIntelligenceResultRead
+
+
+class ReviewWebsiteOpportunityRead(BaseModel):
+    recommendation: str
+    based_on_theme: str
+
+
+class ReviewFaqOpportunityRead(BaseModel):
+    question: str
+    based_on_theme: str
+    needs_owner_confirmation: bool = True
+
+
+class ReviewWebsiteGapRead(BaseModel):
+    gap: str
+    based_on_theme: str
+
 
 class KeyPointRead(BaseModel):
     # Deliberately plain `str` rather than a Literal for area/severity —
@@ -35,12 +53,31 @@ class PlanningRead(BaseModel):
     analysed_at: datetime | None
     updated_at: datetime
 
+    # Denormalized from the parent Lead's Business, purely so the
+    # standalone Planning workspace header can show a business name
+    # without a second request — set in service._to_read, never a real
+    # column on LeadPlanning.
+    lead_business_name: str = ""
+
     # Denormalized from the backing WebsiteAudit, when one exists, so the
     # frontend can render evidence/screenshots without a second request.
     has_existing_site: bool | None = None
     screenshot_desktop_base64: str | None = None
     screenshot_mobile_base64: str | None = None
     detected_technology: str | None = None
+
+    # "Google Review Insights" (docs/05_DECISIONS.md) — reputation snapshot
+    # and customer themes are the latest ReviewIntelligenceResult for this
+    # Lead, served as-is (see modules/review_intelligence); the remaining
+    # fields are this workspace's own synthesis
+    # (agents/planning_review_insights.py), empty until "Run Review
+    # Insights" has been used at least once.
+    review_intelligence: ReviewIntelligenceResultRead | None = None
+    review_summary: str | None = None
+    review_website_opportunities: list[ReviewWebsiteOpportunityRead] = []
+    review_faq_opportunities: list[ReviewFaqOpportunityRead] = []
+    review_website_gaps: list[ReviewWebsiteGapRead] = []
+    review_insights_generated_at: datetime | None = None
 
 
 class PlanningListItem(BaseModel):
@@ -68,3 +105,4 @@ class AnalysePlanningRequest(BaseModel):
 class UpdatePlanningRequest(BaseModel):
     website_summary: str | None = None
     operator_notes: str | None = None
+    review_summary: str | None = None

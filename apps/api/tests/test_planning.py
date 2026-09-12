@@ -14,10 +14,13 @@ Create Project handoff.
 import uuid
 
 from app.agents import planning_audit as planning_audit_agent
+from app.integrations import places
 from app.integrations.browser import PlanningAuditSignals
+from app.integrations.discovery.google_places_provider import GooglePlacesDiscoveryProvider
 from app.integrations.llm import LlmUnavailableError
 from app.jobs import runner
 from app.jobs.handlers import HANDLERS
+from app.modules.discovery.models import DiscoveredBusiness, DiscoverySearch
 
 VISUAL_REVIEW_LLM_OUTPUT = {
     "findings": [
@@ -533,3 +536,183 @@ def test_delete_planning_is_workspace_scoped(authed_client, other_authed_client,
     # Untouched from the owning workspace's point of view.
     still_there = authed_client.get(f"/api/v1/planning/{result['id']}")
     assert still_there.status_code == 200
+
+
+# --- Google Review Insights -----------------------------------------------------
+# Reuses modules/review_intelligence entirely for the reputation
+# snapshot/themes/summary (see tests/test_review_intelligence.py for the
+# lead-scoped fetch/persist/place-id-resolution coverage itself); these
+# tests cover the Planning-level wiring — the endpoint, the new
+# synthesis agent only running when there are themes to work with, and
+# graceful degradation when no LLM is configured.
+
+THREE_PRAISE_REVIEWS = [
+    places.PlaceReview(rating=5, text="Friendly staff, very friendly team", published_at="2026-08-01T00:00:00Z"),
+    places.PlaceReview(rating=5, text="So friendly and helpful every time", published_at="2026-08-10T00:00:00Z"),
+    places.PlaceReview(rating=5, text="Really friendly staff, would recommend", published_at="2026-08-20T00:00:00Z"),
+]
+
+SYNTHESIS_LLM_OUTPUT = {
+    "website_opportunities": [{"recommendation": "Highlight the friendly team on the homepage.", "based_on_theme": "Friendly staff"}],
+    "faq_opportunities": [],
+    "review_website_gaps": [],
+}
+
+
+def _patch_review_insights(monkeypatch, *, reviews=None, rating=4.8, review_count=42, synthesis_output=None):
+    # No DiscoveredBusiness on record for this lead in most of these
+    # tests, so place-id resolution falls through to a text_search —
+    # give it one real-looking match rather than None, or the whole run
+    # takes the "no_listing" branch and get_place_details is never
+    # reached (see test_review_insights_no_google_listing_found_is_not_an_error
+    # for the case that deliberately exercises that branch instead).
+    monkeypatch.setattr(
+        places,
+        "text_search",
+        lambda query, page_size=1, page_token=None: places.PlacesPage(
+            results=[places.PlaceResult(place_id="places/found123", name="Coastal Cafe")]
+        ),
+    )
+    monkeypatch.setattr(
+        places,
+        "get_place_details",
+        lambda place_id: places.PlaceDetails(
+            place_id=place_id, rating=rating, user_rating_count=review_count, reviews=reviews or []
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agents.review_intelligence.generate_structured",
+        lambda **kwargs: {"summary": "Customers consistently mention the friendly staff."},
+    )
+    monkeypatch.setattr(
+        "app.agents.planning_review_insights.generate_structured",
+        lambda **kwargs: dict(synthesis_output or SYNTHESIS_LLM_OUTPUT),
+    )
+
+
+def _link_discovered_business(db_session, authed_client, lead, *, place_id="places/abc123"):
+    search = DiscoverySearch(workspace_id=uuid.UUID(authed_client.get("/api/v1/auth/me").json()["workspace_id"]), industry="Cafes", provider="manual")
+    db_session.add(search)
+    db_session.commit()
+    db_session.refresh(search)
+    business = DiscoveredBusiness(
+        discovery_search_id=search.id,
+        name="Coastal Cafe",
+        source_provider=GooglePlacesDiscoveryProvider.name,
+        source_external_id=place_id,
+        dedup_key="coastal cafe||",
+        imported_lead_id=uuid.UUID(lead["id"]),
+    )
+    db_session.add(business)
+    db_session.commit()
+    return business
+
+
+def test_review_insights_returns_404_for_missing_item(authed_client):
+    res = authed_client.post(f"/api/v1/planning/{uuid.uuid4()}/review-insights")
+    assert res.status_code == 404
+
+
+def test_review_insights_with_no_reviews_saves_snapshot_and_skips_synthesis(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, reviews=[])
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["review_intelligence"]["data_status"] == "ok"
+    assert body["review_intelligence"]["google_rating"] == 4.8
+    # No review text at all -> the agent's deterministic fallback, no LLM call.
+    assert "no review text is available" in body["review_summary"]
+    assert body["review_website_opportunities"] == []
+    assert body["review_faq_opportunities"] == []
+    assert body["review_website_gaps"] == []
+    assert body["review_insights_generated_at"] is not None
+
+
+def test_review_insights_runs_synthesis_when_themes_are_present(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["review_intelligence"]["themes_data_sufficient"] is True
+    assert any(t["theme"] == "Friendly staff" for t in body["review_intelligence"]["positive_review_themes"])
+    assert body["review_website_opportunities"] == SYNTHESIS_LLM_OUTPUT["website_opportunities"]
+
+
+def test_review_insights_synthesis_failure_still_keeps_the_snapshot(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+
+    def _boom(**kwargs):
+        raise LlmUnavailableError("no API key configured")
+
+    monkeypatch.setattr("app.agents.planning_review_insights.generate_structured", _boom)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["review_summary"] == "Customers consistently mention the friendly staff."
+    assert body["review_website_opportunities"] == []
+
+
+def test_review_insights_prefers_a_known_place_id_over_a_text_search(authed_client, monkeypatch, db_session):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _link_discovered_business(db_session, authed_client, lead, place_id="places/known123")
+
+    calls = {"text_search": 0, "place_id": None}
+
+    def fake_text_search(query, page_size=1, page_token=None):
+        calls["text_search"] += 1
+        return None
+
+    def fake_get_place_details(place_id):
+        calls["place_id"] = place_id
+        return places.PlaceDetails(place_id=place_id, rating=4.5, user_rating_count=10, reviews=[])
+
+    monkeypatch.setattr(places, "text_search", fake_text_search)
+    monkeypatch.setattr(places, "get_place_details", fake_get_place_details)
+    monkeypatch.setattr("app.agents.review_intelligence.generate_structured", lambda **kwargs: {"summary": "x"})
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 200
+    assert calls["text_search"] == 0
+    assert calls["place_id"] == "places/known123"
+
+
+def test_review_insights_no_google_listing_found_is_not_an_error(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(places, "text_search", lambda query, page_size=1, page_token=None: None)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["review_intelligence"]["data_status"] == "no_listing"
+    assert body["review_summary"] is None
+
+
+def test_update_planning_can_edit_review_summary(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, reviews=[])
+    authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+
+    res = authed_client.patch(f"/api/v1/planning/{planning['id']}", json={"review_summary": "Edited by the operator."})
+    assert res.status_code == 200
+    assert res.json()["review_summary"] == "Edited by the operator."
+
+
+def test_review_insights_is_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, reviews=[])
+
+    res = other_authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
+    assert res.status_code == 404

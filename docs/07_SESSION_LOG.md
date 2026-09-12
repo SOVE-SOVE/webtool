@@ -11,6 +11,59 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-10 — Google Review Insights inside Planning
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/api/app/modules/review_intelligence/{models,schemas,service}.py`
+(new nullable `lead_id` + XOR check constraint, `run_review_intelligence_for_lead`
+and place-id resolution for leads), `apps/api/app/modules/planning/{models,schemas,service,routes}.py`
+(new `review_intelligence_id`/`review_summary`/`review_website_opportunities`/
+`review_faq_opportunities`/`review_website_gaps`/`review_insights_generated_at`
+columns, `run_review_insights`, `POST /planning/{id}/review-insights`),
+new `apps/api/app/agents/planning_review_insights.py` +
+`agents/prompts/planning_review_insights.md`, `apps/api/app/integrations/ai/tasks.py`
++ `router.py` (new `AITask.REVIEW_WEBSITE_INSIGHTS`, routed LOCAL), new
+migration `fe3c2ead557c_add_lead_scoped_review_intelligence_and_.py`,
+new tests in `tests/test_planning.py` (9 tests); frontend:
+`apps/web/src/lib/api.ts` (new types + `runReviewInsights`), new
+`GoogleReviewInsightsCard`/`ThemeList` in
+`apps/web/src/app/dashboard/planning/[id]/page.tsx`. See [[05_DECISIONS]]
+for the full design.
+
+**What happened:** Implemented the "Google Review Insights" feature
+inside standalone Planning per the user's spec — Reputation Snapshot,
+Customer Themes, Website Opportunities, FAQ Opportunities,
+Review-to-Website Gaps, and an editable Neutral Review Summary. Reused
+the existing `review_intelligence` module and its deterministic
+scoring/theme engine entirely; only the last three sections needed a
+genuinely new synthesis agent. Live-QA'd end to end against the real
+Google Places API (a real business, "The Grounds of Alexandria") — the
+text_search place-id fallback, reputation snapshot, and the honest
+"0 reviews with text available" degrade path all worked correctly; the
+`imported_lead_id`-based place-id shortcut and the synthesis agent's
+LLM-unavailable degrade path were covered by the new backend tests
+instead (no `LLM_API_KEY` in this dev `.env`). Found and fixed one real
+bug during testing: `PlanningRead.model_validate(planning)` failed on
+the new `review_intelligence` nested field because pydantic doesn't
+cascade `from_attributes` into a nested submodel unless that submodel
+declares it too — fixed by adding `model_config = ConfigDict(from_attributes=True)`
+to `ReviewIntelligenceResultRead` itself.
+**Blockers/issues:** None outstanding. Full backend suite (1084+ tests
+before this feature's own 9) and the new tests all pass; frontend
+`tsc --noEmit`, `npm run lint`, `npm test`, and `npm run build` all
+clean. Mobile-width visual QA was attempted but the browser
+`resize_window` tool did not take effect on this pass (known flaky per
+session history) — not independently re-verified, though the new
+markup uses the same flex-wrap/responsive Tailwind patterns already
+shipped and verified elsewhere on this same page.
+**Next up:** Push to `origin/main` once reviewed. Consider whether
+Website Opportunities/FAQ/Gaps should be regenerated automatically the
+next time "Analyse Website" completes (currently both actions are
+fully independent — Review Insights must be re-run by hand to pick up
+new audit findings).
+
+---
+
 ## 2026-09-05 — Google Review Intelligence: a reputation snapshot for Discovery, sourced only from what Google Places actually gives us
 **Mode:** background job, isolated worktree (`google-review-intelligence`), merged/pushed at session end.
 **Scope touched:** new `apps/api/app/modules/review_intelligence/` (models,
