@@ -32,6 +32,8 @@ LOCAL_TASKS: frozenset[AITask] = frozenset(
         AITask.CLIENT_SUMMARY,
         AITask.PROJECT_SUMMARY,
         AITask.FOLLOW_UP_RECOMMENDATION,
+        AITask.PLANNING_WEBSITE_DIRECTION,
+        AITask.PLANNING_COMPARABLE_PATTERNS,
     }
 )
 

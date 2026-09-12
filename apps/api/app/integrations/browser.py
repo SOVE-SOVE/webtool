@@ -11,6 +11,7 @@ import json
 import re
 import socket
 from dataclasses import dataclass, field
+from typing import Callable
 from urllib.parse import urlparse
 
 from playwright.async_api import Error as PlaywrightError
@@ -736,8 +737,17 @@ class PlanningAuditSignals:
     error: str | None = None
 
 
-async def fetch_planning_audit_signals(url: str) -> PlanningAuditSignals:
-    """Same navigation/SSRF-guard shape as the other fetch_* functions."""
+async def fetch_planning_audit_signals(
+    url: str, on_progress: Callable[[], None] | None = None
+) -> PlanningAuditSignals:
+    """
+    Same navigation/SSRF-guard shape as the other fetch_* functions.
+    `on_progress`, if given, is called once — synchronously, no
+    arguments — right as this switches from the desktop pass to the
+    tablet/mobile viewport pass, so a caller can record a real "now
+    reviewing mobile layout" checkpoint (see PlanningAnalysisStep). Purely
+    an observability hook: never changes what's measured or returned.
+    """
     try:
         _check_url_is_public(url)
         parsed = urlparse(url)
@@ -867,6 +877,8 @@ async def fetch_planning_audit_signals(url: str) -> PlanningAuditSignals:
                 except Exception:
                     sitemap_xml_reachable = False
 
+                if on_progress:
+                    on_progress()
                 await page.set_viewport_size(TABLET_VIEWPORT)
                 tablet_overflow = await page.evaluate(
                     "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5"

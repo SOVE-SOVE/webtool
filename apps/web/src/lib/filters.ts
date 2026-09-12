@@ -12,6 +12,12 @@ export const UNASSIGNED = "__unassigned__";
 // The two post-launch stages — see ProjectStage in the API.
 export const FINISHED_STAGES: ProjectStage[] = ["maintenance", "complete"];
 
+// Everything from "deployed" onward — a site that's actually live on the
+// internet, whether still under active maintenance or fully wrapped up.
+// Backs the "Live Websites" nav destination (Projects filtered to
+// ?view=live), a view over this same list rather than a new page.
+export const LIVE_STAGES: ProjectStage[] = ["deployed", "maintenance", "complete"];
+
 function matchesSearch(fields: (string | null | undefined)[], query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -29,13 +35,17 @@ export type ProjectFilters = {
   stage: ProjectStage | "";
   assignee: string;
   showFinished: boolean;
+  /** The "Live Websites" view: only LIVE_STAGES, regardless of stage/showFinished. */
+  onlyLive?: boolean;
 };
 
 export function filterProjects(projects: Project[], filters: ProjectFilters): Project[] {
   return projects.filter((project) => {
-    // An explicit stage filter wins outright: asking for "maintenance"
-    // shouldn't return nothing just because "show finished" is off.
-    if (filters.stage) {
+    if (filters.onlyLive) {
+      if (!LIVE_STAGES.includes(project.stage)) return false;
+    } else if (filters.stage) {
+      // An explicit stage filter wins outright: asking for "maintenance"
+      // shouldn't return nothing just because "show finished" is off.
       if (project.stage !== filters.stage) return false;
     } else if (!filters.showFinished && FINISHED_STAGES.includes(project.stage)) {
       return false;

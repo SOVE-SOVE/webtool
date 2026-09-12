@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   api,
   PROJECT_STAGE_LABELS,
@@ -75,8 +75,15 @@ function ProjectCard({ project, nextTask }: { project: Project; nextTask: Task |
   );
 }
 
-export default function ProjectsPage() {
+// useSearchParams() needs a Suspense-boundary ancestor for Next's static
+// generation — see the default export below. It's also what makes the
+// deep-linked state below correctly reset when navigating between two
+// query-variants of this same page (Projects <-> Live Websites) without
+// a full remount, which a one-time mount effect reading
+// window.location.search cannot do.
+function ProjectsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -93,6 +100,9 @@ export default function ProjectsPage() {
   const [stageFilter, setStageFilter] = useState<ProjectStage | "">("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [showFinished, setShowFinished] = useState(false);
+  // "Live Websites" (Manage nav) is this same list, deep-linked as
+  // ?view=live — deployed/maintenance/complete only, no build controls.
+  const [onlyLive, setOnlyLive] = useState(false);
 
   function load() {
     api
@@ -109,10 +119,19 @@ export default function ProjectsPage() {
 
   useEffect(load, []);
 
+  // Deep-linked state (?new=1 from a quick action, ?view=live from the
+  // "Live Websites" nav item, ?stage=<x> from Today's "ready to build"
+  // next action) — re-derived (not just seeded once) so it resets
+  // correctly navigating away, e.g. Live Websites -> Projects reusing
+  // the same page component with no remount in between.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (new URLSearchParams(window.location.search).has("new")) setShowForm(true);
-  }, []);
+    setShowForm(searchParams.has("new"));
+    setOnlyLive(searchParams.get("view") === "live");
+    const stage = searchParams.get("stage");
+    setStageFilter(stage && (PROJECT_STAGES as readonly string[]).includes(stage) ? (stage as ProjectStage) : "");
+  }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -138,28 +157,34 @@ export default function ProjectsPage() {
     () =>
       projects === null
         ? null
-        : filterProjects(projects, { search, stage: stageFilter, assignee: assigneeFilter, showFinished }),
-    [projects, search, stageFilter, assigneeFilter, showFinished],
+        : filterProjects(projects, { search, stage: stageFilter, assignee: assigneeFilter, showFinished, onlyLive }),
+    [projects, search, stageFilter, assigneeFilter, showFinished, onlyLive],
   );
 
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
-        title="Projects"
-        description="Websites in production for signed clients — where each one is, and what needs to happen next."
+        title={onlyLive ? "Live Websites" : "Projects"}
+        description={
+          onlyLive
+            ? "Websites that are live for a client — deployed, in maintenance, or fully delivered."
+            : "Websites in production for signed clients — where each one is, and what needs to happen next."
+        }
         actions={
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            disabled={clients.length === 0}
-            className="btn btn-primary"
-            title={clients.length === 0 ? "Convert a lead to a client first" : undefined}
-          >
-            {showForm ? "Cancel" : "New project"}
-          </button>
+          onlyLive ? undefined : (
+            <button
+              onClick={() => setShowForm((v) => !v)}
+              disabled={clients.length === 0}
+              className="btn btn-primary"
+              title={clients.length === 0 ? "Convert a lead to a client first" : undefined}
+            >
+              {showForm ? "Cancel" : "New project"}
+            </button>
+          )
         }
       />
 
-      {showForm && (
+      {showForm && !onlyLive && (
         <form onSubmit={handleCreate} className="mt-4 max-w-xl space-y-3 rounded-md border border-border p-4">
           <select
             required
@@ -206,18 +231,20 @@ export default function ProjectsPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-60 rounded-md border border-border-strong px-3 py-1.5 text-sm"
         />
-        <select
-          value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
-        >
-          <option value="">All stages</option>
-          {PROJECT_STAGES.map((stage) => (
-            <option key={stage} value={stage}>
-              {PROJECT_STAGE_LABELS[stage]}
-            </option>
-          ))}
-        </select>
+        {!onlyLive && (
+          <select
+            value={stageFilter}
+            onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
+            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          >
+            <option value="">All stages</option>
+            {PROJECT_STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {PROJECT_STAGE_LABELS[stage]}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
@@ -231,15 +258,17 @@ export default function ProjectsPage() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-          <input
-            type="checkbox"
-            checked={showFinished}
-            onChange={(e) => setShowFinished(e.target.checked)}
-            disabled={stageFilter !== ""}
-          />
-          Show finished
-        </label>
+        {!onlyLive && (
+          <label className="flex items-center gap-1.5 text-sm text-fg-muted">
+            <input
+              type="checkbox"
+              checked={showFinished}
+              onChange={(e) => setShowFinished(e.target.checked)}
+              disabled={stageFilter !== ""}
+            />
+            Show finished
+          </label>
+        )}
       </div>
 
       {error && (
@@ -284,7 +313,21 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {visibleProjects && projects && projects.length > 0 && visibleProjects.length === 0 && (
+      {visibleProjects && projects && projects.length > 0 && visibleProjects.length === 0 && onlyLive && (
+        <div className="mt-4">
+          <EmptyState
+            title="No live websites yet"
+            description="Nothing has been deployed for a client yet — once a project ships, it shows up here."
+            action={
+              <Link href="/dashboard/planning" className="btn btn-primary">
+                Open Planning
+              </Link>
+            }
+          />
+        </div>
+      )}
+
+      {visibleProjects && projects && projects.length > 0 && visibleProjects.length === 0 && !onlyLive && (
         <div className="mt-4">
           <EmptyState
             title="No projects match"
@@ -313,5 +356,13 @@ export default function ProjectsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+      <ProjectsPageInner />
+    </Suspense>
   );
 }

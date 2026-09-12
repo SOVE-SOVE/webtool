@@ -19,6 +19,7 @@ JOB_WEBSITE_GENERATE = "website_generate"
 JOB_QA_REPORT = "qa_report"
 JOB_CHECK_INSTAGRAM_WEBSITE = "check_instagram_website"
 JOB_PLANNING_ANALYSIS = "planning_analysis"
+JOB_PLANNING_COMPARABLE_ANALYSIS = "planning_comparable_analysis"
 
 # Default cadence for a recurring discovery search that doesn't specify
 # its own interval — daily, per docs/04_ROADMAP.md M7's "scheduled/

@@ -83,6 +83,31 @@ export function EvidencePanel({
   );
 }
 
+/**
+ * Stands in for the website preview while an analysis is running — same
+ * bordered box as EvidencePanel (so the layout doesn't jump once the
+ * real screenshot lands), with a quiet "inspection" sweep instead of an
+ * image. Never shows a stale screenshot from a previous run labelled as
+ * current: a fresh one is mid-capture, so there's nothing honest to
+ * show yet but the box itself.
+ */
+export function AnalysingPreviewPanel() {
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-surface">
+      <div className="border-b border-border px-3 py-2">
+        <p className="text-xs font-medium text-fg-subtle">Website preview</p>
+      </div>
+      <div
+        className="scan-surface flex h-[260px] items-center justify-center bg-surface-subtle"
+        role="status"
+        aria-label="Capturing a fresh screenshot"
+      >
+        <p className="text-xs text-fg-subtle">Capturing…</p>
+      </div>
+    </div>
+  );
+}
+
 /** Compact, read-mostly notes preview for the desktop Overview side panel. */
 export function NotesPreview({ notes, onOpenNotes }: { notes: string | null; onOpenNotes: () => void }) {
   return (

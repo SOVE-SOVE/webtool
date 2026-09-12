@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   api,
   LEAD_PRIORITIES,
@@ -48,8 +49,15 @@ function nextFollowUpByLead(
   return map;
 }
 
-export default function LeadsPage() {
+// useSearchParams() needs a Suspense-boundary ancestor for Next's static
+// generation — see the default export below. It's also what makes the
+// deep-linked state below correctly reset navigating between two
+// query-variants of this same page (Leads <-> Clients) without a full
+// remount, which a one-time mount effect reading window.location.search
+// cannot do.
+function LeadsPageInner() {
   const confirm = useConfirm();
+  const searchParams = useSearchParams();
   const showToast = useToast();
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[] | null>(null);
@@ -95,17 +103,18 @@ export default function LeadsPage() {
 
   useEffect(load, [showArchived]);
 
-  // View/tab can be deep-linked (?view=board from the old Pipeline route,
-  // ?tab=won from the old Clients route, ?new=1 from a quick action).
-  // Deferred to an effect so SSR markup matches the first client render.
+  // View/tab can be deep-linked (?view=board from the Pipeline route,
+  // ?tab=won from the Clients nav item, ?new=1 from a quick action) —
+  // re-derived (not just seeded once) so it resets correctly navigating
+  // away, e.g. Clients -> Leads reusing the same page component with no
+  // remount in between.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("new")) setShowAdd(true);
-    if (params.get("view") === "board") setView("board");
-    const t = params.get("tab");
-    if (isLeadTab(t)) setTab(t);
-  }, []);
+    setShowAdd(searchParams.has("new"));
+    setView(searchParams.get("view") === "board" ? "board" : "table");
+    const t = searchParams.get("tab");
+    setTab(isLeadTab(t) ? t : "all");
+  }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleCreate(e: React.FormEvent) {
@@ -530,5 +539,13 @@ export default function LeadsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+      <LeadsPageInner />
+    </Suspense>
   );
 }

@@ -75,6 +75,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 12.5h17" />
     </>
   ),
+  live: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.2 2.3 3.4 5.2 3.4 8.5s-1.2 6.2-3.4 8.5c-2.2-2.3-3.4-5.2-3.4-8.5S9.8 5.8 12 3.5Z" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

@@ -16,11 +16,13 @@ import uuid
 from app.agents import planning_audit as planning_audit_agent
 from app.integrations import places
 from app.integrations.browser import PlanningAuditSignals
+from app.integrations.discovery.base import DiscoveryPage, NormalizedBusinessResult, WebsiteStatus
 from app.integrations.discovery.google_places_provider import GooglePlacesDiscoveryProvider
 from app.integrations.llm import LlmUnavailableError
 from app.jobs import runner
 from app.jobs.handlers import HANDLERS
 from app.modules.discovery.models import DiscoveredBusiness, DiscoverySearch
+from app.modules.planning import service as planning_service
 
 VISUAL_REVIEW_LLM_OUTPUT = {
     "findings": [
@@ -55,7 +57,9 @@ def _patch_planning_llm(monkeypatch, summary_output=None, visual_output=None):
 
 
 def _patch_planning_fetch(monkeypatch, signals: PlanningAuditSignals):
-    async def fake_fetch(url):
+    async def fake_fetch(url, on_progress=None):
+        if on_progress:
+            on_progress()
         return signals
 
     monkeypatch.setattr("app.modules.planning.service.fetch_planning_audit_signals", fake_fetch)
@@ -284,6 +288,48 @@ def test_analysis_job_completes_and_populates_findings_and_summary(authed_client
     assert len(result["key_points"]) >= 3
     assert any(kp["area"] == "visual" for kp in result["key_points"])
     assert result["analysed_at"] is not None
+    # current_step is a live-progress marker only — cleared once the run
+    # has actually settled, whatever it settled to.
+    assert result["current_step"] is None
+
+
+def test_analysis_job_records_real_progress_steps_in_order(authed_client, monkeypatch):
+    """
+    The frontend's "During audit" progress list is driven by
+    current_step, set at each real phase boundary inside
+    run_analysis_job (never simulated/timed) — this locks in that the
+    five phases actually fire, in the documented order.
+    """
+    recorded: list[str] = []
+    original_set_step = planning_service._set_step
+
+    def _spy(db, planning, step):
+        recorded.append(step.value)
+        original_set_step(db, planning, step)
+
+    monkeypatch.setattr(planning_service, "_set_step", _spy)
+
+    lead = _create_lead(authed_client)
+    _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    assert recorded == ["structure", "mobile", "technical", "visual", "summary"]
+
+
+def test_analysis_job_clears_current_step_on_failure(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+
+    async def _raise_fetch(url, on_progress=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.modules.planning.service.fetch_planning_audit_signals", _raise_fetch)
+
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/analyse", json={"website_url": "https://coastalcafe.example"})
+    _drain_jobs()
+
+    result = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert result["status"] == "failed"
+    assert result["current_step"] is None
 
 
 def test_analysis_job_marks_needs_review_when_llm_unavailable(authed_client, monkeypatch):
@@ -310,7 +356,7 @@ def test_analysis_job_marks_needs_review_when_llm_unavailable(authed_client, mon
 def test_analysis_job_marks_failed_on_unexpected_error(authed_client, monkeypatch):
     lead = _create_lead(authed_client)
 
-    async def _raise_fetch(url):
+    async def _raise_fetch(url, on_progress=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr("app.modules.planning.service.fetch_planning_audit_signals", _raise_fetch)
@@ -716,3 +762,339 @@ def test_review_insights_is_workspace_scoped(authed_client, other_authed_client,
 
     res = other_authed_client.post(f"/api/v1/planning/{planning['id']}/review-insights")
     assert res.status_code == 404
+
+
+# --- New Website Plan mode (no existing website to audit) -----------------
+
+PLAN_LLM_OUTPUT = {
+    "recommended_objective": "Generate phone enquiries for kitchen renovation quotes.",
+    "priority_pages": [
+        {"title": "Home", "purpose": "Introduce the business and its main service."},
+        {"title": "Services", "purpose": "List kitchen renovation services offered."},
+        {"title": "Gallery", "purpose": "Show completed work."},
+        {"title": "Contact", "purpose": "Make it easy to call or enquire."},
+    ],
+    "content_priorities": ["Kitchen renovation services", "Completed project gallery"],
+    "contact_priorities": ["Phone number prominent on every page"],
+    "visual_priorities": ["Real photos of completed kitchens"],
+    "open_questions": ["No services list on file — confirm exact services offered."],
+    "website_summary": "A simple site to generate renovation enquiries by phone.",
+}
+
+
+def test_generate_website_plan_builds_from_verified_inputs_and_completes(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation", phone="0400111222")
+    planning = _start_planning(authed_client, lead)
+    assert planning["website_url"] is None  # no website on record for this lead — New Website Plan mode
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return dict(PLAN_LLM_OUTPUT)
+
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", fake_generate)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "completed"
+    assert body["website_audit_id"] is None  # still no audit — the other mode
+    assert body["recommended_objective"] == PLAN_LLM_OUTPUT["recommended_objective"]
+    assert len(body["priority_pages"]) == 4
+    assert body["content_priorities"] == PLAN_LLM_OUTPUT["content_priorities"]
+    assert body["open_questions"] == PLAN_LLM_OUTPUT["open_questions"]
+    assert body["website_summary"] == PLAN_LLM_OUTPUT["website_summary"]
+    assert body["website_plan_generated_at"] is not None
+
+    assert "Kitchen Renovation" in captured["user"]
+    assert "0400111222" in captured["user"]
+
+
+def test_generate_website_plan_degrades_gracefully_without_llm(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    def _boom(**kwargs):
+        raise LlmUnavailableError("no API key configured")
+
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", _boom)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "needs_review"
+    assert body["recommended_objective"] is None
+    assert body["priority_pages"] == []
+    assert "Coastal Cafe" in body["website_summary"]
+    assert body["website_plan_generated_at"] is not None
+
+
+def test_generate_website_plan_uses_existing_review_themes(authed_client, monkeypatch, db_session):
+    from app.modules.review_intelligence.models import ReviewIntelligenceResult
+
+    lead = _create_lead(authed_client, industry="Nail Salon")
+    planning = _start_planning(authed_client, lead)
+
+    review = ReviewIntelligenceResult(
+        lead_id=uuid.UUID(lead["id"]),
+        positive_review_themes=[
+            {"theme": "Friendly staff", "occurrences": 3, "confidence": 0.9, "evidence": ["so friendly"]}
+        ],
+    )
+    db_session.add(review)
+    db_session.commit()
+    db_session.refresh(review)
+
+    conn_db = db_session
+    from app.modules.planning.models import LeadPlanning as _LP
+
+    row = conn_db.get(_LP, uuid.UUID(planning["id"]))
+    row.review_intelligence_id = review.id
+    conn_db.commit()
+
+    captured = {}
+    monkeypatch.setattr(
+        "app.agents.planning_website_direction.generate_structured",
+        lambda **kwargs: (captured.update(kwargs), dict(PLAN_LLM_OUTPUT))[1],
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 200
+    assert "Friendly staff" in captured["user"]
+
+
+def test_generate_website_plan_returns_404_for_missing_item(authed_client):
+    res = authed_client.post(f"/api/v1/planning/{uuid.uuid4()}/generate-website-plan")
+    assert res.status_code == 404
+
+
+def test_generate_website_plan_is_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", lambda **kwargs: dict(PLAN_LLM_OUTPUT))
+
+    res = other_authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 404
+
+
+def test_create_project_from_new_website_plan_carries_forward_plan_content(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", lambda **kwargs: dict(PLAN_LLM_OUTPUT))
+    authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
+    assert res.status_code == 201
+    project = res.json()
+    assert PLAN_LLM_OUTPUT["recommended_objective"] in project["build_direction"]
+    assert "Home: Introduce the business" in project["build_direction"]
+
+
+# --- Research Comparable Websites -------------------------------------------
+
+
+def _fake_comparable_provider(results):
+    class _FakeProvider:
+        name = "google_places"
+
+        def discover(self, criteria, db=None):
+            return DiscoveryPage(results=results, has_more=False)
+
+    return _FakeProvider()
+
+
+def _comparable_result(name, url, *, website_status=WebsiteStatus.FOUND, **overrides):
+    defaults = dict(
+        name=name,
+        website_url=url,
+        website_status=website_status,
+        business_category="Cafe",
+        suburb="Byron Bay",
+        state="NSW",
+        raw_snippet=f"{name} — a local cafe in Byron Bay",
+    )
+    defaults.update(overrides)
+    return NormalizedBusinessResult(**defaults)
+
+
+def test_comparable_search_filters_to_websites_and_excludes_own_domain(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, website_url="https://coastalcafe.example", industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    results = [
+        _comparable_result("Coastal Cafe", "https://coastalcafe.example"),  # own business — excluded
+        _comparable_result("No Website Cafe", None, website_status=WebsiteStatus.NONE),  # no site — excluded
+        _comparable_result("Sunrise Cafe", "https://sunrisecafe.example"),
+        _comparable_result("Beachside Cafe", "https://beachsidecafe.example"),
+        _comparable_result("Sunrise Cafe Duplicate", "https://sunrisecafe.example"),  # dup hostname — excluded
+    ]
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry, "get_provider", lambda name: _fake_comparable_provider(results)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+    assert res.status_code == 200
+    body = res.json()
+    sites = body["comparable_sites"]
+    assert len(sites) == 2
+    assert {s["website_url"] for s in sites} == {"https://sunrisecafe.example", "https://beachsidecafe.example"}
+    assert all(s["included"] for s in sites)
+    assert all(s["source_provider"] == "google_places" for s in sites)
+    assert body["comparable_research_status"] == "ready_for_review"
+
+
+def test_comparable_search_caps_at_five_and_a_re_search_replaces_the_batch(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    many_results = [_comparable_result(f"Cafe {i}", f"https://cafe{i}.example") for i in range(8)]
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry, "get_provider", lambda name: _fake_comparable_provider(many_results)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+    assert len(res.json()["comparable_sites"]) == 5
+
+    # A re-search with fewer results replaces the previous batch entirely.
+    monkeypatch.setattr(
+        planning_service.discovery_registry,
+        "get_provider",
+        lambda name: _fake_comparable_provider([_comparable_result("Only Cafe", "https://onlycafe.example")]),
+    )
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+    sites = res.json()["comparable_sites"]
+    assert len(sites) == 1
+    assert sites[0]["website_url"] == "https://onlycafe.example"
+
+
+def test_update_comparable_site_toggle_and_404_for_unknown_site(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry,
+        "get_provider",
+        lambda name: _fake_comparable_provider([_comparable_result("Sunrise Cafe", "https://sunrisecafe.example")]),
+    )
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+    site_id = res.json()["comparable_sites"][0]["id"]
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/comparable-sites/{site_id}", json={"included": False}
+    )
+    assert res.status_code == 200
+    assert res.json()["comparable_sites"][0]["included"] is False
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/comparable-sites/{uuid.uuid4()}", json={"included": False}
+    )
+    assert res.status_code == 404
+
+
+def test_analyse_comparable_sites_requires_at_least_one_included(authed_client):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/analyse")
+    assert res.status_code == 400
+
+
+COMPARABLE_PATTERNS_LLM_OUTPUT = {
+    "patterns": [{"pattern": "Most reference sites show a phone number in the header.", "evidence": "2 of 2 sites"}],
+    "opportunities": [
+        {"opportunity": "Put the phone number in the header.", "rationale": "Matches the pattern across references."}
+    ],
+}
+
+
+def test_comparable_analysis_job_skips_failed_fetch_and_never_persists_screenshots(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry,
+        "get_provider",
+        lambda name: _fake_comparable_provider(
+            [
+                _comparable_result("Sunrise Cafe", "https://sunrisecafe.example"),
+                _comparable_result("Beachside Cafe", "https://beachsidecafe.example"),
+            ]
+        ),
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+
+    async def fake_fetch(url, on_progress=None):
+        if "beachside" in url:
+            return PlanningAuditSignals(error="Navigation timed out")
+        return _slow_mobile_unfriendly_signals(final_url=url, title="Sunrise Cafe — Home")
+
+    monkeypatch.setattr("app.modules.planning.service.fetch_planning_audit_signals", fake_fetch)
+    monkeypatch.setattr(
+        "app.agents.planning_comparable_patterns.generate_structured",
+        lambda **kwargs: dict(COMPARABLE_PATTERNS_LLM_OUTPUT),
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/analyse")
+    assert res.status_code == 200
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["comparable_research_status"] == "completed"
+    assert body["comparable_research_patterns"] == COMPARABLE_PATTERNS_LLM_OUTPUT["patterns"]
+    assert body["comparable_research_opportunities"] == COMPARABLE_PATTERNS_LLM_OUTPUT["opportunities"]
+
+    by_url = {s["website_url"]: s for s in body["comparable_sites"]}
+    assert by_url["https://sunrisecafe.example"]["fetch_ok"] is True
+    assert by_url["https://beachsidecafe.example"]["fetch_ok"] is False
+    # No screenshot field exists anywhere on a comparable-site row — the
+    # schema itself has no place to put one (see PlanningComparableSiteRead).
+    assert "screenshot_desktop_base64" not in by_url["https://sunrisecafe.example"]
+
+
+def test_comparable_analysis_needs_review_when_llm_unavailable(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry,
+        "get_provider",
+        lambda name: _fake_comparable_provider([_comparable_result("Sunrise Cafe", "https://sunrisecafe.example")]),
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+
+    async def fake_fetch(url, on_progress=None):
+        return _slow_mobile_unfriendly_signals(final_url=url)
+
+    def _boom(**kwargs):
+        raise LlmUnavailableError("no API key configured")
+
+    monkeypatch.setattr("app.modules.planning.service.fetch_planning_audit_signals", fake_fetch)
+    monkeypatch.setattr("app.agents.planning_comparable_patterns.generate_structured", _boom)
+
+    authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/analyse")
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["comparable_research_status"] == "needs_review"
+    assert body["comparable_research_patterns"] == []
+
+
+def test_comparable_sites_are_removed_when_planning_is_deleted(authed_client, monkeypatch, db_session):
+    from app.modules.planning.models import LeadPlanningComparableSite
+
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(planning_service.discovery_registry, "default_provider", lambda: "google_places")
+    monkeypatch.setattr(
+        planning_service.discovery_registry,
+        "get_provider",
+        lambda name: _fake_comparable_provider([_comparable_result("Sunrise Cafe", "https://sunrisecafe.example")]),
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/comparable-sites/search")
+
+    res = authed_client.delete(f"/api/v1/planning/{planning['id']}")
+    assert res.status_code == 204
+    assert db_session.query(LeadPlanningComparableSite).count() == 0

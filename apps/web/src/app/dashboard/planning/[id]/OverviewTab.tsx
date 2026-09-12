@@ -1,40 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { api, type Planning } from "@/lib/api";
+import { api, type Lead, type Planning } from "@/lib/api";
 import {
   ROW_STATE_DOT,
   ROW_STATE_LABEL,
   computeAuditRows,
+  computeBusinessInputRows,
   computeTopOpportunities,
+  planningMode,
   type AuditRow,
   type Opportunity,
 } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
+import { AnalysingOverview } from "./AnalysingOverview";
 import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { GenerateWebsitePlanAction } from "./GenerateWebsitePlanAction";
 import { EvidencePanel, NotesPreview } from "./SidePanels";
 
 type Evidence = { label: string; text: string };
+type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business_phone" | "business_email">;
 
 /**
- * The default, decision-focused tab: top opportunities, the neutral
- * website summary, and a compact per-dimension status list, with the
- * screenshot/evidence panel alongside on desktop. Deliberately excludes
- * anything that belongs to progressive disclosure (full findings live
- * in the Website Audit tab).
+ * The default, decision-focused tab. Existing Website mode: top
+ * opportunities, the neutral website summary, and a compact
+ * per-dimension audit status list, with the screenshot/evidence panel
+ * alongside on desktop. New Website Plan mode (no website_audit yet):
+ * the recommended objective, the same editable summary reused as the
+ * Planning Summary, and a compact business-inputs completeness list
+ * instead. Deliberately excludes anything that belongs to progressive
+ * disclosure (full findings/plan detail live in the second tab).
  */
 export function OverviewTab({
   planning,
+  lead,
   onUpdated,
   onOpenAuditTab,
   onOpenNotesTab,
 }: {
   planning: Planning;
+  lead: LeadBusinessFields | null;
   onUpdated: (p: Planning) => void;
   onOpenAuditTab: () => void;
   onOpenNotesTab: () => void;
 }) {
-  const hasAudit = planning.website_audit_id !== null;
   const opportunities = computeTopOpportunities(planning);
   const rows = computeAuditRows(planning);
   const [selected, setSelected] = useState<Evidence | null>(null);
@@ -64,8 +73,30 @@ export function OverviewTab({
     setSelected({ label: `${row.label} — evidence`, text: row.points[0].evidence });
   }
 
-  if (!hasAudit) {
-    return <AnalyseWebsiteAction planning={planning} onAnalysed={onUpdated} />;
+  if (planning.status === "analysing") {
+    return <AnalysingOverview planning={planning} />;
+  }
+
+  if (planningMode(planning) === "new") {
+    if (planning.website_plan_generated_at === null) {
+      // A website_url that just hasn't been analysed yet still gets the
+      // Existing-Website empty state (AnalyseWebsiteAction) — only a
+      // Lead with no website_url at all gets "Generate Website Plan".
+      return planning.website_url ? (
+        <AnalyseWebsiteAction planning={planning} onAnalysed={onUpdated} />
+      ) : (
+        <GenerateWebsitePlanAction planning={planning} onGenerated={onUpdated} />
+      );
+    }
+    return (
+      <NewWebsitePlanOverview
+        planning={planning}
+        lead={lead}
+        onUpdated={onUpdated}
+        onOpenPlanTab={onOpenAuditTab}
+        onOpenNotesTab={onOpenNotesTab}
+      />
+    );
   }
 
   const opportunitiesSection = (
@@ -154,6 +185,81 @@ export function OverviewTab({
 
       <aside className="mt-6 hidden space-y-4 lg:mt-0 lg:block lg:self-start">
         <EvidencePanel planning={planning} evidence={selected} />
+        <NotesPreview notes={planning.operator_notes} onOpenNotes={onOpenNotesTab} />
+      </aside>
+    </div>
+  );
+}
+
+/** New Website Plan mode's Overview content — the recommended
+ * objective, the same editable summary reused as the Planning
+ * Summary, and a compact business-inputs completeness list, in place
+ * of Top Opportunities/Audit status. No screenshot panel — there's no
+ * website to show a preview of. */
+function NewWebsitePlanOverview({
+  planning,
+  lead,
+  onUpdated,
+  onOpenPlanTab,
+  onOpenNotesTab,
+}: {
+  planning: Planning;
+  lead: LeadBusinessFields | null;
+  onUpdated: (p: Planning) => void;
+  onOpenPlanTab: () => void;
+  onOpenNotesTab: () => void;
+}) {
+  const rows = computeBusinessInputRows(planning, lead);
+
+  async function handleSaveSummary(value: string) {
+    onUpdated(await api.updatePlanning(planning.id, { website_summary: value }));
+  }
+
+  return (
+    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
+      <div className="flex min-w-0 flex-col gap-6">
+        <section>
+          <h2 className="section-title">Recommended objective</h2>
+          <p className="mt-1.5 text-sm text-fg">{planning.recommended_objective ?? "Not generated yet."}</p>
+        </section>
+
+        <section>
+          <h2 className="section-title">Website summary</h2>
+          <p className="mt-0.5 text-xs text-fg-muted">A neutral, editable summary of the plan.</p>
+          <div className="mt-1.5">
+            <AutoSaveTextarea
+              key={planning.id + (planning.website_plan_generated_at ?? "")}
+              defaultValue={planning.website_summary ?? ""}
+              onSave={handleSaveSummary}
+              rows={4}
+            />
+          </div>
+        </section>
+
+        <section>
+          <h2 className="section-title">Business inputs</h2>
+          <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+            {rows.map((row) => (
+              <li key={row.key} className="flex items-center justify-between gap-3 px-3 py-2">
+                <span className="text-sm text-fg">{row.label}</span>
+                <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-fg-muted">
+                  <span className={`h-1.5 w-1.5 rounded-full ${ROW_STATE_DOT[row.state]}`} aria-hidden="true" />
+                  {ROW_STATE_LABEL[row.state]}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={onOpenPlanTab}
+            className="mt-2 text-xs font-medium text-fg-muted hover:text-fg hover:underline"
+          >
+            View plan →
+          </button>
+        </section>
+      </div>
+
+      <aside className="mt-6 hidden lg:mt-0 lg:block lg:self-start">
         <NotesPreview notes={planning.operator_notes} onOpenNotes={onOpenNotesTab} />
       </aside>
     </div>

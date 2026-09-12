@@ -719,6 +719,51 @@ export const PLANNING_STATUS_LABELS: Record<PlanningStatus, string> = {
   failed: "Failed",
 };
 
+// Real checkpoints inside the backend's run_analysis_job (see
+// PlanningAnalysisStep in apps/api) — never simulated client-side.
+// Only meaningful while status === "analysing"; null once a run has
+// settled, or before the queued job has been claimed yet.
+export const PLANNING_ANALYSIS_STEPS = ["structure", "mobile", "technical", "visual", "summary"] as const;
+export type PlanningAnalysisStep = (typeof PLANNING_ANALYSIS_STEPS)[number];
+
+export const PLANNING_ANALYSIS_STEP_LABELS: Record<PlanningAnalysisStep, string> = {
+  structure: "Checking website structure",
+  mobile: "Reviewing mobile layout",
+  technical: "Checking technical health",
+  visual: "Reviewing visual presentation",
+  summary: "Preparing Planning summary",
+};
+
+export type PlanningPriorityPage = {
+  title: string;
+  purpose: string;
+};
+
+export const COMPARABLE_RESEARCH_STATUSES = [
+  "ready_for_review",
+  "analysing",
+  "completed",
+  "needs_review",
+  "failed",
+] as const;
+export type ComparableResearchStatus = (typeof COMPARABLE_RESEARCH_STATUSES)[number];
+
+export type PlanningComparablePattern = { pattern: string; evidence: string };
+export type PlanningComparableOpportunity = { opportunity: string; rationale: string };
+
+export type PlanningComparableSite = {
+  id: string;
+  business_name: string;
+  website_url: string;
+  business_category: string | null;
+  location_text: string | null;
+  source_provider: string;
+  source_evidence: string | null;
+  included: boolean;
+  fetch_ok: boolean | null;
+  created_at: string;
+};
+
 export type Planning = {
   id: string;
   lead_id: string;
@@ -730,6 +775,7 @@ export type Planning = {
   key_points: PlanningKeyPoint[];
   operator_notes: string | null;
   error_message: string | null;
+  current_step: PlanningAnalysisStep | null;
   created_at: string;
   analysed_at: string | null;
   updated_at: string;
@@ -748,6 +794,25 @@ export type Planning = {
   review_faq_opportunities: ReviewFaqOpportunity[];
   review_website_gaps: ReviewWebsiteGap[];
   review_insights_generated_at: string | null;
+
+  // "New Website Plan" mode — for a Lead with no website_audit yet.
+  // Mode itself is derived (website_audit_id === null), never stored.
+  recommended_objective: string | null;
+  priority_pages: PlanningPriorityPage[];
+  content_priorities: string[];
+  contact_priorities: string[];
+  visual_priorities: string[];
+  open_questions: string[];
+  website_plan_generated_at: string | null;
+
+  // "Research Comparable Websites" — optional, inside New Website Plan
+  // mode. Public reference research only — see docs/05_DECISIONS.md.
+  comparable_research_status: ComparableResearchStatus | null;
+  comparable_research_error: string | null;
+  comparable_sites: PlanningComparableSite[];
+  comparable_research_patterns: PlanningComparablePattern[];
+  comparable_research_opportunities: PlanningComparableOpportunity[];
+  comparable_research_generated_at: string | null;
 };
 
 export type PlanningListItem = {
@@ -2127,6 +2192,20 @@ export const api = {
   // against the existing website audit.
   runReviewInsights: (id: string) =>
     request<Planning>(`/api/v1/planning/${id}/review-insights`, { method: "POST" }),
+  // "New Website Plan" mode — for a Lead with no website to audit.
+  generateWebsitePlan: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/generate-website-plan`, { method: "POST" }),
+  // "Research Comparable Websites" — search (synchronous), include/
+  // exclude a candidate, then analyse the included ones (background job).
+  searchComparableSites: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/comparable-sites/search`, { method: "POST" }),
+  updateComparableSite: (id: string, siteId: string, included: boolean) =>
+    request<Planning>(`/api/v1/planning/${id}/comparable-sites/${siteId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ included }),
+    }),
+  analyseComparableSites: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/comparable-sites/analyse`, { method: "POST" }),
 
   generateCreativeDirection: (projectId: string, data?: GenerateCreativeDirectionRequest) =>
     request<CreativeDirectionBrief>(`/api/v1/projects/${projectId}/creative-directions`, {

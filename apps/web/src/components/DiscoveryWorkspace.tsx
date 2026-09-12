@@ -27,7 +27,7 @@ import {
 } from "@/lib/filters";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { TableSkeleton } from "@/components/ui/Skeleton";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
 
 // Leaflet touches `window` on import — client-only, no SSR.
@@ -488,7 +488,8 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
       )}
 
       {activeId && !activeResults && !error && (
-        <div className="mt-4">
+        <div className="mt-4 space-y-4">
+          <Skeleton className="h-72 w-full sm:h-80" />
           <TableSkeleton rows={4} cols={6} />
         </div>
       )}

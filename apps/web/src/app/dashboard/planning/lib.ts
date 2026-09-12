@@ -1,4 +1,16 @@
-import type { Planning, PlanningKeyPoint, PlanningStatus } from "@/lib/api";
+import type { ComparableResearchStatus, Lead, Planning, PlanningKeyPoint, PlanningStatus, ReviewIntelligenceResult } from "@/lib/api";
+
+// Which of Planning's two modes a workspace is in — derived, never
+// stored (mirrors the backend: see LeadPlanning's docstring). A Lead
+// with no website audit yet is in New Website Plan mode, whether
+// that's because it has no website at all or one just hasn't been
+// analysed — the "Analyse Website" empty state still wins whenever a
+// website_url is on record (see AnalyseWebsiteAction/OverviewTab).
+export type PlanningMode = "existing" | "new";
+
+export function planningMode(planning: Planning): PlanningMode {
+  return planning.website_audit_id !== null ? "existing" : "new";
+}
 
 // Shared between the Planning list page and the standalone Planning
 // workspace (detail page + tabs) so status colours and the
@@ -104,6 +116,25 @@ function stateFromPoints(points: PlanningKeyPoint[]): RowState {
   return "good";
 }
 
+/** Shared between the audit-status "Google reviews" row and New Website
+ * Plan mode's business-inputs "Google reviews" row — same evidence,
+ * same read. */
+function googleReviewsRowState(review: ReviewIntelligenceResult | null): RowState {
+  if (!review) return "not_checked";
+  if (review.data_status !== "ok") return "review";
+  if (review.review_health_score !== null) {
+    if (review.review_health_score >= 70) return "good";
+    if (review.review_health_score >= 40) return "review";
+    return "improve";
+  }
+  if (review.google_rating !== null) {
+    if (review.google_rating >= 4.3) return "good";
+    if (review.google_rating >= 3.5) return "review";
+    return "improve";
+  }
+  return "review";
+}
+
 export function computeAuditRows(planning: Planning): AuditRow[] {
   const hasAudit = planning.website_audit_id !== null;
   const points = planning.key_points;
@@ -118,24 +149,7 @@ export function computeAuditRows(planning: Planning): AuditRow[] {
     (p) => (p.area === "usability" && p.category !== "mobile" && p.category !== "conversion_path") || p.area === "accessibility",
   );
 
-  const review = planning.review_intelligence;
-  const googleState: RowState = !review
-    ? "not_checked"
-    : review.data_status !== "ok"
-      ? "review"
-      : review.review_health_score !== null
-        ? review.review_health_score >= 70
-          ? "good"
-          : review.review_health_score >= 40
-            ? "review"
-            : "improve"
-        : review.google_rating !== null
-          ? review.google_rating >= 4.3
-            ? "good"
-            : review.google_rating >= 3.5
-              ? "review"
-              : "improve"
-          : "review";
+  const googleState = googleReviewsRowState(planning.review_intelligence);
 
   return [
     {
@@ -224,4 +238,74 @@ export function computeTopOpportunities(planning: Planning, maxCount = 5): Oppor
     if (result.length >= maxCount) break;
   }
   return result;
+}
+
+// --- Business inputs (New Website Plan mode's Overview) --------------------
+// The equivalent of the compact audit-status rows above, but for input
+// completeness rather than audit severity: "is there enough verified
+// information on file to plan from" instead of "what did the audit
+// find". Same restrained dot+label shape, reused as-is.
+
+export type BusinessInputRowKey = "business_details" | "location" | "contact" | "google_reviews" | "comparable_research";
+
+export const BUSINESS_INPUT_ROW_LABELS: Record<BusinessInputRowKey, string> = {
+  business_details: "Business details",
+  location: "Location",
+  contact: "Contact details",
+  google_reviews: "Google reviews",
+  comparable_research: "Comparable research",
+};
+
+export type BusinessInputRow = {
+  key: BusinessInputRowKey;
+  label: string;
+  state: RowState;
+};
+
+function comparableResearchRowState(status: ComparableResearchStatus | null): RowState {
+  switch (status) {
+    case null:
+      return "not_checked";
+    case "ready_for_review":
+    case "analysing":
+      return "review";
+    case "completed":
+      return "good";
+    case "needs_review":
+    case "failed":
+      return "improve";
+  }
+}
+
+export function computeBusinessInputRows(
+  planning: Planning,
+  lead: Pick<Lead, "industry" | "suburb" | "state" | "business_phone" | "business_email"> | null,
+): BusinessInputRow[] {
+  return [
+    {
+      key: "business_details",
+      label: BUSINESS_INPUT_ROW_LABELS.business_details,
+      state: lead?.industry ? "good" : "not_checked",
+    },
+    {
+      key: "location",
+      label: BUSINESS_INPUT_ROW_LABELS.location,
+      state: lead && (lead.suburb || lead.state) ? "good" : "not_checked",
+    },
+    {
+      key: "contact",
+      label: BUSINESS_INPUT_ROW_LABELS.contact,
+      state: lead && (lead.business_phone || lead.business_email) ? "good" : "not_checked",
+    },
+    {
+      key: "google_reviews",
+      label: BUSINESS_INPUT_ROW_LABELS.google_reviews,
+      state: googleReviewsRowState(planning.review_intelligence),
+    },
+    {
+      key: "comparable_research",
+      label: BUSINESS_INPUT_ROW_LABELS.comparable_research,
+      state: comparableResearchRowState(planning.comparable_research_status),
+    },
+  ];
 }

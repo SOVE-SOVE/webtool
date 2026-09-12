@@ -37,6 +37,7 @@ from app.modules.jobs.job_types import (
     JOB_OPPORTUNITY_SCORE,
     JOB_OUTREACH_DRAFT,
     JOB_PLANNING_ANALYSIS,
+    JOB_PLANNING_COMPARABLE_ANALYSIS,
     JOB_QA_REPORT,
     JOB_REVIEW_INTELLIGENCE,
     JOB_WEBSITE_GENERATE,
@@ -264,6 +265,20 @@ def handle_planning_analysis(db: Session, job: Job) -> dict:
     return planning_service.run_analysis_job(db, planning_id)
 
 
+def handle_planning_comparable_analysis(db: Session, job: Job) -> dict:
+    """
+    "Research Comparable Websites" -> "Analyse included sites" — the
+    background half (modules/planning). Fetches each included candidate
+    site's public homepage signals and synthesizes market patterns/
+    opportunities. See planning_service.run_comparable_analysis_job's
+    own docstring for the per-site degrade-gracefully behaviour.
+    """
+    from app.modules.planning import service as planning_service
+
+    planning_id = uuid.UUID(job.payload["planning_id"])
+    return planning_service.run_comparable_analysis_job(db, planning_id)
+
+
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
@@ -276,4 +291,5 @@ HANDLERS = {
     JOB_WEBSITE_GENERATE: handle_website_generate,
     JOB_QA_REPORT: handle_qa_report,
     JOB_PLANNING_ANALYSIS: handle_planning_analysis,
+    JOB_PLANNING_COMPARABLE_ANALYSIS: handle_planning_comparable_analysis,
 }

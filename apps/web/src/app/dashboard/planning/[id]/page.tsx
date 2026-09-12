@@ -3,31 +3,24 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, PLANNING_STATUS_LABELS, type Planning, type PlanningStatus } from "@/lib/api";
-import { TabBar, type TabItem } from "@/components/ui/Tabs";
+import { api, ApiError, PLANNING_STATUS_LABELS, type Lead, type Planning, type PlanningStatus } from "@/lib/api";
+import { TabBar } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
-import { STATUS_BADGE_CLASS } from "../lib";
+import { STATUS_BADGE_CLASS, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
-import { AnalysingProgress } from "./AnalysingProgress";
 import { AuditTab } from "./AuditTab";
 import { NotesTab } from "./NotesTab";
 import { OverviewTab } from "./OverviewTab";
 import { ReviewInsightsTab } from "./ReviewInsightsTab";
+import { WebsitePlanTab } from "./WebsitePlanTab";
 
 // If a run has been sitting at "analysing" longer than this with no
 // progress, the background worker likely never picked it up (or died
 // mid-job) — offer a manual retry rather than leaving the operator
 // stuck watching a spinner forever.
 const STALE_ANALYSING_MS = 60_000;
-
-const TABS: TabItem[] = [
-  { id: "overview", label: "Overview" },
-  { id: "audit", label: "Website Audit" },
-  { id: "reviews", label: "Google Review Insights" },
-  { id: "notes", label: "Notes" },
-];
 
 export default function PlanningDetailPage() {
   const params = useParams<{ id: string }>();
@@ -37,6 +30,7 @@ export default function PlanningDetailPage() {
   const showToast = useToast();
 
   const [planning, setPlanning] = useState<Planning | null>(null);
+  const [lead, setLead] = useState<Lead | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -58,18 +52,35 @@ export default function PlanningDetailPage() {
 
   useEffect(load, [planningId]);
 
+  // The Lead's own business record (industry/location/contact) — only
+  // needed for New Website Plan mode's "Business inputs" completeness
+  // rows, but cheap enough to just always have on hand.
+  useEffect(() => {
+    if (!planning) return;
+    api
+      .getLead(planning.lead_id)
+      .then(setLead)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planning?.lead_id]);
+
   // Only poll while a run is actually in progress — ready_to_analyse is
   // a stable resting state (waiting on the operator), not transient.
+  // Covers both the main audit pipeline (status) and the optional
+  // comparable-site analysis job (comparable_research_status) — two
+  // independent background runs that can each be "in progress".
   const [now, setNow] = useState(() => Date.now());
+  const isAnalysing = planning?.status === "analysing";
+  const isAnalysingComparableSites = planning?.comparable_research_status === "analysing";
   useEffect(() => {
-    if (!planning || planning.status !== "analysing") return;
+    if (!isAnalysing && !isAnalysingComparableSites) return;
     const id = setInterval(() => {
       load();
       setNow(Date.now());
     }, 4000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planning?.status, planningId]);
+  }, [isAnalysing, isAnalysingComparableSites, planningId]);
 
   // "Completed: automatically open Overview" — only on the transition
   // into completed (e.g. a run finished while the operator had Notes
@@ -144,11 +155,16 @@ export default function PlanningDetailPage() {
   }
   if (!planning) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
-  const isAnalysing = planning.status === "analysing";
   const isStale = isAnalysing && now - new Date(planning.updated_at).getTime() > STALE_ANALYSING_MS;
   const hasAudit = planning.website_audit_id !== null;
-  const readyForHandoff = hasAudit && !isAnalysing;
-  const showLastUpdated = Boolean(planning.analysed_at || planning.review_insights_generated_at);
+  const mode = planningMode(planning);
+  // "Ready to hand off" for either mode: a real audit, or a generated
+  // Website Plan — and never mid-run.
+  const readyForHandoff =
+    (hasAudit || planning.website_plan_generated_at !== null) && !isAnalysing;
+  const showLastUpdated = Boolean(
+    planning.analysed_at || planning.review_insights_generated_at || planning.website_plan_generated_at,
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
@@ -210,56 +226,61 @@ export default function PlanningDetailPage() {
       </header>
       {createProjectError && <p className="text-error">{createProjectError}</p>}
 
-      {isAnalysing ? (
-        <div className="rounded-md border border-border bg-surface p-6">
-          <h2 className="section-title">Analysing this website</h2>
-          <p className="mt-0.5 text-sm text-fg-muted">This page updates automatically once the run finishes.</p>
-          <AnalysingProgress startedAt={planning.updated_at} />
-          {isStale && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-              <p className="text-sm text-amber-900 dark:text-amber-300">This is taking longer than expected — it may be stuck.</p>
-              <button type="button" onClick={handleRetry} disabled={retrying} className="btn btn-secondary btn-sm shrink-0">
-                {retrying ? "Retrying…" : "Retry analysis"}
-              </button>
-            </div>
-          )}
+      {isStale && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="text-sm text-amber-900 dark:text-amber-300">This is taking longer than expected — it may be stuck.</p>
+          <button type="button" onClick={handleRetry} disabled={retrying} className="btn btn-secondary btn-sm shrink-0">
+            {retrying ? "Retrying…" : "Retry analysis"}
+          </button>
         </div>
-      ) : (
-        <>
-          {planning.status === "failed" && hasAudit && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
-              <p className="text-sm text-red-800 dark:text-red-300">
-                {planning.error_message ?? "The last re-analysis didn't finish — the findings below are from the previous run."}
-              </p>
-              <AnalyseWebsiteAction planning={planning} onAnalysed={setPlanning} variant="inline" />
-            </div>
-          )}
-          {planning.status === "needs_review" && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-              <p className="text-sm text-amber-900 dark:text-amber-300">
-                This analysis needs a quick look — part of it (visual review or summary) may be incomplete. Check the
-                findings before relying on them.
-              </p>
-            </div>
-          )}
-
-          <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
-
-          <div>
-            {activeTab === "overview" && (
-              <OverviewTab
-                planning={planning}
-                onUpdated={setPlanning}
-                onOpenAuditTab={() => setActiveTab("audit")}
-                onOpenNotesTab={() => setActiveTab("notes")}
-              />
-            )}
-            {activeTab === "audit" && <AuditTab planning={planning} />}
-            {activeTab === "reviews" && <ReviewInsightsTab planning={planning} onUpdated={setPlanning} />}
-            {activeTab === "notes" && <NotesTab planning={planning} onUpdated={setPlanning} />}
-          </div>
-        </>
       )}
+      {planning.status === "failed" && hasAudit && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
+          <p className="text-sm text-red-800 dark:text-red-300">
+            {planning.error_message ?? "The last re-analysis didn't finish — the findings below are from the previous run."}
+          </p>
+          <AnalyseWebsiteAction planning={planning} onAnalysed={setPlanning} variant="inline" />
+        </div>
+      )}
+      {planning.status === "needs_review" && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="text-sm text-amber-900 dark:text-amber-300">
+            This workspace needs a quick look — part of it may be incomplete. Check{" "}
+            {mode === "existing" ? "the findings" : "the plan"} before relying on it.
+          </p>
+        </div>
+      )}
+
+      <TabBar
+        tabs={[
+          { id: "overview", label: "Overview" },
+          { id: "audit", label: mode === "existing" ? "Website Audit" : "Website Plan" },
+          { id: "reviews", label: "Google Review Insights" },
+          { id: "notes", label: "Notes" },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
+
+      <div>
+        {activeTab === "overview" && (
+          <OverviewTab
+            planning={planning}
+            lead={lead}
+            onUpdated={setPlanning}
+            onOpenAuditTab={() => setActiveTab("audit")}
+            onOpenNotesTab={() => setActiveTab("notes")}
+          />
+        )}
+        {activeTab === "audit" &&
+          (mode === "existing" ? (
+            <AuditTab planning={planning} />
+          ) : (
+            <WebsitePlanTab planning={planning} onUpdated={setPlanning} />
+          ))}
+        {activeTab === "reviews" && <ReviewInsightsTab planning={planning} onUpdated={setPlanning} />}
+        {activeTab === "notes" && <NotesTab planning={planning} onUpdated={setPlanning} />}
+      </div>
     </div>
   );
 }

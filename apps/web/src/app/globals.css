@@ -249,7 +249,46 @@ body {
 
   /* Loading */
   .skeleton {
-    @apply animate-pulse rounded bg-surface-subtle;
+    @apply animate-pulse rounded bg-surface-subtle motion-reduce:animate-none;
+  }
+
+  /* The "inspection" sweep over a website preview while it's being
+     analysed (Planning's "Analyse Website" flow, and anywhere else a
+     live capture is in progress). Deliberately subtle: a single thin,
+     low-opacity band, short cycle, contained to its own box — never a
+     full-bleed gradient. Fully inert under prefers-reduced-motion; the
+     static band alone (plus the caller's own text/label) still reads as
+     "in progress" with no motion at all. */
+  .scan-surface {
+    @apply relative overflow-hidden;
+  }
+  .scan-surface::after {
+    content: "";
+    @apply pointer-events-none absolute inset-x-0 h-16 opacity-0;
+    top: -4rem;
+    background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--accent) 16%, transparent) 50%, transparent 100%);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .scan-surface::after {
+      animation: scan-sweep 2.6s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes scan-sweep {
+  0% {
+    top: -4rem;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
   }
 }
 

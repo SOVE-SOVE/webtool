@@ -42,6 +42,18 @@ class AITask(str, Enum):
     # clamped by app/agents/follow_up.py regardless of what the model
     # returns — see that module's docstring.
     FOLLOW_UP_RECOMMENDATION = "follow_up_recommendation"
+    # "New Website Plan" mode (a Lead with no website to audit) — turns
+    # already-verified business/review facts into a website-planning
+    # brief. Same LOCAL rationale as REVIEW_WEBSITE_INSIGHTS: synthesis
+    # over given facts, not creative/strategic judgment shaping a
+    # client-facing deliverable directly. See
+    # agents/planning_website_direction.py.
+    PLANNING_WEBSITE_DIRECTION = "planning_website_direction"
+    # "Research Comparable Websites" — turns already-fetched public-page
+    # signals for a small set of comparable sites into market patterns
+    # and opportunities. Same LOCAL rationale. See
+    # agents/planning_comparable_patterns.py.
+    PLANNING_COMPARABLE_PATTERNS = "planning_comparable_patterns"
 
     # PREMIUM — creative/strategic judgment that directly shapes what a
     # paying client sees; output quality determines website quality.

@@ -111,6 +111,25 @@ describe("filterProjects", () => {
     expect(result.map((p) => p.id)).toEqual(["care"]);
   });
 
+  it("onlyLive (the Live Websites view) shows deployed/maintenance/complete and nothing still in build", () => {
+    const rows = [
+      project({ id: "in-build", stage: "design" }),
+      project({ id: "deployed", stage: "deployed" }),
+      project({ id: "maintaining", stage: "maintenance" }),
+      project({ id: "done", stage: "complete" }),
+    ];
+
+    const result = filterProjects(rows, { ...NO_PROJECT_FILTERS, onlyLive: true });
+    expect(result.map((p) => p.id).sort()).toEqual(["deployed", "done", "maintaining"]);
+  });
+
+  it("onlyLive wins over an explicit stage filter", () => {
+    const rows = [project({ id: "in-build", stage: "design" }), project({ id: "deployed", stage: "deployed" })];
+
+    const result = filterProjects(rows, { ...NO_PROJECT_FILTERS, onlyLive: true, stage: "design" });
+    expect(result.map((p) => p.id)).toEqual(["deployed"]);
+  });
+
   it("searches the client name, not just the project name", () => {
     const rows = [
       project({ id: "a", name: "Site rebuild", client_business_name: "Coastal Cafe" }),

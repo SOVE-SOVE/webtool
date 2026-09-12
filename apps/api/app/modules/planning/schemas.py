@@ -37,6 +37,36 @@ class KeyPointRead(BaseModel):
     confidence: float
 
 
+class PriorityPageRead(BaseModel):
+    title: str
+    purpose: str
+
+
+class ComparablePatternRead(BaseModel):
+    pattern: str
+    evidence: str
+
+
+class ComparableOpportunityRead(BaseModel):
+    opportunity: str
+    rationale: str
+
+
+class PlanningComparableSiteRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    business_name: str
+    website_url: str
+    business_category: str | None
+    location_text: str | None
+    source_provider: str
+    source_evidence: str | None
+    included: bool
+    fetch_ok: bool | None
+    created_at: datetime
+
+
 class PlanningRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,6 +79,7 @@ class PlanningRead(BaseModel):
     key_points: list[KeyPointRead]
     operator_notes: str | None
     error_message: str | None
+    current_step: Literal["structure", "mobile", "technical", "visual", "summary"] | None
     created_at: datetime
     analysed_at: datetime | None
     updated_at: datetime
@@ -79,6 +110,30 @@ class PlanningRead(BaseModel):
     review_website_gaps: list[ReviewWebsiteGapRead] = []
     review_insights_generated_at: datetime | None = None
 
+    # "New Website Plan" mode — for a Lead with no website_audit yet.
+    # See LeadPlanning's own docstring in models.py: the mode itself is
+    # derived (website_audit_id is None), never stored.
+    recommended_objective: str | None = None
+    priority_pages: list[PriorityPageRead] = []
+    content_priorities: list[str] = []
+    contact_priorities: list[str] = []
+    visual_priorities: list[str] = []
+    open_questions: list[str] = []
+    website_plan_generated_at: datetime | None = None
+
+    # "Research Comparable Websites" — optional, inside New Website Plan
+    # mode. comparable_sites are the candidate rows the operator curates;
+    # the patterns/opportunities below are this workspace's synthesis
+    # over whichever of those were included and successfully fetched.
+    comparable_research_status: Literal["ready_for_review", "analysing", "completed", "needs_review", "failed"] | None = (
+        None
+    )
+    comparable_research_error: str | None = None
+    comparable_sites: list[PlanningComparableSiteRead] = []
+    comparable_research_patterns: list[ComparablePatternRead] = []
+    comparable_research_opportunities: list[ComparableOpportunityRead] = []
+    comparable_research_generated_at: datetime | None = None
+
 
 class PlanningListItem(BaseModel):
     """Lighter shape for list views (workspace-wide and per-lead) — omits
@@ -106,3 +161,7 @@ class UpdatePlanningRequest(BaseModel):
     website_summary: str | None = None
     operator_notes: str | None = None
     review_summary: str | None = None
+
+
+class UpdateComparableSiteRequest(BaseModel):
+    included: bool
