@@ -2065,6 +2065,23 @@ export type ReviewWebsiteGap = {
   based_on_theme: string;
 };
 
+export type AiProviderStatus = {
+  provider: string;
+  configured: boolean;
+  ok: boolean;
+  detail: string;
+  model: string | null;
+  model_installed: boolean | null;
+  can_generate: boolean | null;
+  installed_models: string[];
+};
+
+export type AiProvidersStatus = {
+  local: AiProviderStatus;
+  premium: AiProviderStatus;
+  probed: boolean;
+};
+
 export const api = {
   login: (email: string, password: string) =>
     request<Me>("/api/v1/auth/login", {
@@ -2156,6 +2173,12 @@ export const api = {
     request<CalendarEvent[]>(`/api/v1/calendar?start=${start}&end=${end}`),
 
   getGoogleCalendarStatus: () => request<CalendarConnection | null>("/api/v1/calendar/google/status"),
+
+  // AI provider status for the Settings panel. `probe` runs a live
+  // reachability / 1-token generation check (slower); omit it for the
+  // fast config + Ollama-model-list check.
+  getAiProvidersStatus: (probe = false) =>
+    request<AiProvidersStatus>(`/api/v1/ai/providers/status${probe ? "?probe=true" : ""}`),
   // A real browser navigation (OAuth consent screen), not a fetch call.
   googleCalendarConnectUrl: () => `${API_URL}/api/v1/calendar/google/connect`,
   disconnectGoogleCalendar: () => request<void>("/api/v1/calendar/google/disconnect", { method: "POST" }),

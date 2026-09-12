@@ -13,6 +13,7 @@ from app.core.settings import settings
 from app.integrations import llm
 from app.integrations.ai import router
 from app.integrations.ai.errors import AIProviderUnavailableError
+from app.integrations.ai.providers.base import GenerationResult
 from app.integrations.ai.tasks import AITask
 from app.integrations.errors import LlmUnavailableError
 
@@ -20,18 +21,32 @@ SCHEMA = {"type": "object"}
 
 
 class FakeProvider:
-    def __init__(self, result=None, error=None):
-        self.result = result if result is not None else {"ok": True}
+    def __init__(self, result=None, error=None, input_tokens=None, output_tokens=None):
+        self._data = result if result is not None else {"ok": True}
         self.error = error
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
         self.calls = []
 
-    def generate_structured(self, system, user, schema, model, max_tokens=4096):
+    def generate_structured(self, system, user, schema, model, max_tokens=4096, **kwargs):
         self.calls.append(
-            {"system": system, "user": user, "schema": schema, "model": model, "max_tokens": max_tokens}
+            {"system": system, "user": user, "schema": schema, "model": model, "max_tokens": max_tokens, **kwargs}
         )
         if self.error:
             raise self.error
-        return self.result
+        return GenerationResult(
+            data=self._data, input_tokens=self.input_tokens, output_tokens=self.output_tokens
+        )
+
+
+@pytest.fixture(autouse=True)
+def _stub_usage_recorder(monkeypatch):
+    """Keep router unit tests from writing to the AI usage table — the
+    recorder itself is covered by tests/test_ai_usage.py. Collects the
+    kwargs each call would have recorded."""
+    recorded: list[dict] = []
+    monkeypatch.setattr(router.recorder, "record_ai_usage", lambda **kw: recorded.append(kw))
+    return recorded
 
 
 @pytest.fixture(autouse=True)
@@ -122,20 +137,15 @@ def test_ollama_unavailable_with_fallback_enabled_uses_anthropic(monkeypatch):
     assert len(anthropic_fake.calls) == 1
 
 
-def test_anthropic_remains_functional_via_llm_module(monkeypatch):
-    """The 9 existing agent call sites all use app.integrations.llm
-    directly — this must keep working unchanged after the refactor."""
+def test_llm_module_is_only_an_error_type_re_export_now():
+    """As of T8, app.integrations.llm carries no generate_structured —
+    every agent routes through the router. It exists only so the
+    historical `LlmUnavailableError` import path keeps working for
+    app.main's exception handler."""
+    from app.integrations.errors import LlmUnavailableError as CanonicalError
 
-    class FakeAnthropicProvider:
-        def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
-            assert model == "claude-sonnet-5"
-            return {"legacy": "still works"}
-
-    monkeypatch.setattr(llm, "_provider", FakeAnthropicProvider())
-
-    result = llm.generate_structured(system="sys", user="usr", schema=SCHEMA)
-
-    assert result == {"legacy": "still works"}
+    assert llm.LlmUnavailableError is CanonicalError
+    assert not hasattr(llm, "generate_structured")
 
 
 def test_no_api_key_appears_in_error_messages(monkeypatch):
@@ -182,23 +192,104 @@ def test_no_agent_module_imports_a_provider_directly():
     assert offenders == []
 
 
-def test_review_intelligence_and_follow_up_are_migrated_onto_the_router():
-    """First two agents migrated off the legacy llm.py path (both were
-    the strongest LOCAL candidates in the T1 audit) — a regression here
-    would silently route them back onto the always-premium legacy path."""
+# Agents migrated off the legacy always-premium llm.py path onto the
+# router, and the AITask each one must be routing on. Extend this dict
+# (not a new bespoke test) as more agents migrate — a regression here
+# would silently route an agent back onto the legacy path, or a LOCAL
+# task onto the wrong lane, without any single call site noticing.
+MIGRATED_AGENTS: dict[str, str] = {
+    "review_intelligence.py": "AITask.REVIEW_SUMMARY",
+    "follow_up.py": "AITask.FOLLOW_UP_RECOMMENDATION",
+    "meeting_brief.py": "AITask.MEETING_BRIEF",
+    "creative_director.py": "AITask.CREATIVE_DIRECTION",
+    "sitemap.py": "AITask.SITEMAP_PLANNING",
+    "website_brief.py": "AITask.WEBSITE_BRIEF",
+    "website_revision.py": "AITask.WEBSITE_REVISION",
+    "planning_visual_review.py": "AITask.VISUAL_DESIGN_REVIEW",
+    "sales_audit.py": "AITask.SALES_AUDIT",
+    "planning_summary.py": "AITask.PLANNING_SUMMARY",
+    "outreach.py": "AITask.OUTREACH_DRAFTING",
+}
+
+# No agent may still import the legacy always-premium
+# app.integrations.llm.generate_structured — every LLM call site now
+# goes through the router, so provider choice is never hard-coded in a
+# feature. (LlmUnavailableError, the error type, is still fine to import.)
+def test_no_agent_still_uses_the_legacy_llm_generate_structured():
     agents_dir = pathlib.Path(__file__).parent.parent / "app" / "agents"
+    offenders = [
+        path.name
+        for path in agents_dir.glob("*.py")
+        if "from app.integrations.llm import generate_structured" in path.read_text(encoding="utf-8")
+        or "llm.generate_structured" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
 
-    review_intelligence_src = (agents_dir / "review_intelligence.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in review_intelligence_src
-    assert "AITask.REVIEW_SUMMARY" in review_intelligence_src
 
-    follow_up_src = (agents_dir / "follow_up.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in follow_up_src
-    assert "AITask.FOLLOW_UP_RECOMMENDATION" in follow_up_src
+# The website-creation pipeline: every LLM step that shapes what a
+# paying client sees must route to a PREMIUM task, so it can never run
+# on the local model. See docs/09_AI_WEBSITE_PIPELINE.md.
+WEBSITE_PIPELINE_PREMIUM_TASKS = [
+    AITask.WEBSITE_BRIEF,
+    AITask.SITEMAP_PLANNING,
+    AITask.CREATIVE_DIRECTION,
+    AITask.WEBSITE_GENERATION,
+    AITask.WEBSITE_REVISION,
+    AITask.DESIGN_REFINEMENT,
+    AITask.COMPLEX_WEBSITE_REASONING,
+    AITask.VISUAL_DESIGN_REVIEW,
+]
 
-    meeting_brief_src = (agents_dir / "meeting_brief.py").read_text(encoding="utf-8")
-    assert "from app.integrations.ai.router import generate_structured" in meeting_brief_src
-    assert "AITask.MEETING_BRIEF" in meeting_brief_src
+
+@pytest.mark.parametrize("task", WEBSITE_PIPELINE_PREMIUM_TASKS)
+def test_website_pipeline_task_never_routes_to_local(task, monkeypatch):
+    ollama = FakeProvider(result={"should": "never be called"})
+    anthropic_fake = FakeProvider(result={"ok": True})
+    monkeypatch.setattr(router, "OllamaProvider", lambda base_url, timeout_seconds: ollama)
+    monkeypatch.setattr(router, "AnthropicProvider", lambda: anthropic_fake)
+    # Even with fallback ON, a premium task must not touch the local model.
+    monkeypatch.setattr(settings, "ai_local_fallback_to_premium", True)
+
+    router.generate_structured(task=task, system="s", user="u", schema=SCHEMA)
+
+    assert ollama.calls == []
+    assert len(anthropic_fake.calls) == 1
+
+
+def test_images_on_a_local_task_is_rejected(monkeypatch):
+    fake = FakeProvider()
+    monkeypatch.setattr(router, "OllamaProvider", lambda base_url, timeout_seconds: fake)
+
+    with pytest.raises(LlmUnavailableError, match="cannot process images"):
+        router.generate_structured(
+            task=AITask.LEAD_SUMMARY, system="s", user="u", schema=SCHEMA, images_base64=["Zm9v"]
+        )
+    assert fake.calls == []
+
+
+def test_images_on_a_premium_task_pass_through_to_anthropic(monkeypatch):
+    captured = {}
+
+    class ImageAwareFake:
+        def generate_structured(self, system, user, schema, model, max_tokens=4096, images_base64=None):
+            captured["images"] = images_base64
+            return GenerationResult(data={"findings": []})
+
+    monkeypatch.setattr(router, "AnthropicProvider", lambda: ImageAwareFake())
+
+    router.generate_structured(
+        task=AITask.VISUAL_DESIGN_REVIEW, system="s", user="u", schema=SCHEMA, images_base64=["Zm9v"]
+    )
+
+    assert captured["images"] == ["Zm9v"]
+
+
+@pytest.mark.parametrize("filename,expected_task", MIGRATED_AGENTS.items())
+def test_agent_is_migrated_onto_the_router(filename, expected_task):
+    agents_dir = pathlib.Path(__file__).parent.parent / "app" / "agents"
+    src = (agents_dir / filename).read_text(encoding="utf-8")
+    assert "from app.integrations.ai.router import generate_structured" in src
+    assert expected_task in src
 
 
 def test_meeting_brief_agent_calls_router_with_meeting_brief_task(monkeypatch):
@@ -235,6 +326,62 @@ def test_meeting_brief_agent_calls_router_with_meeting_brief_task(monkeypatch):
 
     assert captured["task"] == AITask.MEETING_BRIEF
     assert result.output.questions_to_ask == ["What's the timeline?"]
+
+
+def test_creative_director_agent_calls_router_with_creative_direction_task(monkeypatch):
+    from app.agents import creative_director as creative_director_agent
+
+    captured = {}
+    fake_output = {
+        "facts": ["Business is a plumber based in Ballarat."],
+        "assumptions": [],
+        "creative_concept": "Trustworthy local trade, fast response",
+        "visual_direction": "Clean, high-contrast, trade-blue palette",
+        "brand_personality": ["reliable", "prompt"],
+        "colour_direction": "Blue and white, high contrast",
+        "typography_direction": "Bold sans-serif headings",
+        "image_direction": "Real job-site photos",
+        "layout_direction": "Single-page, phone-first",
+        "ux_direction": "Click-to-call prominent",
+        "tone_of_voice": "Direct, no-nonsense",
+        "visual_hierarchy": "Phone number first",
+        "cta_strategy": "Call now, repeated",
+        "things_to_avoid": ["stock photos"],
+        "references_inspiration": [],
+    }
+
+    def fake_generate_structured(*, task, system, user, schema, max_tokens=4096):
+        captured["task"] = task
+        return dict(fake_output)
+
+    monkeypatch.setattr(creative_director_agent, "generate_structured", fake_generate_structured)
+
+    result = creative_director_agent.run(
+        creative_director_agent.CreativeDirectorInput(
+            business_name="Riverside Plumbing",
+            industry="trade",
+            suburb="Ballarat",
+            state="VIC",
+            website_url=None,
+            social_links=None,
+            business_notes=None,
+            project_name="Riverside Plumbing site",
+            project_stage="creative_direction",
+            website_audit=None,
+            prior_research_summary=None,
+            prior_website_strengths=None,
+            prior_top_problems=None,
+            prior_suggested_structure=None,
+            prior_suggested_offer=None,
+            target_audience="Homeowners needing urgent plumbing repairs",
+            business_goals="Get more emergency call-outs",
+            additional_notes=None,
+            intake_notes=None,
+        )
+    )
+
+    assert captured["task"] == AITask.CREATIVE_DIRECTION
+    assert result.output.creative_concept == fake_output["creative_concept"]
 
 
 def test_follow_up_agent_calls_router_with_follow_up_task(monkeypatch):

@@ -18,7 +18,19 @@ import json
 
 import httpx
 
-from app.integrations.ai.errors import AIProviderUnavailableError
+from app.integrations.ai.errors import AIProviderModelMissingError, AIProviderUnavailableError
+from app.integrations.ai.providers.base import GenerationResult
+
+
+def _looks_like_missing_model(response: httpx.Response) -> bool:
+    """Ollama answers a request for a model it hasn't pulled with a 404
+    (sometimes 400) whose body mentions the model isn't found / needs
+    pulling. Distinguishing this from 'server down' lets the operator get
+    'run `ollama pull X`' instead of 'is Ollama running'."""
+    if response.status_code not in (400, 404):
+        return False
+    body = response.text.lower()
+    return "not found" in body or "try pulling" in body or "no such model" in body
 
 
 class OllamaProvider:
@@ -33,7 +45,7 @@ class OllamaProvider:
         schema: dict,
         model: str,
         max_tokens: int = 4096,
-    ) -> dict:
+    ) -> GenerationResult:
         payload = {
             "model": model,
             "messages": [
@@ -53,24 +65,46 @@ class OllamaProvider:
                 json=payload,
                 timeout=self._timeout_seconds,
             )
-            response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise AIProviderUnavailableError(
-                f"AI generation is unavailable — the local AI server at {self._base_url} timed out "
-                f"after {self._timeout_seconds}s. Nothing was generated or saved."
+                f"Local AI timed out after {self._timeout_seconds}s. Ollama at {self._base_url} "
+                f"is running but didn't respond in time — the machine may be under load, or "
+                f"{model!r} may be too large for it. Nothing was generated or saved."
             ) from exc
         except httpx.HTTPError as exc:
             raise AIProviderUnavailableError(
-                f"AI generation is unavailable — couldn't reach the local AI server at "
-                f"{self._base_url} ({exc}). Nothing was generated or saved."
+                f"Local AI is unavailable. Make sure Ollama is running at {self._base_url} "
+                f"and the model {model!r} is installed (`ollama pull {model}`). "
+                f"Nothing was generated or saved. ({type(exc).__name__})"
+            ) from exc
+
+        if _looks_like_missing_model(response):
+            raise AIProviderModelMissingError(
+                f"Local AI model {model!r} is not installed on the Ollama server at "
+                f"{self._base_url}. Install it with: ollama pull {model}. "
+                f"Nothing was generated or saved."
+            )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AIProviderUnavailableError(
+                f"Local AI is unavailable — Ollama at {self._base_url} returned "
+                f"{response.status_code}. Nothing was generated or saved. ({type(exc).__name__})"
             ) from exc
 
         try:
             data = response.json()
             content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
+            parsed = json.loads(content)
+            usage = data.get("usage") or {}
+            return GenerationResult(
+                data=parsed,
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
+            )
         except (KeyError, IndexError, ValueError) as exc:
             raise AIProviderUnavailableError(
-                f"AI generation is unavailable — the local AI server at {self._base_url} returned "
-                f"an unusable response ({type(exc).__name__}). Nothing was generated or saved."
+                f"Local AI is unavailable — Ollama at {self._base_url} returned a response "
+                f"that couldn't be used ({type(exc).__name__}). The model {model!r} may not "
+                f"support JSON-schema-constrained output. Nothing was generated or saved."
             ) from exc

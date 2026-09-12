@@ -316,25 +316,59 @@ through silently. Prompt templates live in `agents/prompts/` as their
 own files (not inline strings), so they can be iterated without a code
 change and so a stored result can be traced back to the prompt version
 that produced it, per [[03_AGENT_RULES]]'s traceability requirement.
-Most agents still call the LLM through `integrations/llm.py`, which
-always uses the premium/Anthropic path. Two — `agents/review_intelligence.py`
-(the review-summary field) and `agents/follow_up.py` — have been
-migrated onto `integrations/ai/router.py` instead, routing to a local
-model by default (they were the two clearest LOCAL candidates in the
-AI-call audit: bounded, fact-constrained summarization/classification
-with code-level clamping downstream regardless of what generated them).
+
+**Every LLM-calling agent now goes through `integrations/ai/router.py`.**
+`integrations/llm.py` is a legacy always-premium shim kept only for the
+`LlmUnavailableError` re-export; no agent calls its `generate_structured`
+any more (enforced by `tests/test_ai_router.py`).
 
 `integrations/ai/router.py` routes an explicit `AITask` to either the
 Anthropic provider or a local Ollama provider
 (`integrations/ai/providers/`), based on `AI_LOCAL_*` / `AI_PREMIUM_*`
-config — see `AITask`'s docstring for which tasks are routine
-business-intelligence work (local) versus creative/website-generation
-work that stays premium. A feature adopts this by calling
-`ai.router.generate_structured(task=..., ...)` instead of
-`llm.generate_structured(...)`; provider selection never happens inside
-the feature itself. If the local provider is unavailable, this fails
-loudly rather than silently and automatically falling back to the more
-expensive premium model — cost control is the point.
+config — see `AITask`'s docstring and [[09_AI_WEBSITE_PIPELINE]] for
+which tasks are routine business-intelligence work (LOCAL: review
+intelligence, follow-up timing, meeting brief, sales audit, outreach
+draft, planning summary) versus creative/website-generation work that
+stays PREMIUM (creative direction, sitemap planning, website brief,
+website generation/revision, visual design review). A feature adopts
+this by calling `ai.router.generate_structured(task=..., ...)`; provider
+selection never happens inside the feature itself. If the local provider
+is unavailable, this fails loudly rather than silently and automatically
+falling back to the more expensive premium model — cost control is the
+point. `router.resolve_model(task)` / `router.resolve_provider_and_model(task)`
+report where a task would run, for recording `model_used` on generated
+rows.
+
+**AI usage observability** (`modules/ai_usage/`): the router writes one
+`ai_usage_events` row per call — task, provider, model, success, duration,
+token counts (when the provider reports them), retry count, error
+category, and an estimated `cost_usd` (0 for local inference, computed
+from `AI_ANTHROPIC_PRICING_USD_PER_MTOK` for priced Anthropic models,
+null when unknown — never guessed). No prompts, responses, business
+content, or secrets are stored. Recording is best-effort — it never
+raises into or slows a generation. Two admin-only read endpoints
+(`GET /api/v1/ai-usage/summary`, `/events`) answer "what model handled
+this / how much Anthropic usage / how many tasks on Ollama / which
+tasks are expensive / which calls are failing". It is deliberately not
+a dashboard.
+
+**AI provider health** (`integrations/ai/health.py`, `modules/ai_health/`):
+`GET /api/v1/ai/providers/status` reports whether the local (Ollama) and
+premium (Anthropic) providers are usable — for the Settings status
+panel and for actionable errors. The default check is config +
+Ollama's model list (fast, no generation); `?probe=true` adds a live
+reachability check — a 1-token Ollama generation and a **free**
+(unmetered, no tokens) Anthropic `models.list`. The app never downloads
+a model: a missing local model reports "not installed" and the
+`ollama pull <model>` command. When generation fails, the Ollama
+provider now distinguishes "server unreachable" ("make sure Ollama is
+running"), "model not pulled" (`AIProviderModelMissingError` →
+"ollama pull <model>"), and "model can't do JSON-schema output" —
+never a bare "AI generation failed", never a stack trace or key.
+
+The T5–T8 migration series (every agent routed, the premium pipeline
+protected, usage observability, provider health) is audited end to end
+in [[10_AI_ARCHITECTURE_AUDIT]].
 
 ### The ten potential roles, and what's actually being built
 

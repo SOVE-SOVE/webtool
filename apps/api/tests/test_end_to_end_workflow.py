@@ -277,7 +277,10 @@ def test_all_22_stages_with_invariants(authed_client, db_session, monkeypatch):
     assert brief_no_llm["suggested_pricing_range"] == "Core (~$899)"
     assert brief_no_llm["questions_to_ask"] == []
     assert brief_no_llm["flagged_for_review"] is True
-    assert "No LLM configured" in brief_no_llm["review_notes"]
+    # meeting_brief routes as a LOCAL task now (Ollama, no key needed), so
+    # it's attempted and degrades gracefully when no local server is up —
+    # rather than being skipped for lack of a Claude key.
+    assert "failed" in brief_no_llm["review_notes"]
 
     # With a key configured, the discovery half fills in.
     monkeypatch.setattr("app.core.settings.settings.llm_api_key", "test-key-not-a-real-credential")

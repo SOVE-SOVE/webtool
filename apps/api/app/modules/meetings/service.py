@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 from app.agents import meeting_brief as meeting_brief_agent
 from app.core.logging import logger
 from app.core.settings import settings
+from app.integrations.ai import router as ai_router
+from app.integrations.ai.tasks import AITask
 from app.integrations.calendar import registry as calendar_registry
 from app.integrations.calendar.base import CalendarEventInput
 from app.modules.activity_log import service as activity_service
@@ -344,12 +346,17 @@ def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, m
     likely_requirements: list[str] = []
     flagged_for_review = True
     review_notes = (
-        "No LLM configured — discovery questions/requirements unavailable. "
+        "No AI provider configured — discovery questions/requirements unavailable. "
         "Business/website/sales facts below are accurate and unaffected."
     )
     model_used = "none"
 
-    if settings.llm_api_key:
+    # meeting_brief routes as a LOCAL task (Ollama, which needs no API
+    # key). Only require a key when it would actually route to the
+    # premium provider; otherwise attempt and let the except below turn
+    # an unreachable local server into a graceful degrade.
+    ai_configured = ai_router.is_local(AITask.MEETING_BRIEF) or bool(settings.llm_api_key)
+    if ai_configured:
         try:
             discovery_input = meeting_brief_agent.MeetingBriefDiscoveryInput(
                 business_name=facts["business_name"],
@@ -374,7 +381,7 @@ def _generate_brief(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, m
             likely_requirements = result.output.likely_requirements
             flagged_for_review = result.flagged_for_review
             review_notes = result.notes
-            model_used = settings.llm_model
+            model_used = ai_router.resolve_model(AITask.MEETING_BRIEF)
         except Exception as exc:  # noqa: BLE001 - genuinely must never break booking, see docstring
             logger.warning("Meeting brief discovery generation failed for meeting %s: %s", meeting.id, exc)
             flagged_for_review = True

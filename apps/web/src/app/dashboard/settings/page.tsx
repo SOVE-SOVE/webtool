@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, type CalendarConnection, type Me, type Role, type User } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  type AiProvidersStatus,
+  type AiProviderStatus,
+  type CalendarConnection,
+  type Me,
+  type Role,
+  type User,
+} from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
 
@@ -32,6 +41,9 @@ export default function SettingsPage() {
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("calendar"),
   );
 
+  const [aiStatus, setAiStatus] = useState<AiProvidersStatus | null | undefined>(undefined);
+  const [aiChecking, setAiChecking] = useState(false);
+
   const [workspaceName, setWorkspaceName] = useState("");
   const [savingWorkspace, setSavingWorkspace] = useState(false);
 
@@ -49,9 +61,21 @@ export default function SettingsPage() {
     }).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
     api.getGoogleCalendarStatus().then(setCalendarConnection).catch(() => setCalendarConnection(null));
+    api.getAiProvidersStatus().then(setAiStatus).catch(() => setAiStatus(null));
   }
 
   useEffect(load, []);
+
+  async function handleRecheckAi() {
+    setAiChecking(true);
+    try {
+      setAiStatus(await api.getAiProvidersStatus(true));
+    } catch {
+      setAiStatus(null);
+    } finally {
+      setAiChecking(false);
+    }
+  }
 
   async function handleDisconnectCalendar() {
     setDisconnecting(true);
@@ -218,6 +242,37 @@ export default function SettingsPage() {
       </section>
 
       <section className="mt-6 max-w-md border border-border p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-fg">AI providers</h2>
+          <button
+            onClick={handleRecheckAi}
+            disabled={aiChecking}
+            className="text-xs text-fg-muted underline hover:text-fg disabled:opacity-50"
+          >
+            {aiChecking ? "Checking…" : "Run live check"}
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-fg-muted">
+          Routine AI (summaries, scoring, drafts) runs on the local model; creative and
+          website-generation work runs on the premium model.
+        </p>
+
+        {aiStatus === undefined && <p className="mt-3 text-sm text-fg-muted">Loading…</p>}
+        {aiStatus === null && (
+          <p className="mt-3 text-sm text-error">Couldn&apos;t load AI provider status.</p>
+        )}
+        {aiStatus && (
+          <div className="mt-3 space-y-3">
+            <ProviderRow label="Local AI" name="Ollama" status={aiStatus.local} />
+            <ProviderRow label="Premium AI" name="Anthropic" status={aiStatus.premium} />
+            {aiStatus.probed && (
+              <p className="text-xs text-fg-muted">Live check run just now.</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6 max-w-md border border-border p-4">
         <h2 className="text-sm font-semibold text-fg">Workspace</h2>
         {isAdmin ? (
           <form onSubmit={handleRenameWorkspace} className="mt-3 flex gap-2">
@@ -345,6 +400,40 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function ProviderRow({
+  label,
+  name,
+  status,
+}: {
+  label: string;
+  name: string;
+  status: AiProviderStatus;
+}) {
+  const badge = status.ok
+    ? { text: status.detail === "Connected" ? "Connected" : "Configured", cls: "text-emerald-700 dark:text-emerald-400" }
+    : status.configured
+      ? { text: "Unavailable", cls: "text-amber-700 dark:text-amber-400" }
+      : { text: "Not configured", cls: "text-fg-muted" };
+
+  return (
+    <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-fg">
+          <span className="text-xs uppercase tracking-wide text-fg-muted">{label}</span>{" "}
+          {name}
+        </p>
+        <span className={`text-sm font-medium ${badge.cls}`}>{badge.text}</span>
+      </div>
+      {status.model && (
+        <p className="mt-0.5 text-xs text-fg-muted">Model: {status.model}</p>
+      )}
+      {!status.ok && (
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{status.detail}</p>
+      )}
     </div>
   );
 }

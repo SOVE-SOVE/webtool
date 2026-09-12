@@ -24,7 +24,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "website_revision-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "website_revision.md"
@@ -67,6 +68,7 @@ def _build_user_message(input: ReviseSectionInput) -> str:
 def run(input: ReviseSectionInput) -> AgentResult[ReviseSectionOutput]:
     schema = ReviseSectionOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.WEBSITE_REVISION,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

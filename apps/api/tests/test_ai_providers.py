@@ -73,9 +73,26 @@ class TestAnthropicProvider:
         provider = AnthropicProvider()
         result = provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="claude-sonnet-5")
 
-        assert result == {"summary": "hello"}
+        assert result.data == {"summary": "hello"}
         assert fake_messages.last_kwargs["model"] == "claude-sonnet-5"
         assert fake_messages.last_kwargs["tool_choice"] == {"type": "tool", "name": "emit_result"}
+
+    def test_reports_token_usage_when_present(self, monkeypatch):
+        monkeypatch.setattr(settings, "llm_api_key", "sk-ant-test-key")
+
+        class _Usage:
+            input_tokens = 1234
+            output_tokens = 56
+
+        response = _FakeAnthropicResponse([_FakeBlock("tool_use", name="emit_result", input_={"summary": "x"})])
+        response.usage = _Usage()
+        fake_messages = _FakeMessages(response=response)
+        monkeypatch.setattr(anthropic, "Anthropic", lambda api_key: _FakeAnthropicClient(fake_messages))
+
+        result = AnthropicProvider().generate_structured(system="s", user="u", schema=SCHEMA, model="claude-sonnet-5")
+
+        assert result.input_tokens == 1234
+        assert result.output_tokens == 56
 
     def test_api_status_error_raises_provider_error(self, monkeypatch):
         monkeypatch.setattr(settings, "llm_api_key", "sk-ant-test-key")
@@ -148,7 +165,45 @@ class TestOllamaProvider:
         provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
         result = provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="qwen3:30b-a3b")
 
-        assert result == {"summary": "local model output"}
+        assert result.data == {"summary": "local model output"}
+
+    def test_reports_token_usage_when_the_server_includes_it(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            content = json.dumps({"summary": "ok"})
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": content}}],
+                    "usage": {"prompt_tokens": 812, "completion_tokens": 40},
+                },
+            )
+
+        monkeypatch.setattr(
+            httpx, "post", lambda url, json, timeout: _mock_transport(handler).post(url, json=json, timeout=timeout)
+        )
+
+        result = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0).generate_structured(
+            system="s", user="u", schema=SCHEMA, model="qwen3:30b-a3b"
+        )
+
+        assert result.input_tokens == 812
+        assert result.output_tokens == 40
+
+    def test_missing_usage_block_leaves_token_counts_none(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            content = json.dumps({"summary": "ok"})
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+        monkeypatch.setattr(
+            httpx, "post", lambda url, json, timeout: _mock_transport(handler).post(url, json=json, timeout=timeout)
+        )
+
+        result = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0).generate_structured(
+            system="s", user="u", schema=SCHEMA, model="qwen3:30b-a3b"
+        )
+
+        assert result.input_tokens is None
+        assert result.output_tokens is None
 
     def test_timeout_raises_unavailable_error(self, monkeypatch):
         def raise_timeout(*args, **kwargs):
@@ -167,8 +222,22 @@ class TestOllamaProvider:
         monkeypatch.setattr(httpx, "post", raise_connect_error)
 
         provider = OllamaProvider(base_url="http://unreachable-host:11434", timeout_seconds=5.0)
-        with pytest.raises(AIProviderUnavailableError, match="couldn't reach"):
+        with pytest.raises(AIProviderUnavailableError, match="Make sure Ollama is running"):
             provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="qwen3:30b-a3b")
+
+    def test_missing_model_raises_a_distinct_actionable_error(self, monkeypatch):
+        from app.integrations.ai.errors import AIProviderModelMissingError
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, json={"error": {"message": 'model "gpt-oss:20b" not found, try pulling it first'}})
+
+        monkeypatch.setattr(
+            httpx, "post", lambda url, json, timeout: _mock_transport(handler).post(url, json=json, timeout=timeout)
+        )
+
+        provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
+        with pytest.raises(AIProviderModelMissingError, match=r"not installed.*ollama pull gpt-oss:20b"):
+            provider.generate_structured(system="s", user="u", schema=SCHEMA, model="gpt-oss:20b")
 
     def test_non_2xx_status_raises_unavailable_error(self, monkeypatch):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -191,7 +260,7 @@ class TestOllamaProvider:
         )
 
         provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
-        with pytest.raises(AIProviderUnavailableError, match="unusable response"):
+        with pytest.raises(AIProviderUnavailableError, match="couldn't be used"):
             provider.generate_structured(system="sys", user="usr", schema=SCHEMA, model="qwen3:30b-a3b")
 
     def test_base_url_is_stripped_of_trailing_slash(self, monkeypatch):

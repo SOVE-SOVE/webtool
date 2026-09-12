@@ -64,6 +64,199 @@ new audit findings).
 
 ---
 
+## 2026-09-10 — T8: final repo-wide AI architecture audit + report
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t8-final-ai-audit` off main after T7 (#55). One PR, squash-merged.
+**Scope touched:** new `docs/10_AI_ARCHITECTURE_AUDIT.md` (the 11-section
+report), `docs/02_ARCHITECTURE.md` §6 (pointer),
+`apps/api/app/integrations/llm.py` (stripped to a 3-line
+`LlmUnavailableError` re-export — `generate_structured` removed; dead
+since T5), `apps/api/app/modules/meetings/service.py` (meeting-brief
+generation was still gated on `settings.llm_api_key` although
+`MEETING_BRIEF` is a LOCAL/Ollama task — now attempted whenever the
+routed provider needs no key, degrading gracefully),
+`apps/api/app/agents/{sales_audit,outreach}.py` (docstrings: "via
+integrations/llm.py" → "via the router"), tests:
+`test_ai_router.py` (the `llm.generate_structured` test replaced with
+one asserting the module is now only an error re-export),
+`test_end_to_end_workflow.py` (meeting-brief no-key assertion updated to
+"degrades" not "skipped").
+**Audit result:** clean. All 11 LLM-calling agents route through
+`integrations/ai/router.py`. The only direct provider/SDK/HTTP-AI calls
+are the two provider implementations, `integrations/ai/health.py` (a
+free non-generation probe), and `scripts/ai_benchmark/` (standalone).
+No hard-coded model names in code, no hard-coded provider decisions
+outside the router, no router bypasses, no duplicate AI clients (llm.py
+shim removed), no secrets or keys reachable from the frontend or in any
+log line. Full report + before/after, LOCAL/PREMIUM task tables,
+configured models, tests, build, limitations, and recommendations in
+`docs/10_AI_ARCHITECTURE_AUDIT.md`.
+**Verification:** backend `pytest` 1139 passed, 0 failed; frontend
+`vitest` 118 passed, `tsc` clean, `next build` ✓; `eslint .` = 1
+pre-existing error (`dashboard/layout.tsx:138`, unrelated, untouched) +
+4 pre-existing warnings, nothing new. Alembic single head.
+**Next up:** None — T5–T8 complete. Loose ends for a future session:
+the `layout.tsx:138` eslint error; adding a CI gate (there is none);
+running `scripts/ai_benchmark` against a real Ollama host to confirm
+`AI_LOCAL_MODEL`.
+
+---
+
+## 2026-09-10 — T7: AI provider health checks + Settings status panel + actionable errors
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t7-ai-provider-health` off main after T6 (#54). One PR, squash-merged.
+**Scope touched:** new `apps/api/app/integrations/ai/health.py`
+(`check_local` / `check_premium`), new
+`apps/api/app/modules/ai_health/` (schemas, routes), new
+`AIProviderModelMissingError` in `integrations/ai/errors.py`,
+`integrations/ai/providers/ollama_provider.py` (distinguish
+server-unreachable / model-not-pulled / bad-response, all with
+actionable text naming the model + `ollama pull`),
+`integrations/ai/router.py` (`_error_category` → `model_missing`),
+`app/main.py`, `docs/02_ARCHITECTURE.md` §6; frontend
+`apps/web/src/lib/api.ts` (`AiProvidersStatus` types +
+`getAiProvidersStatus`), `apps/web/src/app/dashboard/settings/page.tsx`
+(new "AI providers" section — LOCAL AI / Ollama / Connected+model,
+PREMIUM AI / Anthropic / Configured, plus a "Run live check" that
+probes); tests: `apps/api/tests/test_ai_providers.py` (message
+assertions updated + missing-model test), new
+`apps/api/tests/test_ai_health.py` (16 tests).
+**What happened:** `GET /api/v1/ai/providers/status` (any authed user)
+reports local + premium provider usability. Default check: provider
+config + Ollama's `/api/tags` model list — fast, no generation.
+`?probe=true` adds a 1-token Ollama generation and a **free** Anthropic
+`models.list` (never a paid call, and only when a key is set — a test
+asserts no client is even constructed without probe, and that the probe
+path calls only `models.list`). The app never pulls a model: a missing
+local model returns "Local AI model is not installed" + the exact
+`ollama pull <model>` command. The Ollama provider's generation errors
+now say which of "Ollama isn't running", "the model isn't pulled", or
+"the model can't do JSON-schema output" applies — no bare "AI
+generation failed", no keys, no stack traces (existing
+`main.py` handler already turns `LlmUnavailableError` into a clean 503).
+**Blockers/issues:** Pre-existing eslint `error` at
+`apps/web/src/app/dashboard/layout.tsx:138` ("Calling setState
+synchronously within an effect") — on `main` already, a recently
+tightened `react-hooks` rule, untouched here; there is no CI lint gate
+and the production build passes. Worth a separate cleanup.
+`apps/web/node_modules` had to be `npm install`ed into the worktree
+(Turbopack rejects a symlinked one). Backend suite: 1139 passed, 0
+failed. Frontend: `next build` ✓, `vitest` 118 passed, `tsc` clean (the
+`LayoutProps` error clears once `next build` generates `.next/types`).
+**Next up:** T8 — final repo-wide AI architecture audit + report
+(direct provider calls, hard-coded models, router bypasses, secrets to
+frontend, duplication), run all backend/frontend tests + TS + lint +
+build, produce the 11-section report. Also fold in the deferred T5/T6
+follow-ups: remove dead `llm.generate_structured`; fix
+`modules/meetings/service.py`'s stale `settings.llm_api_key` gate.
+
+---
+
+## 2026-09-10 — T6: lightweight AI usage observability
+**Mode:** background job, worktree (`ai-migration-t5-t8`), branch
+`t6-ai-usage-observability` off main after T5 (#53). One PR, squash-merged.
+**Scope touched:** new `apps/api/app/modules/ai_usage/` (models, pricing,
+recorder, schemas, service, routes), new migration
+`f9b5ad0ab10f_ai_usage_events_observability_table.py`,
+`app/integrations/ai/providers/base.py` (new `GenerationResult`
+dataclass — providers now return parsed data + token counts, not a bare
+dict), `anthropic_provider.py` / `ollama_provider.py` (populate it),
+`app/integrations/llm.py` (`.data`), `app/integrations/ai/router.py`
+(times every call, records one usage event on success and failure,
+retries=1 on the opt-in fallback, `_error_category`),
+`app/core/settings.py` (`ai_anthropic_pricing_usd_per_mtok` — JSON from
+env, indicative defaults), `app/db/all_models.py`, `app/main.py`,
+`.env.example`, `docs/02_ARCHITECTURE.md` §6, tests:
+`test_ai_providers.py` (`.data` + token assertions), `test_ai_router.py`
+(FakeProvider → GenerationResult, recorder stubbed), new
+`test_ai_usage.py` (13 tests).
+**What happened:** Every AI task execution now writes one
+`ai_usage_events` row via the router — task, provider, model,
+success, duration_ms, input/output tokens (when the provider reports
+them — never estimated), retries, error_category, and an estimated
+`cost_usd`. Local inference records `$0` (real "no API charge", not a
+synthetic token price); Anthropic cost is computed from the configurable
+pricing map, or `null` when the model isn't priced there. NO prompts,
+responses, business content, or API keys are stored or logged — one
+structured `ai_usage ...` INFO/— line per call carries only counts and
+the routing decision, and a test asserts a planted secret never reaches
+any column or log record. Recording is best-effort: a DB failure or bad
+value is logged and swallowed, never raised into or slowing generation.
+Two admin-only endpoints — `GET /api/v1/ai-usage/summary` (rollups by
+provider and by task+model, cost-ordered, recent failures) and `/events`
+(filterable recent rows) — answer the five operator questions from the
+task. No frontend (T7 adds the small Settings status section).
+**Blockers/issues:** No live providers in this env, so both-providers-
+record and failure-records coverage is via fake providers through the
+real router + real DB. Full `apps/api` suite: 1126 passed, 0 failed.
+**Next up:** T7 — AI provider health-check system (Ollama reachable /
+model present / can generate; Anthropic configured / reachable without a
+paid call), small Settings UI status section, and replace vague "AI
+generation failed" errors with actionable ones. Then T8 (final audit).
+
+---
+
+## 2026-09-10 — T5: route every remaining agent through the AI task router; protect the premium website pipeline
+**Mode:** background job, isolated worktree (`ai-migration-t5-t8`), branch
+`t5-protect-premium-pipeline` (builds on PR #49's creative_director
+commit, cherry-picked onto current main). One PR, squash-merged to main.
+**Scope touched:** `apps/api/app/integrations/ai/tasks.py` (+6 AITask:
+SALES_AUDIT, OUTREACH_DRAFTING, PLANNING_SUMMARY / SITEMAP_PLANNING,
+WEBSITE_BRIEF, VISUAL_DESIGN_REVIEW), `.../ai/router.py` (route the 6,
+add `images_base64` passthrough for premium-only + reject on LOCAL, add
+`is_local` / `resolve_provider_and_model` / `resolve_model` helpers),
+7 agents migrated off `integrations/llm.py` onto `integrations/ai/router.py`
+(creative_director [cherry-pick], sitemap, website_brief, website_revision,
+planning_visual_review, sales_audit, planning_summary, outreach),
+`integrations/llm.py` (docstring — now dead code, kept for
+LlmUnavailableError re-export, flagged for T8 removal), 7 service files
+now record `model_used=router.resolve_model(<task>)` instead of the
+hard-coded `settings.llm_model` (creative_directions, sitemaps,
+website_briefs, sales_audits, outreach ×2 incl. follow_up, meetings),
+`apps/api/.env.example` (comments), `docs/02_ARCHITECTURE.md` §6,
+new `docs/09_AI_WEBSITE_PIPELINE.md` (full trace + premium-only rule),
+`tests/test_ai_router.py` (MIGRATED_AGENTS table +7, premium-never-local
+parametrized test, image-routing tests, legacy-llm-import guard),
+`tests/test_sales_audits.py` (one test rewritten: sales_audit is LOCAL
+now, so the "AI unavailable" case is Ollama down, not a missing Claude
+key), new `tests/test_ai_pipeline_routing.py` (real agent → real router
+→ fake provider).
+**What happened:** Before T5, the "generation pipeline" LLM steps
+(creative_director, sitemap, website_brief, website_revision,
+planning_visual_review) and the routine ones (sales_audit,
+planning_summary, outreach) all still called `integrations/llm.py`
+directly — always premium, bypassing the router entirely. T5 routes
+every one of them through `integrations/ai/router.py` with an explicit
+`AITask`: the website-creation steps as PREMIUM tasks (still Anthropic,
+same model, same prompts — nothing about the output changed), the
+routine ones as LOCAL. `website_generator.py` / `anti_slop.py` /
+`technical_qa.py` make no LLM call and were not touched. Added a hard
+test that the 8 website-pipeline PREMIUM tasks never route to the local
+model even with `AI_LOCAL_FALLBACK_TO_PREMIUM` on. Fixed the
+`model_used` columns, which were recording `settings.llm_model` for
+tasks that (post earlier migrations) already ran on Ollama —
+meeting_brief and follow_up were already wrong on main.
+**Blockers/issues:** No live Ollama/Anthropic in this environment, so
+"generate a real website" was done via the mocked end-to-end suite
+(`test_end_to_end_workflow.py`) + the new real-agent/real-router test,
+not a live call. Full `apps/api` suite: 1106 passed, 0 failed.
+Frontend untouched (no `apps/web` changes) — full frontend build
+deferred to T8's repo-wide verification.
+**Known follow-ups for T8:** (a) remove dead `llm.generate_structured`;
+(b) `modules/meetings/service.py` still gates meeting-brief generation on
+`settings.llm_api_key` even though MEETING_BRIEF is a LOCAL (Ollama)
+task — stale premium assumption, needs the gate re-expressed against
+the routed provider; (c) `planning_visual_review` sends images and so
+is premium-coupled by necessity (Ollama has no vision) — documented,
+not a defect.
+**Next up:** T6 — lightweight AI usage observability (per-execution
+usage records: task/provider/model/success/duration/tokens/retries/cost,
+configurable Anthropic pricing, local = no API cost). Then T7 (provider
+health checks + Settings UI + better error messages), then T8 (final
+repo-wide AI audit + report).
+
+---
+
 ## 2026-09-05 — Google Review Intelligence: a reputation snapshot for Discovery, sourced only from what Google Places actually gives us
 **Mode:** background job, isolated worktree (`google-review-intelligence`), merged/pushed at session end.
 **Scope touched:** new `apps/api/app/modules/review_intelligence/` (models,

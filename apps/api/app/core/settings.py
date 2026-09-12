@@ -61,6 +61,22 @@ class Settings(BaseSettings):
     ai_premium_model: str = ""
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: float = 120.0
+
+    # AI usage cost estimation (see app/modules/ai_usage/). Per-MILLION-token
+    # USD prices for Anthropic models, so pricing lives here, not scattered
+    # through the code. JSON-parsed from the AI_ANTHROPIC_PRICING_USD_PER_MTOK
+    # env var, e.g. '{"claude-sonnet-5": {"input": 2.0, "output": 10.0}}'.
+    # Local (Ollama) inference is always recorded as $0 — no API charge —
+    # never a synthetic token cost. A model missing from this map has its
+    # cost recorded as unknown (null), never guessed. Defaults below are
+    # indicative list prices as of 2026-06 — verify against
+    # https://www.anthropic.com/pricing and override per deployment.
+    ai_anthropic_pricing_usd_per_mtok: dict[str, dict[str, float]] = {
+        "claude-sonnet-5": {"input": 2.0, "output": 10.0},
+        "claude-opus-5": {"input": 5.0, "output": 25.0},
+        "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+        "claude-fable-5-1": {"input": 10.0, "output": 50.0},
+    }
     # Cost-control default: OFF. If the local provider is unavailable, a
     # local task fails loudly (LlmUnavailableError -> 503) rather than
     # silently and automatically running on the much more expensive

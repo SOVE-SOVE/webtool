@@ -17,7 +17,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agents.base import AgentResult
-from app.integrations.llm import generate_structured
+from app.integrations.ai.router import generate_structured
+from app.integrations.ai.tasks import AITask
 
 PROMPT_VERSION = "sitemap-v1"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "sitemap.md"
@@ -104,6 +105,7 @@ def _build_user_message(input: SitemapInput) -> str:
 def run(input: SitemapInput) -> AgentResult[SitemapOutput]:
     schema = SitemapOutput.model_json_schema()
     raw = generate_structured(
+        task=AITask.SITEMAP_PLANNING,
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,

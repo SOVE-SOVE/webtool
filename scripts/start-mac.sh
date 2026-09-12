@@ -37,6 +37,14 @@ API_LOG="$LOG_DIR/api.log"
 WEB_LOG="$LOG_DIR/web.log"
 JOBS_LOG="$LOG_DIR/jobs.log"
 
+# The commit each long-running process was last (re)started against, so a
+# `git pull` / branch switch can be told apart from a plain restart. The
+# web server's cache and the job poller both go stale on a code change
+# but neither notices on its own — see sections 2b and 3.
+JOBS_HEAD_FILE="$RUN_DIR/jobs-head"
+WEB_HEAD_FILE="$RUN_DIR/web-head"
+CURRENT_HEAD="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+
 info() { echo "-> $1"; }
 ok()   { echo "[OK] $1"; }
 
@@ -92,6 +100,20 @@ wait_for 30 bash -c "cd '$REPO_ROOT' && docker compose exec -T postgres pg_isrea
   || fail "Postgres didn't become ready within 30s."
 ok "Postgres is ready"
 
+# --- 1b. Database migrations -----------------------------------------
+# Applied on every start so a `git pull` that brought new migrations
+# can't leave the API pointed at a stale schema — the failure mode is a
+# page 500ing with `relation "..." does not exist`. `alembic upgrade
+# head` is a no-op when the DB is already current.
+if [ -x "$API_DIR/.venv/bin/alembic" ]; then
+  info "Applying database migrations..."
+  ( cd "$API_DIR" && ./.venv/bin/alembic upgrade head ) \
+    || fail "Database migrations failed ('alembic upgrade head' — see the output above)."
+  ok "Database schema is up to date"
+else
+  info "Skipping migrations (apps/api/.venv not set up yet)"
+fi
+
 # --- 2. API -------------------------------------------------------------
 if url_up "$API_URL/health"; then
   ok "API already running at $API_URL - leaving it as is"
@@ -117,16 +139,42 @@ fi
 # outreach/follow-up drafting, website generation, QA — see
 # apps/api/app/jobs/handlers.py) only actually runs while this poller
 # process is alive; the API enqueues jobs either way, but nothing claims
-# them without it. No health endpoint (it's not a server) — presence of
-# a live process is all there is to check.
-if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
-  ok "Job runner already running - leaving it as is"
+# them without it. No health endpoint (it's not a server).
+#
+# Unlike the API, the poller has no --reload: a `git pull` that adds or
+# changes a job handler leaves a still-running poller on stale code — the
+# symptom is jobs failing with "No handler registered" while whatever
+# queued them sits forever in its in-progress state. So restart it when
+# HEAD has moved since it was last started.
+#
+# Liveness is read straight from the process table (`pgrep`), not the pid
+# file — a recycled pid otherwise reads as "still up", and a partially
+# stale environment can leave two pollers racing to claim the same jobs.
+# The `[-]m` matches a literal "-m" while keeping the pattern from
+# matching this pgrep itself.
+runner_pids="$(pgrep -f "[-]m app.jobs.runner" 2>/dev/null || true)"
+runner_n="$(printf '%s' "$runner_pids" | grep -c . || true)"
+
+if [ "$runner_n" = "1" ] \
+    && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
+  ok "Job runner already running on current code - leaving it as is"
 else
+  if [ "$runner_n" != "0" ]; then
+    info "Restarting the job runner (code changed since it started, or more than one was running)..."
+    # shellcheck disable=SC2086
+    kill $runner_pids 2>/dev/null
+    sleep 1
+  else
+    info "Starting the job runner..."
+  fi
   rm -f "$JOBS_PID_FILE"
-  info "Starting the job runner..."
-  ( cd "$API_DIR" && nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 & echo $! >"$JOBS_PID_FILE" )
+  # `exec` so the recorded pid is the python process itself, not a
+  # short-lived subshell wrapper that stop-mac.sh would fail to match.
+  ( cd "$API_DIR" && exec nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 ) &
+  echo $! >"$JOBS_PID_FILE"
   sleep 1
-  if kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
+  if kill -0 "$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)" 2>/dev/null; then
+    echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
     ok "Job runner is running (log: $JOBS_LOG)"
   else
     echo "[WARN] Job runner didn't stay running - check $JOBS_LOG. The app still works; scheduled/background automation won't."
@@ -146,6 +194,21 @@ else
     fail "Something else is already listening on port $WEB_PORT. Stop it, or free the port, and try again."
   fi
 
+  # Turbopack builds its dev route table from a cache under .next, and it
+  # doesn't reliably pick up route files that arrived via `git pull` or a
+  # branch switch rather than an editor save — the symptom is a new page
+  # 404ing even though its file is on disk. A leftover `next build` output
+  # (BUILD_ID) in the same .next confuses routing too. So drop the cache
+  # whenever HEAD has moved since the last web start, or a production
+  # build is present. An unchanged HEAD (a plain restart, or local edits
+  # only) keeps the cache — Turbopack handles live edits fine.
+  NEXT_CACHE="$WEB_DIR/.next"
+  if [ -d "$NEXT_CACHE" ] && { [ -f "$NEXT_CACHE/BUILD_ID" ] \
+      || [ "$CURRENT_HEAD" != "$(cat "$WEB_HEAD_FILE" 2>/dev/null || echo none)" ]; }; then
+    info "Clearing the Next.js cache (code changed since last start — prevents stale-route 404s)..."
+    rm -rf "$NEXT_CACHE"
+  fi
+
   info "Starting the web app..."
   # Calling the `next` binary directly (not `npm run dev`) so the pid we
   # capture is the real dev-server process, not an npm wrapper around it.
@@ -154,6 +217,7 @@ else
   wait_for 60 curl -fs -o /dev/null "$WEB_URL" \
     || fail "The web app didn't respond at $WEB_URL within 60s." "$WEB_LOG"
   ok "Web app is ready at $WEB_URL"
+  echo "$CURRENT_HEAD" >"$WEB_HEAD_FILE"
 fi
 
 # --- 4. Open the browser --------------------------------------------------
