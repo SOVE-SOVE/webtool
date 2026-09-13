@@ -26,3 +26,18 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
 }
+
+/** "Sunday, 13 September" — the Today page's header date line. */
+export function formatLongDate(d: Date = new Date()): string {
+  return d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" });
+}
+
+/** "2:00 pm" — same-day event time, for Today's schedule. */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }).toLowerCase();
+}
+
+/** "2026-09-13" — the calendar API's date-key format (local calendar day, not UTC). */
+export function dateKey(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

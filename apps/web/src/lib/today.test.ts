@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { activityHref, computeNextActions, computePipelineStages } from "./today";
-import type { ActivityItem, Lead, PlanningListItem, Project } from "./api";
+import {
+  activityHref,
+  attentionPriority,
+  attentionTag,
+  computeNextActions,
+  computePipelineStages,
+  todaysScheduleEvents,
+} from "./today";
+import type { ActivityItem, AttentionItem, CalendarEvent, Lead, PlanningListItem, Project } from "./api";
 
 function lead(overrides: Partial<Lead> = {}): Pick<Lead, "id" | "status" | "archived_at"> {
   return { id: "l1", status: "new", archived_at: null, ...overrides };
@@ -116,5 +123,73 @@ describe("activityHref", () => {
 
   it("falls back to Today for an unrecognised entity type", () => {
     expect(activityHref({ entity_type: "something_new", entity_id: "abc" } as ActivityItem)).toBe("/dashboard");
+  });
+});
+
+function attentionItem(overrides: Partial<Pick<AttentionItem, "kind" | "detail">> = {}) {
+  return { kind: "task" as AttentionItem["kind"], detail: "no due date", ...overrides };
+}
+
+describe("attentionPriority", () => {
+  it("ranks a stale lead as low regardless of its detail text", () => {
+    expect(attentionPriority(attentionItem({ kind: "stale_lead", detail: "No movement in 9 days" }))).toBe("low");
+  });
+
+  it("ranks an imminent meeting and a blocked project as high", () => {
+    expect(attentionPriority(attentionItem({ kind: "meeting" }))).toBe("high");
+    expect(attentionPriority(attentionItem({ kind: "project" }))).toBe("high");
+  });
+
+  it("ranks anything overdue as high, regardless of kind", () => {
+    expect(attentionPriority(attentionItem({ kind: "follow_up", detail: "2 days overdue" }))).toBe("high");
+    expect(attentionPriority(attentionItem({ kind: "task", detail: "Lead: Acme — overdue" }))).toBe("high");
+  });
+
+  it("falls back to medium for a follow-up or task due but not overdue", () => {
+    expect(attentionPriority(attentionItem({ kind: "follow_up", detail: "Due today" }))).toBe("medium");
+    expect(attentionPriority(attentionItem({ kind: "task", detail: "Project: Acme site — due 2026-09-20" }))).toBe(
+      "medium",
+    );
+  });
+});
+
+describe("attentionTag", () => {
+  it("labels anything overdue as Overdue before checking kind", () => {
+    expect(attentionTag(attentionItem({ kind: "task", detail: "Lead: Acme — overdue" }))).toBe("Overdue");
+  });
+
+  it("gives each kind its own tag when not overdue", () => {
+    expect(attentionTag(attentionItem({ kind: "follow_up", detail: "Due today" }))).toBe("Due today");
+    expect(attentionTag(attentionItem({ kind: "meeting", detail: "Call — Mon, 10:00" }))).toBe("Meeting soon");
+    expect(attentionTag(attentionItem({ kind: "project", detail: "Waiting on QA sign-off" }))).toBe("Action needed");
+    expect(attentionTag(attentionItem({ kind: "stale_lead", detail: "No movement in 9 days" }))).toBe("Gone quiet");
+  });
+});
+
+describe("todaysScheduleEvents", () => {
+  function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+    return {
+      kind: "meeting",
+      id: "e1",
+      title: "Call",
+      at: "2026-09-13T10:00:00Z",
+      detail: "",
+      done: false,
+      href: "/dashboard/calendar",
+      ...overrides,
+    };
+  }
+
+  it("sorts by time, earliest first", () => {
+    const events = [
+      event({ id: "late", at: "2026-09-13T15:00:00Z" }),
+      event({ id: "early", at: "2026-09-13T09:00:00Z" }),
+    ];
+    expect(todaysScheduleEvents(events).map((e) => e.id)).toEqual(["early", "late"]);
+  });
+
+  it("drops events already marked done", () => {
+    const events = [event({ id: "done", done: true }), event({ id: "pending", done: false })];
+    expect(todaysScheduleEvents(events).map((e) => e.id)).toEqual(["pending"]);
   });
 });
