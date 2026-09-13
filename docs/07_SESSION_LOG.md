@@ -11,6 +11,65 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-13 — Clients gets its own page again (full IA/UX redesign)
+**Mode:** background job, worktree (`clients-redesign`), branch `worktree-clients-redesign` off main.
+**Scope touched:** new `apps/web/src/lib/clients.ts` (+ `clients.test.ts`,
+14 tests) — pure helpers deriving a client's status (`onboarding` /
+`active` / `complete`) and "current project" from its `Project[]`, same
+pattern as `leads.ts`/`projects.ts`; new
+`apps/web/src/components/ClientStatusBadge.tsx`; full rewrite of
+`apps/web/src/app/dashboard/clients/page.tsx` (was a bare
+`redirect("/dashboard/leads?tab=won")`) into a real client directory —
+card grid (not a table), compact summary line, search + status +
+assignee filters, empty/loading/error states, "+ Add Client"; redesigned
+`apps/web/src/app/dashboard/clients/[id]/page.tsx` — added an Overview
+block (current project, next action, last activity) up top, reused
+`ProjectStatusBadge`/`ClientStatusBadge`, fixed the back-link now that
+`/dashboard/clients` is real; `apps/web/src/lib/nav.ts` (+`nav.test.ts`)
+— Clients nav item now points at `/dashboard/clients` directly instead
+of `/dashboard/leads?tab=won`.
+**Why a standalone page:** T2 (2026-08-29) deliberately folded Clients
+into Leads' Won tab. The redesign brief asked for a real client
+directory (cards, its own search/filters, its own detail experience),
+which conflicts with that. Asked the user first (AskUserQuestion) —
+they confirmed they already think of "Clients" as its own page (reached
+via the Manage nav item), so this restores it as a real route. No
+backend change was needed or made: `Client`/`ClientRead` and
+`GET/POST/PATCH /api/v1/clients` already existed and were fully
+untouched (frontend just never called `listClients()` from a page).
+Leads' own Won tab, `/dashboard/pipeline` redirect, and the Leads page
+itself are all untouched — this only touches Clients + genuinely shared
+nav config.
+**Client "status" note:** `Client` has no status column (every row is
+already a won-lead conversion or a manual referral) — the three
+displayed statuses are derived from the client's `Project[]` stage(s)
+(same restraint as `projectTone`/`leadTone`), not a new backend concept.
+**Verification:** `apps/web` — `next build` clean (all routes,
+including the new/changed ones, compile; the pre-existing
+`layout.tsx` `LayoutProps` `tsc --noEmit` quirk is unrelated and clears
+after build per prior session notes), `eslint` clean on all
+touched/added files, `vitest run` 163/163 passing (149 pre-existing +
+14 new). Did **not** get a real-backend browser walkthrough: this
+worktree had no `apps/api/.env`/`.venv` or `apps/web/.env.local`, the
+host disk was at ~300MB free for most of this session (multiple other
+parallel worktree jobs each carry their own ~500MB `node_modules`), and
+there's no browser-automation tool available to this session — spinning
+up Postgres via Docker plus a Python venv risked exhausting shared disk
+for no guaranteed payoff. Did do a lighter sanity check instead: started
+`next dev` on a scratch port and confirmed `/dashboard/clients` and
+`/dashboard/clients/[id]` both serve 200 with no server-side crash,
+then stopped the dev server.
+**Blockers/issues:** No real-browser QA (see above) — worth a follow-up
+session with the API running to click through search/filters/add-client/
+empty-state and check mobile width for real.
+**Next up:** Live-QA this against a running backend; consider whether
+Leads' own inline "Add client directly" mini-form (unchanged, still
+works) should eventually just link to the new Clients page's Add Client
+action instead of duplicating the fields — left alone this session to
+keep scope to Clients only.
+
+---
+
 ## 2026-09-10 — Google Review Insights inside Planning
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review

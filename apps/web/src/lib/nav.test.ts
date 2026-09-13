@@ -75,21 +75,17 @@ describe("isNavLinkActive", () => {
     expect(isNavLinkActive("/dashboard/discovered-businesses/xyz", q(), discovery)).toBe(false);
   });
 
-  describe("Leads vs Clients (same base route, disambiguated by ?tab=won)", () => {
+  it("Leads is active on the leads list and a lead detail page", () => {
     const leads = link("/dashboard/leads");
-    const clients = link("/dashboard/leads?tab=won");
+    expect(isNavLinkActive("/dashboard/leads", q(), leads)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads/abc123", q(), leads)).toBe(true);
+  });
 
-    it("Leads is active on the leads list and a lead detail page, but not the Won tab", () => {
-      expect(isNavLinkActive("/dashboard/leads", q(), leads)).toBe(true);
-      expect(isNavLinkActive("/dashboard/leads/abc123", q(), leads)).toBe(true);
-      expect(isNavLinkActive("/dashboard/leads", q("tab=won"), leads)).toBe(false);
-    });
-
-    it("Clients is active only on the Won tab, or the real client detail route", () => {
-      expect(isNavLinkActive("/dashboard/leads", q("tab=won"), clients)).toBe(true);
-      expect(isNavLinkActive("/dashboard/leads", q(), clients)).toBe(false);
-      expect(isNavLinkActive("/dashboard/clients/xyz", q(), clients)).toBe(true);
-    });
+  it("Clients is its own route, active on the list and a client detail page", () => {
+    const clients = link("/dashboard/clients");
+    expect(isNavLinkActive("/dashboard/clients", q(), clients)).toBe(true);
+    expect(isNavLinkActive("/dashboard/clients/xyz", q(), clients)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads", q(), clients)).toBe(false);
   });
 
   describe("Projects vs Live Websites (same base route, disambiguated by ?view=live)", () => {
