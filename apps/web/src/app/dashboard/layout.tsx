@@ -321,10 +321,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             the page content — pinned to the bottom of the scroll area, its
             own list capped and internally scrollable so it never stretches
             the page. Extra bottom padding on mobile keeps content clear of
-            the fixed bottom nav. */}
+            the fixed bottom nav. Skipped on Today itself: Today's own
+            "Today's priorities" section renders this exact same
+            needs_attention queue as its hero content, so repeating it in
+            the tray below would just be the same list twice on one page. */}
         <main className="flex min-w-0 flex-1 flex-col overflow-x-auto pb-14 pt-12 lg:pb-0 lg:pt-0">
           <div className="min-w-0 flex-1">{children}</div>
-          <DoThisNext />
+          {pathname !== "/dashboard" && <DoThisNext />}
         </main>
 
         <BottomNav pathname={pathname} onOpenMore={() => setMobileNavOpen(true)} />
