@@ -158,8 +158,12 @@ def test_overview_needs_attention_overdue_task(authed_client):
     )
 
     body = authed_client.get("/api/v1/dashboard/overview").json()
+    # The count is workspace-wide, but individual tasks are deliberately
+    # never surfaced in the shared needs_attention feed — "next task" is a
+    # per-project concept, not something selected from every task in the
+    # database and shown on every page. See docs/05_DECISIONS.md.
     assert body["tasks_needing_attention"] == 1
-    assert any(item["kind"] == "task" and item["title"] == "Call back" for item in body["needs_attention"])
+    assert not any(item["kind"] == "task" for item in body["needs_attention"])
 
 
 def test_overview_needs_attention_stale_lead(authed_client, db_session):
@@ -380,10 +384,6 @@ def test_failed_deployment_outranks_everything_else(authed_client, db_session):
     project = _project(authed_client)
     pid = project["id"]
 
-    # An overdue task exists too, so the ordering is actually exercised.
-    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-    authed_client.post("/api/v1/tasks", json={"title": "Old task", "project_id": pid, "due_at": yesterday})
-
     # The failed deployment is built directly: the API refuses to create
     # one without every approval in place, and this test is about the
     # dashboard's reaction to a failure, not about how it got there.
@@ -398,7 +398,6 @@ def test_failed_deployment_outranks_everything_else(authed_client, db_session):
     assert items[0]["label"] == "Deploy"
     assert "failed" in items[0]["detail"]
     assert items[0]["action"] == "Check the error and re-run the deployment"
-    assert [i["kind"] for i in items].index("task") > 0
 
 
 def test_finished_projects_drop_off_the_list(authed_client):
