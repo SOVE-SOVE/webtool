@@ -11,6 +11,72 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-13 — Tasks page redesign (work queue, not admin table)
+**Mode:** interactive session, feature branch `redesign-tasks-page`.
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/web/src/lib/tasks.ts` + `tasks.test.ts` (urgency
+bucketing, tab filtering, project/lead filter options, search matching —
+15 unit tests), new `apps/web/src/components/NewTaskModal.tsx` and
+`TaskDetailModal.tsx`, rewritten `apps/web/src/app/dashboard/tasks/page.tsx`.
+No backend changes — `Task` model/schemas/routes untouched.
+
+**What happened:** UI/UX-only redesign of the Tasks page per the
+operator's brief: turn a dense admin table into a scannable work queue.
+The old page was one flat `<table>` with every task (open and done)
+mixed together, a per-row assignee `<select>` widening every row, and
+an always-visible creation form.
+
+Key finding during inspection: `Task` has no priority field (only
+`Lead` does — see `LeadPriority`), and `TaskUpdate` only accepts `done`
+and `assigned_user_id` (title/due date aren't patchable after
+creation). Rather than add backend fields the brief said not to touch,
+"how important is this" is answered by due-date urgency instead of a
+fabricated priority: tasks group into Overdue / Due today / Upcoming /
+No due date (reusing the same red/amber/muted colour convention as
+`deadlineStatus` on the Projects page), soonest first. Completed tasks
+never mix into that list — a flat Completed tab, or a collapsed
+`Disclosure` under "All" — so they don't compete with active work.
+
+Status tabs are To do / All / Completed (a `done` boolean has no
+"in progress" state to represent, so no fake middle tab was added).
+Filters are a compact search (title + project/client name) and a
+project/lead dropdown built from the tasks actually present — no due-
+date filter dropdown, since the urgency grouping already answers that.
+Each row shows title, a clickable project/lead link (routes to the
+existing project or lead detail page), assignee (if any), and a due
+badge; a checkbox toggles done inline without opening anything.
+Everything else (assignee, due date, created-at) moved into a
+`TaskDetailModal` opened by clicking the row, per "don't put every
+field on the main page." "Do this next" was deliberately left alone —
+it's the existing global `DoThisNext` bar in the dashboard layout, out
+of scope for this page-only redesign.
+
+Live-QA'd against the real dev database (Playwright, a throwaway QA
+login created and deleted afterward): create task → shows in the
+correct urgency group; toggle done → moves to Completed and the toast
+fires; open a row → detail modal shows project link, due date,
+assignee select, created-at; reassign from the modal → row updates
+live; search and the project filter both narrow the list correctly,
+with a "Clear filters" empty state when they exclude everything;
+narrow-viewport (375px) layout confirmed via accessibility snapshot
+(the flex-row rows have no table to overflow, so nothing goes
+horizontally cramped). One incidental discovery, not a bug: the real
+dev workspace had a job runner actively creating project onboarding
+tasks mid-session — unrelated background automation, not this change.
+
+**Not changed:** the Projects page's own inline per-project task list,
+`Task`/`TaskCreate`/`TaskUpdate` schemas, the tasks API routes, and the
+global `DoThisNext` component/layout placement.
+
+**Checks:** `npm run test` 164/164 pass (new `tasks.test.ts`, 15
+tests). `npm run lint` — zero new issues (the 1 error / 2 warnings
+reported are pre-existing, in files this change didn't touch:
+`dashboard/layout.tsx`, `dashboard/calendar/page.tsx`,
+`dashboard/projects/[id]/page.tsx`). `tsc --noEmit` clean. `npm run
+build` succeeds.
+
+---
+
 ## 2026-09-10 — Google Review Insights inside Planning
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review
