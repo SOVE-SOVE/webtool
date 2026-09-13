@@ -103,6 +103,47 @@ through silently.
   financial weight produces a flagged question for the operator rather
   than a silent assumption.
 
+## Product design principles
+
+WebTool's current state and its long-term direction are two different
+things — see [[00_VISION]] "Future direction: productisation" for the
+distinction. Today it's a private internal tool for one operator/small
+team. The intent is for it to eventually become a commercially
+sellable product for other web designers, freelance operators, small
+agencies, and people managing multiple website clients. That intent
+should inform decisions without being used to justify building things
+the current tool doesn't need yet.
+
+**Productisation.** When making an architectural or UI decision,
+consider whether the approach would block supporting multiple users,
+businesses, clients, or workspaces later — and prefer the option that
+doesn't, when it costs nothing extra now. Do not build multi-tenant
+infrastructure, billing, plans, or team/role management beyond what
+[[01_REQUIREMENTS]] "Multi-user & workspace" already calls for. Cheap
+foresight, not speculative infrastructure.
+
+**UI/UX.** WebTool should increasingly read as a product someone would
+confidently pay for: clarity, usability, consistency, accessibility,
+visual hierarchy, maintainability, and scalability come before
+decoration. Reuse the existing design tokens and component classes in
+`apps/web/src/app/globals.css` and `apps/web/src/components/ui/` rather
+than inventing new visual language per page — see the Settings page
+redesign in [[05_DECISIONS]] for how this played out in practice.
+
+**Architecture.** Prefer reusable components, clear separation of
+concerns, predictable state management, and modular features over
+duplicated logic, page-specific hacks, tightly coupled components, or
+speculative infrastructure built ahead of an actual requirement.
+
+**Future commercial considerations (not yet in scope).** Keep in mind
+that user accounts, organisations/workspaces, roles and permissions,
+subscriptions/billing, usage limits, team collaboration, client
+separation, integrations, onboarding, analytics, and audit/history may
+all matter eventually. None of these should be implemented ahead of an
+actual requirement calling for them — this section exists so a
+decision isn't made that quietly forecloses them later, not as a
+backlog.
+
 ## Change log
 
 Changes to these rules are decisions in their own right — log them in

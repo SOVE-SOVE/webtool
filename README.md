@@ -6,6 +6,12 @@ workspace shared by a couple of people). Read
 repo should trace back to it. Full architecture:
 [`docs/02_ARCHITECTURE.md`](docs/02_ARCHITECTURE.md).
 
+That's what it is today. The long-term intent is for it to become a
+commercially sellable product for other web designers and agencies —
+see [`docs/00_VISION.md`](docs/00_VISION.md) "Future direction:
+productisation" for what that does and doesn't change about how the
+tool is built right now.
+
 ## Stack
 
 - `apps/web` — Next.js (TypeScript), the operator dashboard + client-

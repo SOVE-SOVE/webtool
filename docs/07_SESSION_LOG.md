@@ -11,6 +11,55 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-13 — Settings page UI/UX redesign + productisation context
+**Mode:** background job, worktree (`settings-redesign`), branch
+`worktree-settings-redesign` off `prefill-project-brief-from-lead`.
+**Merge to main after:** pending review — not yet pushed.
+**Scope touched:** `apps/web/src/app/dashboard/settings/page.tsx`
+(full IA/layout redesign, no backend or API changes), `docs/00_VISION.md`
+(new "Future direction: productisation" section), `docs/03_AGENT_RULES.md`
+(new "Product design principles" section), `docs/05_DECISIONS.md` (new
+entry). See [[05_DECISIONS]] for the full design reasoning.
+
+**What happened:** Redesigned Settings from one long undifferentiated
+scroll into category-based navigation (Account, Workspace, Appearance,
+Integrations, AI & Automation) driven by a `?section=` query param, with
+"Add teammate" moved into a modal and per-form inline errors instead of
+one page-wide banner. Reused existing design tokens/components
+(`TabBar`, `TableSkeleton`, `useToast`, `.card`/`.modal-panel` classes)
+rather than inventing new ones. No categories were stubbed with fake
+"coming soon" content — sections with no real backing functionality
+(Notifications, Leads & Sales, Website Generation, Advanced, Danger
+Zone) were left out entirely. Also updated `00_VISION.md` and
+`03_AGENT_RULES.md` to document that WebTool's long-term intent is to
+become a commercially sellable product for other web designers/
+agencies, without implying it already has multi-tenant/SaaS
+functionality — see [[00_VISION]].
+
+**Blockers/issues:** The shared machine's `C:` drive was at 0 bytes
+free for this entire session (unrelated pre-existing condition, not
+caused by this task) — `npm install` inside the isolated worktree
+repeatedly failed with `ENOSPC`, so `npm run build`, `npm test`, and
+`npm run lint` could not be run normally. Worked around it for
+verification: ran ESLint via its Node API against the new file with
+`cwd` pointed at the parent repo root (so its flat-config base-path
+check accepted a file outside `apps/web`) — zero problems. Ran a real
+`tsc --noEmit` via a temporary tsconfig (job tmp dir) that mapped `@/*`
+to this worktree's own `src` and mapped the handful of third-party
+bare imports (`react`, `react/jsx-runtime`, `next/link`,
+`next/navigation`) to the main checkout's installed
+`node_modules/@types` — zero type errors. Did **not** run
+`npm run build` or `vitest` (no realistic way to fake a full bundler
+run without a real `node_modules`) — flagged to the user as the one
+thing still worth a real `npm run build && npm test` once disk space is
+available, alongside manual visual/responsive QA in a browser.
+**Next up:** Free up disk space, then run `npm run build`, `npm test`,
+and `npm run lint` for real before merging; visually verify the
+Settings page (all five sections, the add-teammate modal, mobile-width
+tab strip, the Google Calendar OAuth-redirect banner) in a browser.
+
+---
+
 ## 2026-09-10 — Google Review Insights inside Planning
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review
