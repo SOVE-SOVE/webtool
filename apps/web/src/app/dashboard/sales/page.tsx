@@ -5,75 +5,13 @@ import { useEffect, useState } from "react";
 import { api, type FollowUpBuckets, type SalesDashboard } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
+import { EmptyRow, ItemRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatAud, timeAgo } from "@/lib/format";
 
 function pct(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(0)}%`;
-}
-
-/** A compact module: title + optional right slot, then a fixed-height,
- *  internally-scrolling body so no single list stretches the page. */
-function Panel({
-  title,
-  subtitle,
-  right,
-  children,
-  bodyClassName = "max-h-80",
-}: {
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-  bodyClassName?: string;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col rounded-md border border-border bg-surface">
-      <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-2.5">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
-          {subtitle && <p className="truncate text-xs text-fg-muted">{subtitle}</p>}
-        </div>
-        {right && <div className="shrink-0 text-xs text-fg-muted">{right}</div>}
-      </div>
-      <div className={`overflow-y-auto overscroll-contain ${bodyClassName}`}>{children}</div>
-    </section>
-  );
-}
-
-function EmptyRow({ children }: { children: React.ReactNode }) {
-  return <p className="px-4 py-6 text-sm text-fg-muted">{children}</p>;
-}
-
-function LeadRow({
-  href,
-  primary,
-  secondary,
-  right,
-  rightTone,
-}: {
-  href: string;
-  primary: string;
-  secondary: string;
-  right?: string;
-  rightTone?: "danger" | "warn" | "muted";
-}) {
-  const toneCls =
-    rightTone === "danger"
-      ? "text-red-700 dark:text-red-400"
-      : rightTone === "warn"
-        ? "text-amber-700 dark:text-amber-400"
-        : "text-fg-muted";
-  return (
-    <Link href={href} className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-surface-hover">
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-fg">{primary}</span>
-        <span className="block truncate text-xs text-fg-muted">{secondary}</span>
-      </span>
-      {right && <span className={`shrink-0 text-xs ${toneCls}`}>{right}</span>}
-    </Link>
-  );
 }
 
 const ACTIVITY_TABS = ["outreach", "proposals", "closed", "meetings"] as const;
@@ -170,7 +108,7 @@ export default function SalesPage() {
                       [...followUps.overdue, ...followUps.due_today].find((f) => f.lead_id === lead.id);
                     return (
                       <li key={lead.id}>
-                        <LeadRow
+                        <ItemRow
                           href={`/dashboard/leads/${lead.id}`}
                           primary={lead.business_name}
                           secondary={`${lead.status.replace("_", " ")} · ${lead.priority} priority${
@@ -205,7 +143,7 @@ export default function SalesPage() {
                 <ul className="divide-y divide-border">
                   {followUps.overdue.map((f) => (
                     <li key={f.id}>
-                      <LeadRow
+                      <ItemRow
                         href={`/dashboard/leads/${f.lead_id}`}
                         primary={f.business_name}
                         secondary={f.suggested_next_action}
@@ -216,7 +154,7 @@ export default function SalesPage() {
                   ))}
                   {followUps.due_today.map((f) => (
                     <li key={f.id}>
-                      <LeadRow
+                      <ItemRow
                         href={`/dashboard/leads/${f.lead_id}`}
                         primary={f.business_name}
                         secondary={f.suggested_next_action}
@@ -227,7 +165,7 @@ export default function SalesPage() {
                   ))}
                   {followUps.upcoming.map((f) => (
                     <li key={f.id}>
-                      <LeadRow
+                      <ItemRow
                         href={`/dashboard/leads/${f.lead_id}`}
                         primary={f.business_name}
                         secondary={f.suggested_next_action}
@@ -292,7 +230,7 @@ export default function SalesPage() {
                 <ul className="divide-y divide-border">
                   {data.proposals.map((p) => (
                     <li key={p.lead_id}>
-                      <LeadRow
+                      <ItemRow
                         href={`/dashboard/leads/${p.lead_id}`}
                         primary={p.business_name}
                         secondary={`${p.tier ?? "No tier on file"} · out since ${new Date(p.since).toLocaleDateString()}`}
@@ -351,7 +289,7 @@ export default function SalesPage() {
                 <ul className="divide-y divide-border">
                   {data.upcoming_meetings.map((m) => (
                     <li key={m.id}>
-                      <LeadRow
+                      <ItemRow
                         href="/dashboard/calendar"
                         primary={m.business_name}
                         secondary={m.title}

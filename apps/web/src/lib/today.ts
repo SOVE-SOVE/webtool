@@ -8,7 +8,7 @@
  * filters.ts / leads.ts / pipeline.ts.
  */
 
-import type { ActivityItem, Lead, PlanningListItem, Project } from "./api";
+import type { ActivityItem, AttentionItem, CalendarEvent, Lead, PlanningListItem, Project } from "./api";
 import { LIVE_STAGES } from "./filters";
 import { leadMatchesTab } from "./leads";
 
@@ -144,4 +144,46 @@ const ENTITY_HREF: Record<string, (id: string) => string> = {
 export function activityHref(item: Pick<ActivityItem, "entity_type" | "entity_id">): string {
   const resolve = ENTITY_HREF[item.entity_type];
   return resolve ? resolve(item.entity_id) : "/dashboard";
+}
+
+export type AttentionPriority = "high" | "medium" | "low";
+
+/**
+ * A coarse High/Medium/Low tier for an attention row, derived from the
+ * `kind` + `detail` text the API already returns rather than a field the
+ * backend doesn't expose. This deliberately approximates (not
+ * reproduces) the server's own tie-break order — see
+ * apps/api/app/modules/dashboard/service.py's `_OVERDUE_FOLLOW_UP` /
+ * `_IMMINENT_MEETING` / `_STALE_LEAD` tier constants, which this mirrors
+ * at the kind level: overdue items and imminent meetings/blocked
+ * projects read High, a stale lead reads Low, everything else Medium.
+ */
+export function attentionPriority(item: Pick<AttentionItem, "kind" | "detail">): AttentionPriority {
+  if (item.kind === "stale_lead") return "low";
+  if (item.kind === "meeting" || item.kind === "project") return "high";
+  return item.detail.toLowerCase().includes("overdue") ? "high" : "medium";
+}
+
+/** Short right-aligned status word for an attention row, paired with attentionPriority's tone. */
+export function attentionTag(item: Pick<AttentionItem, "kind" | "detail">): string {
+  if (item.detail.toLowerCase().includes("overdue")) return "Overdue";
+  switch (item.kind) {
+    case "follow_up":
+      return "Due today";
+    case "meeting":
+      return "Meeting soon";
+    case "project":
+      return "Action needed";
+    case "stale_lead":
+      return "Gone quiet";
+    default:
+      return "Due";
+  }
+}
+
+/** Today's calendar events (meetings + tasks due today), not-yet-done, earliest first. */
+export function todaysScheduleEvents(
+  events: Pick<CalendarEvent, "kind" | "id" | "title" | "at" | "detail" | "done" | "href">[],
+): Pick<CalendarEvent, "kind" | "id" | "title" | "at" | "detail" | "done" | "href">[] {
+  return events.filter((e) => !e.done).sort((a, b) => a.at.localeCompare(b.at));
 }
