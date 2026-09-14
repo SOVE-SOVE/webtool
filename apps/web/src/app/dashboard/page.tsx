@@ -110,10 +110,9 @@ export default function TodayPage() {
       {error && <ErrorState message={error} onRetry={load} compact />}
 
       {/* 1. Today's priorities — the same server-ranked "what needs
-          attention" queue the rest of the app shows in the DoThisNext
-          tray (see dashboard/layout.tsx), given the hero treatment here
-          instead of a compact strip, since answering "what do I do
-          today" is this page's one job. */}
+          attention" queue, given the hero treatment here instead of a
+          compact strip, since answering "what do I do today" is this
+          page's one job. */}
       <section>
         <h2 className="section-title">Today&apos;s priorities</h2>
         {!data ? (

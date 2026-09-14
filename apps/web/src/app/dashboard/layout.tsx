@@ -12,7 +12,6 @@ import {
 } from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
-import { DoThisNext } from "@/components/ui/DoThisNext";
 import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -239,10 +238,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // The sidebar's two badge counts — fetched once per short window
-  // (lib/navCounts.ts), shared across every page the same way
-  // lib/overview.ts backs <DoThisNext>. Refetches on navigation so
-  // acting on an item (e.g. approving a review item) is reflected soon
-  // after returning to a list page, without polling constantly.
+  // (lib/navCounts.ts), shared across every page. Refetches on
+  // navigation so acting on an item (e.g. approving a review item) is
+  // reflected soon after returning to a list page, without polling
+  // constantly.
   useEffect(() => {
     let alive = true;
     loadNavCounts()
@@ -332,17 +331,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* `overflow-x-auto` keeps wide tables/boards scrolling inside the
-            content area rather than the whole page. DoThisNext sits after
-            the page content — pinned to the bottom of the scroll area, its
-            own list capped and internally scrollable so it never stretches
-            the page. Extra bottom padding on mobile keeps content clear of
-            the fixed bottom nav. Skipped on Today itself: Today's own
-            "Today's priorities" section renders this exact same
-            needs_attention queue as its hero content, so repeating it in
-            the tray below would just be the same list twice on one page. */}
+            content area rather than the whole page. Extra bottom padding
+            on mobile keeps content clear of the fixed bottom nav. */}
         <main className="flex min-w-0 flex-1 flex-col overflow-x-auto pb-14 pt-12 lg:pb-0 lg:pt-0">
           <div className="min-w-0 flex-1">{children}</div>
-          {pathname !== "/dashboard" && <DoThisNext />}
         </main>
 
         <BottomNav pathname={pathname} onOpenMore={() => setMobileNavOpen(true)} />

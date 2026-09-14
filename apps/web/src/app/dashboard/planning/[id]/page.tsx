@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, PLANNING_STATUS_LABELS, type Lead, type Planning, type PlanningStatus } from "@/lib/api";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
+import { DoThisNext } from "@/components/ui/DoThisNext";
 import { TabBar } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -322,6 +323,11 @@ export default function PlanningDetailPage() {
         {activeTab === "content-draft" && <ContentDraftTab planning={planning} onUpdated={setPlanning} />}
         {activeTab === "notes" && <NotesTab planning={planning} onUpdated={setPlanning} />}
       </div>
+
+      {/* Scoped to the project this Planning item has been transferred
+          to, if any — renders nothing before that handoff happens (see
+          DoThisNext.tsx), rather than a global cross-workspace queue. */}
+      <DoThisNext projectId={planning.project_id} />
     </div>
   );
 }

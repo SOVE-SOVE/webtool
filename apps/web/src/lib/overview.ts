@@ -1,13 +1,13 @@
 /**
  * A tiny module-level cache for GET /api/v1/dashboard/overview.
  *
- * Two things read that (fairly heavy) aggregate: the Overview page's
- * summary metrics, and the <DoThisNext> queue the dashboard layout
- * renders on every page. Without a shared cache the Overview page would
- * fire it twice on load, and navigating between any two pages would
- * re-run it every time. This keeps one result warm for a short window;
- * a genuine revisit after that window still refetches, and a mutation
- * elsewhere can force it with `invalidateOverview()`.
+ * Two things read that (fairly heavy) aggregate: the Today page's
+ * summary metrics, and the <DoThisNext> queue the Planning page renders
+ * (scoped to the project in context — see DoThisNext.tsx). Without a
+ * shared cache visiting both in the same short window would fire it
+ * twice. This keeps one result warm for a short window; a genuine
+ * revisit after that window still refetches, and a mutation elsewhere
+ * can force it with `invalidateOverview()`.
  */
 
 // Relative (not "@/lib/api") so this stays runnable under vitest, which
