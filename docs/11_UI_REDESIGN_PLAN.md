@@ -255,13 +255,25 @@ New components to add to `components/ui/`:
   page-redesign agents extract their own card into it rather than the
   foundation phase attempting a risky generic rewrite of two live pages
   it isn't otherwise touching.
-- **Tab pattern decision**: standardize on `TabBar` for
-  page-level section switches (Settings' usage is the model). Sales'
-  activity-tab buttons and any other pill-toggle should move to
-  `TabBar` **as part of the Sales redesign** (Prompt 04), since Sales
-  is the one foundation page that currently uses the ad-hoc pattern.
-  Leads (List/Board) and Tasks (status tabs) are left for their
-  individual page-redesign agents to convert.
+- **Tab pattern decision (revised during Prompt 04 implementation)**:
+  there are genuinely two different patterns here, not one. `TabBar`
+  (underline style, full container width, a `border-b` cutting across
+  it) is right for **page-level section switches** — Settings' usage is
+  the model, and stays the standard for that job. Sales' activity
+  switcher, Leads' List/Board toggle, and Tasks' status tabs are a
+  different job — a **compact inline toggle** living inside a `Panel`
+  header's small `right` slot or a filter row, where `TabBar`'s
+  full-width underline doesn't fit. Attempting to force `TabBar` into
+  Sales' `Panel` header during Prompt 04 confirmed this mismatch.
+  Standardized instead on the segmented-control shape Leads' and Tasks'
+  toggles already independently used (`rounded-md border
+  border-border-strong p-0.5` pill group, `bg-accent text-accent-fg`
+  active state) — Sales' activity switcher now matches that, with
+  `role="tablist"`/`role="tab"`/`aria-selected` and a `focus-visible`
+  ring added for accessibility. **Leads and Tasks already match this
+  shape visually** (only Sales' switcher needed converting) — their
+  page-redesign agents don't need to change anything for this specific
+  gap, just carry the same pattern forward on their own pages.
 - **Stat-display decision**: `Metric`/`MetricGrid` is the canonical
   "headline numbers" component. Don't add a second one — Clients' inline
   summary and Lead/Client detail's `field()`-card grid are candidates
@@ -314,13 +326,15 @@ invent new visual language per page.
 - Minimal CTA hierarchy: text-link "→" for secondary navigation inside
   panels, never a second competing button.
 
-**Fix within Sales itself, using the Prompt 02 primitives:**
-- Replace the inline Won/Lost pill in the "Closed" tab with the new
-  shared `Badge`.
-- Replace the raw-button tab switcher in the activity `Panel`'s `right`
-  slot with `TabBar`, resolving the inconsistency with Settings (§2.2)
-  and making Sales the reference for *both* patterns other pages should
-  copy.
+**Fixed within Sales itself, using the Prompt 02 primitives (done):**
+- Replaced the inline Won/Lost pill in the "Closed" tab with the new
+  shared `Badge` (`tone="success"`/`"muted"`).
+- Restyled the activity switcher onto the segmented-control shape Leads/
+  Tasks already use (§4's revised tab-pattern decision — `TabBar` didn't
+  fit the `Panel` header slot), added proper `role="tablist"`/`"tab"`/
+  `aria-selected` and a `focus-visible` ring.
+- Added `focus-visible` rings to the two "→" panel-header links, matching
+  the shell's Prompt 03 focus-state pass.
 
 **Preserve all existing functionality exactly:** six real metrics
 (`hot_leads_count`, `needs_follow_up_count`, `proposals_count`,

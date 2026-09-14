@@ -97,7 +97,32 @@ batch: PR #59 ("Redesign Today to match Sales' visual language") — a
 this plan document existed) — was already merged when the Today-page
 task was initially (and mistakenly) assigned to this same session; the
 fleet's task list and the repo's actual merged-PR state can drift —
-check `gh pr list` before starting on an assigned page.
+check `gh pr list` before starting on an assigned page. Separately: the
+call above to keep the List/Board toggle as a segmented control instead
+of `TabBar` turned out to match the plan author's own later conclusion
+in Prompt 04 (merged mid-session, see below) — Sales' activity-tab
+switcher hit the same "TabBar doesn't fit a compact inline slot" issue
+and was restyled onto that same segmented-control shape instead.
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 04: Sales page benchmark fixes + foundation complete
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — final entry in the same session as Prompts 01–03.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/sales/page.tsx, docs/11_UI_REDESIGN_PLAN.md (updated to match what was actually built).
+**What happened:** Applied the two fixes docs/11_UI_REDESIGN_PLAN.md §6 called out on the Sales benchmark page: the inline Won/Lost pill in the "Closed" activity tab now renders the shared `Badge` (`tone="success"`/`"muted"`) instead of a hand-typed emerald/surface-subtle span; `focus-visible` rings added to the two panel-header "→" links. The activity-tab switcher was *not* moved to `TabBar` as the plan originally proposed — implementing it revealed `TabBar`'s full-width underline style doesn't fit a `Panel` header's compact `right` slot. Recognized this is genuinely two different UI jobs (page-level section nav vs. compact inline toggle) and instead restyled the switcher onto the segmented-control shape Leads' List/Board toggle and Tasks' status tabs already independently used (`rounded-md border border-border-strong p-0.5` pill group), adding `role="tablist"`/`"tab"`/`aria-selected` and a focus ring — updated §4/§6 of the plan doc to document this revised decision so the five page-redesign agents (who read that doc, not this log) get the corrected guidance. Every existing Sales metric, list, tab, and link is unchanged — this was a visual/component substitution only. `next build` output identical (18 routes), 202/202 tests, lint clean (same 2 pre-existing unrelated warnings), `tsc --noEmit` clean.
+**Blockers/issues:** None. This closes out the shared foundation (Prompts 01–04, all pushed straight to `main`).
+**Next up:** Foundation is complete. The five page-redesign agents (Lead detail, Review queue, Dashboard/Today, Leads list, Clients+Projects, Follow-ups+Tasks — priority order in docs/11_UI_REDESIGN_PLAN.md §7) can now be released against `main` and docs/11_UI_REDESIGN_PLAN.md.
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 03: app shell polish (focus states, brand mark, lint fix)
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompts 01–02.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/layout.tsx.
+**What happened:** Per docs/11_UI_REDESIGN_PLAN.md §5, kept `lib/nav.ts`'s existing six-section workflow grouping unchanged (it already satisfies "what am I doing here" over a raw feature list) and did a visual/interaction pass only: added `focus-visible` ring states (using the `--focus-ring` token) to every interactive shell element that lacked one — both `NavLink` variants, the sign-out button, the mobile hamburger button, the bottom-nav links, and the "More" button; added a small `bg-accent` square brand mark next to the "Web Design OS" wordmark in both the desktop sidebar header and the mobile top bar; added a thin top accent bar on the active bottom-nav item for a clearer mobile active state. Also fixed the one pre-existing lint error in this file (`react-hooks/set-state-in-effect` on the `api.me()` retry effect) while already touching it, using the same `eslint-disable`/`eslint-enable` convention the codebase already applies to other deliberate effect-body state resets (e.g. `leads/page.tsx`). No changes to `NAV_SECTIONS`, hrefs, `isNavLinkActive`, or `MOBILE_PRIMARY_HREFS` — every route/link is untouched.
+**Blockers/issues:** No live browser/backend smoke test was run for this pass — it's a markup/Tailwind-class-only change with zero routing-logic edits, `next build` produced the identical 18-route list before and after, and the 202-test vitest suite passed; standing up the full docker/Postgres/API stack purely to screenshot the sidebar felt disproportionate for a foundation-only styling pass ahead of the five page-redesign agents, who will be running a live stack throughout their own work anyway.
+**Next up:** Prompt 04 (Sales page: swap its inline Won/Lost pill for the new `Badge`, its raw-button activity tabs for `TabBar`), then release the five page-redesign agents against docs/11_UI_REDESIGN_PLAN.md.
 
 ---
 
