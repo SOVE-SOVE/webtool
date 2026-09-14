@@ -115,6 +115,27 @@ a team. Scale comes from automation, not hiring.
 - Not optimizing for feature count, generality, or "startup" scale.
   Optimizing for revenue per hour of one person's time.
 
+## Future direction: productisation
+
+Everything above describes what WebTool *is right now*: a private
+internal tool built around one operator's workflow, not a product
+anyone else signs up for. That hasn't changed, and this section isn't
+a quiet rewrite of the Non-goals above.
+
+Separately, there is a long-term intent for WebTool to eventually
+become a commercially sellable product — for other freelance web
+designers, small web-design businesses, agencies, and people managing
+multiple website clients. The exact market and positioning for that is
+not validated yet, and nothing here should be read as WebTool already
+having multi-tenant, billing, or team-management functionality it
+doesn't have.
+
+What this does change: when an architecture or UI decision has a
+low-cost option that keeps the door open for multiple users, businesses,
+or workspaces later, prefer it — without building that infrastructure
+before it's actually needed. See [[03_AGENT_RULES]] "Product design
+principles" for how this is meant to shape day-to-day decisions.
+
 ## Status
 
 This is the north star. Every requirement, architecture choice, and
