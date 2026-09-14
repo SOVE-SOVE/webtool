@@ -32,6 +32,7 @@ import { OutreachMessageView } from "@/components/OutreachMessageView";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { DetailField, DetailRow } from "@/components/ui/DetailField";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -66,25 +67,19 @@ const OUTREACH_STATUS_LABELS: Record<OutreachMessage["status"], string> = {
   closed: "Closed",
 };
 
+// Thin positional-argument wrappers over the shared DetailField/DetailRow
+// primitives (docs/11_UI_REDESIGN_PLAN.md §2.4/§4) — kept so the many
+// existing `field("Label", value)` / `summaryRow("Label", value)` call
+// sites below don't all need to become `<DetailField label=... value=... />`.
 function field(label: string, value: React.ReactNode) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className="mt-1">{value}</div>
-    </div>
-  );
+  return <DetailField label={label} value={value} />;
 }
 
 function summaryRow(label: string, value: React.ReactNode) {
-  return (
-    <div className="flex justify-between gap-3 text-sm">
-      <span className="text-fg-muted">{label}</span>
-      <span className="min-w-0 truncate text-right text-fg">{value}</span>
-    </div>
-  );
+  return <DetailRow label={label} value={value} />;
 }
 
-const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
+const inputClass = "input";
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();

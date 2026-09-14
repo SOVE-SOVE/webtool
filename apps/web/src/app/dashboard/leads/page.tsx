@@ -350,12 +350,12 @@ function LeadsPageInner() {
             placeholder="Search business, industry, suburb, email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64 rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            className="input w-64"
           />
           <select
             value={tab}
             onChange={(e) => setTab(e.target.value as LeadTab)}
-            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input w-auto"
             aria-label="Filter by status"
           >
             {LEAD_TABS.map((t) => (
@@ -367,7 +367,7 @@ function LeadsPageInner() {
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
-            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input w-auto"
             aria-label="Filter by priority"
           >
             <option value="">Any priority</option>
@@ -380,7 +380,7 @@ function LeadsPageInner() {
           <select
             value={websiteFilter}
             onChange={(e) => setWebsiteFilter(e.target.value as WebsiteFilter)}
-            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input w-auto"
             aria-label="Filter by website"
           >
             <option value="">Any website</option>
@@ -390,7 +390,7 @@ function LeadsPageInner() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as LeadSort)}
-            className="ml-auto rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input ml-auto w-auto"
             aria-label="Sort leads"
           >
             {LEAD_SORTS.map((s) => (
@@ -630,18 +630,18 @@ function LeadsPageInner() {
         {showAdd && (
           <div className="mt-3 max-w-2xl space-y-4">
             <form onSubmit={handleCreate} className="grid grid-cols-1 gap-3 border border-border p-4 sm:grid-cols-2">
-              <input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm sm:col-span-2" />
-              <input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="rounded-md border border-border-strong px-3 py-1.5 text-sm">
+              <input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input sm:col-span-2" />
+              <input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="input" />
+              <input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="input" />
+              <input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="input" />
+              <input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="input" />
+              <select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="input">
                 <option value="">Medium priority</option>
                 {LEAD_PRIORITIES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
-              <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm">
+              <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
                 <option value="">Unassigned</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
@@ -654,8 +654,8 @@ function LeadsPageInner() {
 
             <form onSubmit={handleCreateClient} className="flex flex-wrap items-end gap-2 border border-border p-4">
               <div className="w-full text-xs text-fg-muted">Already signed, no lead to track? Add the client directly.</div>
-              <input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="flex-1 rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="flex-1 rounded-md border border-border-strong px-3 py-1.5 text-sm" />
+              <input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="input flex-1" />
+              <input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="input flex-1" />
               <button type="submit" disabled={savingClient} className="btn btn-secondary btn-sm">
                 {savingClient ? "Saving…" : "Add client"}
               </button>

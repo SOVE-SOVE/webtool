@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Lead, LeadStatus, PipelineStage } from "@/lib/api";
-import { LEAD_PRIORITY_STYLE } from "@/components/LeadStatusBadge";
+import { LeadPriorityBadge } from "@/components/LeadStatusBadge";
 import { daysSince, groupLeadsByStatus, isStale, orderStages } from "@/lib/pipeline";
 
 /**
@@ -109,11 +109,7 @@ export function LeadsBoard({
                     </div>
                     {lead.industry && <p className="mt-0.5 text-xs text-fg-muted">{lead.industry}</p>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${LEAD_PRIORITY_STYLE[lead.priority]}`}
-                      >
-                        {lead.priority}
-                      </span>
+                      <LeadPriorityBadge priority={lead.priority} />
                       {lead.assigned_user_name && (
                         <span className="text-[11px] text-fg-muted">{lead.assigned_user_name}</span>
                       )}

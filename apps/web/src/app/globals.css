@@ -30,6 +30,24 @@
   --overlay: rgb(0 0 0 / 0.4); /* modal/drawer backdrop */
   --danger: #dc2626;
   --danger-fg: #ffffff;
+
+  /* Status pill tones — the soft-background/dark-text pairing every
+     status badge (LeadStatusBadge/ClientStatusBadge/ProjectStatusBadge,
+     and the shared Badge primitive they wrap) uses. One place for these
+     instead of each badge hand-typing its own `bg-emerald-100
+     text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300`
+     literal — see docs/11_UI_REDESIGN_PLAN.md §3. "muted" has no token
+     pair here; it reuses --surface-subtle/--fg-muted directly. */
+  --pill-info-bg: #dbeafe;
+  --pill-info-fg: #1e40af;
+  --pill-success-bg: #d1fae5;
+  --pill-success-fg: #065f46;
+  --pill-warning-bg: #fef3c7;
+  --pill-warning-fg: #92400e;
+  --pill-danger-bg: #fee2e2;
+  --pill-danger-fg: #991b1b;
+  --pill-highlight-bg: #ccfbf1;
+  --pill-highlight-fg: #115e59;
 }
 
 /* Dark palette. Same tokens, different values — every component built
@@ -54,6 +72,17 @@
   --overlay: rgb(0 0 0 / 0.6);
   --danger: #f87171;
   --danger-fg: #171717;
+
+  --pill-info-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --pill-info-fg: #93c5fd;
+  --pill-success-bg: color-mix(in srgb, #10b981 15%, transparent);
+  --pill-success-fg: #6ee7b7;
+  --pill-warning-bg: color-mix(in srgb, #f59e0b 15%, transparent);
+  --pill-warning-fg: #fcd34d;
+  --pill-danger-bg: color-mix(in srgb, #ef4444 15%, transparent);
+  --pill-danger-fg: #fca5a5;
+  --pill-highlight-bg: color-mix(in srgb, #14b8a6 15%, transparent);
+  --pill-highlight-fg: #5eead4;
 }
 
 /* Until ThemeProvider's blocking script runs, fall back to the OS
@@ -76,6 +105,17 @@
     --overlay: rgb(0 0 0 / 0.6);
     --danger: #f87171;
     --danger-fg: #171717;
+
+    --pill-info-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+    --pill-info-fg: #93c5fd;
+    --pill-success-bg: color-mix(in srgb, #10b981 15%, transparent);
+    --pill-success-fg: #6ee7b7;
+    --pill-warning-bg: color-mix(in srgb, #f59e0b 15%, transparent);
+    --pill-warning-fg: #fcd34d;
+    --pill-danger-bg: color-mix(in srgb, #ef4444 15%, transparent);
+    --pill-danger-fg: #fca5a5;
+    --pill-highlight-bg: color-mix(in srgb, #14b8a6 15%, transparent);
+    --pill-highlight-fg: #5eead4;
   }
 }
 
@@ -111,6 +151,17 @@ html[data-font="mono"] {
   --color-overlay: var(--overlay);
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
+
+  --color-pill-info-bg: var(--pill-info-bg);
+  --color-pill-info-fg: var(--pill-info-fg);
+  --color-pill-success-bg: var(--pill-success-bg);
+  --color-pill-success-fg: var(--pill-success-fg);
+  --color-pill-warning-bg: var(--pill-warning-bg);
+  --color-pill-warning-fg: var(--pill-warning-fg);
+  --color-pill-danger-bg: var(--pill-danger-bg);
+  --color-pill-danger-fg: var(--pill-danger-fg);
+  --color-pill-highlight-bg: var(--pill-highlight-bg);
+  --color-pill-highlight-fg: var(--pill-highlight-fg);
 
   --font-sans: var(--font-app, var(--font-geist-sans));
   --font-mono: var(--font-geist-mono);
