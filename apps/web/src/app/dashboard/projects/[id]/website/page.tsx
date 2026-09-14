@@ -121,12 +121,23 @@ export default function ProjectWebsiteWorkspace() {
     setGenerating(true);
     setGenerateError(null);
     try {
-      const generated = await api.generateWebsite(projectId, { force_regenerate_all: forceRegenerateAll });
+      // First build for a project: seed a starter sitemap + brief from
+      // the business info on file and generate straight away. Every
+      // build after that regenerates from the (now editable) sources.
+      const generated =
+        versions && versions.length === 0
+          ? await api.generateInitialWebsite(projectId)
+          : await api.generateWebsite(projectId, { force_regenerate_all: forceRegenerateAll });
       setWebsite(generated);
+      setTab("preview");
       loadVersions(generated.id);
       loadSupporting();
     } catch {
-      setGenerateError("Couldn't generate — this project needs an approved sitemap with pages first.");
+      setGenerateError(
+        versions && versions.length === 0
+          ? "Couldn't generate the initial website. Check the project has a client business on file."
+          : "Couldn't regenerate — this project needs a sitemap with pages.",
+      );
     } finally {
       setGenerating(false);
     }
@@ -266,7 +277,7 @@ export default function ProjectWebsiteWorkspace() {
               </button>
             )}
             <button onClick={() => handleGenerate(false)} disabled={generating} className="btn btn-primary btn-sm">
-              {generating ? "Generating…" : website ? "Regenerate" : "Generate website"}
+              {generating ? "Generating…" : website ? "Regenerate" : "Generate initial website"}
             </button>
           </div>
         </div>
@@ -380,8 +391,9 @@ export default function ProjectWebsiteWorkspace() {
               <div className="rounded-md border border-dashed border-border p-6 text-center">
                 <p className="text-sm font-medium text-fg">No website generated yet</p>
                 <p className="mt-1 text-sm text-fg-muted">
-                  Generation assembles pages from the approved sitemap, brief and creative direction. Approve
-                  those first, then use “Generate website” above.
+                  “Generate initial website” builds a demo straight from the business information on file — a
+                  starter sitemap and brief are seeded for you. It’s a working draft to show the owner; refine
+                  the brief, sitemap and content and regenerate from there.
                 </p>
               </div>
             ))}
