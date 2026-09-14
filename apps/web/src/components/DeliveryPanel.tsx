@@ -78,7 +78,7 @@ export function DeliveryPanel({
           onClick={deliver}
           disabled={!deliveryStatus.can_deliver || busy}
           title={deliveryStatus.can_deliver ? undefined : `Missing: ${deliveryStatus.missing.join("; ")}`}
-          className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {busy ? "Marking delivered…" : "Mark project delivered"}
         </button>

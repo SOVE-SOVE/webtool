@@ -32,7 +32,9 @@ import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
+import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { EmptyRow } from "@/components/ui/Panel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { checkpointProgress, deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
@@ -41,21 +43,16 @@ function money(cents: number | null): string {
   return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
 }
 
+// Thin wrapper over the shared Badge primitive (docs/11_UI_REDESIGN_PLAN.md
+// §2.1/§4) — kept as its own component since every call site here passes a
+// draft/build-step `status` rather than a tone directly.
 function StatusChip({ status }: { status: "approved" | "draft" | undefined }) {
-  if (status === "approved") {
-    return (
-      <span className="rounded px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/15">
-        Approved
-      </span>
-    );
-  }
-  if (status === "draft") {
-    return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">Draft</span>;
-  }
-  return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-subtle">Not started</span>;
+  if (status === "approved") return <Badge tone="success">Approved</Badge>;
+  if (status === "draft") return <Badge tone="muted">Draft</Badge>;
+  return <Badge tone="muted">Not started</Badge>;
 }
 
-const detailInputClass = "w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm";
+const detailInputClass = "input";
 
 function DetailField({
   label,
@@ -461,7 +458,8 @@ export default function ProjectDetailPage() {
             <select
               value={project.stage}
               onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+              className="input w-auto"
+              aria-label="Project stage"
             >
               {PROJECT_STAGES.map((stage) => (
                 <option key={stage} value={stage}>
@@ -472,7 +470,8 @@ export default function ProjectDetailPage() {
             <select
               value={project.assigned_user_id ?? ""}
               onChange={(e) => handleAssigneeChange(e.target.value)}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+              className="input w-auto"
+              aria-label="Assigned to"
             >
               <option value="">Unassigned</option>
               {users.map((user) => (
@@ -505,9 +504,7 @@ export default function ProjectDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Business details</h2>
           {detailsConfirmed ? (
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-              Confirmed
-            </span>
+            <Badge tone="success">Confirmed</Badge>
           ) : (
             <button
               onClick={handleConfirmDetails}
@@ -644,7 +641,7 @@ export default function ProjectDetailPage() {
           }}
           rows={10}
           placeholder="Paste your build direction, prompts, or instructions here…"
-          className="mt-3 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          className="input mt-3"
         />
         <div className="mt-2 flex items-center gap-3">
           <button
@@ -686,21 +683,21 @@ export default function ProjectDetailPage() {
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Target audience"
               />
               <textarea
                 value={businessGoals}
                 onChange={(e) => setBusinessGoals(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Business goals for the new site"
               />
               <textarea
                 value={additionalNotes}
                 onChange={(e) => setAdditionalNotes(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Additional notes"
               />
               <button type="submit" disabled={generating} className="btn btn-primary btn-sm">
@@ -712,7 +709,9 @@ export default function ProjectDetailPage() {
           {generateError && <p className="mt-2 text-error">{generateError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {briefs && briefs.length === 0 && !generating && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {briefs?.map((cd) => {
               const expanded = expandedId === cd.id;
@@ -724,11 +723,7 @@ export default function ProjectDetailPage() {
                     </button>
                     <div className="flex items-center gap-2">
                       <StatusChip status={cd.status} />
-                      {cd.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Flagged
-                        </span>
-                      )}
+                      {cd.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
                     </div>
                   </div>
                   {expanded && (
@@ -761,7 +756,7 @@ export default function ProjectDetailPage() {
               <select
                 value={sitemapCreativeDirectionId}
                 onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
               >
                 <option value="">Creative direction: auto (latest approved)</option>
                 {briefs?.map((cd) => (
@@ -774,7 +769,7 @@ export default function ProjectDetailPage() {
                 value={sitemapAdditionalNotes}
                 onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Additional notes"
               />
               <button type="submit" disabled={generatingSitemap} className="btn btn-primary btn-sm">
@@ -786,7 +781,9 @@ export default function ProjectDetailPage() {
           {generateSitemapError && <p className="mt-2 text-error">{generateSitemapError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {sitemaps?.map((s) => {
               const expanded = sitemapExpandedId === s.id;
@@ -801,11 +798,7 @@ export default function ProjectDetailPage() {
                     </button>
                     <div className="flex items-center gap-2">
                       <StatusChip status={s.status} />
-                      {s.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Flagged
-                        </span>
-                      )}
+                      {s.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
                     </div>
                   </div>
                   {expanded && (
@@ -837,7 +830,9 @@ export default function ProjectDetailPage() {
           {generateWebsiteBriefError && <p className="mt-2 text-error">{generateWebsiteBriefError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {websiteBriefs?.map((b) => {
               const expanded = websiteBriefExpandedId === b.id;
@@ -893,7 +888,7 @@ export default function ProjectDetailPage() {
             value={newTask}
             onChange={(e) => setNewTask(e.target.value)}
             placeholder="Add a task for this project…"
-            className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+            className="input flex-1"
           />
           <button type="submit" disabled={addingTask || !newTask.trim()} className="btn btn-secondary btn-sm">
             {addingTask ? "Adding…" : "Add"}
@@ -938,7 +933,9 @@ export default function ProjectDetailPage() {
         <Disclosure title="Meetings" badge={<span className="text-xs text-fg-muted">{meetings?.length ?? 0}</span>}>
           <ul className="divide-y divide-border rounded-md border border-border">
             {meetings && meetings.length === 0 && (
-              <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled.</li>
+              <li>
+                <EmptyRow>No meetings scheduled.</EmptyRow>
+              </li>
             )}
             {meetings?.map((m) => (
               <li key={m.id} className="px-3 py-2 text-sm">
@@ -956,7 +953,11 @@ export default function ProjectDetailPage() {
 
         <Disclosure title="Activity history" badge={<span className="text-xs text-fg-muted">{activity?.length ?? 0}</span>}>
           <ul className="divide-y divide-border rounded-md border border-border">
-            {activity && activity.length === 0 && <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>}
+            {activity && activity.length === 0 && (
+              <li>
+                <EmptyRow>No activity yet.</EmptyRow>
+              </li>
+            )}
             {activity?.slice(0, 20).map((item) => (
               <li key={item.id} className="px-3 py-2 text-sm">
                 <span className="text-fg">{item.summary ?? item.action}</span>

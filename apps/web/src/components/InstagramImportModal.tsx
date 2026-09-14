@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type InstagramImportResult } from "@/lib/api";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 
 const SAMPLE_CSV = `name,instagram_handle,category,phone,email,address,suburb,state,postcode,country,latitude,longitude,bio,bio_link_url,profile_image_url,follower_count,last_post_date,website_status,website_url,notes
 Joe's Plumbing,joesplumbing,Plumbing,0400 111 222,,12 Smith St,Gold Coast,QLD,4217,Australia,-28.0167,153.4,"Your local plumber, 24/7 emergency callouts",https://linktr.ee/joesplumbing,,1500,2026-08-20,link_in_bio_only,,Found via #goldcoastplumber
@@ -27,6 +28,8 @@ export function InstagramImportModal({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InstagramImportResult | null>(null);
+
+  useEscapeToClose(onClose);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

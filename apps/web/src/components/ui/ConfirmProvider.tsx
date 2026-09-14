@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { useEscapeToClose } from "./useEscapeToClose";
 
 type ConfirmOptions = {
   title: string;
@@ -35,6 +36,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     resolverRef.current = null;
     setPending(null);
   }
+
+  useEscapeToClose(() => {
+    if (pending) settle(false);
+  });
 
   return (
     <ConfirmContext.Provider value={confirm}>

@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { ListSkeleton } from "@/components/ui/Skeleton";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 
 const SNOOZE_OPTIONS: { label: string; days: number }[] = [
@@ -91,7 +92,7 @@ function FollowUpRow({
                 const days = Number(e.target.value);
                 if (days) onSnooze(item.id, days);
               }}
-              className="rounded-md border border-border-strong px-2 py-1 text-xs"
+              className="input w-auto"
               aria-label={`Snooze follow-up for ${item.business_name}`}
             >
               <option value="">Snooze…</option>
@@ -101,10 +102,7 @@ function FollowUpRow({
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => onResolve(item.id)}
-              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-            >
+            <button onClick={() => onResolve(item.id)} className="btn btn-secondary btn-sm">
               Mark done
             </button>
           </div>
@@ -276,6 +274,12 @@ export default function FollowUpsPage() {
         </div>
       )}
 
+      {buckets === null && !error && (
+        <div className="mt-6">
+          <ListSkeleton />
+        </div>
+      )}
+
       {queueEmpty && (
         <div className="mt-6">
           <EmptyState
@@ -341,7 +345,7 @@ export default function FollowUpsPage() {
             <select
               value={selectedLeadId}
               onChange={(e) => setSelectedLeadId(e.target.value)}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm"
+              className="input w-auto"
             >
               <option value="">Select a lead…</option>
               {eligibleLeads.map((lead) => (

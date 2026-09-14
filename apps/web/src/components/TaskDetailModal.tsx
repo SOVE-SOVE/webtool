@@ -6,6 +6,7 @@ import { ApiError, api, type Task, type User } from "@/lib/api";
 import { taskContextHref, taskContextKind, taskContextName } from "@/lib/tasks";
 import { timeAgo } from "@/lib/format";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 
 /**
  * Secondary task detail, opened by clicking a row on the Tasks page. The
@@ -32,6 +33,8 @@ export function TaskDetailModal({
   const showToast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEscapeToClose(onClose);
 
   async function toggleDone() {
     setBusy(true);
@@ -107,7 +110,7 @@ export function TaskDetailModal({
                 value={task.assigned_user_id ?? ""}
                 disabled={busy}
                 onChange={(e) => changeAssignee(e.target.value)}
-                className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                className="input w-auto"
               >
                 <option value="">Unassigned</option>
                 {users.map((user) => (

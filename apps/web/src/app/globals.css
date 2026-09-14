@@ -273,7 +273,7 @@ body {
     @apply divide-y divide-border;
   }
   .table tbody tr {
-    @apply bg-surface;
+    @apply bg-surface transition-colors hover:bg-surface-hover;
   }
 
   /* Text hierarchy */

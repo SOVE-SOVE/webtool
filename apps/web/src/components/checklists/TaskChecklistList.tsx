@@ -131,12 +131,12 @@ function AddTaskRow({ users, onAdd }: { users: User[]; onAdd: (title: string, as
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           placeholder="Task title"
-          className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+          className="input min-w-0 flex-1"
         />
         <select
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
-          className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+          className="input w-auto"
         >
           <option value="">Unassigned</option>
           {users.map((u) => (
@@ -454,7 +454,7 @@ function TaskRow<T extends TaskItem, R>({
               value={item.assigned_user_id ?? ""}
               onChange={(e) => reassign(e.target.value)}
               disabled={busy}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+              className="input w-auto"
             >
               <option value="">Unassigned</option>
               {users.map((u) => (
@@ -482,7 +482,7 @@ function TaskRow<T extends TaskItem, R>({
                   onChange={(e) => setBlockReason(e.target.value)}
                   placeholder="Why is this blocked? e.g. Waiting for approved business photos."
                   rows={2}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                  className="input"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -547,7 +547,7 @@ function TaskRow<T extends TaskItem, R>({
                 onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitNote()}
                 placeholder="Optional note"
-                className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                className="input min-w-0 flex-1"
               />
               <button type="button" onClick={submitNote} disabled={busy || !note.trim()} className="btn btn-secondary btn-sm">
                 Save
