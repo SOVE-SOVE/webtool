@@ -38,6 +38,24 @@ def generate_website(
     return website
 
 
+@router.post("/api/v1/projects/{project_id}/initial-website", response_model=WebsiteRead, status_code=201)
+def generate_initial_website(
+    project_id: uuid.UUID,
+    body: GenerateWebsiteRequest = GenerateWebsiteRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WebsiteRead:
+    """Generate the first ("prospect / demo") website for a project
+    straight from the business information already on file — seeds a
+    starter sitemap and pre-fills the brief on first run, then generates.
+    The primary project workflow: build something to show the owner
+    before they've lifted a finger."""
+    website = service.generate_initial_website(db, current_user.workspace_id, current_user.id, project_id, body)
+    if website is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return website
+
+
 @router.get("/api/v1/projects/{project_id}/websites", response_model=list[WebsiteSummary])
 def list_websites(
     project_id: uuid.UUID,

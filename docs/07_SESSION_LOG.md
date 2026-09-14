@@ -11,6 +11,62 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-13 — Project-scoped "Next task", removed from the global attention feed
+**Mode:** background job, worktree (`project-scoped-next-task`), branch
+`worktree-project-scoped-next-task` off main. Merged to main and pushed
+per [[feedback-always-merge]]'s standing policy.
+**Scope touched:** `apps/api/app/modules/dashboard/service.py` (removed
+the per-task `AttentionItem` block from `get_overview`'s `needs_attention`
+feed — deleted `_OVERDUE_TASK`/`_UPCOMING_TASK` priorities and the
+now-unused `_task_detail` helper; the `tasks_needing_attention` *count*
+metric is unchanged), `apps/api/tests/test_dashboard.py` (updated the two
+tests that asserted a task appeared in `needs_attention` or was ordered
+against other kinds there), `apps/web/src/app/dashboard/projects/[id]/page.tsx`
+(new "Next task" callout — reuses `nextOpenTask` from `lib/projects.ts`,
+the same helper the Projects list card already used — above the existing
+full task list, with its own "Mark done" action and an explicit empty
+state).
+**What happened:** The dashboard's global `<DoThisNext>` queue (mounted
+once in `dashboard/layout.tsx`, so it renders under every page — Today,
+Discovery, Leads, Sales, Follow-ups, Settings, etc.) mixed several
+unrelated "needs attention" kinds into one feed: project approval gates,
+follow-ups, meetings, stale leads, and — the one this task was about —
+individual `Task` rows selected from *every* project and lead in the
+workspace, shown with a generic `/dashboard/tasks` link regardless of
+which project they belonged to. That's a workspace-wide "next task"
+selected from the whole database, displayed on pages that have nothing
+to do with the project it belongs to — not project-scoped at all.
+Fixed by removing only the task-sourced items from that shared feed
+(everything else `<DoThisNext>` does — project gates, follow-ups,
+meetings, stale leads — is unrelated to per-project task tracking and
+was left alone, so Dashboard/Leads/Sales/Follow-ups keep their existing
+behavior otherwise) and adding a real "Next task" section to the
+project detail page, which already had a fully project-scoped task list
+(`loadTasks()` already filtered by `project_id`, and task creation from
+that page already auto-set `project_id` with no manual project picker —
+both pre-existing, reused as-is). No schema change: `tasks.project_id`
+already existed with a check constraint that a task belongs to exactly
+one of project or lead.
+**Blockers/issues:** None outstanding. Full backend suite (1162 tests)
+and full frontend suite (149 tests) pass; `next build` (which runs
+`tsc`) is clean. Live-verified end to end against a real Postgres-backed
+API + Next dev server on isolated ports (8001/3001, to avoid the user's
+own running dev server on 8000/3000) with two real projects each given
+their own tasks: confirmed via Playwright that Project A never shows
+Project B's task and vice versa, that completing the shown task
+immediately surfaces the project's next open one, that a fully-done
+project shows the empty state with an inline way to add the next task,
+and that `/dashboard`, `/dashboard/projects` (list), and other pages'
+"Do this next" panel no longer lists any individual task. All smoke-test
+data was created in and then removed from the shared dev DB.
+**Next up:** Nothing pending on this change. If a similar "per-entity
+next-item" pattern comes up again (e.g. a lead's next task), the same
+approach — keep the shared cross-cutting feed for cross-cutting kinds,
+build entity-scoped ones on that entity's own page — is probably right
+here too.
+
+---
+
 ## 2026-09-13 — Settings page UI/UX redesign + productisation context
 **Mode:** background job, worktree (`settings-redesign`), branch
 `worktree-settings-redesign` off `prefill-project-brief-from-lead`.
@@ -57,6 +113,72 @@ available, alongside manual visual/responsive QA in a browser.
 and `npm run lint` for real before merging; visually verify the
 Settings page (all five sections, the add-teammate modal, mobile-width
 tab strip, the Google Calendar OAuth-redirect banner) in a browser.
+
+---
+
+## 2026-09-13 — Tasks page redesign (work queue, not admin table)
+**Mode:** interactive session, feature branch `redesign-tasks-page`.
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/web/src/lib/tasks.ts` + `tasks.test.ts` (urgency
+bucketing, tab filtering, project/lead filter options, search matching —
+15 unit tests), new `apps/web/src/components/NewTaskModal.tsx` and
+`TaskDetailModal.tsx`, rewritten `apps/web/src/app/dashboard/tasks/page.tsx`.
+No backend changes — `Task` model/schemas/routes untouched.
+
+**What happened:** UI/UX-only redesign of the Tasks page per the
+operator's brief: turn a dense admin table into a scannable work queue.
+The old page was one flat `<table>` with every task (open and done)
+mixed together, a per-row assignee `<select>` widening every row, and
+an always-visible creation form.
+
+Key finding during inspection: `Task` has no priority field (only
+`Lead` does — see `LeadPriority`), and `TaskUpdate` only accepts `done`
+and `assigned_user_id` (title/due date aren't patchable after
+creation). Rather than add backend fields the brief said not to touch,
+"how important is this" is answered by due-date urgency instead of a
+fabricated priority: tasks group into Overdue / Due today / Upcoming /
+No due date (reusing the same red/amber/muted colour convention as
+`deadlineStatus` on the Projects page), soonest first. Completed tasks
+never mix into that list — a flat Completed tab, or a collapsed
+`Disclosure` under "All" — so they don't compete with active work.
+
+Status tabs are To do / All / Completed (a `done` boolean has no
+"in progress" state to represent, so no fake middle tab was added).
+Filters are a compact search (title + project/client name) and a
+project/lead dropdown built from the tasks actually present — no due-
+date filter dropdown, since the urgency grouping already answers that.
+Each row shows title, a clickable project/lead link (routes to the
+existing project or lead detail page), assignee (if any), and a due
+badge; a checkbox toggles done inline without opening anything.
+Everything else (assignee, due date, created-at) moved into a
+`TaskDetailModal` opened by clicking the row, per "don't put every
+field on the main page." "Do this next" was deliberately left alone —
+it's the existing global `DoThisNext` bar in the dashboard layout, out
+of scope for this page-only redesign.
+
+Live-QA'd against the real dev database (Playwright, a throwaway QA
+login created and deleted afterward): create task → shows in the
+correct urgency group; toggle done → moves to Completed and the toast
+fires; open a row → detail modal shows project link, due date,
+assignee select, created-at; reassign from the modal → row updates
+live; search and the project filter both narrow the list correctly,
+with a "Clear filters" empty state when they exclude everything;
+narrow-viewport (375px) layout confirmed via accessibility snapshot
+(the flex-row rows have no table to overflow, so nothing goes
+horizontally cramped). One incidental discovery, not a bug: the real
+dev workspace had a job runner actively creating project onboarding
+tasks mid-session — unrelated background automation, not this change.
+
+**Not changed:** the Projects page's own inline per-project task list,
+`Task`/`TaskCreate`/`TaskUpdate` schemas, the tasks API routes, and the
+global `DoThisNext` component/layout placement.
+
+**Checks:** `npm run test` 164/164 pass (new `tasks.test.ts`, 15
+tests). `npm run lint` — zero new issues (the 1 error / 2 warnings
+reported are pre-existing, in files this change didn't touch:
+`dashboard/layout.tsx`, `dashboard/calendar/page.tsx`,
+`dashboard/projects/[id]/page.tsx`). `tsc --noEmit` clean. `npm run
+build` succeeds.
 
 ---
 
@@ -1030,6 +1152,110 @@ instruction to change nothing if everything already works.
 **Next up:** none outstanding from T1/T2/T3. (See the entry above for
 a follow-up dev-environment issue reported by the operator right after
 this review closed out.)
+## 2026-09-01 — Initial ("prospect / demo") website as the primary project workflow
+**Mode:** new session
+**Merge to main after:** yes
+**Scope touched:** `apps/api/app/modules/websites/{service,routes}.py`,
+`apps/api/app/modules/discovery/service.py`,
+`apps/web/src/lib/api.ts`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/website/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/review/page.tsx`,
+`apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`
+
+**What happened:** Made "generate a convincing demo site before contacting
+the business" a real one-path workflow, reusing the existing generator
+rather than building a second one.
+
+Existing website-generation functionality found (unchanged):
+`agents/website_generator.py` is deterministic (no LLM) and already
+takes flat inputs — business name, a `BriefContent`, a
+`CreativeDirectionContent`, and a list of sitemap pages. The DB-row
+requirement ("needs an approved sitemap with pages") lived only in
+`websites/service.py::generate_website` via `_resolve_sitemap`. Full
+generation is gated behind approved brief → creative direction →
+sitemap; `approve_website` / QA / workflow-transition / deploy gates
+are all downstream of that and were left exactly as they were.
+
+Workflow changes:
+1. **`generate_initial_website()`** (new, `websites/service.py`) +
+   `POST /api/v1/projects/{id}/initial-website`. On first run it seeds a
+   starter DRAFT `Sitemap` — Home / About / **an offering page picked to
+   fit the industry** (Menu for food/hospitality, Products for retail,
+   Work for trades/creative, else Services) / Contact — and pre-fills the
+   project's `DesignBrief` from real data already on file. The home
+   description is the business's existing site's own meta description
+   (via the originating lead's `WebsiteAudit`), else a **plain factual
+   sentence built only from known facts** (name, industry, location) —
+   no bracketed lorem, no invented claim; everything with no source is
+   left for the generator to report in `missing_information`. Then it
+   calls the unchanged `generate_website()` with `advance_to_stage=DESIGN`
+   (a pre-sale demo hasn't reached development) and a `sources_note` that
+   labels the version an intentional demo. Seeded artifacts are ordinary
+   editable DRAFT rows — idempotent: an existing sitemap or an
+   operator-filled brief field is never overwritten. The plain
+   `POST /websites` route, its 400, and its `advance_to_stage=DEVELOPMENT`
+   default are untouched.
+2. **Discovery approve → auto-CRM.** `approve_business` /
+   `bulk_approve` now chain into `import_to_lead` (best-effort: a
+   business that already has a lead stays APPROVED, not an error).
+   Matches docs/00_VISION.md's "approve → automatically add to CRM".
+   Supersedes the "import stays manual" half of the 2026-08-27 decision
+   for the approve action (approve *is* the human review) — see
+   docs/05_DECISIONS.md.
+3. **Frontend.** Project page "Build & delivery" leads with a
+   "Generate initial website →" button when no version exists. Website
+   workspace: first build calls the initial-website endpoint, jumps to
+   the Preview tab; empty-state copy no longer tells the operator to
+   approve a sitemap/brief/creative-direction first. `WebsiteView` now
+   renders `sources_note` as a bordered callout (so the "this is a demo"
+   note reads as context, not a broken generation). Lead page gains a
+   one-click "Start website project →". Review page: "Approve" →
+   "Approve & add to CRM".
+
+Files changed: `apps/api/app/modules/websites/{service,routes}.py`,
+`discovery/service.py`; `apps/web/src/lib/api.ts`,
+`app/dashboard/{projects/[id]/page,projects/[id]/website/page,leads/[id]/page,review/page}.tsx`,
+`components/WebsiteView.tsx`; `apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file + `docs/05_DECISIONS.md`. **No migration** (no schema change).
+
+**Tests performed:** `apps/api` — new `TestGenerateInitialWebsite`
+(8 cases: 404, seeds+generates+DESIGN-stage+demo-label, industry
+offering page, factual-not-bracketed description, idempotent re-run,
+existing sitemap respected, operator brief fields preserved, edit
+survives). Updated the discovery tests that assumed the old
+approve-then-import two-step + added "approve when a lead already exists
+stays APPROVED". Full `apps/api` suite: **889 passed, 2 deselected** —
+run against a private throwaway `webdesignos_test_iw` DB (temp one-line
+`conftest.py` DB-name patch, reverted) because the shared
+`webdesignos_test` was unusable under concurrent-session load (900+
+setup ERRORs). The 2 deselected are the pre-existing `test_dashboard.py`
+`upcoming_meetings` time-of-day flakes (hardcoded `2026-09-01T10:00:00Z`
+meetings; identical failures on clean `main`). `apps/web` — `tsc`,
+`eslint` (1 pre-existing warning), `vitest` 102 passed, `next build`
+all clean.
+**Live end-to-end smoke** (throwaway `webdesignos_iwdemo` DB on the
+native Homebrew Postgres, API on :8071, no LLM key needed — the
+generator is deterministic): real Brave discovery search → approve
+(→ imported, lead created, re-import 400s) → one-click convert (INTAKE
+project) → initial-website (Cafe → **Menu** page, seeded 4-page DRAFT
+sitemap, brief pre-filled "Espressohead Cafe is a cafe business.",
+project → **design**, `sources_note` "Initial demo website…", flagged
+for review with 4 missing-info items) → GET website (full config, nav,
+hero) → PATCH+approve the home hero → plain regenerate (approved edit
+preserved, `sources_note` recomputed to the normal summary, project →
+development, 2 versions). Instance + DB torn down after.
+
+**Blockers/issues:** The local shared `webdesignos_test` Postgres is
+contended by other sessions — a whole test file sometimes shows ~45
+setup ERRORs from cross-session `create_all`/`drop_all` races (recurring,
+see prior entries); passes clean when the DB is quiet. A real
+`GOOGLE_PLACES_API_KEY` in `apps/api/.env` makes 4 `test_business_discovery`
+tests hit the live API — pre-existing, run with the key unset.
+
+**Next up:** Nothing required. If wanted: the industry→offering-page map
+is a short keyword list in `websites/service.py` and easy to extend.
 
 ---
 

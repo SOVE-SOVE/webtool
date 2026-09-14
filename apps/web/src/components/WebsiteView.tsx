@@ -152,7 +152,11 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
         )}
       </div>
 
-      {website.sources_note && <p className="mt-2 text-xs text-fg-muted">{website.sources_note}</p>}
+      {website.sources_note && (
+        <p className="mt-2 rounded-md border border-border bg-surface-subtle p-2 text-xs text-fg-muted">
+          {website.sources_note}
+        </p>
+      )}
 
       {website.missing_information.length > 0 && (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
