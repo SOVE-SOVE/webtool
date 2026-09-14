@@ -11,6 +11,66 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — Leads list + Lead Detail: priority/qualification visibility, sort, notes preview
+**Mode:** worktree (`worktree-leads-and-detail-redesign`)
+**Merge to main after:** yes
+**Scope touched:** `apps/web/src/app/dashboard/leads/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/components/LeadStatusBadge.tsx` (new `LeadPriorityBadge` +
+exported `LEAD_PRIORITY_STYLE`), `apps/web/src/components/LeadsBoard.tsx`
+(now imports the shared priority style instead of defining its own copy),
+`apps/web/src/lib/leads.ts` (new `sortLeads`/`LeadSort`/`LEAD_SORTS`/
+`LEAD_SORT_LABEL`, unit tested in `leads.test.ts`).
+**What happened:** UI/UX pass on the Leads list and Lead Detail pages —
+part of the same multi-agent redesign batch as the already-merged Today
+(#59), Settings (#58), Clients (#60), and Review Queue (#61) pages,
+reusing their shared primitives (`Metric`, `card`, tone-coloured badges).
+Priority/score existed on the `Lead` type and on the board view's cards
+but were completely invisible on the table/list view and on Lead Detail's
+header — no way to spot a high-value lead without opening it. Added a
+`LeadPriorityBadge` (rounded-pill, quiet low/medium, red high — mirrors
+the board's existing style, now the single shared definition), shown in
+the list table/mobile cards, the board (no visual change, just
+deduplicated), and the Lead Detail header + Status card. Added a Priority
+filter and a Sort control (Recently updated / Priority / Score /
+Follow-up soonest — pure `sortLeads`, tie-breaks on recency) since there
+was previously no user-facing sort at all, only a fixed
+archived-then-recency order. Added a 4-tile summary row (Active leads /
+High priority / Needs follow-up / No website) above the list, matching
+the Sales page's metrics row, so "where's the value" is visible before
+scanning rows. Removed the redundant "Open lead →" text link from the
+desktop table's actions column (the business name is already the row's
+link) to declutter. On Lead Detail, added a read-only Notes preview card
+(shown only when `lead.notes` is set) right below the at-a-glance grid so
+notes are scannable without opening the "Business & lead details"
+disclosure — editing still happens there, this is purely a duplicate
+read view of the same field. Otherwise preserved Lead Detail's existing
+structure as-is: it already had good hierarchy (Who/Status/Next hero
+cards, then Planning/Project bridges, then progressively-disclosed
+Business & lead details / Sales prep & outreach / History) and didn't
+need restructuring. No backend changes, no API contract changes — all
+additions are client-side derivations over data the app already fetches.
+**Blockers/issues:** None functionally. Verification note: this worktree
+had no `node_modules` (git worktrees don't share it); a first attempt to
+symlink it from the main checkout broke Turbopack's build ("Symlink
+[project]/node_modules is invalid, it points out of the filesystem
+root") — replaced with a real `npm ci` in the worktree, and ran `npx next
+typegen` once before `tsc --noEmit` since a fresh worktree has no
+`.next/types` (source of a `Cannot find name 'LayoutProps'` red herring,
+unrelated to this change). Final verification: `tsc --noEmit` clean,
+`eslint` clean on all 6 changed files (repo-wide lint has 1 pre-existing
+error + 2 warnings in untouched files — `dashboard/layout.tsx`,
+`calendar/page.tsx`, `projects/[id]/page.tsx` — confirmed unrelated by
+`git status`), `vitest run` 207/207 passing, `next build` succeeds.
+**Next up:** None. Also worth noting for whoever runs the next redesign
+batch: PR #59 ("Redesign Today to match Sales' visual language") was
+already merged before this session started when the same task was
+initially assigned here — the fleet's task list and the repo's actual
+merged-PR state can drift; check `gh pr list` before starting on an
+assigned page.
+
+---
+
 ## 2026-09-14 — Checklist task ownership, blocked states, next actions, required/optional, review versions, notes
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review

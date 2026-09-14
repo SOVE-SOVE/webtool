@@ -10,7 +10,7 @@
  * docs/05_DECISIONS.md (2026-08-16, LeadStatus replaces LeadStage).
  */
 
-import type { Lead, LeadStatus } from "@/lib/api";
+import type { Lead, LeadPriority, LeadStatus } from "@/lib/api";
 
 export type LeadTab =
   | "all"
@@ -161,4 +161,61 @@ export function countLeadsByTab(leads: Pick<Lead, "status" | "archived_at" | "cl
     }
   }
   return counts;
+}
+
+/**
+ * Leads list sort options. "updated" (the long-standing default) is
+ * recency; the other three surface commercial value or urgency first,
+ * for "which of these is worth my time right now."
+ */
+export const LEAD_SORTS = ["updated", "priority", "score", "follow_up"] as const;
+export type LeadSort = (typeof LEAD_SORTS)[number];
+
+export const LEAD_SORT_LABEL: Record<LeadSort, string> = {
+  updated: "Recently updated",
+  priority: "Priority",
+  score: "Score",
+  follow_up: "Follow-up soonest",
+};
+
+const PRIORITY_RANK: Record<LeadPriority, number> = { high: 0, medium: 1, low: 2 };
+
+/**
+ * Sorts leads for the list view. Archived leads always sink to the
+ * bottom regardless of sort, then the chosen dimension breaks ties —
+ * falling back to most-recently-updated when a lead has nothing to
+ * compare on (e.g. no score, no follow-up).
+ */
+export function sortLeads(
+  leads: Lead[],
+  sort: LeadSort,
+  nextFollowUpByLead?: Map<string, string>,
+): Lead[] {
+  const byRecency = (a: Lead, b: Lead) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  return [...leads].sort((a, b) => {
+    if (!!a.archived_at !== !!b.archived_at) return a.archived_at ? 1 : -1;
+    switch (sort) {
+      case "priority": {
+        const diff = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+        return diff !== 0 ? diff : byRecency(a, b);
+      }
+      case "score": {
+        if (a.score === null && b.score === null) return byRecency(a, b);
+        if (a.score === null) return 1;
+        if (b.score === null) return -1;
+        return b.score - a.score;
+      }
+      case "follow_up": {
+        const fa = nextFollowUpByLead?.get(a.id);
+        const fb = nextFollowUpByLead?.get(b.id);
+        if (!fa && !fb) return byRecency(a, b);
+        if (!fa) return 1;
+        if (!fb) return -1;
+        return fa < fb ? -1 : fa > fb ? 1 : byRecency(a, b);
+      }
+      case "updated":
+      default:
+        return byRecency(a, b);
+    }
+  });
 }

@@ -29,7 +29,7 @@ import {
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
-import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
@@ -562,9 +562,10 @@ export default function LeadDetailPage() {
       </Link>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
           <LeadStatusBadge status={lead.status} />
+          <LeadPriorityBadge priority={lead.priority} score={lead.score} />
         </div>
         <button
           onClick={handleArchiveToggle}
@@ -604,8 +605,7 @@ export default function LeadDetailPage() {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Status</h2>
           <div className="mt-2 space-y-1.5">
             {summaryRow("Stage", LEAD_STATUS_LABEL[lead.status])}
-            {summaryRow("Priority", <span className="capitalize">{lead.priority}</span>)}
-            {summaryRow("Score", lead.score ?? "—")}
+            {summaryRow("Priority", <LeadPriorityBadge priority={lead.priority} score={lead.score} />)}
             {summaryRow("Assigned", lead.assigned_user_name ?? "Unassigned")}
             {summaryRow("Source", lead.source ?? "—")}
           </div>
@@ -629,6 +629,18 @@ export default function LeadDetailPage() {
           {followUpError && <p className="mt-2 text-error">{followUpError}</p>}
         </div>
       </div>
+
+      {/* Notes — read-only preview so "what do I already know about this
+          lead" is visible without opening the edit form below. Editing
+          still happens in the "Business & lead details" disclosure; this
+          is the one place that stays in sync with it automatically since
+          it just reads `lead.notes`. */}
+      {lead.notes && (
+        <div className="card mt-4 p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Notes</h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-fg">{lead.notes}</p>
+        </div>
+      )}
 
       {/* Google review intelligence — read-only projection from Lead
           Intelligence discovery; the full analysis lives on the

@@ -16,22 +16,28 @@ import {
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Metric } from "@/components/ui/Metric";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
-import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
 import {
   isLeadTab,
+  LEAD_SORT_LABEL,
+  LEAD_SORTS,
   LEAD_TABS,
   leadMatchesTab,
   leadNextAction,
+  type LeadSort,
   type LeadTab,
+  sortLeads,
 } from "@/lib/leads";
 
 type ViewMode = "table" | "board";
 type WebsiteFilter = "" | "has" | "none";
+type PriorityFilter = "" | LeadPriority;
 
 function nextFollowUpByLead(
   buckets:
@@ -107,6 +113,8 @@ function LeadsPageInner() {
   const [view, setView] = useState<ViewMode>("table");
   const [search, setSearch] = useState("");
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("");
+  const [sort, setSort] = useState<LeadSort>("updated");
   const [showArchived, setShowArchived] = useState(false);
 
   // Manual entry — the secondary path. Discovery → approve is how leads
@@ -256,21 +264,18 @@ function LeadsPageInner() {
       if (view === "table" && !leadMatchesTab(lead, tab)) return false;
       if (websiteFilter === "has" && !lead.website_url) return false;
       if (websiteFilter === "none" && lead.website_url) return false;
+      if (priorityFilter && lead.priority !== priorityFilter) return false;
       if (!q) return true;
       return [lead.business_name, lead.industry, lead.suburb, lead.source, lead.notes, lead.business_email]
         .filter(Boolean)
         .some((field) => field!.toLowerCase().includes(q));
     });
-  }, [leads, view, tab, search, websiteFilter]);
+  }, [leads, view, tab, search, websiteFilter, priorityFilter]);
 
   const visibleLeads = useMemo(() => {
     if (!filteredLeads) return null;
-    return [...filteredLeads].sort((a, b) => {
-      // Archived sink to the bottom; otherwise most recently touched first.
-      if (!!a.archived_at !== !!b.archived_at) return a.archived_at ? 1 : -1;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-  }, [filteredLeads]);
+    return sortLeads(filteredLeads, sort, followUpMap);
+  }, [filteredLeads, sort, followUpMap]);
 
   const boardLeads = useMemo(
     () => (filteredLeads ?? []).filter((l) => !l.archived_at),
@@ -287,6 +292,19 @@ function LeadsPageInner() {
     }
     return counts;
   }, [leads]);
+
+  // Top-of-page "what's worth my attention" summary — active (non-archived,
+  // non-converted) leads only, so a stale or already-won lead doesn't
+  // inflate these counts. Mirrors the Sales page's metrics row.
+  const summary = useMemo(() => {
+    const active = (leads ?? []).filter((l) => !l.archived_at && l.client_id == null);
+    return {
+      active: active.length,
+      highPriority: active.filter((l) => l.priority === "high").length,
+      needsFollowUp: active.filter((l) => followUpMap.has(l.id)).length,
+      noWebsite: active.filter((l) => !l.website_url).length,
+    };
+  }, [leads, followUpMap]);
 
   const viewToggle = (
     <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
@@ -313,7 +331,19 @@ function LeadsPageInner() {
         actions={viewToggle}
       />
 
-      {/* Controls: search + status + website + archived (list view only) */}
+      {/* At-a-glance: active pipeline size and where the commercial value /
+          urgency is, before scanning the list itself — same idea as the
+          Sales metrics row. */}
+      {leads && leads.length > 0 && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Active leads" value={summary.active} />
+          <Metric label="High priority" value={summary.highPriority} hint="chase these first" />
+          <Metric label="Needs follow-up" value={summary.needsFollowUp} href="/dashboard/follow-ups" />
+          <Metric label="No website" value={summary.noWebsite} hint="strongest pitch" />
+        </div>
+      )}
+
+      {/* Controls: search + status + website + priority + sort + archived (list view only) */}
       {view === "table" && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <input
@@ -335,6 +365,19 @@ function LeadsPageInner() {
             ))}
           </select>
           <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
+            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            aria-label="Filter by priority"
+          >
+            <option value="">Any priority</option>
+            {LEAD_PRIORITIES.map((p) => (
+              <option key={p} value={p} className="capitalize">
+                {p} priority
+              </option>
+            ))}
+          </select>
+          <select
             value={websiteFilter}
             onChange={(e) => setWebsiteFilter(e.target.value as WebsiteFilter)}
             className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
@@ -343,6 +386,18 @@ function LeadsPageInner() {
             <option value="">Any website</option>
             <option value="has">Has a website</option>
             <option value="none">No website</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as LeadSort)}
+            className="ml-auto rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            aria-label="Sort leads"
+          >
+            {LEAD_SORTS.map((s) => (
+              <option key={s} value={s}>
+                Sort: {LEAD_SORT_LABEL[s]}
+              </option>
+            ))}
           </select>
           <label className="flex items-center gap-1.5 text-sm text-fg-muted">
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
@@ -406,6 +461,7 @@ function LeadsPageInner() {
                 onClick={() => {
                   setSearch("");
                   setWebsiteFilter("");
+                  setPriorityFilter("");
                   setTab("all");
                 }}
                 className="btn btn-secondary btn-sm"
@@ -433,9 +489,10 @@ function LeadsPageInner() {
                           .join(" · ") || "—"}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                       {lead.planning_id && <InPlanningBadge />}
                       <LeadStatusBadge status={lead.status} />
+                      <LeadPriorityBadge priority={lead.priority} score={lead.score} />
                     </div>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
@@ -510,9 +567,10 @@ function LeadsPageInner() {
                       {lead.website_url ? "Has a website" : "No website"}
                     </td>
                     <td className="px-3 py-2">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {lead.planning_id && <InPlanningBadge />}
                         <LeadStatusBadge status={lead.status} />
+                        <LeadPriorityBadge priority={lead.priority} score={lead.score} />
                       </div>
                     </td>
                     <td className="px-3 py-2 text-sm text-fg">
@@ -525,16 +583,10 @@ function LeadsPageInner() {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <Link
-                        href={`/dashboard/leads/${lead.id}`}
-                        className="text-sm font-medium text-fg hover:underline"
-                      >
-                        Open lead →
-                      </Link>
                       {lead.client_id && (
                         <Link
                           href={`/dashboard/clients/${lead.client_id}`}
-                          className="ml-2 text-sm text-fg-muted hover:text-fg hover:underline"
+                          className="text-sm text-fg-muted hover:text-fg hover:underline"
                         >
                           Open client →
                         </Link>
