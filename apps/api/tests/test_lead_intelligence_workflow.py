@@ -170,6 +170,37 @@ def test_cannot_reimport_already_imported_business(authed_client, monkeypatch):
     assert second.status_code == 400
 
 
+def test_approve_links_to_existing_lead_when_a_duplicate_is_approved_again(authed_client, monkeypatch, db_session):
+    """Approve auto-imports, but if the business already has a CRM lead
+    (e.g. imported directly earlier, or a duplicate) the approval still
+    lands — it links to the existing lead instead of creating a duplicate."""
+    monkeypatch.setattr(
+        search_integration,
+        "search_business",
+        lambda query, count=None, offset=None: [
+            SearchResult(title="Twin Pines Plumbing", url="https://twinpines.example", description="")
+        ],
+    )
+    search = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing"}).json()
+    first = authed_client.get(f"/api/v1/discovery-searches/{search['id']}/results").json()[0]
+
+    # A second discovery run surfaces the same business again as its own row.
+    search2 = authed_client.post("/api/v1/discovery-searches", json={"industry": "Plumbing", "location": "Cairns"}).json()
+    second = authed_client.get(f"/api/v1/discovery-searches/{search2['id']}/results").json()[0]
+    assert second["id"] != first["id"]
+
+    first_approved = authed_client.post(f"/api/v1/discovered-businesses/{first['id']}/approve").json()
+    assert first_approved["outcome"] == "imported"
+    assert first_approved["business"]["status"] == "imported"
+
+    approved_again = authed_client.post(f"/api/v1/discovered-businesses/{second['id']}/approve")
+    assert approved_again.status_code == 200
+    body = approved_again.json()
+    assert body["outcome"] == "already_in_crm"
+    assert body["lead_id"] == first_approved["lead_id"]
+    assert body["business"]["status"] == "imported"
+
+
 def test_cannot_import_rejected_business(authed_client, monkeypatch):
     _patch_discovery_and_research(monkeypatch)
     business = _run_discovery(authed_client)

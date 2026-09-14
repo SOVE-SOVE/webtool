@@ -183,6 +183,61 @@ Planning button not reading the new `planning_id` field, and a stale
 
 ---
 
+## 2026-09-13 — Settings page redesign + documenting the productisation direction
+
+**Decision:** Redesigned `apps/web/src/app/dashboard/settings/page.tsx`
+from a single long scroll of unrelated bordered boxes into a
+category-based layout: a section nav (vertical list on desktop, a
+`TabBar` strip below `lg`) beside a content area that renders one
+category at a time. The active category lives in `?section=` on the
+URL (read via `useSearchParams`, same Suspense-boundary pattern as
+`dashboard/leads/page.tsx`), so it's shareable and survives the back
+button instead of being local-only state. Categories: **Account**
+(read-only profile + sign out), **Workspace** (rename + the People
+table/add-teammate/role-change that used to be its own unrelated
+section), **Appearance** (theme/font, unchanged logic), **Integrations**
+(Google Calendar, unchanged logic), **AI & Automation** (AI provider
+status, unchanged logic). "Add teammate" moved from an inline form that
+pushed the People table down to a modal (reusing the existing
+`.modal-overlay`/`.modal-panel` classes from `ConfirmProvider`), and
+workspace-rename/add-teammate errors now show inline on their own form
+instead of a single page-wide error banner. No backend/API changes —
+every `api.*` call the old page made is unchanged.
+
+Categories from the brief that don't correspond to real functionality
+today — Notifications, Leads & Sales, Website Generation, Advanced,
+Danger Zone — were deliberately **not** added. There's nothing real to
+put in them yet (no notification preferences, no lead/pipeline defaults,
+no website-generation defaults, no destructive workspace/account action
+exists), and stubbing them with "coming soon" would be exactly the kind
+of fake functionality the brief warned against. Add them when the
+backing functionality exists, not before.
+
+Alongside the redesign, updated project docs to reflect that WebTool is
+meant to eventually become a commercially sellable product for other
+web designers/agencies, not just this operator — see [[00_VISION]]
+"Future direction: productisation" and [[03_AGENT_RULES]] "Product
+design principles". This is documentation only: no multi-tenant,
+billing, or team-management code was added, and [[00_VISION]]'s
+existing Non-goals (not a startup, not optimizing for feature count)
+still describe today's tool.
+
+**Why:** The old page mixed account info, workspace admin, appearance,
+calendar, and AI status in one undifferentiated scroll with no way to
+tell at a glance what applied to you vs. what was admin-only — exactly
+the "cluttered internal-tool settings page" pattern that reads badly
+once other people (teammates, and eventually other businesses) are
+meant to use the product with confidence.
+
+**Alternatives considered:** Kept everything as expandable
+`<Disclosure>` sections on one page instead of a category nav —
+rejected because it doesn't solve "where am I / what does this
+category contain," which was the actual complaint, and doesn't give a
+shareable/deep-linkable location for e.g. the calendar-OAuth redirect
+to land on.
+
+---
+
 ## 2026-09-10 — Google Review Insights: a Planning-scoped tool, not a second review-intelligence system
 
 **Decision:** Added "Google Review Insights" inside the standalone
@@ -312,6 +367,64 @@ decision about where candidates come from (see the "future discovery-
 provider integration" boundary in the original plan — deliberately not
 decided here). See [[07_SESSION_LOG]] 2026-09-05 for the full file list
 and test results.
+
+---
+
+## 2026-09-01 — Initial website is the primary project workflow; approve now adds to the CRM
+
+**Decision:** Two connected changes, both on explicit operator
+direction (the point of the product is to walk into a business with a
+convincing draft site *before* contacting them — docs/00_VISION.md):
+
+**1. "Generate initial website" reuses the existing generator; it does
+not bypass or replace it.** `agents/website_generator.py` already
+accepts flat inputs and is deterministic. The only thing standing
+between "a project with just a business name" and "a generated
+`Website` row" was `websites/service.py::generate_website` refusing
+without a sitemap. So `generate_initial_website()` seeds a starter
+DRAFT `Sitemap` — Home / About / an offering page chosen by industry
+keyword (Menu, Products, Work, else Services — page *structure* only,
+never invented copy) / Contact — and pre-fills the `DesignBrief` from
+data already on file: business fields, and for the home description the
+business's existing site's own meta description (their words, via the
+originating lead's `WebsiteAudit`) or else **a plain factual sentence
+from known facts only** (name + industry + location). No bracketed
+lorem: anything with no honest source is left for the generator to
+report in `missing_information`. **No business claim is invented** (the
+hard constraint from every prior website-generation entry below is
+untouched). Then it calls the unchanged `generate_website()`, passing
+`advance_to_stage=DESIGN` (a pre-sale demo has not reached development;
+the plain route keeps its DEVELOPMENT default) and a `sources_note`
+that labels the version an intentional demo so the workspace UI frames
+it as a draft, not a failed generation. Seeded rows are ordinary
+editable DRAFT artifacts; the seed is idempotent — an existing sitemap
+or an operator-entered brief field is never overwritten. All downstream
+gates (`approve_website`, QA, Phase-6 workflow transitions, deployment)
+are unchanged: an initial website is a normal `Website` version that
+still has to earn every one of them before it can ship.
+
+**2. Approving a discovered business now imports it to the CRM.** This
+reverses the 2026-08-27 "Review + CRM import stays manual" decision
+below — *for the approve action specifically*. The reasoning there
+(don't let a fuzzy score skip human eyes) still holds and is still
+satisfied: **approve is the human review**. An operator looking at the
+research/score context and clicking "approve" has done the reviewing;
+making them then click "import" was a second step with no second
+judgement in it. `approve_business` / `bulk_approve` chain into the
+unchanged `import_to_lead` (best-effort — a business that already has a
+lead stays APPROVED rather than erroring). Rejecting/archiving and the
+"import without approving" shortcut are unchanged.
+
+**Alternatives considered:** A dedicated `is_initial` column / separate
+table for demo sites — rejected, it would fork every downstream consumer
+(`regenerate_section`, approvals, previews, deployments) for no real
+gain; the "initial" site *is* just the first version, and the
+demo-vs-real distinction is carried by `sources_note` (a display string
+that a real regeneration recomputes away) rather than a stored flag
+anything branches on. Auto-seeding inside `generate_website` itself (so
+the plain route also works from zero) — rejected, it would have silently
+changed that route's documented 400 and the e2e refusal assertions; a
+separate `/initial-website` route keeps the concept explicit.
 
 ---
 

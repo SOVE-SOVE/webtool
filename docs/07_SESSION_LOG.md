@@ -335,6 +335,65 @@ in unrelated files, none touched by this feature).
 
 ---
 
+## 2026-09-13 — Clients gets its own page again (full IA/UX redesign)
+**Mode:** background job, worktree (`clients-redesign`), branch `worktree-clients-redesign` off main.
+**Scope touched:** new `apps/web/src/lib/clients.ts` (+ `clients.test.ts`,
+14 tests) — pure helpers deriving a client's status (`onboarding` /
+`active` / `complete`) and "current project" from its `Project[]`, same
+pattern as `leads.ts`/`projects.ts`; new
+`apps/web/src/components/ClientStatusBadge.tsx`; full rewrite of
+`apps/web/src/app/dashboard/clients/page.tsx` (was a bare
+`redirect("/dashboard/leads?tab=won")`) into a real client directory —
+card grid (not a table), compact summary line, search + status +
+assignee filters, empty/loading/error states, "+ Add Client"; redesigned
+`apps/web/src/app/dashboard/clients/[id]/page.tsx` — added an Overview
+block (current project, next action, last activity) up top, reused
+`ProjectStatusBadge`/`ClientStatusBadge`, fixed the back-link now that
+`/dashboard/clients` is real; `apps/web/src/lib/nav.ts` (+`nav.test.ts`)
+— Clients nav item now points at `/dashboard/clients` directly instead
+of `/dashboard/leads?tab=won`.
+**Why a standalone page:** T2 (2026-08-29) deliberately folded Clients
+into Leads' Won tab. The redesign brief asked for a real client
+directory (cards, its own search/filters, its own detail experience),
+which conflicts with that. Asked the user first (AskUserQuestion) —
+they confirmed they already think of "Clients" as its own page (reached
+via the Manage nav item), so this restores it as a real route. No
+backend change was needed or made: `Client`/`ClientRead` and
+`GET/POST/PATCH /api/v1/clients` already existed and were fully
+untouched (frontend just never called `listClients()` from a page).
+Leads' own Won tab, `/dashboard/pipeline` redirect, and the Leads page
+itself are all untouched — this only touches Clients + genuinely shared
+nav config.
+**Client "status" note:** `Client` has no status column (every row is
+already a won-lead conversion or a manual referral) — the three
+displayed statuses are derived from the client's `Project[]` stage(s)
+(same restraint as `projectTone`/`leadTone`), not a new backend concept.
+**Verification:** `apps/web` — `next build` clean (all routes,
+including the new/changed ones, compile; the pre-existing
+`layout.tsx` `LayoutProps` `tsc --noEmit` quirk is unrelated and clears
+after build per prior session notes), `eslint` clean on all
+touched/added files, `vitest run` 163/163 passing (149 pre-existing +
+14 new). Did **not** get a real-backend browser walkthrough: this
+worktree had no `apps/api/.env`/`.venv` or `apps/web/.env.local`, the
+host disk was at ~300MB free for most of this session (multiple other
+parallel worktree jobs each carry their own ~500MB `node_modules`), and
+there's no browser-automation tool available to this session — spinning
+up Postgres via Docker plus a Python venv risked exhausting shared disk
+for no guaranteed payoff. Did do a lighter sanity check instead: started
+`next dev` on a scratch port and confirmed `/dashboard/clients` and
+`/dashboard/clients/[id]` both serve 200 with no server-side crash,
+then stopped the dev server.
+**Blockers/issues:** No real-browser QA (see above) — worth a follow-up
+session with the API running to click through search/filters/add-client/
+empty-state and check mobile width for real.
+**Next up:** Live-QA this against a running backend; consider whether
+Leads' own inline "Add client directly" mini-form (unchanged, still
+works) should eventually just link to the new Clients page's Add Client
+action instead of duplicating the fields — left alone this session to
+keep scope to Clients only.
+
+---
+
 ## 2026-09-13 — Project-scoped "Next task", removed from the global attention feed
 **Mode:** background job, worktree (`project-scoped-next-task`), branch
 `worktree-project-scoped-next-task` off main. Merged to main and pushed
@@ -388,6 +447,55 @@ next-item" pattern comes up again (e.g. a lead's next task), the same
 approach — keep the shared cross-cutting feed for cross-cutting kinds,
 build entity-scoped ones on that entity's own page — is probably right
 here too.
+
+---
+
+## 2026-09-13 — Settings page UI/UX redesign + productisation context
+**Mode:** background job, worktree (`settings-redesign`), branch
+`worktree-settings-redesign` off `prefill-project-brief-from-lead`.
+**Merge to main after:** pending review — not yet pushed.
+**Scope touched:** `apps/web/src/app/dashboard/settings/page.tsx`
+(full IA/layout redesign, no backend or API changes), `docs/00_VISION.md`
+(new "Future direction: productisation" section), `docs/03_AGENT_RULES.md`
+(new "Product design principles" section), `docs/05_DECISIONS.md` (new
+entry). See [[05_DECISIONS]] for the full design reasoning.
+
+**What happened:** Redesigned Settings from one long undifferentiated
+scroll into category-based navigation (Account, Workspace, Appearance,
+Integrations, AI & Automation) driven by a `?section=` query param, with
+"Add teammate" moved into a modal and per-form inline errors instead of
+one page-wide banner. Reused existing design tokens/components
+(`TabBar`, `TableSkeleton`, `useToast`, `.card`/`.modal-panel` classes)
+rather than inventing new ones. No categories were stubbed with fake
+"coming soon" content — sections with no real backing functionality
+(Notifications, Leads & Sales, Website Generation, Advanced, Danger
+Zone) were left out entirely. Also updated `00_VISION.md` and
+`03_AGENT_RULES.md` to document that WebTool's long-term intent is to
+become a commercially sellable product for other web designers/
+agencies, without implying it already has multi-tenant/SaaS
+functionality — see [[00_VISION]].
+
+**Blockers/issues:** The shared machine's `C:` drive was at 0 bytes
+free for this entire session (unrelated pre-existing condition, not
+caused by this task) — `npm install` inside the isolated worktree
+repeatedly failed with `ENOSPC`, so `npm run build`, `npm test`, and
+`npm run lint` could not be run normally. Worked around it for
+verification: ran ESLint via its Node API against the new file with
+`cwd` pointed at the parent repo root (so its flat-config base-path
+check accepted a file outside `apps/web`) — zero problems. Ran a real
+`tsc --noEmit` via a temporary tsconfig (job tmp dir) that mapped `@/*`
+to this worktree's own `src` and mapped the handful of third-party
+bare imports (`react`, `react/jsx-runtime`, `next/link`,
+`next/navigation`) to the main checkout's installed
+`node_modules/@types` — zero type errors. Did **not** run
+`npm run build` or `vitest` (no realistic way to fake a full bundler
+run without a real `node_modules`) — flagged to the user as the one
+thing still worth a real `npm run build && npm test` once disk space is
+available, alongside manual visual/responsive QA in a browser.
+**Next up:** Free up disk space, then run `npm run build`, `npm test`,
+and `npm run lint` for real before merging; visually verify the
+Settings page (all five sections, the add-teammate modal, mobile-width
+tab strip, the Google Calendar OAuth-redirect banner) in a browser.
 
 ---
 
@@ -1427,6 +1535,110 @@ instruction to change nothing if everything already works.
 **Next up:** none outstanding from T1/T2/T3. (See the entry above for
 a follow-up dev-environment issue reported by the operator right after
 this review closed out.)
+## 2026-09-01 — Initial ("prospect / demo") website as the primary project workflow
+**Mode:** new session
+**Merge to main after:** yes
+**Scope touched:** `apps/api/app/modules/websites/{service,routes}.py`,
+`apps/api/app/modules/discovery/service.py`,
+`apps/web/src/lib/api.ts`,
+`apps/web/src/app/dashboard/projects/[id]/page.tsx`,
+`apps/web/src/app/dashboard/projects/[id]/website/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/app/dashboard/review/page.tsx`,
+`apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`
+
+**What happened:** Made "generate a convincing demo site before contacting
+the business" a real one-path workflow, reusing the existing generator
+rather than building a second one.
+
+Existing website-generation functionality found (unchanged):
+`agents/website_generator.py` is deterministic (no LLM) and already
+takes flat inputs — business name, a `BriefContent`, a
+`CreativeDirectionContent`, and a list of sitemap pages. The DB-row
+requirement ("needs an approved sitemap with pages") lived only in
+`websites/service.py::generate_website` via `_resolve_sitemap`. Full
+generation is gated behind approved brief → creative direction →
+sitemap; `approve_website` / QA / workflow-transition / deploy gates
+are all downstream of that and were left exactly as they were.
+
+Workflow changes:
+1. **`generate_initial_website()`** (new, `websites/service.py`) +
+   `POST /api/v1/projects/{id}/initial-website`. On first run it seeds a
+   starter DRAFT `Sitemap` — Home / About / **an offering page picked to
+   fit the industry** (Menu for food/hospitality, Products for retail,
+   Work for trades/creative, else Services) / Contact — and pre-fills the
+   project's `DesignBrief` from real data already on file. The home
+   description is the business's existing site's own meta description
+   (via the originating lead's `WebsiteAudit`), else a **plain factual
+   sentence built only from known facts** (name, industry, location) —
+   no bracketed lorem, no invented claim; everything with no source is
+   left for the generator to report in `missing_information`. Then it
+   calls the unchanged `generate_website()` with `advance_to_stage=DESIGN`
+   (a pre-sale demo hasn't reached development) and a `sources_note` that
+   labels the version an intentional demo. Seeded artifacts are ordinary
+   editable DRAFT rows — idempotent: an existing sitemap or an
+   operator-filled brief field is never overwritten. The plain
+   `POST /websites` route, its 400, and its `advance_to_stage=DEVELOPMENT`
+   default are untouched.
+2. **Discovery approve → auto-CRM.** `approve_business` /
+   `bulk_approve` now chain into `import_to_lead` (best-effort: a
+   business that already has a lead stays APPROVED, not an error).
+   Matches docs/00_VISION.md's "approve → automatically add to CRM".
+   Supersedes the "import stays manual" half of the 2026-08-27 decision
+   for the approve action (approve *is* the human review) — see
+   docs/05_DECISIONS.md.
+3. **Frontend.** Project page "Build & delivery" leads with a
+   "Generate initial website →" button when no version exists. Website
+   workspace: first build calls the initial-website endpoint, jumps to
+   the Preview tab; empty-state copy no longer tells the operator to
+   approve a sitemap/brief/creative-direction first. `WebsiteView` now
+   renders `sources_note` as a bordered callout (so the "this is a demo"
+   note reads as context, not a broken generation). Lead page gains a
+   one-click "Start website project →". Review page: "Approve" →
+   "Approve & add to CRM".
+
+Files changed: `apps/api/app/modules/websites/{service,routes}.py`,
+`discovery/service.py`; `apps/web/src/lib/api.ts`,
+`app/dashboard/{projects/[id]/page,projects/[id]/website/page,leads/[id]/page,review/page}.tsx`,
+`components/WebsiteView.tsx`; `apps/api/tests/{test_websites,test_lead_intelligence_workflow,test_automation_pipeline}.py`;
+this file + `docs/05_DECISIONS.md`. **No migration** (no schema change).
+
+**Tests performed:** `apps/api` — new `TestGenerateInitialWebsite`
+(8 cases: 404, seeds+generates+DESIGN-stage+demo-label, industry
+offering page, factual-not-bracketed description, idempotent re-run,
+existing sitemap respected, operator brief fields preserved, edit
+survives). Updated the discovery tests that assumed the old
+approve-then-import two-step + added "approve when a lead already exists
+stays APPROVED". Full `apps/api` suite: **889 passed, 2 deselected** —
+run against a private throwaway `webdesignos_test_iw` DB (temp one-line
+`conftest.py` DB-name patch, reverted) because the shared
+`webdesignos_test` was unusable under concurrent-session load (900+
+setup ERRORs). The 2 deselected are the pre-existing `test_dashboard.py`
+`upcoming_meetings` time-of-day flakes (hardcoded `2026-09-01T10:00:00Z`
+meetings; identical failures on clean `main`). `apps/web` — `tsc`,
+`eslint` (1 pre-existing warning), `vitest` 102 passed, `next build`
+all clean.
+**Live end-to-end smoke** (throwaway `webdesignos_iwdemo` DB on the
+native Homebrew Postgres, API on :8071, no LLM key needed — the
+generator is deterministic): real Brave discovery search → approve
+(→ imported, lead created, re-import 400s) → one-click convert (INTAKE
+project) → initial-website (Cafe → **Menu** page, seeded 4-page DRAFT
+sitemap, brief pre-filled "Espressohead Cafe is a cafe business.",
+project → **design**, `sources_note` "Initial demo website…", flagged
+for review with 4 missing-info items) → GET website (full config, nav,
+hero) → PATCH+approve the home hero → plain regenerate (approved edit
+preserved, `sources_note` recomputed to the normal summary, project →
+development, 2 versions). Instance + DB torn down after.
+
+**Blockers/issues:** The local shared `webdesignos_test` Postgres is
+contended by other sessions — a whole test file sometimes shows ~45
+setup ERRORs from cross-session `create_all`/`drop_all` races (recurring,
+see prior entries); passes clean when the DB is quiet. A real
+`GOOGLE_PLACES_API_KEY` in `apps/api/.env` makes 4 `test_business_discovery`
+tests hit the live API — pre-existing, run with the key unset.
+
+**Next up:** Nothing required. If wanted: the industry→offering-page map
+is a short keyword list in `websites/service.py` and easy to extend.
 
 ---
 
