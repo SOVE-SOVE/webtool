@@ -73,7 +73,7 @@ export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; 
               key={s}
               onClick={() => handleTransition(s)}
               disabled={transitioning}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+              className="btn btn-secondary"
             >
               Move to {WORKFLOW_STATUS_LABELS[s]}
             </button>

@@ -26,6 +26,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { buildChecklist, checklistProgress, type ChecklistItem } from "@/lib/websiteChecklist";
 import { Select } from "@/components/ui/Select";
+import { TabBar } from "@/components/ui/Tabs";
 
 const TABS = [
   { id: "content", label: "Pages & content" },
@@ -261,7 +262,7 @@ function ProjectWebsiteWorkspaceInner() {
       </Link>
 
       {/* 1. Overview */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="page-title">{project?.name ?? "Website"}</h1>
@@ -360,7 +361,7 @@ function ProjectWebsiteWorkspaceInner() {
       </section>
 
       {/* 2. Build checklist */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Build checklist</h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           Derived from the project&apos;s real approval, content, QA and deployment state — not a manual list.
@@ -393,19 +394,7 @@ function ProjectWebsiteWorkspaceInner() {
 
       {/* 3-6. Workspace tabs */}
       <div>
-        <div className="flex flex-wrap gap-1 border-b border-border">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
-                tab === t.id ? "border-fg font-medium text-fg" : "border-transparent text-fg-muted hover:text-fg"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
         <div className="mt-4">
           {tab === "content" &&

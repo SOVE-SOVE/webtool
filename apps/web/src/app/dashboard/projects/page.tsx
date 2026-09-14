@@ -42,7 +42,7 @@ function ProjectCard({ project, nextTask }: { project: Project; nextTask: Task |
   return (
     <Link
       href={`/dashboard/projects/${project.id}`}
-      className="flex flex-col rounded-md border border-border bg-surface p-4 transition-colors hover:border-border-strong"
+      className="panel flex flex-col transition-colors hover:border-border-strong"
     >
       <div className="flex items-start justify-between gap-2">
         <ProjectStatusBadge project={project} />
@@ -277,7 +277,7 @@ function ProjectsPageInner() {
       {!projects && !error && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-md border border-border bg-surface p-4">
+            <div key={i} className="panel">
               <Skeleton className="h-3 w-16" />
               <Skeleton className="mt-3 h-4 w-2/3" />
               <Skeleton className="mt-3 h-1.5 w-full" />

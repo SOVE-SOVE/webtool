@@ -22,7 +22,7 @@ export function Disclosure({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-md border border-border bg-surface">
+    <div className="card">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

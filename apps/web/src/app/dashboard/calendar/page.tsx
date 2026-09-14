@@ -420,14 +420,14 @@ export default function CalendarPage() {
       <div className="mt-6 flex items-center justify-between">
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
+          className="btn btn-secondary btn-sm"
         >
           ← Prev
         </button>
         <span className="text-sm font-medium text-fg">{monthLabel}</span>
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
+          className="btn btn-secondary btn-sm"
         >
           Next →
         </button>
@@ -540,21 +540,21 @@ export default function CalendarPage() {
                 <button
                   onClick={() => handleStatusChange("held")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
                   Mark held
                 </button>
                 <button
                   onClick={() => handleStatusChange("no_show")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
                   Mark no-show
                 </button>
                 <button
                   onClick={() => handleStatusChange("cancelled")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:bg-red-500/10 dark:text-red-300"
+                  className="btn btn-secondary btn-sm text-red-600 hover:bg-red-50 dark:bg-red-500/10 dark:text-red-300"
                 >
                   Cancel meeting
                 </button>
@@ -564,7 +564,7 @@ export default function CalendarPage() {
               <button
                 onClick={handleGenerateBrief}
                 disabled={meetingBusy}
-                className="ml-auto rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary btn-sm ml-auto"
               >
                 {meetingBusy ? "Generating…" : selectedMeeting.brief ? "Regenerate brief" : "Generate brief"}
               </button>
@@ -648,10 +648,7 @@ function AttendeesPanel({
           onChange={(e) => setName(e.target.value)}
           className="input flex-1"
         />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-        >
+        <button type="submit" className="btn btn-secondary btn-sm shrink-0">
           Add
         </button>
       </form>
@@ -721,10 +718,7 @@ function RemindersPanel({
           onChange={(e) => setNote(e.target.value)}
           className="input flex-1"
         />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-        >
+        <button type="submit" className="btn btn-secondary btn-sm shrink-0">
           Add
         </button>
       </form>

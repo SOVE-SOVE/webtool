@@ -42,10 +42,7 @@ export default function SalesAuditDetailPage() {
         <Link href={`/dashboard/leads/${leadId}`} className="text-sm text-fg-muted hover:underline">
           ← Back to lead
         </Link>
-        <button
-          onClick={() => window.print()}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-        >
+        <button onClick={() => window.print()} className="btn btn-secondary">
           Print
         </button>
       </div>

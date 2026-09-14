@@ -681,7 +681,7 @@ export default function LeadDetailPage() {
 
       {/* Planning — the only bridge from this lead to its Planning workspace */}
       {!lead.archived_at && (
-        <section className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface p-4">
+        <section className="panel mt-8 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="section-title">Planning</h2>
             <p className="mt-0.5 text-sm text-fg-muted">

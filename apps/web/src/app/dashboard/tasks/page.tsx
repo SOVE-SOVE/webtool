@@ -27,6 +27,7 @@ import { TaskDetailModal } from "@/components/TaskDetailModal";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { TabBar } from "@/components/ui/Tabs";
 
 // Same colour convention as DEADLINE_CLASS on the Projects page (see
 // lib/projects.ts's deadlineStatus) — urgency, not a fabricated
@@ -196,20 +197,7 @@ export default function TasksPage() {
       />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
-          {TASK_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`rounded px-3 py-1 ${
-                tab === t.id ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar className="border-b-0" tabs={TASK_TABS} active={tab} onChange={(id) => setTab(id as TaskTab)} />
 
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
           <Input

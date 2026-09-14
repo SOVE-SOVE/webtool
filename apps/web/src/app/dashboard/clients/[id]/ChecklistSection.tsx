@@ -49,7 +49,7 @@ export function ChecklistSection({ clientId }: { clientId: string }) {
     <section className="mt-8">
       <h2 className="text-sm font-semibold text-fg">Client Setup &amp; Delivery</h2>
 
-      <div className="mt-3 rounded-md border border-border p-4">
+      <div className="mt-3 panel">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Client setup</h3>
         <div className="mt-2">
           <TaskChecklistList
@@ -100,7 +100,7 @@ export function ChecklistSection({ clientId }: { clientId: string }) {
             />
           </Disclosure>
         ) : (
-          <div key={section.project_id} className="mt-3 rounded-md border border-border p-4">
+          <div key={section.project_id} className="mt-3 panel">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
               Delivery — {section.project_name}
             </h3>

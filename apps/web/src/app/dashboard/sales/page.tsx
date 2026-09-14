@@ -9,6 +9,7 @@ import { Metric } from "@/components/ui/Metric";
 import { EmptyRow, ItemRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { TabBar } from "@/components/ui/Tabs";
 import { formatAud, timeAgo } from "@/lib/format";
 
 function pct(value: number | null): string {
@@ -203,26 +204,13 @@ export default function SalesPage() {
             }`}
             bodyClassName="max-h-72"
             right={
-              <div
-                role="tablist"
-                aria-label="Activity view"
-                className="flex rounded-md border border-border-strong p-0.5"
-              >
-                {ACTIVITY_TABS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    role="tab"
-                    aria-selected={activityTab === t}
-                    onClick={() => setActivityTab(t)}
-                    className={`rounded px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
-                      activityTab === t ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
-                    }`}
-                  >
-                    {ACTIVITY_TAB_LABEL[t]}
-                  </button>
-                ))}
-              </div>
+              <TabBar
+                className="border-b-0"
+                ariaLabel="Activity view"
+                tabs={ACTIVITY_TABS.map((t) => ({ id: t, label: ACTIVITY_TAB_LABEL[t] }))}
+                active={activityTab}
+                onChange={(id) => setActivityTab(id as ActivityTab)}
+              />
             }
           >
             {activityTab === "outreach" &&

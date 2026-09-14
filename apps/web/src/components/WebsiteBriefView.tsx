@@ -138,20 +138,13 @@ export function WebsiteBriefView({
         </div>
         <div className="flex items-center gap-2">
           {!editing && (
-            <button
-              onClick={startEditing}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-            >
+            <button onClick={startEditing} className="btn btn-secondary">
               Edit
             </button>
           )}
           {editing && (
             <>
-              <button
-                onClick={() => setEditing(false)}
-                disabled={saving}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-              >
+              <button onClick={() => setEditing(false)} disabled={saving} className="btn btn-secondary">
                 Cancel
               </button>
               <button

@@ -222,11 +222,7 @@ function PageForm({
         />
       </label>
       <div className="flex justify-end gap-2 pt-1">
-        <button
-          onClick={onCancel}
-          disabled={saving}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-hover disabled:opacity-50"
-        >
+        <button onClick={onCancel} disabled={saving} className="btn btn-secondary">
           Cancel
         </button>
         <button
@@ -580,10 +576,7 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
         </div>
         <div className="flex items-center gap-2">
           {!approved && (
-            <button
-              onClick={() => setAddingTop((v) => !v)}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-            >
+            <button onClick={() => setAddingTop((v) => !v)} className="btn btn-secondary">
               {addingTop ? "Cancel" : "Add page"}
             </button>
           )}

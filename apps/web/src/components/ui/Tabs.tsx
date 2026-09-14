@@ -3,6 +3,7 @@
 export type TabItem = {
   id: string;
   label: string;
+  count?: number;
 };
 
 /**
@@ -16,14 +17,20 @@ export function TabBar({
   active,
   onChange,
   className = "",
+  ariaLabel,
 }: {
-  tabs: TabItem[];
+  tabs: readonly TabItem[];
   active: string;
   onChange: (id: string) => void;
   className?: string;
+  ariaLabel?: string;
 }) {
   return (
-    <div role="tablist" className={`flex gap-4 overflow-x-auto border-b border-border ${className}`}>
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={`flex gap-4 overflow-x-auto border-b border-border ${className}`}
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === active;
         return (
@@ -38,6 +45,7 @@ export function TabBar({
             }`}
           >
             {tab.label}
+            {tab.count !== undefined && <span className="ml-1.5 text-xs text-fg-subtle">{tab.count}</span>}
           </button>
         );
       })}

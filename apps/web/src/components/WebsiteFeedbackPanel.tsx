@@ -85,20 +85,20 @@ export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: stri
                   {item.status === "open" && (
                     <button
                       onClick={() => updateStatus(item.id, "acknowledged")}
-                      className="rounded-md border border-border-strong px-2 py-1 text-xs hover:bg-surface-hover"
+                      className="btn btn-secondary btn-sm"
                     >
                       Acknowledge
                     </button>
                   )}
                   <button
                     onClick={() => updateStatus(item.id, "resolved")}
-                    className="rounded-md border border-border-strong px-2 py-1 text-xs hover:bg-surface-hover"
+                    className="btn btn-secondary btn-sm"
                   >
                     Resolve
                   </button>
                   <button
                     onClick={() => updateStatus(item.id, "dismissed")}
-                    className="rounded-md border border-border-strong px-2 py-1 text-xs hover:bg-surface-hover"
+                    className="btn btn-secondary btn-sm"
                   >
                     Dismiss
                   </button>

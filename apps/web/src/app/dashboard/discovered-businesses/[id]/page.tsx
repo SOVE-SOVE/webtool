@@ -66,7 +66,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) {
   if (result.data_status === "no_listing") {
     return (
-      <div className="mt-6 max-w-2xl border border-border p-4">
+      <div className="mt-6 max-w-2xl panel">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <p className="mt-2 text-sm text-fg-subtle">{result.data_limitations || "No Google listing on record."}</p>
       </div>
@@ -75,7 +75,7 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
 
   if (result.data_status === "unavailable") {
     return (
-      <div className="mt-6 max-w-2xl border border-border p-4">
+      <div className="mt-6 max-w-2xl panel">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <p className="mt-2 text-sm text-fg-subtle">
           {result.data_limitations || "Google Places is currently unavailable."}
@@ -85,7 +85,7 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
   }
 
   return (
-    <div className="mt-6 max-w-2xl border border-border p-4">
+    <div className="mt-6 max-w-2xl panel">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <span className="text-xs text-fg-subtle">
@@ -248,7 +248,7 @@ function InstagramCard({
 }) {
   const igState = instagramCheckDisplayState(business);
   return (
-    <div className="mt-6 max-w-2xl border border-border p-4">
+    <div className="mt-6 max-w-2xl panel">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {business.instagram_profile_image_url && (
@@ -280,7 +280,7 @@ function InstagramCard({
           <button
             onClick={onCheckWebsite}
             disabled={checking}
-            className="shrink-0 rounded-md border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+            className="btn btn-secondary btn-sm shrink-0"
           >
             {checking ? "Checking…" : igState === "check_pending" ? "Check now" : "Check for website"}
           </button>
@@ -503,7 +503,7 @@ export default function DiscoveredBusinessDetailPage() {
                 onClick={handleAudit}
                 disabled={auditing || !latest}
                 title={!latest ? "Run research first" : undefined}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {auditing ? "Auditing…" : "Audit quality"}
               </button>
@@ -511,14 +511,14 @@ export default function DiscoveredBusinessDetailPage() {
                 onClick={handleScore}
                 disabled={scoring || !latest}
                 title={!latest ? "Run research first" : undefined}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {scoring ? "Scoring…" : "Score opportunity"}
               </button>
               <button
                 onClick={handleReviewAnalysis}
                 disabled={analyzingReviews}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {analyzingReviews ? "Analyzing…" : latestReviewIntel ? "Refresh reviews" : "Analyze Google reviews"}
               </button>
@@ -553,7 +553,7 @@ export default function DiscoveredBusinessDetailPage() {
       )}
 
       {latest && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Website research</h2>
             <span className="text-xs text-fg-subtle">
@@ -584,7 +584,7 @@ export default function DiscoveredBusinessDetailPage() {
       )}
 
       {latestAudit && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Website quality audit</h2>
             <span className="text-xs text-fg-subtle">{new Date(latestAudit.audited_at).toLocaleString()}</span>
@@ -618,7 +618,7 @@ export default function DiscoveredBusinessDetailPage() {
       {latestReviewIntel && <GoogleReviewsSection result={latestReviewIntel} />}
 
       {latestScore && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
             <span className="text-xs text-fg-subtle">{new Date(latestScore.scored_at).toLocaleString()}</span>

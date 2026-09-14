@@ -49,7 +49,7 @@ export function SocialPresenceSection({ planning, onUpdated }: { planning: Plann
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <div className="rounded-md border border-border p-3">
+      <div className="card p-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-fg">Instagram</h3>
           <SourceBadge platform="Instagram" source={social.instagram_source} />
@@ -109,7 +109,7 @@ export function SocialPresenceSection({ planning, onUpdated }: { planning: Plann
         </div>
       </div>
 
-      <div className="rounded-md border border-border p-3">
+      <div className="card p-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-fg">Facebook</h3>
           <SourceBadge platform="Facebook" source={social.facebook_source} />

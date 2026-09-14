@@ -504,7 +504,7 @@ export default function ProjectDetailPage() {
       )}
 
       {/* 2. Business details — carried over from the lead, editable */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Business details</h2>
           {detailsConfirmed ? (
@@ -568,7 +568,7 @@ export default function ProjectDetailPage() {
       </section>
 
       {/* 3. Website / build workspace — the primary area */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Website &amp; build</h2>
           {websites && websites.length === 0 ? (
@@ -631,7 +631,7 @@ export default function ProjectDetailPage() {
       <StageChecklistPanel ownerType="project" ownerId={projectId} title="Stage checklist" />
 
       {/* 4. Build direction — bring in direction worked out elsewhere */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Build direction</h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           Optional. Worked out the concept, visual direction, copy direction, page structure or generation prompts in
@@ -866,7 +866,7 @@ export default function ProjectDetailPage() {
       {/* Tasks — "Next task" is this project's, and only this project's:
           derived from `tasks`, which is already filtered to this project's
           id in loadTasks() above. */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Next task</h2>
         {tasks === null ? (
           <p className="mt-2 text-sm text-fg-muted">Loading…</p>

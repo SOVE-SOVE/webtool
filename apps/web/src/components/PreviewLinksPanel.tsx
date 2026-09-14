@@ -66,11 +66,7 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
             <option value="client">Client link</option>
             <option value="internal">Internal link</option>
           </Select>
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-          >
+          <button onClick={handleCreate} disabled={creating} className="btn btn-secondary">
             {creating ? "Creating…" : "New link"}
           </button>
         </div>
@@ -121,10 +117,7 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
                 {link.revoked ? "Revoked" : link.expired ? "Expired" : "Active"}
               </span>
               {link.active && (
-                <button
-                  onClick={() => handleRevoke(link.id)}
-                  className="rounded-md border border-border-strong px-2 py-1 text-xs hover:bg-surface-subtle"
-                >
+                <button onClick={() => handleRevoke(link.id)} className="btn btn-secondary btn-sm">
                   Revoke
                 </button>
               )}

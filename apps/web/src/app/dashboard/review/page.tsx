@@ -14,6 +14,7 @@ import { timeAgo } from "@/lib/format";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { TabBar } from "@/components/ui/Tabs";
 import {
   countReviewItemsByTab,
   REVIEW_SORT_LABEL,
@@ -224,20 +225,12 @@ export default function ReviewPage() {
         )
       )}
 
-      <div className="mt-5 flex flex-wrap gap-1 border-b border-border">
-        {REVIEW_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
-              tab === t.id ? "border-fg font-medium text-fg" : "border-transparent text-fg-muted hover:text-fg"
-            }`}
-          >
-            {t.label}
-            <span className="ml-1.5 text-xs text-fg-subtle">{tabCounts?.[t.id] ?? 0}</span>
-          </button>
-        ))}
-      </div>
+      <TabBar
+        className="mt-5"
+        tabs={REVIEW_TABS.map((t) => ({ id: t.id, label: t.label, count: tabCounts?.[t.id] ?? 0 }))}
+        active={tab}
+        onChange={(id) => setTab(id as ReviewTab)}
+      />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Input
