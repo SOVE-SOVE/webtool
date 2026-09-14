@@ -11,6 +11,42 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — UI/UX redesign, Prompt 01: audit + implementation plan
+**Mode:** interactive session, direct to main (lead agent coordinating 5 parallel worktree agents on individual page redesigns; this session builds the shared foundation only).
+**Merge to main after:** yes
+**Scope touched:** docs/11_UI_REDESIGN_PLAN.md (new). No code changes.
+**What happened:** Inspected the whole `apps/web` dashboard app (all ~19
+routes, every shared `components/ui/*` primitive, `globals.css`'s token
+system, `lib/nav.ts`, and the three per-entity status badges) and wrote
+`docs/11_UI_REDESIGN_PLAN.md` — the audit + plan for the commercial-
+quality visual overhaul. Headline finding: the app already has a real
+token system and a decent `components/ui/` set (Sales and the
+recently-redesigned Settings page are both built almost entirely from
+it) — the actual work is consolidation, not a rebuild. The one clear
+gap: no shared `Badge`/status-pill primitive (three duplicated entity
+badges + ad-hoc inline pills in 7+ files + 6 independent urgency-tone
+color maps). Also found: three parallel tab-switcher implementations,
+three parallel "stat display" conventions, a `field()` label-value
+helper copy-pasted into 3+ files, and Lead detail (1375 lines) as by
+far the most overloaded page. Plan defines token/component strategy,
+app-shell strategy (keep `lib/nav.ts`'s existing workflow-based
+grouping — it already satisfies the brief), the Sales-page benchmark
+fixes for Prompts 02–04, page-by-page priorities for the five
+follow-on redesign agents, implementation order, and risks.
+**Blockers/issues:** None. A first background-fork investigation
+attempt returned a confused/incomplete report (claimed to still be
+"running in the background" while its own status showed completed) —
+resumed it with an explicit instruction not to sub-delegate further,
+and it then returned a complete, well-sourced report; cross-checked
+against direct reads of the same files.
+**Next up:** Prompt 02 (design system: `Badge` + status tokens +
+`DetailField`, convert the three entity badges), then Prompt 03 (app
+shell re-skin), then Prompt 04 (Sales benchmark fixes) — same session,
+each committed and pushed to main before the next starts. The five
+page-redesign agents are released only after all four land.
+
+---
+
 ## 2026-09-14 — Checklist task ownership, blocked states, next actions, required/optional, review versions, notes
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review
