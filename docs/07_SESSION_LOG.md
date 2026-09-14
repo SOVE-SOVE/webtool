@@ -11,6 +11,16 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — UI/UX redesign, Prompt 03: app shell polish (focus states, brand mark, lint fix)
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompts 01–02.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/layout.tsx.
+**What happened:** Per docs/11_UI_REDESIGN_PLAN.md §5, kept `lib/nav.ts`'s existing six-section workflow grouping unchanged (it already satisfies "what am I doing here" over a raw feature list) and did a visual/interaction pass only: added `focus-visible` ring states (using the `--focus-ring` token) to every interactive shell element that lacked one — both `NavLink` variants, the sign-out button, the mobile hamburger button, the bottom-nav links, and the "More" button; added a small `bg-accent` square brand mark next to the "Web Design OS" wordmark in both the desktop sidebar header and the mobile top bar; added a thin top accent bar on the active bottom-nav item for a clearer mobile active state. Also fixed the one pre-existing lint error in this file (`react-hooks/set-state-in-effect` on the `api.me()` retry effect) while already touching it, using the same `eslint-disable`/`eslint-enable` convention the codebase already applies to other deliberate effect-body state resets (e.g. `leads/page.tsx`). No changes to `NAV_SECTIONS`, hrefs, `isNavLinkActive`, or `MOBILE_PRIMARY_HREFS` — every route/link is untouched.
+**Blockers/issues:** No live browser/backend smoke test was run for this pass — it's a markup/Tailwind-class-only change with zero routing-logic edits, `next build` produced the identical 18-route list before and after, and the 202-test vitest suite passed; standing up the full docker/Postgres/API stack purely to screenshot the sidebar felt disproportionate for a foundation-only styling pass ahead of the five page-redesign agents, who will be running a live stack throughout their own work anyway.
+**Next up:** Prompt 04 (Sales page: swap its inline Won/Lost pill for the new `Badge`, its raw-button activity tabs for `TabBar`), then release the five page-redesign agents against docs/11_UI_REDESIGN_PLAN.md.
+
+---
+
 ## 2026-09-14 — UI/UX redesign, Prompt 02: design-system foundation (Badge + status tokens + DetailField)
 **Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompt 01.
 **Merge to main after:** yes
