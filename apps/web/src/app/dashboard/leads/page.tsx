@@ -19,7 +19,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
@@ -78,19 +78,93 @@ function InPlanningBadge() {
 function ChecklistProgressCell({
   clientId,
   summary,
-  wide = false,
   className = "",
 }: {
   clientId: string | null;
   summary: ClientChecklistSummary | undefined;
-  wide?: boolean;
   className?: string;
 }) {
   if (!clientId || !summary) return null;
   return (
-    <Link href={`/dashboard/clients/${clientId}`} className={`block ${wide ? "w-full" : "w-32"} ${className}`}>
+    <Link href={`/dashboard/clients/${clientId}`} className={`block w-full ${className}`}>
       <ProgressBar value={summary.pct ?? 0} label={`${summary.completed} of ${summary.total} · ${summary.pct ?? 0}%`} />
     </Link>
+  );
+}
+
+// One lead, as a compact grid card — replaces the old full-width table row.
+// Every column from the former table (business/website/status/next/setup
+// progress/open client/archive) is kept, just laid out densely instead of
+// spread across a viewport-wide row. Mirrors the Clients page's ClientCard
+// density (rounded-md border p-3, stacked fields, bordered footer row).
+function LeadCard({
+  lead,
+  nextAction,
+  checklistSummary,
+  archivingId,
+  onArchive,
+  onRestore,
+}: {
+  lead: Lead;
+  nextAction: string;
+  checklistSummary: ClientChecklistSummary | undefined;
+  archivingId: string | null;
+  onArchive: (lead: Lead) => void;
+  onRestore: (lead: Lead) => void;
+}) {
+  return (
+    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
+      <Link href={`/dashboard/leads/${lead.id}`} className="block">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate font-medium text-fg">{lead.business_name}</div>
+            <div className="truncate text-xs text-fg-muted">
+              {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {lead.planning_id && <InPlanningBadge />}
+            <LeadStatusBadge status={lead.status} />
+            <LeadPriorityBadge priority={lead.priority} score={lead.score} />
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
+          <span>{lead.website_url ? "Has a website" : "No website"}</span>
+          <span className="truncate text-fg">{nextAction}</span>
+        </div>
+      </Link>
+      <ChecklistProgressCell clientId={lead.client_id} summary={checklistSummary} className="mt-2" />
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+        {lead.client_id ? (
+          <Link href={`/dashboard/clients/${lead.client_id}`} className="text-xs text-fg-muted hover:text-fg hover:underline">
+            Open client →
+          </Link>
+        ) : (
+          <span />
+        )}
+        {lead.archived_at ? (
+          <button
+            type="button"
+            onClick={() => onRestore(lead)}
+            disabled={archivingId === lead.id}
+            className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
+          >
+            {archivingId === lead.id ? "Restoring…" : "Restore"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onArchive(lead)}
+            disabled={archivingId === lead.id}
+            className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+          >
+            {archivingId === lead.id ? "Archiving…" : "Archive"}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -416,8 +490,14 @@ function LeadsPageInner() {
       )}
 
       {!leads && !error && (
-        <div className="mt-4">
-          <TableSkeleton rows={6} cols={5} />
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="card p-3">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="mt-2 h-3 w-1/2" />
+              <Skeleton className="mt-3 h-3 w-full" />
+            </div>
+          ))}
         </div>
       )}
 
@@ -477,151 +557,19 @@ function LeadsPageInner() {
       )}
 
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
-        <>
-          {/* Mobile cards */}
-          <div className="mt-4 space-y-2 md:hidden">
-            {visibleLeads.map((lead) => (
-              <div key={lead.id} className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
-                <Link href={`/dashboard/leads/${lead.id}`} className="block">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-medium text-fg">{lead.business_name}</div>
-                      <div className="text-xs text-fg-muted">
-                        {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                      {lead.planning_id && <InPlanningBadge />}
-                      <LeadStatusBadge status={lead.status} />
-                      <LeadPriorityBadge priority={lead.priority} score={lead.score} />
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
-                    <span>{lead.website_url ? "Has a website" : "No website"}</span>
-                    <span className="text-fg">{leadNextAction(lead, followUpMap.get(lead.id))}</span>
-                  </div>
-                </Link>
-                <ChecklistProgressCell
-                  clientId={lead.client_id}
-                  summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
-                  wide
-                  className="mt-2"
-                />
-                <div className="mt-2 flex items-center justify-end gap-3 border-t border-border pt-2">
-                  {lead.client_id && (
-                    <Link href={`/dashboard/clients/${lead.client_id}`} className="text-xs text-fg-muted hover:text-fg hover:underline">
-                      Open client →
-                    </Link>
-                  )}
-                  {lead.archived_at ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRestoreLead(lead)}
-                      disabled={archivingId === lead.id}
-                      className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                    >
-                      {archivingId === lead.id ? "Restoring…" : "Restore"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleArchiveLead(lead)}
-                      disabled={archivingId === lead.id}
-                      className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-                    >
-                      {archivingId === lead.id ? "Archiving…" : "Archive"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop table */}
-          <div className="table-shell mt-4 hidden md:block">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="px-3 py-2">Business</th>
-                  <th className="px-3 py-2">Website</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Next</th>
-                  <th className="px-3 py-2">Setup progress</th>
-                  <th className="px-3 py-2"></th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleLeads.map((lead) => (
-                  <tr key={lead.id} className={lead.archived_at ? "opacity-50" : undefined}>
-                    <td className="px-3 py-2">
-                      <Link href={`/dashboard/leads/${lead.id}`} className="font-medium text-fg hover:underline">
-                        {lead.business_name}
-                      </Link>
-                      <div className="max-w-[260px] truncate text-xs text-fg-muted">
-                        {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-fg-muted">
-                      {lead.website_url ? "Has a website" : "No website"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {lead.planning_id && <InPlanningBadge />}
-                        <LeadStatusBadge status={lead.status} />
-                        <LeadPriorityBadge priority={lead.priority} score={lead.score} />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-fg">
-                      {leadNextAction(lead, followUpMap.get(lead.id))}
-                    </td>
-                    <td className="px-3 py-2">
-                      <ChecklistProgressCell
-                        clientId={lead.client_id}
-                        summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {lead.client_id && (
-                        <Link
-                          href={`/dashboard/clients/${lead.client_id}`}
-                          className="text-sm text-fg-muted hover:text-fg hover:underline"
-                        >
-                          Open client →
-                        </Link>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {lead.archived_at ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreLead(lead)}
-                          disabled={archivingId === lead.id}
-                          className="text-sm font-medium text-fg hover:underline disabled:opacity-50"
-                        >
-                          {archivingId === lead.id ? "Restoring…" : "Restore"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleArchiveLead(lead)}
-                          disabled={archivingId === lead.id}
-                          className="text-sm text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-                        >
-                          {archivingId === lead.id ? "Archiving…" : "Archive"}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {visibleLeads.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              nextAction={leadNextAction(lead, followUpMap.get(lead.id))}
+              checklistSummary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
+              archivingId={archivingId}
+              onArchive={handleArchiveLead}
+              onRestore={handleRestoreLead}
+            />
+          ))}
+        </div>
       )}
 
       {/* Manual entry — secondary */}
