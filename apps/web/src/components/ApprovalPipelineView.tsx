@@ -1,19 +1,16 @@
 "use client";
 
 import type { ProjectApprovalStatus } from "@/lib/api";
+import { Badge } from "@/components/ui/Badge";
 
 export function ApprovalPipelineView({ status }: { status: ProjectApprovalStatus }) {
   return (
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg">Approval pipeline</h2>
-        <span
-          className={`rounded px-2 py-0.5 text-xs font-medium ${
-            status.can_deploy ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-          }`}
-        >
+        <Badge tone={status.can_deploy ? "success" : "muted"}>
           {status.can_deploy ? "Ready to deploy" : "Not ready to deploy"}
-        </span>
+        </Badge>
       </div>
 
       <ol className="mt-3 flex flex-wrap gap-2">

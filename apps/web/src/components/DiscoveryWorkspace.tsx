@@ -7,7 +7,6 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_CHECK_STATE_BADGE,
   INSTAGRAM_CHECK_STATE_LABEL,
   INSTAGRAM_WEBSITE_STATUS_LABEL,
   INSTAGRAM_WEBSITE_STATUSES,
@@ -15,8 +14,10 @@ import {
   instagramCheckDisplayState,
   type DiscoveredBusiness,
   type DiscoverySearch,
+  type InstagramCheckState,
   type InstagramImportResult,
 } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import {
   ACTIVE_RECENTLY_DAYS,
   filterDiscoveredBusinesses,
@@ -47,10 +48,21 @@ const NO_FILTERS: DiscoveredBusinessFilters = {
   showImported: false,
 };
 
-const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], string> = {
-  found: "bg-surface-subtle text-fg-muted",
-  none: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
-  unknown: "bg-surface-subtle text-fg-subtle",
+// "none" (no website) gets the standout tone — the strongest sales
+// opportunity, not a problem to flag.
+const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], BadgeTone> = {
+  found: "muted",
+  none: "highlight",
+  unknown: "muted",
+};
+
+// Shared badge tone for INSTAGRAM_CHECK_STATE_LABEL.
+const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, BadgeTone> = {
+  website_found: "success",
+  no_website_found: "highlight",
+  link_in_bio_only: "info",
+  check_pending: "warning",
+  needs_review: "muted",
 };
 
 // Discovered businesses the operator can still bring into the CRM. A
@@ -709,13 +721,9 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                              igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]
-                            }`}
-                          >
+                          <Badge tone={igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]}>
                             {igState ? INSTAGRAM_CHECK_STATE_LABEL[igState] : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
-                          </span>
+                          </Badge>
                           {business.website_status === "found" && business.website_url && (
                             <a
                               href={business.website_url}

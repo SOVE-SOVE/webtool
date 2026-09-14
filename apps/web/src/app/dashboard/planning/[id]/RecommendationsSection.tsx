@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError, type Planning, type Recommendation, type RecommendationCategory } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const CATEGORY_LABEL: Record<RecommendationCategory, string> = { keep: "Keep", improve: "Improve", add: "Add" };
 const CATEGORY_HINT: Record<RecommendationCategory, string> = {
@@ -84,9 +85,9 @@ function RecommendationCard({
         <>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <p className="text-sm font-medium text-fg">{rec.title}</p>
-            <span className="shrink-0 rounded bg-surface-subtle px-1.5 py-0.5 text-xs font-medium text-fg-muted">
+            <Badge tone="muted" className="shrink-0">
               {SOURCE_LABEL[rec.source_type]}
-            </span>
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-fg-muted">{rec.explanation}</p>
           {rec.source_evidence && <p className="mt-1 text-xs italic text-fg-subtle">&ldquo;{rec.source_evidence}&rdquo;</p>}

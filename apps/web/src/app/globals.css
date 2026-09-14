@@ -48,6 +48,14 @@
   --pill-danger-fg: #991b1b;
   --pill-highlight-bg: #ccfbf1;
   --pill-highlight-fg: #115e59;
+  --pill-violet-bg: #ede9fe;
+  --pill-violet-fg: #5b21b6;
+  /* "critical" is deliberately solid (not the soft pill pairing above) —
+     the one severity tier meant to outweigh a plain danger pill, so it
+     stays the same strong red in both themes rather than following the
+     surface/fg tokens. */
+  --pill-critical-bg: #dc2626;
+  --pill-critical-fg: #ffffff;
 }
 
 /* Dark palette. Same tokens, different values — every component built
@@ -83,6 +91,8 @@
   --pill-danger-fg: #fca5a5;
   --pill-highlight-bg: color-mix(in srgb, #14b8a6 15%, transparent);
   --pill-highlight-fg: #5eead4;
+  --pill-violet-bg: color-mix(in srgb, #8b5cf6 15%, transparent);
+  --pill-violet-fg: #c4b5fd;
 }
 
 /* Until ThemeProvider's blocking script runs, fall back to the OS
@@ -116,6 +126,8 @@
     --pill-danger-fg: #fca5a5;
     --pill-highlight-bg: color-mix(in srgb, #14b8a6 15%, transparent);
     --pill-highlight-fg: #5eead4;
+    --pill-violet-bg: color-mix(in srgb, #8b5cf6 15%, transparent);
+    --pill-violet-fg: #c4b5fd;
   }
 }
 
@@ -162,6 +174,10 @@ html[data-font="mono"] {
   --color-pill-danger-fg: var(--pill-danger-fg);
   --color-pill-highlight-bg: var(--pill-highlight-bg);
   --color-pill-highlight-fg: var(--pill-highlight-fg);
+  --color-pill-violet-bg: var(--pill-violet-bg);
+  --color-pill-violet-fg: var(--pill-violet-fg);
+  --color-pill-critical-bg: var(--pill-critical-bg);
+  --color-pill-critical-fg: var(--pill-critical-fg);
 
   --font-sans: var(--font-app, var(--font-geist-sans));
   --font-mono: var(--font-geist-mono);

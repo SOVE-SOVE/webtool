@@ -9,7 +9,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
-import { STATUS_BADGE_CLASS } from "./lib";
+import { Badge } from "@/components/ui/Badge";
+import { STATUS_BADGE_TONE } from "./lib";
 import { Checkbox } from "@/components/ui/Checkbox";
 
 export default function PlanningListPage() {
@@ -114,14 +115,8 @@ export default function PlanningListPage() {
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5">
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
-                        {PLANNING_STATUS_LABELS[item.status]}
-                      </span>
-                      {item.project_id && (
-                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-                          Transferred
-                        </span>
-                      )}
+                      <Badge tone={STATUS_BADGE_TONE[item.status]}>{PLANNING_STATUS_LABELS[item.status]}</Badge>
+                      {item.project_id && <Badge tone="success">Transferred</Badge>}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-sm text-fg-muted">{new Date(item.created_at).toLocaleString()}</td>
@@ -171,14 +166,8 @@ export default function PlanningListPage() {
               )}
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
-                    {PLANNING_STATUS_LABELS[item.status]}
-                  </span>
-                  {item.project_id && (
-                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-                      Transferred
-                    </span>
-                  )}
+                  <Badge tone={STATUS_BADGE_TONE[item.status]}>{PLANNING_STATUS_LABELS[item.status]}</Badge>
+                  {item.project_id && <Badge tone="success">Transferred</Badge>}
                   <span className="text-xs text-fg-subtle">{new Date(item.created_at).toLocaleDateString()}</span>
                 </div>
                 <button

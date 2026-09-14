@@ -1,12 +1,13 @@
 import type { DiscoveredBusinessStatus, OpportunityScoreCategory } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 /**
  * Shared status/score presentation for discovered businesses, used by the
  * Review Queue and the business detail page so the same status always
- * looks the same everywhere. Colors follow the app's existing semantic
+ * looks the same everywhere. Tones follow the app's existing semantic
  * convention (see e.g. LeadStatusBadge, QaReportView, WebsiteView):
- * emerald = a good/decided outcome, red = rejected, amber = caution,
- * neutral = still in progress. Never a color introduced just for this page.
+ * success = a good/decided outcome, danger = rejected, warning = caution,
+ * muted = still in progress. Never a tone introduced just for this page.
  */
 export const STATUS_LABEL: Record<DiscoveredBusinessStatus, string> = {
   new: "New",
@@ -19,30 +20,26 @@ export const STATUS_LABEL: Record<DiscoveredBusinessStatus, string> = {
   imported: "Imported",
 };
 
-const STATUS_STYLE: Record<DiscoveredBusinessStatus, string> = {
-  new: "bg-surface-subtle text-fg-muted",
-  researched: "bg-surface-subtle text-fg-muted",
-  audited: "bg-surface-subtle text-fg-muted",
-  scored: "bg-surface-subtle text-fg-muted",
-  approved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  imported: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  rejected: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  archived: "bg-surface-hover text-fg-subtle",
+const STATUS_TONE: Record<DiscoveredBusinessStatus, BadgeTone> = {
+  new: "muted",
+  researched: "muted",
+  audited: "muted",
+  scored: "muted",
+  approved: "success",
+  imported: "success",
+  rejected: "danger",
+  archived: "muted",
 };
 
 export function ReviewStatusBadge({ status }: { status: DiscoveredBusinessStatus }) {
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[status]}`}>
-      {STATUS_LABEL[status]}
-    </span>
-  );
+  return <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
 }
 
-export const SCORE_CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
+export const SCORE_CATEGORY_TONE: Record<OpportunityScoreCategory, BadgeTone> = {
+  hot: "danger",
+  warm: "warning",
+  cold: "info",
+  review: "muted",
 };
 
 export function ScoreCategoryBadge({
@@ -53,11 +50,9 @@ export function ScoreCategoryBadge({
   score?: number | null;
 }) {
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${SCORE_CATEGORY_STYLE[category]}`}
-    >
+    <Badge tone={SCORE_CATEGORY_TONE[category]} className="uppercase">
       {category}
       {score !== undefined && score !== null ? ` · ${score}` : ""}
-    </span>
+    </Badge>
   );
 }

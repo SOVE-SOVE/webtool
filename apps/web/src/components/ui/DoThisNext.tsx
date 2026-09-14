@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { AttentionItem } from "@/lib/api";
 import { loadOverview, peekOverview } from "@/lib/overview";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * "What should I do next" for the project currently being planned — the
@@ -19,11 +20,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
  * this and the Today page's own overview fetch share one request
  * instead of two).
  */
-
-// Every item this component can show is kind "project" (the filter
-// below guarantees it) — one badge colour, not the full kind→colour map
-// the workspace-wide queue used to need.
-const PROJECT_BADGE_CLASS = "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300";
 
 /**
  * Renders nothing when `projectId` is null — no project is in context
@@ -94,9 +90,9 @@ export function DoThisNext({ projectId }: { projectId: string | null }) {
                         {item.title} — {item.detail}
                       </span>
                     </span>
-                    <span className={`mt-0.5 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${PROJECT_BADGE_CLASS}`}>
+                    <Badge tone="violet" className="mt-0.5 shrink-0">
                       {item.label}
-                    </span>
+                    </Badge>
                   </Link>
                 </li>
               ))}

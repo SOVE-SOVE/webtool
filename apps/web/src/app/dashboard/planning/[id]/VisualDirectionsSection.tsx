@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, ApiError, type Planning, type VisualDirectionOption } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 
 const FIELD_LABEL: Record<keyof VisualDirectionOption, string> = {
   character: "Character",
@@ -26,9 +27,9 @@ function DirectionCard({
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-fg">{option.character}</p>
         {selected ? (
-          <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+          <Badge tone="success" className="shrink-0">
             Selected
-          </span>
+          </Badge>
         ) : (
           <button type="button" onClick={onSelect} className="shrink-0 text-xs font-medium text-fg-muted hover:underline">
             Select

@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -505,9 +506,7 @@ export default function CalendarPage() {
             {new Date(selectedMeeting.scheduled_at).toLocaleString()} ({selectedMeeting.duration_minutes} min)
           </p>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-            <span className="rounded bg-surface-subtle px-2 py-0.5 text-fg-muted">
-              {MEETING_STATUS_LABELS[selectedMeeting.status]}
-            </span>
+            <Badge tone="muted">{MEETING_STATUS_LABELS[selectedMeeting.status]}</Badge>
             {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
             {selectedMeeting.synced_to_calendar && <span className="text-emerald-700 dark:text-emerald-400">Synced to calendar</span>}
           </p>
@@ -748,9 +747,7 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
     <div className="mt-5 border-t border-border pt-4">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-fg">Meeting brief</h3>
-        {brief.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-        )}
+        {brief.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
       </div>
       {brief.review_notes && <p className="mt-1 text-xs text-fg-muted">{brief.review_notes}</p>}
 

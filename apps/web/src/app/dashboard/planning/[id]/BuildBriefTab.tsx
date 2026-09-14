@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, ApiError, type BuildBrief, type Lead, type Planning } from "@/lib/api";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { Badge } from "@/components/ui/Badge";
 import { computeBuildBriefFacts } from "../lib";
 import { AssetsChecklistSection } from "./AssetsChecklistSection";
 import { RecommendationsSection } from "./RecommendationsSection";
@@ -126,13 +127,7 @@ export function BuildBriefTab({
         title="Approved Build Brief"
         hint="A compiled preview, ready to hand off to Create Project"
         defaultOpen
-        badge={
-          brief?.is_approved ? (
-            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-              Approved
-            </span>
-          ) : undefined
-        }
+        badge={brief?.is_approved ? <Badge tone="success">Approved</Badge> : undefined}
       >
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">

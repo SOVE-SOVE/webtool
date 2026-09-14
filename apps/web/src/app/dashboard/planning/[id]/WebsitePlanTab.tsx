@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, ApiError, type Lead, type Planning, type PlanningComparableSite } from "@/lib/api";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { Badge } from "@/components/ui/Badge";
 import { computeInformationToConfirm } from "../lib";
 import { GenerateWebsitePlanAction } from "./GenerateWebsitePlanAction";
 import { SocialPresenceSection } from "./SocialPresenceSection";
@@ -182,11 +183,7 @@ export function WebsitePlanTab({
         <Disclosure
           title="Information to Confirm"
           hint={`${informationToConfirm.length} to confirm`}
-          badge={
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-              Needs confirmation
-            </span>
-          }
+          badge={<Badge tone="warning">Needs confirmation</Badge>}
         >
           <ul className="list-disc space-y-1.5 pl-4 text-sm text-fg">
             {informationToConfirm.map((q, i) => (

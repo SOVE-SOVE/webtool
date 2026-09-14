@@ -24,6 +24,7 @@ import { WebsiteView } from "@/components/WebsiteView";
 import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Badge } from "@/components/ui/Badge";
 import { buildChecklist, checklistProgress, type ChecklistItem } from "@/lib/websiteChecklist";
 import { Select } from "@/components/ui/Select";
 import { TabBar } from "@/components/ui/Tabs";
@@ -482,15 +483,9 @@ function ProjectWebsiteWorkspaceInner() {
                   <div className="mt-3">
                     <QaReportView report={qaReport} />
                     <div className="mt-3 flex items-center gap-3">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          qaReport.human_approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={qaReport.human_approved ? "success" : "muted"}>
                         {qaReport.human_approved ? `Signed off by ${qaReport.approved_by_user_name}` : "Not signed off"}
-                      </span>
+                      </Badge>
                       {!qaReport.human_approved && (
                         <button
                           onClick={handleApproveQa}
@@ -522,31 +517,19 @@ function ProjectWebsiteWorkspaceInner() {
                 <>
                   <div className="rounded-md border border-border p-4">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          website.approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={website.approved ? "success" : "muted"}>
                         {website.approved ? `Internally approved by ${website.approved_by_user_name}` : "Not internally approved"}
-                      </span>
+                      </Badge>
                       {!website.approved && (
                         <button onClick={handleApproveWebsite} disabled={approvingWebsite} className="btn btn-secondary btn-sm">
                           {approvingWebsite ? "Approving…" : "Approve website"}
                         </button>
                       )}
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          website.client_approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={website.client_approved ? "success" : "muted"}>
                         {website.client_approved
                           ? `Client approved (recorded by ${website.client_approved_by_user_name})`
                           : "Client approval not recorded"}
-                      </span>
+                      </Badge>
                       {website.approved && !website.client_approved && (
                         <button onClick={handleClientApprove} disabled={clientApproving} className="btn btn-secondary btn-sm">
                           {clientApproving ? "Recording…" : "Record client approval"}

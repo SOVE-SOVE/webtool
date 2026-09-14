@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, ApiError, type Planning, type SitemapPageProposal } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 
 function PageRow({
   planningId,
@@ -70,12 +71,8 @@ function PageRow({
             <>
               <div className="flex flex-wrap items-center gap-1.5">
                 <p className="text-sm font-medium text-fg">{page.title}</p>
-                <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">{page.page_type}</span>
-                {page.needs_confirmation && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                    Needs confirmation
-                  </span>
-                )}
+                <Badge tone="muted">{page.page_type}</Badge>
+                {page.needs_confirmation && <Badge tone="warning">Needs confirmation</Badge>}
               </div>
               <p className="mt-0.5 text-sm text-fg-muted">{page.purpose}</p>
               <p className="mt-1 text-xs text-fg-subtle">{page.reason}</p>

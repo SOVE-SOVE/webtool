@@ -21,6 +21,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
+import { Badge } from "@/components/ui/Badge";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
 import { Input } from "@/components/ui/Input";
@@ -65,11 +66,7 @@ function nextFollowUpByLead(
 // LeadStatusBadge (docs/05_DECISIONS.md: relationship status and
 // website-development progress are tracked separately).
 function InPlanningBadge() {
-  return (
-    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-500/15 dark:text-blue-300">
-      In Planning
-    </span>
-  );
+  return <Badge tone="info">In Planning</Badge>;
 }
 
 // A won lead with no client yet (client_id null) shows nothing here —

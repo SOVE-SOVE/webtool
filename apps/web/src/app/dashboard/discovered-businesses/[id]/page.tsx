@@ -18,13 +18,14 @@ import {
 } from "@/lib/api";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 
-const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
-  critical: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  low: "bg-surface-subtle text-fg-muted",
+const SEVERITY_TONE: Record<QualityFindingSeverity, BadgeTone> = {
+  critical: "danger",
+  high: "warning",
+  medium: "warning",
+  low: "muted",
 };
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
@@ -596,11 +597,7 @@ export default function DiscoveredBusinessDetailPage() {
               {latestAudit.findings.map((finding, i) => (
                 <li key={i} className="border border-border p-2.5 text-sm">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${SEVERITY_STYLE[finding.severity]}`}
-                    >
-                      {finding.severity}
-                    </span>
+                    <Badge tone={SEVERITY_TONE[finding.severity]}>{finding.severity}</Badge>
                     <span className="text-xs uppercase tracking-wide text-fg-subtle">{finding.category}</span>
                     <span className="ml-auto text-xs text-fg-subtle">
                       {Math.round(finding.confidence * 100)}% confidence

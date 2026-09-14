@@ -10,7 +10,8 @@ import { TabBar } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
-import { STATUS_BADGE_CLASS, planningMode } from "../lib";
+import { Badge } from "@/components/ui/Badge";
+import { STATUS_BADGE_TONE, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
 import { AuditTab } from "./AuditTab";
 import { BuildBriefTab } from "./BuildBriefTab";
@@ -221,9 +222,7 @@ export default function PlanningDetailPage() {
             ) : (
               <span className="text-sm text-fg-subtle">No website on record</span>
             )}
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[planning.status]}`}>
-              {PLANNING_STATUS_LABELS[planning.status]}
-            </span>
+            <Badge tone={STATUS_BADGE_TONE[planning.status]}>{PLANNING_STATUS_LABELS[planning.status]}</Badge>
             {showLastUpdated && (
               <span className="text-xs text-fg-subtle">Last updated {new Date(planning.updated_at).toLocaleString()}</span>
             )}

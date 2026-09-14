@@ -1,13 +1,14 @@
 "use client";
 
 import { api, type Planning, type SocialFieldSource, type UpdateSocialProfileRequest } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { AutoSaveInput } from "./AutoSaveInput";
 import { AutoSaveTextarea } from "./AutoSaveTextarea";
 
-const SOURCE_BADGE_CLASS: Record<SocialFieldSource, string> = {
-  discovered_business: "bg-surface-subtle text-fg-muted",
-  operator_entered: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  meta_enrichment: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+const SOURCE_BADGE_TONE: Record<SocialFieldSource, BadgeTone> = {
+  discovered_business: "muted",
+  operator_entered: "success",
+  meta_enrichment: "success",
 };
 
 function sourceLabel(platform: "Instagram" | "Facebook", source: SocialFieldSource | null): string {
@@ -24,8 +25,7 @@ function sourceLabel(platform: "Instagram" | "Facebook", source: SocialFieldSour
 }
 
 function SourceBadge({ platform, source }: { platform: "Instagram" | "Facebook"; source: SocialFieldSource | null }) {
-  const cls = source ? SOURCE_BADGE_CLASS[source] : "bg-surface-subtle text-fg-subtle";
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>{sourceLabel(platform, source)}</span>;
+  return <Badge tone={source ? SOURCE_BADGE_TONE[source] : "muted"}>{sourceLabel(platform, source)}</Badge>;
 }
 
 /**

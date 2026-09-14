@@ -9,15 +9,16 @@ import {
   type WebsiteWorkflowStatus,
   type WorkflowTransition,
 } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
-const STATUS_STYLES: Record<WebsiteWorkflowStatus, string> = {
-  draft: "bg-surface-subtle text-fg-muted",
-  internal_review: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  client_review: "bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300",
-  changes_requested: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  approved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  ready_to_deploy: "bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300",
-  deployed: "bg-accent text-accent-fg",
+const STATUS_TONE: Record<WebsiteWorkflowStatus, BadgeTone> = {
+  draft: "muted",
+  internal_review: "info",
+  client_review: "violet",
+  changes_requested: "warning",
+  approved: "success",
+  ready_to_deploy: "highlight",
+  deployed: "accent",
 };
 
 export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; onChange: (w: Website) => void }) {
@@ -57,9 +58,7 @@ export function WebsiteWorkflowPanel({ website, onChange }: { website: Website; 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-sm text-fg-muted">Approval workflow:</span>
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[website.workflow_status]}`}>
-            {WORKFLOW_STATUS_LABELS[website.workflow_status]}
-          </span>
+          <Badge tone={STATUS_TONE[website.workflow_status]}>{WORKFLOW_STATUS_LABELS[website.workflow_status]}</Badge>
         </div>
         <button onClick={toggleHistory} className="text-xs text-fg-muted hover:underline">
           {showHistory ? "Hide history" : "Show history"}

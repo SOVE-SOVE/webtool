@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, type PreviewAudience, type PreviewLink } from "@/lib/api";
 import { Select } from "@/components/ui/Select";
+import { Badge } from "@/components/ui/Badge";
 
 export function PreviewLinksPanel({ projectId }: { projectId: string }) {
   const [links, setLinks] = useState<PreviewLink[] | null>(null);
@@ -109,13 +110,9 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded px-2 py-0.5 text-xs font-medium ${
-                  link.active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-                }`}
-              >
+              <Badge tone={link.active ? "success" : "muted"}>
                 {link.revoked ? "Revoked" : link.expired ? "Expired" : "Active"}
-              </span>
+              </Badge>
               {link.active && (
                 <button onClick={() => handleRevoke(link.id)} className="btn btn-secondary btn-sm">
                   Revoke

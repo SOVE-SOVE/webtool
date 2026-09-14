@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
  * Tailwind colors — a new status tone should extend this list (and its
  * --pill-* tokens), not bypass it with an inline class.
  */
-export type BadgeTone = "muted" | "info" | "success" | "warning" | "danger" | "highlight";
+export type BadgeTone = "muted" | "info" | "success" | "warning" | "danger" | "highlight" | "violet" | "critical" | "accent";
 
 const TONE_CLASS: Record<BadgeTone, string> = {
   muted: "bg-surface-subtle text-fg-muted",
@@ -21,6 +21,17 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   warning: "bg-pill-warning-bg text-pill-warning-fg",
   danger: "bg-pill-danger-bg text-pill-danger-fg",
   highlight: "bg-pill-highlight-bg text-pill-highlight-fg",
+  // A distinct categorical tag (not a severity/status gradient) — e.g. a
+  // "which project" label or a workflow stage handed off to a client.
+  violet: "bg-pill-violet-bg text-pill-violet-fg",
+  // Solid, not a soft pill — the one severity tier meant to read as
+  // stronger than "danger" (e.g. a QA check severe enough to block
+  // sign-off outright).
+  critical: "bg-pill-critical-bg text-pill-critical-fg",
+  // The app's own primary-action color, solid — for the one state in a
+  // sequence that should outweigh every other tone (e.g. "deployed" at
+  // the end of a workflow).
+  accent: "bg-accent text-accent-fg",
 };
 
 /**

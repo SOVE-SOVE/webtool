@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const SECTION_TYPE_LABEL: Record<string, string> = {
   hero: "Homepage headline",
@@ -273,9 +274,7 @@ export function ContentSectionEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold text-fg">{SECTION_TYPE_LABEL[section.section_type] ?? section.section_type}</h4>
-          {section.source === "operator_edited" && (
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs font-medium text-fg-muted">Edited</span>
-          )}
+          {section.source === "operator_edited" && <Badge tone="muted">Edited</Badge>}
         </div>
         <button type="button" onClick={handleRegenerate} disabled={regenerating} className="text-xs font-medium text-fg-muted hover:underline">
           {regenerating ? "Regenerating…" : "Regenerate"}

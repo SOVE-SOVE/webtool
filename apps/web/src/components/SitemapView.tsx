@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 import {
   api,
   NAV_PLACEMENTS,
@@ -376,15 +377,9 @@ function PageRow({
             <span className="text-sm font-medium text-fg">
               {expanded ? "▾" : "▸"} {page.title}
             </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              /{page.slug}
-            </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              {PAGE_TYPE_LABELS[page.page_type]}
-            </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              {NAV_PLACEMENT_LABELS[page.nav_placement]}
-            </span>
+            <Badge tone="muted">/{page.slug}</Badge>
+            <Badge tone="muted">{PAGE_TYPE_LABELS[page.page_type]}</Badge>
+            <Badge tone="muted">{NAV_PLACEMENT_LABELS[page.nav_placement]}</Badge>
           </div>
         </button>
         {!approved && (
@@ -563,16 +558,10 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
     <div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span
-            className={`rounded px-2 py-0.5 text-xs font-medium ${
-              approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-            }`}
-          >
+          <Badge tone={approved ? "success" : "muted"}>
             {approved ? "Approved — structural source of truth" : "Draft — review before continuing"}
-          </span>
-          {sitemap.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-          )}
+          </Badge>
+          {sitemap.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
         </div>
         <div className="flex items-center gap-2">
           {!approved && (

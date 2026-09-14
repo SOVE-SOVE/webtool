@@ -2146,16 +2146,6 @@ export function instagramCheckDisplayState(business: InstagramCheckCandidate): I
   return "needs_review";
 }
 
-// Shared badge styling for INSTAGRAM_CHECK_STATE_LABEL, used everywhere
-// the state renders (discovery results table, review queue).
-export const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, string> = {
-  website_found: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  no_website_found: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
-  link_in_bio_only: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  check_pending: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  needs_review: "bg-surface-subtle text-fg-subtle",
-};
-
 // How much to trust a candidate's location fields — a places API's
 // coordinates are CONFIRMED; a CSV-imported address is only
 // APPROXIMATE; no location evidence at all is UNKNOWN (never guessed).

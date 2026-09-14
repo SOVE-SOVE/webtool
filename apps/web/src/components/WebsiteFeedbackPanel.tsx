@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type FeedbackStatus, type FeedbackType, type WebsiteFeedback } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 const TYPE_LABELS: Record<FeedbackType, string> = {
   comment: "Comment",
@@ -11,11 +12,11 @@ const TYPE_LABELS: Record<FeedbackType, string> = {
   general: "General",
 };
 
-const STATUS_STYLES: Record<FeedbackStatus, string> = {
-  open: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  acknowledged: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  resolved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  dismissed: "bg-surface-subtle text-fg-muted",
+const STATUS_TONE: Record<FeedbackStatus, BadgeTone> = {
+  open: "warning",
+  acknowledged: "info",
+  resolved: "success",
+  dismissed: "muted",
 };
 
 // Feedback that carries a decision on the whole version — surfaced
@@ -68,7 +69,7 @@ export function WebsiteFeedbackPanel({ projectId, websiteId }: { projectId: stri
                 {item.page_slug !== null && (
                   <span className="text-xs text-fg-muted">on {item.page_slug === "" ? "Home" : item.page_slug}</span>
                 )}
-                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status]}`}>{item.status}</span>
+                <Badge tone={STATUS_TONE[item.status]}>{item.status}</Badge>
               </div>
               <span className="text-xs text-fg-subtle">{new Date(item.created_at).toLocaleString()}</span>
             </div>

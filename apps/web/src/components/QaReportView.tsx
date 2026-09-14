@@ -1,6 +1,7 @@
 "use client";
 
 import { QA_CATEGORIES, type QaCheck, type QaReport } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 const CATEGORY_LABELS: Record<(typeof QA_CATEGORIES)[number], string> = {
   performance: "Performance",
@@ -11,27 +12,27 @@ const CATEGORY_LABELS: Record<(typeof QA_CATEGORIES)[number], string> = {
   security: "Security",
 };
 
-const STATUS_CLASSES: Record<QaCheck["status"], string> = {
-  pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  fail: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warning: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  skipped: "bg-surface-subtle text-fg-muted",
+const STATUS_TONE: Record<QaCheck["status"], BadgeTone> = {
+  pass: "success",
+  fail: "danger",
+  warning: "warning",
+  skipped: "muted",
 };
 
-const SEVERITY_CLASSES: Record<QaCheck["severity"], string> = {
-  critical: "bg-red-600 text-white",
-  high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  low: "bg-surface-subtle text-fg-muted",
-  info: "bg-surface-subtle text-fg-muted",
+const SEVERITY_TONE: Record<QaCheck["severity"], BadgeTone> = {
+  critical: "critical",
+  high: "danger",
+  medium: "warning",
+  low: "muted",
+  info: "muted",
 };
 
 function CheckRow({ check }: { check: QaCheck }) {
   return (
     <li className="flex items-start gap-2 py-2 text-sm">
-      <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[check.status]}`}>{check.status}</span>
+      <Badge tone={STATUS_TONE[check.status]} className="shrink-0">{check.status}</Badge>
       {check.status === "fail" && (
-        <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${SEVERITY_CLASSES[check.severity]}`}>{check.severity}</span>
+        <Badge tone={SEVERITY_TONE[check.severity]} className="shrink-0">{check.severity}</Badge>
       )}
       <div>
         <p className="font-medium text-fg">{check.name}</p>
@@ -47,13 +48,9 @@ export function QaReportView({ report }: { report: QaReport }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`rounded px-2 py-0.5 text-xs font-medium ${
-            report.passed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
-          }`}
-        >
+        <Badge tone={report.passed ? "success" : "danger"}>
           {report.passed ? "Ready for client review" : "Not ready for client review — critical issues found"}
-        </span>
+        </Badge>
         <span className="text-xs text-fg-muted">
           {report.passed_count} passed · {report.failed_count} failed · {report.warning_count} warnings · {report.skipped_count} skipped
         </span>

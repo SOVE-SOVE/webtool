@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, type CreativeDirectionBrief, type CreativeDirectionUpdate } from "@/lib/api";
 import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 type StrField = keyof Pick<
   CreativeDirectionBrief,
@@ -129,16 +130,10 @@ export function CreativeDirectionView({
     <div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span
-            className={`rounded px-2 py-0.5 text-xs font-medium ${
-              brief.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-            }`}
-          >
+          <Badge tone={brief.status === "approved" ? "success" : "muted"}>
             {brief.status === "approved" ? "Approved" : "Draft — review before continuing"}
-          </span>
-          {brief.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-          )}
+          </Badge>
+          {brief.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
         </div>
         <div className="flex items-center gap-2">
           {!editing && (
