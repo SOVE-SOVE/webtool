@@ -11,7 +11,6 @@ import {
   instagramCheckDisplayState,
   type BusinessResearchResult,
   type DiscoveredBusiness,
-  type OpportunityScoreCategory,
   type OpportunityScoreResult,
   type QualityFindingSeverity,
   type ReviewIntelligenceResult,
@@ -19,19 +18,13 @@ import {
 } from "@/lib/api";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 
 const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
   critical: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
   high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
   medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   low: "bg-surface-subtle text-fg-muted",
-};
-
-const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
 };
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
@@ -497,9 +490,7 @@ export default function DiscoveredBusinessDetailPage() {
             )}
           </div>
           <div className="text-right">
-            <span className="inline-block rounded-full bg-surface-subtle px-2.5 py-1 text-xs font-medium text-fg-muted">
-              {business.status}
-            </span>
+            <ReviewStatusBadge status={business.status} />
             <div className="mt-2 flex gap-2">
               <button
                 onClick={handleResearch}
@@ -534,11 +525,7 @@ export default function DiscoveredBusinessDetailPage() {
             </div>
             {latestScore && (
               <div className="mt-2">
-                <span
-                  className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
-                >
-                  {latestScore.category} · {latestScore.overall_score}
-                </span>
+                <ScoreCategoryBadge category={latestScore.category} score={latestScore.overall_score} />
               </div>
             )}
           </div>
@@ -638,11 +625,7 @@ export default function DiscoveredBusinessDetailPage() {
           </div>
 
           <div className="mt-2 flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-sm font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
-            >
-              {latestScore.category}
-            </span>
+            <ScoreCategoryBadge category={latestScore.category} />
             <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
             <span className="text-xs text-fg-muted">
               {Math.round(latestScore.confidence * 100)}% confidence
