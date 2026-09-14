@@ -38,7 +38,7 @@ function AssetRow({ planningId, asset, onUpdated }: { planningId: string; asset:
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Note"
-              className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+              className="input text-xs"
             />
             <button type="button" onClick={saveNote} className="shrink-0 text-xs font-medium text-fg-muted hover:underline">
               Save
@@ -53,7 +53,7 @@ function AssetRow({ planningId, asset, onUpdated }: { planningId: string; asset:
       <Select
         value={asset.status}
         onChange={(e) => setStatus(e.target.value as AssetStatus)}
-        className="shrink-0 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+        className="input w-auto shrink-0 text-xs"
       >
         {ASSET_STATUSES.map((s) => (
           <option key={s} value={s}>
@@ -110,7 +110,7 @@ export function AssetsChecklistSection({ planning, onUpdated }: { planning: Plan
             placeholder="Asset label"
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <button type="button" onClick={handleAdd} className="btn btn-secondary btn-sm shrink-0">
             Add

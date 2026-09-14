@@ -43,7 +43,7 @@ export function AutoSaveInput({
         onBlur={handleBlur}
         placeholder={placeholder}
         disabled={disabled || status === "saving"}
-        className={`w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm ${className}`}
+        className={`input ${className}`}
       />
       <p className="mt-1 h-4 text-xs text-fg-subtle">
         {status === "saving"

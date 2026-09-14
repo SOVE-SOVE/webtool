@@ -52,8 +52,6 @@ function monthGrid(year: number, month: number): Date[] {
   });
 }
 
-const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
-
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
@@ -308,7 +306,7 @@ export default function CalendarPage() {
             placeholder="Meeting title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className={inputClass}
+            className="input"
           />
           <div className="flex gap-3">
             <Input
@@ -316,16 +314,16 @@ export default function CalendarPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className={inputClass}
+              className="input"
             />
             <Input
               required
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className={inputClass}
+              className="input"
             />
-            <Select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
+            <Select value={duration} onChange={(e) => setDuration(e.target.value)} className="input">
               <option value="15">15 min</option>
               <option value="30">30 min</option>
               <option value="45">45 min</option>
@@ -360,7 +358,7 @@ export default function CalendarPage() {
             required
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
-            className={inputClass}
+            className="input"
           >
             <option value="">{parentType === "lead" ? "Select a lead…" : "Select a project…"}</option>
             {(parentType === "lead" ? leads : projects).map((item) => (
@@ -373,7 +371,7 @@ export default function CalendarPage() {
             <Select
               value={meetingType}
               onChange={(e) => setMeetingType(e.target.value as MeetingType)}
-              className={inputClass}
+              className="input"
             >
               <option value="">Type: default for {parentType === "lead" ? "sales call" : "check-in"}</option>
               {MEETING_TYPES.map((t) => (
@@ -385,7 +383,7 @@ export default function CalendarPage() {
             <Select
               value={assignedUserId}
               onChange={(e) => setAssignedUserId(e.target.value)}
-              className={inputClass}
+              className="input"
             >
               <option value="">Assigned: same as {parentType}</option>
               {users.map((user) => (
@@ -400,7 +398,7 @@ export default function CalendarPage() {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className={inputClass}
+            className="input"
           />
           {formError && <p className="text-error">{formError}</p>}
           <button
@@ -522,7 +520,7 @@ export default function CalendarPage() {
                 defaultValue={selectedMeeting.notes ?? ""}
                 onBlur={(e) => handleSaveNotes(e.target.value)}
                 rows={3}
-                className={inputClass}
+                className="input"
               />,
             )}
             {field(
@@ -531,7 +529,7 @@ export default function CalendarPage() {
                 defaultValue={selectedMeeting.outcome ?? ""}
                 onBlur={(e) => handleSaveOutcome(e.target.value)}
                 placeholder="e.g. Proceeding to proposal"
-                className={inputClass}
+                className="input"
               />,
             )}
           </div>
@@ -642,13 +640,13 @@ function AttendeesPanel({
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
         <Input
           placeholder="Name (optional)"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
         <button
           type="submit"
@@ -715,13 +713,13 @@ function RemindersPanel({
           required
           value={remindAt}
           onChange={(e) => setRemindAt(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
         <Input
           placeholder="Note (optional)"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
         <button
           type="submit"

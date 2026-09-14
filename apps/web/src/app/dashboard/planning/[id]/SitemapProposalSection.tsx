@@ -48,12 +48,12 @@ function PageRow({
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
+                className="input font-medium"
               />
               <Input
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
-                className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                className="input text-xs"
               />
               <button
                 type="button"
@@ -160,13 +160,13 @@ export function SitemapProposalSection({ planning, onUpdated }: { planning: Plan
             placeholder="Page title"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <Input
             placeholder="Purpose"
             value={newPurpose}
             onChange={(e) => setNewPurpose(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <button type="button" onClick={handleAdd} className="btn btn-secondary btn-sm">
             Add

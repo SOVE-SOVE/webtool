@@ -15,9 +15,6 @@ const SECTION_TYPE_LABEL: Record<string, string> = {
   faq: "FAQs",
 };
 
-const inputClass = "w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm";
-const textareaClass = `${inputClass}`;
-
 type Draft = Record<string, unknown>;
 
 function ServiceRows({ services, onChange }: { services: { title: string; description: string }[]; onChange: (v: { title: string; description: string }[]) => void }) {
@@ -29,13 +26,13 @@ function ServiceRows({ services, onChange }: { services: { title: string; descri
             value={s.title}
             placeholder="Service title"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, title: e.target.value } : row)))}
-            className={`${inputClass} flex-1`}
+            className="input flex-1"
           />
           <Input
             value={s.description}
             placeholder="Description"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, description: e.target.value } : row)))}
-            className={`${inputClass} flex-[2]`}
+            className="input flex-[2]"
           />
           <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -58,14 +55,14 @@ function FaqRows({ items, onChange }: { items: { question: string; answer: strin
             value={item.question}
             placeholder="Question"
             onChange={(e) => onChange(items.map((row, j) => (j === i ? { ...row, question: e.target.value } : row)))}
-            className={`${inputClass} font-medium`}
+            className="input font-medium"
           />
           <Textarea
             value={item.answer}
             placeholder="Confirmed answer"
             rows={2}
             onChange={(e) => onChange(items.map((row, j) => (j === i ? { ...row, answer: e.target.value } : row)))}
-            className={textareaClass}
+            className="input"
           />
           <button type="button" onClick={() => onChange(items.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -88,13 +85,13 @@ function ContactDetailRows({ details, onChange }: { details: { label: string; va
             value={d.label}
             placeholder="Label (e.g. Phone)"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, label: e.target.value } : row)))}
-            className={`${inputClass} flex-1`}
+            className="input flex-1"
           />
           <Input
             value={d.value}
             placeholder="Value"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, value: e.target.value } : row)))}
-            className={`${inputClass} flex-[2]`}
+            className="input flex-[2]"
           />
           <button type="button" onClick={() => onChange(details.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -203,14 +200,14 @@ export function ContentSectionEditor({
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
-              className={`${inputClass} font-medium`}
+              className="input font-medium"
             />
             <Textarea
               value={(draft.subheading as string) ?? ""}
               placeholder="Subheading"
               rows={2}
               onChange={(e) => set("subheading", e.target.value)}
-              className={textareaClass}
+              className="input"
             />
           </div>
         );
@@ -221,7 +218,7 @@ export function ContentSectionEditor({
             placeholder="About paragraph"
             rows={4}
             onChange={(e) => set("body", e.target.value)}
-            className={textareaClass}
+            className="input"
           />
         );
       case "serviceCards":
@@ -243,7 +240,7 @@ export function ContentSectionEditor({
               placeholder="Booking instructions (optional)"
               rows={2}
               onChange={(e) => set("booking_instructions", e.target.value)}
-              className={textareaClass}
+              className="input"
             />
           </div>
         );
@@ -254,13 +251,13 @@ export function ContentSectionEditor({
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
-              className={inputClass}
+              className="input"
             />
             <Input
               value={(draft.label as string) ?? ""}
               placeholder="Button label"
               onChange={(e) => set("label", e.target.value)}
-              className={inputClass}
+              className="input"
             />
           </div>
         );

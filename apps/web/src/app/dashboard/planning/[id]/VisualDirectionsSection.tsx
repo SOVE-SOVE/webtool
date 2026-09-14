@@ -126,7 +126,7 @@ export function VisualDirectionsSection({ planning, onUpdated }: { planning: Pla
                   <Input
                     value={draft[field]}
                     onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
-                    className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                    className="input"
                   />
                 </div>
               ))}

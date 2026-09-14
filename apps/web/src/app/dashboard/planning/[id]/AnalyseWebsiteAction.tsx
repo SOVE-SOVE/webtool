@@ -48,7 +48,7 @@ export function AnalyseWebsiteAction({
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…"
           required
-          className="w-full max-w-sm rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm sm:w-auto"
+          className="input max-w-sm sm:w-auto"
         />
       )}
       <button type="submit" disabled={analysing || !url.trim()} className="btn btn-primary btn-sm">

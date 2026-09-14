@@ -50,13 +50,13 @@ function RecommendationCard({
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
+            className="input font-medium"
           />
           <Textarea
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
             rows={2}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <div className="flex gap-2">
             <button
@@ -193,14 +193,14 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
                   placeholder="Title"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                  className="input"
                 />
                 <Textarea
                   placeholder="Explanation"
                   value={newExplanation}
                   onChange={(e) => setNewExplanation(e.target.value)}
                   rows={2}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                  className="input"
                 />
                 <button type="button" onClick={() => handleAdd(category)} className="btn btn-secondary btn-sm">
                   Add
