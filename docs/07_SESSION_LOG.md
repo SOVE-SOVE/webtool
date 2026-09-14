@@ -11,6 +11,16 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — UI/UX redesign, Prompt 02: design-system foundation (Badge + status tokens + DetailField)
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompt 01.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/globals.css, apps/web/src/components/ui/Badge.tsx (new), apps/web/src/components/ui/DetailField.tsx (new), apps/web/src/components/LeadStatusBadge.tsx, apps/web/src/components/ClientStatusBadge.tsx, apps/web/src/components/ProjectStatusBadge.tsx.
+**What happened:** Implemented the one real gap docs/11_UI_REDESIGN_PLAN.md's audit found: no shared status-pill primitive. Added five `--pill-*-bg`/`-fg` token pairs (info/success/warning/danger/highlight, light + dark + the `prefers-color-scheme` fallback block) to `globals.css`, exposed via `@theme inline` as `--color-pill-*`. Added `components/ui/Badge.tsx` (`<Badge tone="muted|info|success|warning|danger|highlight">`) built on those tokens. Converted `LeadStatusBadge`/`ClientStatusBadge`/`ProjectStatusBadge` to thin wrappers around `Badge` with a tone-mapping table each — same public API and identical rendered output (verified color values matched their prior hand-typed Tailwind literals exactly before converting), zero call-site changes needed anywhere else in the app. Also added `components/ui/DetailField.tsx` (`DetailField`/`DetailRow`) for the `field()`/`summaryRow()` label-value helper that was copy-pasted into 3+ page files per the audit — created as a ready primitive for the page-redesign agents; not wired into Lead/Client detail here, since those pages are out of scope for the foundation phase.
+**Blockers/issues:** None. Fresh worktree needed `npm install` (node_modules is gitignored, not carried by `git worktree add`) and one `next build` pass before `tsc --noEmit` would resolve Next 16's generated `LayoutProps` global type — both one-time, unrelated to this change.
+**Next up:** Prompt 03 (app shell re-skin on these tokens — also fixes the pre-existing `react-hooks/set-state-in-effect` lint error in `dashboard/layout.tsx` while that file is open), then Prompt 04 (Sales benchmark: swap its inline Won/Lost pill for `Badge`, its raw-button activity tabs for `TabBar`).
+
+---
+
 ## 2026-09-14 — UI/UX redesign, Prompt 01: audit + implementation plan
 **Mode:** interactive session, direct to main (lead agent coordinating 5 parallel worktree agents on individual page redesigns; this session builds the shared foundation only).
 **Merge to main after:** yes
