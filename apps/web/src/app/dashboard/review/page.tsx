@@ -2,42 +2,90 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  api,
-  ApiError,
-  DISCOVERED_WEBSITE_STATUS_LABEL,
-  type DiscoveredBusinessReviewItem,
-  type DiscoveredBusinessStatus,
-  type OpportunityScoreCategory,
-} from "@/lib/api";
+import { api, ApiError, type DiscoveredBusinessReviewItem } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { TableSkeleton } from "@/components/ui/Skeleton";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { Metric, MetricGrid } from "@/components/ui/Metric";
+import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
+import { ReviewItemDrawer } from "@/components/ReviewItemDrawer";
+import { timeAgo } from "@/lib/format";
+import {
+  countReviewItemsByTab,
+  REVIEW_SORT_LABEL,
+  REVIEW_TABS,
+  reviewItemMatchesQuery,
+  reviewItemMatchesTab,
+  reviewItemNeedsAttention,
+  reviewQueueSummary,
+  sortReviewItems,
+  type ReviewSortKey,
+  type ReviewTab,
+} from "@/lib/reviewQueue";
 
-const STATUS_LABEL: Record<DiscoveredBusinessStatus, string> = {
-  new: "New",
-  researched: "Researched",
-  audited: "Audited",
-  scored: "Scored",
-  approved: "Approved",
-  rejected: "Rejected",
-  archived: "Archived",
-  imported: "Imported",
-};
+function ReviewQueueRow({
+  item,
+  selected,
+  selectable,
+  needsAttention,
+  onToggleSelect,
+  onOpen,
+}: {
+  item: DiscoveredBusinessReviewItem;
+  selected: boolean;
+  selectable: boolean;
+  needsAttention: boolean;
+  onToggleSelect: () => void;
+  onOpen: () => void;
+}) {
+  const location = [item.suburb, item.state].filter(Boolean).join(", ");
+  const whatNeedsReview =
+    item.research_error ?? item.quality_summary ?? (item.researched_at ? null : "Not researched yet");
 
-const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
-};
-
-function Truncated({ text, width = "max-w-[220px]" }: { text: string | null; width?: string }) {
-  if (!text) return <span className="text-fg-subtle">—</span>;
   return (
-    <span title={text} className={`block ${width} truncate`}>
-      {text}
-    </span>
+    <div
+      onClick={onOpen}
+      className="flex cursor-pointer flex-col gap-2 px-3 py-3 hover:bg-surface-hover sm:flex-row sm:items-center sm:gap-4"
+    >
+      <div className="flex shrink-0 items-center pt-0.5 sm:pt-0" onClick={(e) => e.stopPropagation()}>
+        {selectable ? (
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} aria-label={`Select ${item.name}`} />
+        ) : (
+          <span className="block h-4 w-4" />
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="truncate font-medium text-fg">{item.name}</span>
+          {needsAttention && (
+            <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Needs attention</span>
+          )}
+        </div>
+        <p className="truncate text-xs text-fg-muted">
+          {[item.industry, location].filter(Boolean).join(" · ") || "No details on record"}
+        </p>
+        {whatNeedsReview && <p className="mt-1 line-clamp-1 text-sm text-fg-muted">{whatNeedsReview}</p>}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <ReviewStatusBadge status={item.status} />
+          {item.score_category && <ScoreCategoryBadge category={item.score_category} score={item.opportunity_score} />}
+          <span className="text-xs text-fg-subtle">{timeAgo(item.discovered_at)}</span>
+        </div>
+      </div>
+
+      <div className="shrink-0 self-start sm:self-center" onClick={(e) => e.stopPropagation()}>
+        {item.status === "imported" && item.imported_lead_id ? (
+          <Link href={`/dashboard/leads/${item.imported_lead_id}`} className="text-sm text-fg-muted hover:underline">
+            View lead →
+          </Link>
+        ) : (
+          <button onClick={onOpen} className="btn btn-secondary btn-sm">
+            Review
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -46,23 +94,26 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [showArchived, setShowArchived] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<DiscoveredBusinessStatus | "">("");
-  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
+
+  const [tab, setTab] = useState<ReviewTab>("needs_review");
+  const [search, setSearch] = useState("");
+  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
+  const [sort, setSort] = useState<ReviewSortKey>("score");
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
 
   function load() {
     api
-      .listReviewItems({ includeArchived: showArchived })
+      .listReviewItems({ includeArchived: true })
       .then((rows) => {
         setError(null);
         setItems(rows);
         setSelected((prev) => new Set([...prev].filter((id) => rows.some((r) => r.id === id))));
       })
-      .catch(() => setError("Couldn't load the review list."));
+      .catch(() => setError("Couldn't load the review queue."));
   }
 
-  useEffect(load, [showArchived]);
+  useEffect(load, []);
 
   async function runAction(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
@@ -101,15 +152,30 @@ export default function ReviewPage() {
     });
   }
 
-  const visibleItems = useMemo(() => {
+  const tabCounts = useMemo(() => (items ? countReviewItemsByTab(items) : null), [items]);
+  const summary = useMemo(() => (items ? reviewQueueSummary(items) : null), [items]);
+
+  const tabItems = useMemo(() => {
     if (!items) return null;
-    return items.filter((i) => {
-      if (statusFilter && i.status !== statusFilter) return false;
+    return items.filter((i) => reviewItemMatchesTab(i, tab));
+  }, [items, tab]);
+
+  const filtersActive = search.trim() !== "" || websiteFilter !== "";
+
+  const visibleItems = useMemo(() => {
+    if (!tabItems) return null;
+    const filtered = tabItems.filter((i) => {
       if (websiteFilter === "has" && i.website_status !== "found") return false;
       if (websiteFilter === "no" && i.website_status !== "none") return false;
-      return true;
+      return reviewItemMatchesQuery(i, search);
     });
-  }, [items, statusFilter, websiteFilter]);
+    return sortReviewItems(filtered, sort);
+  }, [tabItems, websiteFilter, search, sort]);
+
+  function clearFilters() {
+    setSearch("");
+    setWebsiteFilter("");
+  }
 
   const selectableIds = useMemo(
     () => (visibleItems ?? []).filter((i) => i.status !== "imported").map((i) => i.id),
@@ -121,50 +187,104 @@ export default function ReviewPage() {
     setSelected(allSelected ? new Set() : new Set(selectableIds));
   }
 
+  const activeItem = useMemo(() => items?.find((i) => i.id === activeItemId) ?? null, [items, activeItemId]);
+
   return (
     <div className="p-6">
       <PageHeader
         title="Review queue"
-        description="Every discovered prospect, with research and scoring context, ready to approve, reject, or bring into the CRM."
-        actions={
-          <button
-            onClick={handleBulkApprove}
-            disabled={selected.size === 0 || bulkApproving}
-            className="btn btn-primary"
-          >
-            {bulkApproving ? "Approving…" : `Bulk approve (${selected.size})`}
-          </button>
-        }
+        description="Discovered prospects with research and scoring context — approve, reject, or bring the good ones into the CRM."
       />
 
+      {summary ? (
+        <MetricGrid className="mt-4">
+          <Metric
+            label="Needs review"
+            value={summary.pending}
+            hint={summary.pending === 0 ? "All caught up" : "Awaiting a decision"}
+          />
+          <Metric label="Approved" value={summary.approved} />
+          <Metric label="Rejected" value={summary.rejected} />
+          <Metric
+            label="Needs attention"
+            value={summary.needsAttention}
+            hint="Failed research or thin evidence"
+          />
+        </MetricGrid>
+      ) : (
+        !error && (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        )
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-1 border-b border-border">
+        {REVIEW_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
+              tab === t.id ? "border-fg font-medium text-fg" : "border-transparent text-fg-muted hover:text-fg"
+            }`}
+          >
+            {t.label}
+            <span className="ml-1.5 text-xs text-fg-subtle">{tabCounts?.[t.id] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as DiscoveredBusinessStatus | "")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
-        >
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <input
+          placeholder="Search business, industry, suburb…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input w-64"
+        />
         <select
           value={websiteFilter}
           onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          className="input w-auto"
           aria-label="Filter by website"
         >
           <option value="">Any website status</option>
           <option value="has">Has website</option>
           <option value="no">No website</option>
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
-        </label>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as ReviewSortKey)}
+          className="input w-auto"
+          aria-label="Sort"
+        >
+          {Object.entries(REVIEW_SORT_LABEL).map(([key, label]) => (
+            <option key={key} value={key}>
+              Sort: {label}
+            </option>
+          ))}
+        </select>
+        {filtersActive && (
+          <button onClick={clearFilters} className="text-xs text-fg-muted hover:text-fg hover:underline">
+            Clear filters
+          </button>
+        )}
       </div>
+
+      {selected.size > 0 && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border-strong bg-surface-subtle px-3 py-2 text-sm">
+          <span className="text-fg">{selected.size} selected</span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelected(new Set())} className="text-fg-muted hover:underline">
+              Clear
+            </button>
+            <button onClick={handleBulkApprove} disabled={bulkApproving} className="btn btn-primary btn-sm">
+              {bulkApproving ? "Approving…" : `Approve ${selected.size}`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mt-4">
@@ -174,173 +294,78 @@ export default function ReviewPage() {
 
       {!items && !error && (
         <div className="mt-4">
-          <TableSkeleton rows={5} cols={5} />
+          <TableSkeleton rows={6} cols={5} />
         </div>
       )}
 
-      {visibleItems && visibleItems.length === 0 && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          Nothing to review yet — run a discovery search first.
+      {items && items.length === 0 && !error && (
+        <div className="mt-4">
+          <EmptyState
+            title="Nothing to review yet"
+            description="Run a Discovery search to find businesses, then come back here to approve, reject, or bring the good ones into the CRM."
+            action={
+              <Link href="/dashboard/discovery" className="btn btn-primary">
+                Go to Discovery
+              </Link>
+            }
+          />
+        </div>
+      )}
+
+      {items && items.length > 0 && visibleItems && visibleItems.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No items in this view"
+            description="Try a different tab, or clear the search and filters above."
+            action={
+              <button
+                onClick={() => {
+                  clearFilters();
+                  setTab("all");
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                Clear filters
+              </button>
+            }
+          />
         </div>
       )}
 
       {visibleItems && visibleItems.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full border border-border text-left text-sm">
-            <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-              <tr>
-                <th className="px-2 py-2">
-                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
-                </th>
-                <th className="px-3 py-2">Business</th>
-                <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2">Website</th>
-                <th className="px-3 py-2">Audit summary</th>
-                <th className="px-3 py-2">Score</th>
-                <th className="px-3 py-2">Confidence</th>
-                <th className="px-3 py-2">Key problems</th>
-                <th className="px-3 py-2">Sales angle</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Researched</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibleItems.map((item) => {
-                const busy = busyId === item.id;
-                const settled = ["approved", "rejected", "archived", "imported"].includes(item.status);
-                return (
-                  <tr key={item.id} className={item.status === "archived" ? "opacity-50" : undefined}>
-                    <td className="px-2 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        disabled={item.status === "imported"}
-                        checked={selected.has(item.id)}
-                        onChange={() => toggleSelected(item.id)}
-                      />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Link
-                        href={`/dashboard/discovered-businesses/${item.id}`}
-                        className="font-medium text-fg hover:underline"
-                      >
-                        {item.name}
-                      </Link>
-                      {item.industry && <div className="text-xs text-fg-muted">{item.industry}</div>}
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      {[item.suburb, item.state].filter(Boolean).join(", ") || "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      {item.website_url ? (
-                        <a
-                          href={item.website_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-fg-muted hover:underline"
-                        >
-                          <Truncated text={item.website_url} width="max-w-[160px]" />
-                        </a>
-                      ) : (
-                        <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Truncated text={item.quality_summary} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      {item.opportunity_score !== null && item.score_category ? (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${CATEGORY_STYLE[item.score_category]}`}
-                        >
-                          {item.score_category} · {item.opportunity_score}
-                        </span>
-                      ) : (
-                        <span className="text-fg-subtle">Not scored</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      {item.confidence !== null ? `${Math.round(item.confidence * 100)}%` : "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Truncated text={item.key_problems.join("; ") || null} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Truncated text={item.recommended_sales_angle} />
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">{item.source_provider}</td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      {item.researched_at ? new Date(item.researched_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">{STATUS_LABEL[item.status]}</td>
-                    <td className="px-3 py-2 align-top">
-                      <div className="flex flex-col gap-1">
-                        {item.status === "imported" ? (
-                          item.imported_lead_id && (
-                            <Link
-                              href={`/dashboard/leads/${item.imported_lead_id}`}
-                              className="text-xs text-fg-muted hover:underline"
-                            >
-                              View lead →
-                            </Link>
-                          )
-                        ) : (
-                          <>
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                runAction(item.id, () => api.runBusinessResearch(item.id))
-                              }
-                              className="text-xs text-fg-muted hover:underline disabled:opacity-50"
-                            >
-                              Research again
-                            </button>
-                            {!settled && (
-                              <>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.approveDiscoveredBusiness(item.id))}
-                                  className="text-xs text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.rejectDiscoveredBusiness(item.id))}
-                                  className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
-                                >
-                                  Reject
-                                </button>
-                                <button
-                                  disabled={busy}
-                                  onClick={() => runAction(item.id, () => api.archiveDiscoveredBusiness(item.id))}
-                                  className="text-xs text-fg-muted hover:underline disabled:opacity-50"
-                                >
-                                  Archive
-                                </button>
-                              </>
-                            )}
-                            {item.status !== "rejected" && item.status !== "archived" && (
-                              <button
-                                disabled={busy}
-                                onClick={() => runAction(item.id, () => api.importDiscoveredBusiness(item.id))}
-                                className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                              >
-                                Add to CRM
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="mt-4 rounded-md border border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-surface-subtle px-3 py-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
+            <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
+            <span>
+              {visibleItems.length} of {tabItems?.length ?? visibleItems.length} shown
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {visibleItems.map((item) => (
+              <ReviewQueueRow
+                key={item.id}
+                item={item}
+                selected={selected.has(item.id)}
+                selectable={item.status !== "imported"}
+                needsAttention={reviewItemNeedsAttention(item)}
+                onToggleSelect={() => toggleSelected(item.id)}
+                onOpen={() => setActiveItemId(item.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
+
+      <ReviewItemDrawer
+        item={activeItem}
+        busy={busyId === activeItem?.id}
+        onClose={() => setActiveItemId(null)}
+        onApprove={(id) => runAction(id, () => api.approveDiscoveredBusiness(id))}
+        onReject={(id) => runAction(id, () => api.rejectDiscoveredBusiness(id))}
+        onArchive={(id) => runAction(id, () => api.archiveDiscoveredBusiness(id))}
+        onImport={(id) => runAction(id, () => api.importDiscoveredBusiness(id))}
+        onResearchAgain={(id) => runAction(id, () => api.runBusinessResearch(id))}
+      />
     </div>
   );
 }
