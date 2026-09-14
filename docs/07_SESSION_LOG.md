@@ -11,6 +11,16 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — UI/UX redesign, Prompt 04: Sales page benchmark fixes + foundation complete
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — final entry in the same session as Prompts 01–03.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/sales/page.tsx, docs/11_UI_REDESIGN_PLAN.md (updated to match what was actually built).
+**What happened:** Applied the two fixes docs/11_UI_REDESIGN_PLAN.md §6 called out on the Sales benchmark page: the inline Won/Lost pill in the "Closed" activity tab now renders the shared `Badge` (`tone="success"`/`"muted"`) instead of a hand-typed emerald/surface-subtle span; `focus-visible` rings added to the two panel-header "→" links. The activity-tab switcher was *not* moved to `TabBar` as the plan originally proposed — implementing it revealed `TabBar`'s full-width underline style doesn't fit a `Panel` header's compact `right` slot. Recognized this is genuinely two different UI jobs (page-level section nav vs. compact inline toggle) and instead restyled the switcher onto the segmented-control shape Leads' List/Board toggle and Tasks' status tabs already independently used (`rounded-md border border-border-strong p-0.5` pill group), adding `role="tablist"`/`"tab"`/`aria-selected` and a focus ring — updated §4/§6 of the plan doc to document this revised decision so the five page-redesign agents (who read that doc, not this log) get the corrected guidance. Every existing Sales metric, list, tab, and link is unchanged — this was a visual/component substitution only. `next build` output identical (18 routes), 202/202 tests, lint clean (same 2 pre-existing unrelated warnings), `tsc --noEmit` clean.
+**Blockers/issues:** None. This closes out the shared foundation (Prompts 01–04, all pushed straight to `main`).
+**Next up:** Foundation is complete. The five page-redesign agents (Lead detail, Review queue, Dashboard/Today, Leads list, Clients+Projects, Follow-ups+Tasks — priority order in docs/11_UI_REDESIGN_PLAN.md §7) can now be released against `main` and docs/11_UI_REDESIGN_PLAN.md.
+
+---
+
 ## 2026-09-14 — UI/UX redesign, Prompt 03: app shell polish (focus states, brand mark, lint fix)
 **Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompts 01–02.
 **Merge to main after:** yes
