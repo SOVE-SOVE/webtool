@@ -335,6 +335,10 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
         description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
       />
 
+      {activeResults && activeResults.length > 0 && (
+        <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
+      )}
+
       {/* Search controls — always visible: this is where discovery starts. */}
       <form onSubmit={handleCreate} className="mt-4 flex flex-wrap items-end gap-2 border border-border p-4">
         <select
@@ -606,8 +610,6 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               />
             </div>
           )}
-
-          <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
 
           {visible.length === 0 ? (
             <div className="mt-4 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
