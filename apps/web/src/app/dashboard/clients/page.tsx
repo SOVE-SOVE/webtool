@@ -30,6 +30,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 type EnrichedClient = {
   client: Client;
@@ -186,14 +188,14 @@ export default function ClientsPage() {
           <div className="w-full text-xs text-fg-muted">
             For a client with no lead to convert — a referral, or a deal made outside the pipeline.
           </div>
-          <input
+          <Input
             required
             placeholder="Business name"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             className="input flex-1"
           />
-          <input
+          <Input
             placeholder="Billing email (optional)"
             value={billingEmail}
             onChange={(e) => setBillingEmail(e.target.value)}
@@ -231,13 +233,13 @@ export default function ClientsPage() {
 
       {clients && clients.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <input
+          <Input
             placeholder="Search clients…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input w-60"
           />
-          <select
+          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as ClientTone | "")}
             className="input w-auto"
@@ -249,8 +251,8 @@ export default function ClientsPage() {
                 {CLIENT_STATUS_LABEL[tone]}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
             className="input w-auto"
@@ -263,7 +265,7 @@ export default function ClientsPage() {
                 {user.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
 

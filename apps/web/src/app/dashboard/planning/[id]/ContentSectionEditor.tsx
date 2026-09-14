@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 
 const SECTION_TYPE_LABEL: Record<string, string> = {
   hero: "Homepage headline",
@@ -23,13 +25,13 @@ function ServiceRows({ services, onChange }: { services: { title: string; descri
     <div className="space-y-2">
       {services.map((s, i) => (
         <div key={i} className="flex gap-2">
-          <input
+          <Input
             value={s.title}
             placeholder="Service title"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, title: e.target.value } : row)))}
             className={`${inputClass} flex-1`}
           />
-          <input
+          <Input
             value={s.description}
             placeholder="Description"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, description: e.target.value } : row)))}
@@ -52,13 +54,13 @@ function FaqRows({ items, onChange }: { items: { question: string; answer: strin
     <div className="space-y-2">
       {items.map((item, i) => (
         <div key={i} className="space-y-1 rounded-md border border-border p-2">
-          <input
+          <Input
             value={item.question}
             placeholder="Question"
             onChange={(e) => onChange(items.map((row, j) => (j === i ? { ...row, question: e.target.value } : row)))}
             className={`${inputClass} font-medium`}
           />
-          <textarea
+          <Textarea
             value={item.answer}
             placeholder="Confirmed answer"
             rows={2}
@@ -82,13 +84,13 @@ function ContactDetailRows({ details, onChange }: { details: { label: string; va
     <div className="space-y-2">
       {details.map((d, i) => (
         <div key={i} className="flex gap-2">
-          <input
+          <Input
             value={d.label}
             placeholder="Label (e.g. Phone)"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, label: e.target.value } : row)))}
             className={`${inputClass} flex-1`}
           />
-          <input
+          <Input
             value={d.value}
             placeholder="Value"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, value: e.target.value } : row)))}
@@ -197,13 +199,13 @@ export function ContentSectionEditor({
       case "gallery":
         return (
           <div className="space-y-2">
-            <input
+            <Input
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
               className={`${inputClass} font-medium`}
             />
-            <textarea
+            <Textarea
               value={(draft.subheading as string) ?? ""}
               placeholder="Subheading"
               rows={2}
@@ -214,7 +216,7 @@ export function ContentSectionEditor({
         );
       case "about":
         return (
-          <textarea
+          <Textarea
             value={(draft.body as string) ?? ""}
             placeholder="About paragraph"
             rows={4}
@@ -236,7 +238,7 @@ export function ContentSectionEditor({
               details={(draft.details as { label: string; value: string }[]) ?? []}
               onChange={(v) => set("details", v)}
             />
-            <textarea
+            <Textarea
               value={(draft.booking_instructions as string) ?? ""}
               placeholder="Booking instructions (optional)"
               rows={2}
@@ -248,13 +250,13 @@ export function ContentSectionEditor({
       case "cta":
         return (
           <div className="space-y-2">
-            <input
+            <Input
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
               className={inputClass}
             />
-            <input
+            <Input
               value={(draft.label as string) ?? ""}
               placeholder="Button label"
               onChange={(e) => set("label", e.target.value)}

@@ -25,6 +25,7 @@ import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { buildChecklist, checklistProgress, type ChecklistItem } from "@/lib/websiteChecklist";
+import { Select } from "@/components/ui/Select";
 
 const TABS = [
   { id: "content", label: "Pages & content" },
@@ -342,7 +343,7 @@ function ProjectWebsiteWorkspaceInner() {
         {versions.length > 1 && (
           <div className="mt-4 flex items-center gap-2 text-sm">
             <span className="text-fg-muted">Version</span>
-            <select
+            <Select
               value={website?.id ?? ""}
               onChange={(e) => handleSelectVersion(e.target.value)}
               className="rounded-md border border-border-strong bg-surface px-2 py-1"
@@ -353,7 +354,7 @@ function ProjectWebsiteWorkspaceInner() {
                   {v.anti_slop_score !== null ? ` — score ${v.anti_slop_score}` : ""}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
       </section>

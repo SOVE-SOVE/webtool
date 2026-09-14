@@ -2,6 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { FEEDBACK_TYPES, previewApi, type FeedbackType } from "@/lib/previewApi";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 
 const TYPE_LABELS: Record<FeedbackType, string> = {
   comment: "Comment",
@@ -89,7 +92,7 @@ export function PreviewFeedbackForm({
           <form onSubmit={handleSubmit} className="mt-4 space-y-3">
             <div>
               <label className="text-xs text-fg-muted">Type</label>
-              <select
+              <Select
                 value={feedbackType}
                 onChange={(e) => setFeedbackType(e.target.value as FeedbackType)}
                 className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -99,11 +102,11 @@ export function PreviewFeedbackForm({
                     {TYPE_LABELS[t]}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="text-xs text-fg-muted">Message</label>
-              <textarea
+              <Textarea
                 required
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -115,7 +118,7 @@ export function PreviewFeedbackForm({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-fg-muted">Your name</label>
-                <input
+                <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -123,7 +126,7 @@ export function PreviewFeedbackForm({
               </div>
               <div>
                 <label className="text-xs text-fg-muted">Email</label>
-                <input
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

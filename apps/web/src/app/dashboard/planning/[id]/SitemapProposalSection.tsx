@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type Planning, type SitemapPageProposal } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
 
 function PageRow({
   planningId,
@@ -44,12 +45,12 @@ function PageRow({
         <div className="min-w-0 flex-1">
           {editing ? (
             <div className="space-y-1.5">
-              <input
+              <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
               />
-              <input
+              <Input
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
                 className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
@@ -155,13 +156,13 @@ export function SitemapProposalSection({ planning, onUpdated }: { planning: Plan
       {error && <p className="text-error">{error}</p>}
       {adding && (
         <div className="space-y-2 rounded-md border border-border p-3">
-          <input
+          <Input
             placeholder="Page title"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
           />
-          <input
+          <Input
             placeholder="Purpose"
             value={newPurpose}
             onChange={(e) => setNewPurpose(e.target.value)}

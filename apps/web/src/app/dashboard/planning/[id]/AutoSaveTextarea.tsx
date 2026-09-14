@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FocusEvent } from "react";
+import { Textarea } from "@/components/ui/Textarea";
 
 /**
  * A plain-looking textarea that saves itself on blur and makes the save
@@ -41,7 +42,7 @@ export function AutoSaveTextarea({
 
   return (
     <div>
-      <textarea
+      <Textarea
         defaultValue={defaultValue}
         onChange={() => setStatus("dirty")}
         onBlur={handleBlur}

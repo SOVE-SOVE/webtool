@@ -11,6 +11,9 @@ import { Metric, MetricGrid } from "@/components/ui/Metric";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { ReviewItemDrawer } from "@/components/ReviewItemDrawer";
 import { timeAgo } from "@/lib/format";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   countReviewItemsByTab,
   REVIEW_SORT_LABEL,
@@ -50,7 +53,7 @@ function ReviewQueueRow({
     >
       <div className="flex shrink-0 items-center pt-0.5 sm:pt-0" onClick={(e) => e.stopPropagation()}>
         {selectable ? (
-          <input type="checkbox" checked={selected} onChange={onToggleSelect} aria-label={`Select ${item.name}`} />
+          <Checkbox checked={selected} onChange={onToggleSelect} aria-label={`Select ${item.name}`} />
         ) : (
           <span className="block h-4 w-4" />
         )}
@@ -237,13 +240,13 @@ export default function ReviewPage() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <input
+        <Input
           placeholder="Search business, industry, suburb…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="input w-64"
         />
-        <select
+        <Select
           value={websiteFilter}
           onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
           className="input w-auto"
@@ -252,8 +255,8 @@ export default function ReviewPage() {
           <option value="">Any website status</option>
           <option value="has">Has website</option>
           <option value="no">No website</option>
-        </select>
-        <select
+        </Select>
+        <Select
           value={sort}
           onChange={(e) => setSort(e.target.value as ReviewSortKey)}
           className="input w-auto"
@@ -264,7 +267,7 @@ export default function ReviewPage() {
               Sort: {label}
             </option>
           ))}
-        </select>
+        </Select>
         {filtersActive && (
           <button onClick={clearFilters} className="text-xs text-fg-muted hover:text-fg hover:underline">
             Clear filters
@@ -335,7 +338,7 @@ export default function ReviewPage() {
       {visibleItems && visibleItems.length > 0 && (
         <div className="mt-4 rounded-md border border-border">
           <div className="flex items-center gap-2 border-b border-border bg-surface-subtle px-3 py-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
-            <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
+            <Checkbox checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
             <span>
               {visibleItems.length} of {tabItems?.length ?? visibleItems.length} shown
             </span>

@@ -6,6 +6,7 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { computeInformationToConfirm } from "../lib";
 import { GenerateWebsitePlanAction } from "./GenerateWebsitePlanAction";
 import { SocialPresenceSection } from "./SocialPresenceSection";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 type LeadContactFields = Pick<Lead, "business_phone" | "business_email">;
 
@@ -39,8 +40,7 @@ function ComparableSiteRow({
 }) {
   return (
     <li className="flex items-start gap-3 rounded-md border border-border p-3">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={site.included}
         onChange={(e) => onToggle(e.target.checked)}
         disabled={disabled}

@@ -7,6 +7,7 @@ import { taskContextHref, taskContextKind, taskContextName } from "@/lib/tasks";
 import { timeAgo } from "@/lib/format";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
+import { Select } from "@/components/ui/Select";
 
 /**
  * Secondary task detail, opened by clicking a row on the Tasks page. The
@@ -106,7 +107,7 @@ export function TaskDetailModal({
           <div className="flex items-center justify-between gap-3">
             <dt className="text-fg-muted">Assigned to</dt>
             <dd>
-              <select
+              <Select
                 value={task.assigned_user_id ?? ""}
                 disabled={busy}
                 onChange={(e) => changeAssignee(e.target.value)}
@@ -118,7 +119,7 @@ export function TaskDetailModal({
                     {user.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </dd>
           </div>
 

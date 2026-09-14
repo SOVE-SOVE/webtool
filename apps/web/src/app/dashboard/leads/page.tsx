@@ -23,6 +23,9 @@ import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   isLeadTab,
   LEAD_SORT_LABEL,
@@ -346,13 +349,13 @@ function LeadsPageInner() {
       {/* Controls: search + status + website + priority + sort + archived (list view only) */}
       {view === "table" && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <input
+          <Input
             placeholder="Search business, industry, suburb, email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input w-64"
           />
-          <select
+          <Select
             value={tab}
             onChange={(e) => setTab(e.target.value as LeadTab)}
             className="input w-auto"
@@ -363,8 +366,8 @@ function LeadsPageInner() {
                 {t.label} ({tabCounts.get(t.id) ?? 0})
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
             className="input w-auto"
@@ -376,8 +379,8 @@ function LeadsPageInner() {
                 {p} priority
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             value={websiteFilter}
             onChange={(e) => setWebsiteFilter(e.target.value as WebsiteFilter)}
             className="input w-auto"
@@ -386,8 +389,8 @@ function LeadsPageInner() {
             <option value="">Any website</option>
             <option value="has">Has a website</option>
             <option value="none">No website</option>
-          </select>
-          <select
+          </Select>
+          <Select
             value={sort}
             onChange={(e) => setSort(e.target.value as LeadSort)}
             className="input ml-auto w-auto"
@@ -398,9 +401,9 @@ function LeadsPageInner() {
                 Sort: {LEAD_SORT_LABEL[s]}
               </option>
             ))}
-          </select>
+          </Select>
           <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            <Checkbox checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
             Show archived
           </label>
         </div>
@@ -630,23 +633,23 @@ function LeadsPageInner() {
         {showAdd && (
           <div className="mt-3 max-w-2xl space-y-4">
             <form onSubmit={handleCreate} className="grid grid-cols-1 gap-3 border border-border p-4 sm:grid-cols-2">
-              <input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input sm:col-span-2" />
-              <input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="input" />
-              <input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="input" />
-              <input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="input" />
-              <input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="input" />
-              <select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="input">
+              <Input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input sm:col-span-2" />
+              <Input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="input" />
+              <Input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="input" />
+              <Input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="input" />
+              <Input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="input" />
+              <Select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="input">
                 <option value="">Medium priority</option>
                 {LEAD_PRIORITIES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
-              </select>
-              <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
+              </Select>
+              <Select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
                 <option value="">Unassigned</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
-              </select>
+              </Select>
               <button type="submit" disabled={saving} className="btn btn-primary sm:col-span-2">
                 {saving ? "Saving…" : "Save lead"}
               </button>
@@ -654,8 +657,8 @@ function LeadsPageInner() {
 
             <form onSubmit={handleCreateClient} className="flex flex-wrap items-end gap-2 border border-border p-4">
               <div className="w-full text-xs text-fg-muted">Already signed, no lead to track? Add the client directly.</div>
-              <input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="input flex-1" />
-              <input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="input flex-1" />
+              <Input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="input flex-1" />
+              <Input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="input flex-1" />
               <button type="submit" disabled={savingClient} className="btn btn-secondary btn-sm">
                 {savingClient ? "Saving…" : "Add client"}
               </button>

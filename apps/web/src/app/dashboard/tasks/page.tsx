@@ -24,6 +24,9 @@ import { ListSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Same colour convention as DEADLINE_CLASS on the Projects page (see
 // lib/projects.ts's deadlineStatus) — urgency, not a fabricated
@@ -74,8 +77,7 @@ function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: () => void;
       }}
       className="flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
     >
-      <input
-        type="checkbox"
+      <Checkbox
         checked={task.done}
         onClick={(e) => e.stopPropagation()}
         onChange={onToggle}
@@ -210,14 +212,14 @@ export default function TasksPage() {
         </div>
 
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
-          <input
+          <Input
             placeholder="Search tasks or projects…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input w-full sm:w-56"
           />
           {filterOptions.length > 1 && (
-            <select
+            <Select
               value={filterKey}
               onChange={(e) => setFilterKey(e.target.value)}
               className="input w-auto"
@@ -229,7 +231,7 @@ export default function TasksPage() {
                   {opt.label}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
       </div>

@@ -21,6 +21,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 function formatPrice(cents: number | null): string | null {
   return cents === null ? null : `$${(cents / 100).toLocaleString()}`;
@@ -186,22 +189,22 @@ function ProjectsPageInner() {
 
       {showForm && !onlyLive && (
         <form onSubmit={handleCreate} className="mt-4 max-w-xl space-y-3 rounded-md border border-border p-4">
-          <select required value={clientId} onChange={(e) => setClientId(e.target.value)} className="input">
+          <Select required value={clientId} onChange={(e) => setClientId(e.target.value)} className="input">
             <option value="">Select a client…</option>
             {clients.map((client) => (
               <option key={client.id} value={client.id}>
                 {client.business_name}
               </option>
             ))}
-          </select>
-          <input
+          </Select>
+          <Input
             required
             placeholder="Project name (e.g. “Riverside Plumbing Website”)"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="input"
           />
-          <select
+          <Select
             value={assignedUserId}
             onChange={(e) => setAssignedUserId(e.target.value)}
             className="input"
@@ -212,7 +215,7 @@ function ProjectsPageInner() {
                 {user.name}
               </option>
             ))}
-          </select>
+          </Select>
           <button type="submit" disabled={saving} className="btn btn-primary">
             {saving ? "Saving…" : "Create project"}
           </button>
@@ -220,14 +223,14 @@ function ProjectsPageInner() {
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <input
+        <Input
           placeholder="Search project, client, package…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="input w-60"
         />
         {!onlyLive && (
-          <select
+          <Select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
             className="input w-auto"
@@ -238,9 +241,9 @@ function ProjectsPageInner() {
                 {PROJECT_STAGE_LABELS[stage]}
               </option>
             ))}
-          </select>
+          </Select>
         )}
-        <select
+        <Select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
           className="input w-auto"
@@ -252,11 +255,10 @@ function ProjectsPageInner() {
               {user.name}
             </option>
           ))}
-        </select>
+        </Select>
         {!onlyLive && (
           <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={showFinished}
               onChange={(e) => setShowFinished(e.target.checked)}
               disabled={stageFilter !== ""}

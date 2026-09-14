@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type DeliveryStatus } from "@/lib/api";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export function DeliveryPanel({
   projectId,
@@ -61,8 +62,7 @@ export function DeliveryPanel({
         <ul className="mt-2 space-y-1">
           {deliveryStatus.checklist.map((item) => (
             <li key={item.task_id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={item.done}
                 disabled={taskBusyId === item.task_id}
                 onChange={() => toggleTask(item.task_id, item.done)}

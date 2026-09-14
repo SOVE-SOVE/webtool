@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type PreviewAudience, type PreviewLink } from "@/lib/api";
+import { Select } from "@/components/ui/Select";
 
 export function PreviewLinksPanel({ projectId }: { projectId: string }) {
   const [links, setLinks] = useState<PreviewLink[] | null>(null);
@@ -57,14 +58,14 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg">Client & internal previews</h2>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={audience}
             onChange={(e) => setAudience(e.target.value as PreviewAudience)}
             className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             <option value="client">Client link</option>
             <option value="internal">Internal link</option>
-          </select>
+          </Select>
           <button
             onClick={handleCreate}
             disabled={creating}

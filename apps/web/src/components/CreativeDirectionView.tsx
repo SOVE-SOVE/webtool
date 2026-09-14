@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type CreativeDirectionBrief, type CreativeDirectionUpdate } from "@/lib/api";
+import { Textarea } from "@/components/ui/Textarea";
 
 type StrField = keyof Pick<
   CreativeDirectionBrief,
@@ -205,7 +206,7 @@ export function CreativeDirectionView({
         section(
           label,
           editing ? (
-            <textarea
+            <Textarea
               value={draft[field] ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}
@@ -221,7 +222,7 @@ export function CreativeDirectionView({
         section(
           label,
           editing ? (
-            <textarea
+            <Textarea
               value={draft[field] ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}

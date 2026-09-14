@@ -27,6 +27,9 @@ import {
 import { nextOpenTask } from "@/lib/projects";
 import { timeAgo } from "@/lib/format";
 import { ChecklistSection } from "./ChecklistSection";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 
 // Thin positional-argument wrapper over the shared DetailField primitive
 // (docs/11_UI_REDESIGN_PLAN.md §2.4/§4), matching Lead detail's `field()`.
@@ -36,7 +39,7 @@ function field(label: string, value: React.ReactNode) {
 
 const inputClass = "input";
 
-// Client.contract_signed_at is a full timestamp; <input type="date"> needs
+// Client.contract_signed_at is a full timestamp; <Input type="date"> needs
 // just the date portion, and round-trips back out as UTC midnight.
 function toDateInputValue(iso: string | null): string {
   return iso ? iso.slice(0, 10) : "";
@@ -182,7 +185,7 @@ export default function ClientDetailPage() {
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Name",
-              <input
+              <Input
                 defaultValue={business.name}
                 onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
                 className={inputClass}
@@ -190,7 +193,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Industry",
-              <input
+              <Input
                 defaultValue={business.industry ?? ""}
                 onBlur={(e) => saveBusiness({ industry: e.target.value })}
                 className={inputClass}
@@ -198,7 +201,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Website",
-              <input
+              <Input
                 defaultValue={business.website_url ?? ""}
                 onBlur={(e) => saveBusiness({ website_url: e.target.value })}
                 className={inputClass}
@@ -206,7 +209,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Phone",
-              <input
+              <Input
                 defaultValue={business.phone ?? ""}
                 onBlur={(e) => saveBusiness({ phone: e.target.value })}
                 className={inputClass}
@@ -214,7 +217,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Email",
-              <input
+              <Input
                 defaultValue={business.email ?? ""}
                 onBlur={(e) => saveBusiness({ email: e.target.value })}
                 className={inputClass}
@@ -223,13 +226,13 @@ export default function ClientDetailPage() {
             {field(
               "Location",
               <div className="flex gap-2">
-                <input
+                <Input
                   placeholder="Suburb"
                   defaultValue={business.suburb ?? ""}
                   onBlur={(e) => saveBusiness({ suburb: e.target.value })}
                   className={inputClass}
                 />
-                <input
+                <Input
                   placeholder="State"
                   defaultValue={business.state ?? ""}
                   onBlur={(e) => saveBusiness({ state: e.target.value })}
@@ -240,7 +243,7 @@ export default function ClientDetailPage() {
             <div className="sm:col-span-2">
               {field(
                 "Business notes",
-                <textarea
+                <Textarea
                   defaultValue={business.notes ?? ""}
                   onBlur={(e) => saveBusiness({ notes: e.target.value })}
                   rows={3}
@@ -256,7 +259,7 @@ export default function ClientDetailPage() {
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Billing email",
-              <input
+              <Input
                 defaultValue={clientRecord.billing_email ?? ""}
                 onBlur={(e) => saveClient({ billing_email: e.target.value || null })}
                 className={inputClass}
@@ -264,7 +267,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Contract signed",
-              <input
+              <Input
                 type="date"
                 defaultValue={toDateInputValue(clientRecord.contract_signed_at)}
                 onBlur={(e) =>
@@ -279,7 +282,7 @@ export default function ClientDetailPage() {
             )}
             {field(
               "Assigned to",
-              <select
+              <Select
                 value={clientRecord.assigned_user_id ?? ""}
                 onChange={(e) => saveClient({ assigned_user_id: e.target.value || null })}
                 className={inputClass}
@@ -290,7 +293,7 @@ export default function ClientDetailPage() {
                     {user.name}
                   </option>
                 ))}
-              </select>,
+              </Select>,
             )}
             {field(
               "Client since",

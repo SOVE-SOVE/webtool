@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { STATUS_BADGE_CLASS } from "./lib";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export default function PlanningListPage() {
   const confirm = useConfirm();
@@ -71,7 +72,7 @@ export default function PlanningListPage() {
       />
 
       <label className="flex w-fit items-center gap-1.5 text-sm text-fg-muted">
-        <input type="checkbox" checked={showTransferred} onChange={(e) => setShowTransferred(e.target.checked)} />
+        <Checkbox checked={showTransferred} onChange={(e) => setShowTransferred(e.target.checked)} />
         Show transferred to a Project
       </label>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FocusEvent } from "react";
+import { Input } from "@/components/ui/Input";
 
 /**
  * Single-line counterpart to AutoSaveTextarea — same save-on-blur
@@ -35,7 +36,7 @@ export function AutoSaveInput({
 
   return (
     <div>
-      <input
+      <Input
         type="text"
         defaultValue={defaultValue}
         onChange={() => setStatus("dirty")}

@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 import {
   api,
   NAV_PLACEMENTS,
@@ -116,7 +119,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Title</span>
-          <input
+          <Input
             value={value.title}
             onChange={(e) => {
               const title = e.target.value;
@@ -127,7 +130,7 @@ function PageForm({
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Slug</span>
-          <input
+          <Input
             value={value.slug}
             onChange={(e) => onChange({ ...value, slug: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -137,7 +140,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Page type</span>
-          <select
+          <Select
             value={value.page_type}
             onChange={(e) => onChange({ ...value, page_type: e.target.value as PageType })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -147,11 +150,11 @@ function PageForm({
                 {PAGE_TYPE_LABELS[t]}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Navigation</span>
-          <select
+          <Select
             value={value.nav_placement}
             onChange={(e) => onChange({ ...value, nav_placement: e.target.value as NavPlacement })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -161,12 +164,12 @@ function PageForm({
                 {NAV_PLACEMENT_LABELS[p]}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       <label className="block text-sm">
         <span className="text-fg-muted">Purpose</span>
-        <textarea
+        <Textarea
           value={value.purpose}
           onChange={(e) => onChange({ ...value, purpose: e.target.value })}
           rows={2}
@@ -176,7 +179,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Primary CTA</span>
-          <input
+          <Input
             value={value.primary_cta}
             onChange={(e) => onChange({ ...value, primary_cta: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -184,7 +187,7 @@ function PageForm({
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Secondary CTA</span>
-          <input
+          <Input
             value={value.secondary_cta}
             onChange={(e) => onChange({ ...value, secondary_cta: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -193,7 +196,7 @@ function PageForm({
       </div>
       <label className="block text-sm">
         <span className="text-fg-muted">Key sections (one per line)</span>
-        <textarea
+        <Textarea
           value={value.key_sections}
           onChange={(e) => onChange({ ...value, key_sections: e.target.value })}
           rows={2}
@@ -202,7 +205,7 @@ function PageForm({
       </label>
       <label className="block text-sm">
         <span className="text-fg-muted">Required content (one per line)</span>
-        <textarea
+        <Textarea
           value={value.required_content}
           onChange={(e) => onChange({ ...value, required_content: e.target.value })}
           rows={2}
@@ -211,7 +214,7 @@ function PageForm({
       </label>
       <label className="block text-sm">
         <span className="text-fg-muted">Required functionality (one per line)</span>
-        <textarea
+        <Textarea
           value={value.required_functionality}
           onChange={(e) => onChange({ ...value, required_functionality: e.target.value })}
           rows={2}

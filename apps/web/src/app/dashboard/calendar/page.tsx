@@ -17,6 +17,9 @@ import {
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -300,7 +303,7 @@ export default function CalendarPage() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
-          <input
+          <Input
             required
             placeholder="Meeting title"
             value={title}
@@ -308,30 +311,30 @@ export default function CalendarPage() {
             className={inputClass}
           />
           <div className="flex gap-3">
-            <input
+            <Input
               required
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               className={inputClass}
             />
-            <input
+            <Input
               required
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
               className={inputClass}
             />
-            <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
+            <Select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
               <option value="15">15 min</option>
               <option value="30">30 min</option>
               <option value="45">45 min</option>
               <option value="60">60 min</option>
-            </select>
+            </Select>
           </div>
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5">
-              <input
+              <Input
                 type="radio"
                 checked={parentType === "lead"}
                 onChange={() => {
@@ -342,7 +345,7 @@ export default function CalendarPage() {
               Sales call (lead)
             </label>
             <label className="flex items-center gap-1.5">
-              <input
+              <Input
                 type="radio"
                 checked={parentType === "project"}
                 onChange={() => {
@@ -353,7 +356,7 @@ export default function CalendarPage() {
               Client check-in (project)
             </label>
           </div>
-          <select
+          <Select
             required
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
@@ -365,9 +368,9 @@ export default function CalendarPage() {
                 {parentType === "lead" ? (item as Lead).business_name : (item as Project).name}
               </option>
             ))}
-          </select>
+          </Select>
           <div className="flex gap-3">
-            <select
+            <Select
               value={meetingType}
               onChange={(e) => setMeetingType(e.target.value as MeetingType)}
               className={inputClass}
@@ -378,8 +381,8 @@ export default function CalendarPage() {
                   {MEETING_TYPE_LABELS[t]}
                 </option>
               ))}
-            </select>
-            <select
+            </Select>
+            <Select
               value={assignedUserId}
               onChange={(e) => setAssignedUserId(e.target.value)}
               className={inputClass}
@@ -390,9 +393,9 @@ export default function CalendarPage() {
                   {user.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <textarea
+          <Textarea
             placeholder="Notes (optional)"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -515,7 +518,7 @@ export default function CalendarPage() {
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Notes",
-              <textarea
+              <Textarea
                 defaultValue={selectedMeeting.notes ?? ""}
                 onBlur={(e) => handleSaveNotes(e.target.value)}
                 rows={3}
@@ -524,7 +527,7 @@ export default function CalendarPage() {
             )}
             {field(
               "Outcome",
-              <input
+              <Input
                 defaultValue={selectedMeeting.outcome ?? ""}
                 onBlur={(e) => handleSaveOutcome(e.target.value)}
                 placeholder="e.g. Proceeding to proposal"
@@ -633,7 +636,7 @@ function AttendeesPanel({
         }}
         className="mt-2 flex gap-2"
       >
-        <input
+        <Input
           type="email"
           required
           placeholder="Email"
@@ -641,7 +644,7 @@ function AttendeesPanel({
           onChange={(e) => setEmail(e.target.value)}
           className={`${inputClass} flex-1`}
         />
-        <input
+        <Input
           placeholder="Name (optional)"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -707,14 +710,14 @@ function RemindersPanel({
         }}
         className="mt-2 flex gap-2"
       >
-        <input
+        <Input
           type="datetime-local"
           required
           value={remindAt}
           onChange={(e) => setRemindAt(e.target.value)}
           className={`${inputClass} flex-1`}
         />
-        <input
+        <Input
           placeholder="Note (optional)"
           value={note}
           onChange={(e) => setNote(e.target.value)}

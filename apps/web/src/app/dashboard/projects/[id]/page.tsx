@@ -38,6 +38,10 @@ import { EmptyRow } from "@/components/ui/Panel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { checkpointProgress, deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 function money(cents: number | null): string {
   return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
@@ -68,7 +72,7 @@ function DetailField({
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-fg-subtle">{label}</p>
-      <input
+      <Input
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => {
@@ -455,7 +459,7 @@ export default function ProjectDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select
+            <Select
               value={project.stage}
               onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
               className="input w-auto"
@@ -466,8 +470,8 @@ export default function ProjectDetailPage() {
                   {PROJECT_STAGE_LABELS[stage]}
                 </option>
               ))}
-            </select>
-            <select
+            </Select>
+            <Select
               value={project.assigned_user_id ?? ""}
               onChange={(e) => handleAssigneeChange(e.target.value)}
               className="input w-auto"
@@ -479,7 +483,7 @@ export default function ProjectDetailPage() {
                   {user.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
       </div>
@@ -547,7 +551,7 @@ export default function ProjectDetailPage() {
             />
             <div className="sm:col-span-2 lg:col-span-3">
               <p className="text-xs uppercase tracking-wide text-fg-subtle">Business description</p>
-              <textarea
+              <Textarea
                 defaultValue={business.notes ?? ""}
                 placeholder="What the business does — only if we already know it"
                 onBlur={(e) => {
@@ -633,7 +637,7 @@ export default function ProjectDetailPage() {
           Optional. Worked out the concept, visual direction, copy direction, page structure or generation prompts in
           ChatGPT or Claude? Paste it here — it&apos;s fed into the creative-direction and sitemap steps as context.
         </p>
-        <textarea
+        <Textarea
           value={directionDraft}
           onChange={(e) => {
             setDirectionDraft(e.target.value);
@@ -679,21 +683,21 @@ export default function ProjectDetailPage() {
                 Optional — left blank, target audience and business goals come from the business details and your
                 saved build direction.
               </p>
-              <textarea
+              <Textarea
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 rows={2}
                 className="input"
                 placeholder="Target audience"
               />
-              <textarea
+              <Textarea
                 value={businessGoals}
                 onChange={(e) => setBusinessGoals(e.target.value)}
                 rows={2}
                 className="input"
                 placeholder="Business goals for the new site"
               />
-              <textarea
+              <Textarea
                 value={additionalNotes}
                 onChange={(e) => setAdditionalNotes(e.target.value)}
                 rows={2}
@@ -753,7 +757,7 @@ export default function ProjectDetailPage() {
           </div>
           {showGenerateSitemapForm && (
             <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 rounded-md border border-border p-3">
-              <select
+              <Select
                 value={sitemapCreativeDirectionId}
                 onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
                 className="input"
@@ -764,8 +768,8 @@ export default function ProjectDetailPage() {
                     {new Date(cd.generated_at).toLocaleString()} — {cd.status}
                   </option>
                 ))}
-              </select>
-              <textarea
+              </Select>
+              <Textarea
                 value={sitemapAdditionalNotes}
                 onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
                 rows={2}
@@ -884,7 +888,7 @@ export default function ProjectDetailPage() {
 
         <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-fg-subtle">All tasks</h3>
         <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
-          <input
+          <Input
             value={newTask}
             onChange={(e) => setNewTask(e.target.value)}
             placeholder="Add a task for this project…"
@@ -901,8 +905,7 @@ export default function ProjectDetailPage() {
           )}
           {openTasks.map((t) => (
             <li key={t.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={false}
                 onChange={() => handleToggleTask(t.id, true)}
                 aria-label={`Mark "${t.title}" done`}
@@ -916,8 +919,7 @@ export default function ProjectDetailPage() {
           {doneTasks.length > 0 && <li className="pt-1 text-xs text-fg-subtle">{doneTasks.length} done</li>}
           {doneTasks.slice(0, 5).map((t) => (
             <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked
                 onChange={() => handleToggleTask(t.id, false)}
                 aria-label={`Reopen "${t.title}"`}

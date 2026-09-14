@@ -39,6 +39,9 @@ import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LEAD_STATUS_LABEL, leadNextAction } from "@/lib/leads";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -490,20 +493,20 @@ export default function LeadDetailPage() {
   // action (docs/05_DECISIONS.md).
   const convertForm = showConvertForm && (
     <form onSubmit={handleConvert} className="mt-3 max-w-2xl space-y-3 border border-border p-4">
-      <input
+      <Input
         placeholder="Project name (defaults to “{business} Website”)"
         value={convertProjectName}
         onChange={(e) => setConvertProjectName(e.target.value)}
         className={inputClass}
       />
       <div className="flex gap-3">
-        <input
+        <Input
           placeholder="Package (e.g. Core, $899)"
           value={convertPackage}
           onChange={(e) => setConvertPackage(e.target.value)}
           className={inputClass}
         />
-        <input
+        <Input
           type="number"
           min="0"
           step="1"
@@ -516,28 +519,28 @@ export default function LeadDetailPage() {
       <div className="flex gap-3">
         <div className="flex-1">
           <label className="text-xs uppercase tracking-wide text-fg-muted">Agreed deadline</label>
-          <input
+          <Input
             type="date"
             value={convertDeadline}
             onChange={(e) => setConvertDeadline(e.target.value)}
             className={`${inputClass} mt-1`}
           />
         </div>
-        <input
+        <Input
           placeholder="Billing email (optional)"
           value={convertBillingEmail}
           onChange={(e) => setConvertBillingEmail(e.target.value)}
           className={`${inputClass} mt-5`}
         />
       </div>
-      <select value={convertAssignedUserId} onChange={(e) => setConvertAssignedUserId(e.target.value)} className={inputClass}>
+      <Select value={convertAssignedUserId} onChange={(e) => setConvertAssignedUserId(e.target.value)} className={inputClass}>
         <option value="">Unassigned</option>
         {users.map((user) => (
           <option key={user.id} value={user.id}>
             {user.name}
           </option>
         ))}
-      </select>
+      </Select>
       <button type="submit" disabled={converting} className="btn btn-primary">
         {converting ? "Converting…" : "Convert to client"}
       </button>
@@ -793,7 +796,7 @@ export default function LeadDetailPage() {
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field(
                   "Name",
-                  <input
+                  <Input
                     defaultValue={business.name}
                     onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
                     className={inputClass}
@@ -801,7 +804,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Industry",
-                  <input
+                  <Input
                     defaultValue={business.industry ?? ""}
                     onBlur={(e) => saveBusiness({ industry: e.target.value })}
                     className={inputClass}
@@ -809,7 +812,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Website",
-                  <input
+                  <Input
                     defaultValue={business.website_url ?? ""}
                     onBlur={(e) => saveBusiness({ website_url: e.target.value })}
                     className={inputClass}
@@ -817,7 +820,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Phone",
-                  <input
+                  <Input
                     defaultValue={business.phone ?? ""}
                     onBlur={(e) => saveBusiness({ phone: e.target.value })}
                     className={inputClass}
@@ -825,7 +828,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Email",
-                  <input
+                  <Input
                     defaultValue={business.email ?? ""}
                     onBlur={(e) => saveBusiness({ email: e.target.value })}
                     className={inputClass}
@@ -834,13 +837,13 @@ export default function LeadDetailPage() {
                 {field(
                   "Location",
                   <div className="flex gap-2">
-                    <input
+                    <Input
                       placeholder="Suburb"
                       defaultValue={business.suburb ?? ""}
                       onBlur={(e) => saveBusiness({ suburb: e.target.value })}
                       className={inputClass}
                     />
-                    <input
+                    <Input
                       placeholder="State"
                       defaultValue={business.state ?? ""}
                       onBlur={(e) => saveBusiness({ state: e.target.value })}
@@ -850,7 +853,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Social links",
-                  <textarea
+                  <Textarea
                     defaultValue={business.social_links ?? ""}
                     onBlur={(e) => saveBusiness({ social_links: e.target.value })}
                     placeholder="One URL per line"
@@ -861,7 +864,7 @@ export default function LeadDetailPage() {
                 <div className="sm:col-span-2">
                   {field(
                     "Business notes",
-                    <textarea
+                    <Textarea
                       defaultValue={business.notes ?? ""}
                       onBlur={(e) => saveBusiness({ notes: e.target.value })}
                       rows={3}
@@ -877,7 +880,7 @@ export default function LeadDetailPage() {
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field(
                   "Status",
-                  <select
+                  <Select
                     value={lead.status}
                     onChange={(e) => saveLead({ status: e.target.value as LeadStatus })}
                     className={inputClass}
@@ -887,11 +890,11 @@ export default function LeadDetailPage() {
                         {LEAD_STATUS_LABEL[s]}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field(
                   "Priority",
-                  <select
+                  <Select
                     value={lead.priority}
                     onChange={(e) => saveLead({ priority: e.target.value as LeadPriority })}
                     className={inputClass}
@@ -901,11 +904,11 @@ export default function LeadDetailPage() {
                         {p}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field(
                   "Score",
-                  <input
+                  <Input
                     type="number"
                     defaultValue={lead.score ?? ""}
                     onBlur={(e) => {
@@ -917,7 +920,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Assigned to",
-                  <select
+                  <Select
                     value={lead.assigned_user_id ?? ""}
                     onChange={(e) => saveLead({ assigned_user_id: e.target.value || null })}
                     className={inputClass}
@@ -928,7 +931,7 @@ export default function LeadDetailPage() {
                         {user.name}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field("Source", <span className="text-sm text-fg-muted">{lead.source ?? "—"}</span>)}
                 {field(
@@ -940,7 +943,7 @@ export default function LeadDetailPage() {
                 <div className="sm:col-span-2">
                   {field(
                     "Lead notes",
-                    <textarea
+                    <Textarea
                       defaultValue={lead.notes ?? ""}
                       onBlur={(e) => saveLead({ notes: e.target.value })}
                       rows={3}
@@ -1001,13 +1004,13 @@ export default function LeadDetailPage() {
 
               {!opportunities?.some((o) => o.status === "open") && lead.status !== "won" && lead.status !== "lost" && (
                 <form onSubmit={handleLogProposal} className="mt-3 flex flex-wrap items-end gap-2">
-                  <input
+                  <Input
                     value={proposalTier}
                     onChange={(e) => setProposalTier(e.target.value)}
                     placeholder="Package (e.g. Core)"
                     className="input w-40"
                   />
-                  <input
+                  <Input
                     value={proposalPrice}
                     onChange={(e) => setProposalPrice(e.target.value)}
                     inputMode="decimal"
@@ -1139,13 +1142,13 @@ export default function LeadDetailPage() {
                         <div className="mt-3">
                           {message.channel === "email" || message.channel === "follow_up" ? (
                             <div className="space-y-2">
-                              <input
+                              <Input
                                 value={editSubject}
                                 onChange={(e) => setEditSubject(e.target.value)}
                                 placeholder="Subject"
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editBody}
                                 onChange={(e) => setEditBody(e.target.value)}
                                 placeholder="Body"
@@ -1155,27 +1158,27 @@ export default function LeadDetailPage() {
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <input
+                              <Input
                                 value={editOpeningLine}
                                 onChange={(e) => setEditOpeningLine(e.target.value)}
                                 placeholder="Opening line"
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editKeyPoints}
                                 onChange={(e) => setEditKeyPoints(e.target.value)}
                                 placeholder="Key points — one per line"
                                 rows={4}
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editObjectionHandling}
                                 onChange={(e) => setEditObjectionHandling(e.target.value)}
                                 placeholder="Objection handling — one per line"
                                 rows={3}
                                 className={inputClass}
                               />
-                              <input
+                              <Input
                                 value={editSuggestedClose}
                                 onChange={(e) => setEditSuggestedClose(e.target.value)}
                                 placeholder="Suggested close"

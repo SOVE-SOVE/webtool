@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { ApiError, api, type Lead, type Project, type User } from "@/lib/api";
 import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 /**
  * Task creation for the Tasks page. Deliberately small: a task only has
@@ -71,7 +73,7 @@ export function NewTaskModal({
           New task
         </h2>
 
-        <input
+        <Input
           autoFocus
           required
           placeholder="What needs doing?"
@@ -98,7 +100,7 @@ export function NewTaskModal({
               </button>
             ))}
           </div>
-          <select
+          <Select
             required
             value={linkId}
             onChange={(e) => setLinkId(e.target.value)}
@@ -111,13 +113,13 @@ export function NewTaskModal({
                 {"business_name" in item ? item.business_name : item.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div>
             <label className="field-label text-xs">Due (optional)</label>
-            <input
+            <Input
               type="date"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
@@ -126,7 +128,7 @@ export function NewTaskModal({
           </div>
           <div>
             <label className="field-label text-xs">Assign to</label>
-            <select
+            <Select
               value={assignedUserId}
               onChange={(e) => setAssignedUserId(e.target.value)}
               className="input mt-1"
@@ -137,7 +139,7 @@ export function NewTaskModal({
                   {user.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 

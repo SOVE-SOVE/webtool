@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError, type Planning, type Recommendation, type RecommendationCategory } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 
 const CATEGORY_LABEL: Record<RecommendationCategory, string> = { keep: "Keep", improve: "Improve", add: "Add" };
 const CATEGORY_HINT: Record<RecommendationCategory, string> = {
@@ -45,12 +47,12 @@ function RecommendationCard({
     <li className="rounded-md border border-border p-3">
       {editing ? (
         <div className="space-y-2">
-          <input
+          <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
           />
-          <textarea
+          <Textarea
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
             rows={2}
@@ -187,13 +189,13 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
             </div>
             {addingCategory === category && (
               <div className="mt-2 space-y-2 rounded-md border border-border p-3">
-                <input
+                <Input
                   placeholder="Title"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
                 />
-                <textarea
+                <Textarea
                   placeholder="Explanation"
                   value={newExplanation}
                   onChange={(e) => setNewExplanation(e.target.value)}

@@ -29,6 +29,9 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Leaflet touches `window` on import — client-only, no SSR.
 const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
@@ -341,7 +344,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
 
       {/* Search controls — always visible: this is where discovery starts. */}
       <form onSubmit={handleCreate} className="mt-4 flex flex-wrap items-end gap-2 border border-border p-4">
-        <select
+        <Select
           value={provider}
           onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
           className={inputCls}
@@ -349,32 +352,32 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
         >
           <option value="">Web search (default)</option>
           <option value="instagram_search">Instagram Search Discovery</option>
-        </select>
-        <input
+        </Select>
+        <Input
           placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
           value={industry}
           onChange={(e) => setIndustry(e.target.value)}
           className={`${inputCls} w-44`}
         />
-        <input
+        <Input
           placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           className={`${inputCls} w-44`}
         />
-        <input
+        <Input
           placeholder="Business type"
           value={businessType}
           onChange={(e) => setBusinessType(e.target.value)}
           className={`${inputCls} w-40`}
         />
-        <input
+        <Input
           placeholder="Keywords"
           value={keywords}
           onChange={(e) => setKeywords(e.target.value)}
           className={`${inputCls} w-40`}
         />
-        <select
+        <Select
           value={hasWebsite}
           onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
           className={inputCls}
@@ -383,7 +386,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
           <option value="">Any website status</option>
           <option value="true">Has a website</option>
           <option value="false">No website</option>
-        </select>
+        </Select>
         <button type="submit" disabled={saving} className="btn btn-primary">
           {saving ? "Searching…" : "Run search"}
         </button>
@@ -407,7 +410,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
           <label htmlFor="discovery-search-picker" className="text-fg-muted">
             Showing
           </label>
-          <select
+          <Select
             id="discovery-search-picker"
             value={activeId ?? ""}
             onChange={(e) => selectSearch(e.target.value || null)}
@@ -419,7 +422,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                 {new Date(s.created_at).toLocaleDateString()}
               </option>
             ))}
-          </select>
+          </Select>
           <Link href="/dashboard/review" className="text-fg-muted hover:text-fg hover:underline">
             Review queue →
           </Link>
@@ -508,13 +511,13 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
       {activeResults && activeResults.length > 0 && (
         <>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <input
+            <Input
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
               placeholder="Filter by name, category, address…"
               className={inputCls}
             />
-            <select
+            <Select
               value={filters.website}
               onChange={(e) =>
                 setFilters((f) => ({
@@ -528,8 +531,8 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               <option value="">Any website status</option>
               <option value="has">Has website</option>
               <option value="no">No website</option>
-            </select>
-            <select
+            </Select>
+            <Select
               value={sort}
               onChange={(e) => setSort(e.target.value as DiscoverySort)}
               className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -538,18 +541,16 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               <option value="discovered">Sort: relevance</option>
               <option value="no-website">Sort: no website first</option>
               <option value="score">Sort: best score first</option>
-            </select>
+            </Select>
             <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={filters.mappedOnly}
                 onChange={(e) => setFilters((f) => ({ ...f, mappedOnly: e.target.checked }))}
               />
               On map only
             </label>
             <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={filters.showImported}
                 onChange={(e) => setFilters((f) => ({ ...f, showImported: e.target.checked }))}
               />
@@ -563,7 +564,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               never match anything. */}
           {activeResults.some((b) => b.instagram_handle) && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
+              <Select
                 value={filters.instagramStatus}
                 onChange={(e) =>
                   setFilters((f) => ({
@@ -580,24 +581,22 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                     {INSTAGRAM_WEBSITE_STATUS_LABEL[status]}
                   </option>
                 ))}
-              </select>
+              </Select>
               <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={filters.contactableOnly}
                   onChange={(e) => setFilters((f) => ({ ...f, contactableOnly: e.target.checked }))}
                 />
                 Contactable only
               </label>
               <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={filters.activeRecentlyOnly}
                   onChange={(e) => setFilters((f) => ({ ...f, activeRecentlyOnly: e.target.checked }))}
                 />
                 Active in last {ACTIVE_RECENTLY_DAYS} days
               </label>
-              <input
+              <Input
                 type="number"
                 min={0}
                 value={filters.minFollowers ?? ""}

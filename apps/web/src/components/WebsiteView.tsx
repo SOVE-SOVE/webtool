@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type QualityIssue, type Website, type WebsiteSection } from "@/lib/api";
+import { Textarea } from "@/components/ui/Textarea";
 
 const SEVERITY_CLASSES: Record<QualityIssue["severity"], string> = {
   high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
@@ -114,7 +115,7 @@ function SectionCard({
       <div className="mt-2">
         {editing ? (
           <div>
-            <textarea
+            <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={10}

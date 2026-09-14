@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Planning } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
 
 /**
  * The one primary "Analyse Website" action — used both as the focused
@@ -42,7 +43,7 @@ export function AnalyseWebsiteAction({
       className={`flex flex-wrap items-center gap-2 ${variant === "empty" ? "justify-center" : ""}`}
     >
       {!planning.website_url && (
-        <input
+        <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…"

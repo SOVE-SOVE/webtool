@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { Select } from "@/components/ui/Select";
 
 const SNOOZE_OPTIONS: { label: string; days: number }[] = [
   { label: "+1 day", days: 1 },
@@ -97,7 +98,7 @@ function FollowUpRow({
             Open lead →
           </Link>
           <div className="flex items-center gap-2">
-            <select
+            <Select
               value=""
               onChange={(e) => {
                 const days = Number(e.target.value);
@@ -112,7 +113,7 @@ function FollowUpRow({
                   {opt.label}
                 </option>
               ))}
-            </select>
+            </Select>
             <button onClick={() => onResolve(item.id)} className="btn btn-secondary btn-sm">
               Mark done
             </button>
@@ -353,7 +354,7 @@ export default function FollowUpsPage() {
       <div className="mt-8">
         <Disclosure title="Generate a follow-up for a lead" hint="Draft the next touch for any qualified lead">
           <div className="flex flex-wrap items-center gap-2">
-            <select
+            <Select
               value={selectedLeadId}
               onChange={(e) => setSelectedLeadId(e.target.value)}
               className="input w-auto"
@@ -364,7 +365,7 @@ export default function FollowUpsPage() {
                   {lead.business_name}
                 </option>
               ))}
-            </select>
+            </Select>
             <button onClick={handleGenerate} disabled={!selectedLeadId || generating} className="btn btn-primary">
               {generating ? "Generating…" : "Generate follow-up"}
             </button>

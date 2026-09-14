@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type Planning, type VisualDirectionOption } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
 
 const FIELD_LABEL: Record<keyof VisualDirectionOption, string> = {
   character: "Character",
@@ -122,7 +123,7 @@ export function VisualDirectionsSection({ planning, onUpdated }: { planning: Pla
               {(Object.keys(FIELD_LABEL) as (keyof VisualDirectionOption)[]).map((field) => (
                 <div key={field}>
                   <label className="text-xs font-medium text-fg-subtle">{FIELD_LABEL[field]}</label>
-                  <input
+                  <Input
                     value={draft[field]}
                     onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
                     className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
