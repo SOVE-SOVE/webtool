@@ -10,11 +10,13 @@
  * still first-class routes, surfaced as `secondary` links under the
  * primary concept they belong to.
  *
- * Clients and Live Websites reuse existing routes/views (Leads' "Won"
- * tab, Projects' finished stages) rather than new pages — see the
- * `isActive` predicates below, which is how two sidebar links can point
- * at the same base route (e.g. Leads vs Clients both live at
- * /dashboard/leads) without both lighting up together.
+ * Live Websites reuses Projects (filtered to its finished/live stages)
+ * rather than a new page — see the `isActive` predicate below, which is
+ * how two sidebar links can point at the same base route without both
+ * lighting up together. Clients is its own real route/page backed by the
+ * Client API (`/dashboard/clients`) — it used to be a view over Leads'
+ * "Won" tab, but a client is a distinct entity from a lead (see
+ * docs/05_DECISIONS.md), so it gets its own destination.
  */
 
 export type IconName =
@@ -121,13 +123,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "manage",
     label: "Manage",
     links: [
-      {
-        href: "/dashboard/leads?tab=won",
-        label: "Clients",
-        icon: "clients",
-        activePrefixes: ["/dashboard/clients"],
-        isActive: (pathname, search) => pathname === "/dashboard/leads" && search.get("tab") === "won",
-      },
+      { href: "/dashboard/clients", label: "Clients", icon: "clients" },
       {
         href: "/dashboard/projects?view=live",
         label: "Live Websites",

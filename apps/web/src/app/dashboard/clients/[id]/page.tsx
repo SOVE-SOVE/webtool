@@ -5,15 +5,25 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   api,
-  PROJECT_STAGE_LABELS,
   type ActivityItem,
   type Business,
   type Client,
   type Project,
+  type Task,
   type User,
 } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ClientStatusBadge } from "@/components/ClientStatusBadge";
+import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
+import {
+  clientNextAction,
+  clientTone,
+  currentProject,
+  mostRecentActivity,
+} from "@/lib/clients";
+import { nextOpenTask } from "@/lib/projects";
+import { timeAgo } from "@/lib/format";
 
 function field(label: string, value: React.ReactNode) {
   return (
@@ -24,7 +34,7 @@ function field(label: string, value: React.ReactNode) {
   );
 }
 
-const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
+const inputClass = "input";
 
 // Client.contract_signed_at is a full timestamp; <input type="date"> needs
 // just the date portion, and round-trips back out as UTC midnight.
@@ -42,7 +52,13 @@ export default function ClientDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+  // Unfiltered, workspace-wide — only used to find the most recent event
+  // across this client *and* its project(s) for the Overview's "Last
+  // activity" line. The "Activity history" section below stays scoped to
+  // just this client's own log, unchanged from before.
+  const [allActivity, setAllActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [startingIntake, setStartingIntake] = useState(false);
 
@@ -60,10 +76,12 @@ export default function ClientDetailPage() {
       .catch(() => setError("Couldn't load this client."));
     api.listUsers().then(setUsers).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
+    api.listTasks().then(setTasks).catch(() => {});
     api
       .listActivity({ entity_type: "client", entity_id: clientId })
       .then(setActivity)
       .catch(() => {});
+    api.listActivity().then(setAllActivity).catch(() => {});
   }
 
   useEffect(load, [clientId]);
@@ -120,16 +138,45 @@ export default function ClientDetailPage() {
   const activeProject = clientProjects.find(
     (p) => p.stage !== "maintenance" && p.stage !== "complete",
   );
+  const tone = clientTone(clientProjects);
+  const overviewProject = currentProject(clientProjects);
+  const nextTask = overviewProject ? nextOpenTask(tasks, overviewProject.id) : null;
+  const lastActivity = mostRecentActivity(allActivity, clientRecord, clientProjects);
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/leads?tab=won" className="text-sm text-fg-muted hover:underline">
-        ← All clients
+      <Link href="/dashboard/clients" className="text-sm text-fg-muted hover:underline">
+        ← Clients
       </Link>
 
-      <h1 className="mt-2 text-lg font-semibold text-fg">{business.name}</h1>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+        <ClientStatusBadge tone={tone} />
+      </div>
 
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-8">
+      <section className="mt-6 card grid grid-cols-1 gap-6 p-4 sm:grid-cols-3">
+        {field(
+          "Current project",
+          overviewProject ? (
+            <div className="flex items-center gap-2">
+              <span className="text-fg">{overviewProject.name}</span>
+              <ProjectStatusBadge project={overviewProject} />
+            </div>
+          ) : (
+            <span className="text-fg-muted">No project yet</span>
+          ),
+        )}
+        {field(
+          "Next action",
+          <span className="text-fg">{clientNextAction(overviewProject, nextTask?.title ?? null)}</span>,
+        )}
+        {field(
+          "Last activity",
+          <span className="text-fg-muted">{lastActivity ? timeAgo(lastActivity.created_at) : "No activity yet"}</span>,
+        )}
+      </section>
+
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-8">
         <section>
           <h2 className="text-sm font-semibold text-fg">Business</h2>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -306,9 +353,7 @@ export default function ClientDetailPage() {
                 )}
               </div>
               <span className="flex items-center gap-3 text-xs text-fg-muted">
-                <span className="rounded bg-surface-subtle px-2 py-0.5 font-medium text-fg-muted">
-                  {PROJECT_STAGE_LABELS[project.stage]}
-                </span>
+                <ProjectStatusBadge project={project} />
                 {project.assigned_user_name && <span>· {project.assigned_user_name}</span>}
               </span>
             </li>
