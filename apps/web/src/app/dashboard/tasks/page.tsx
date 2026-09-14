@@ -1,23 +1,120 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, type Lead, type Project, type Task, type User } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { ApiError, api, type Lead, type Project, type Task, type User } from "@/lib/api";
+import {
+  groupOpenTasksByUrgency,
+  listTaskFilterOptions,
+  taskContextHref,
+  taskContextName,
+  taskMatchesFilter,
+  taskMatchesSearch,
+  taskMatchesTab,
+  taskUrgency,
+  TASK_TABS,
+  type TaskTab,
+  type TaskUrgency,
+} from "@/lib/tasks";
+import { Disclosure } from "@/components/ui/Disclosure";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ListSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/ToastProvider";
+import { NewTaskModal } from "@/components/NewTaskModal";
+import { TaskDetailModal } from "@/components/TaskDetailModal";
+
+// Same colour convention as DEADLINE_CLASS on the Projects page (see
+// lib/projects.ts's deadlineStatus) — urgency, not a fabricated
+// priority field, is what tells the operator "how important is this"
+// here, since Task has no priority of its own (only Leads do).
+const URGENCY_CLASS: Record<TaskUrgency, string> = {
+  overdue: "text-red-700 dark:text-red-400",
+  today: "text-amber-700 dark:text-amber-400",
+  upcoming: "text-fg-muted",
+  none: "text-fg-subtle",
+};
+
+const GROUP_LABEL: Record<"overdue" | "today" | "upcoming" | "noDueDate", string> = {
+  overdue: "Overdue",
+  today: "Due today",
+  upcoming: "Upcoming",
+  noDueDate: "No due date",
+};
+
+const GROUP_TONE: Record<"overdue" | "today" | "upcoming" | "noDueDate", string> = {
+  overdue: URGENCY_CLASS.overdue,
+  today: URGENCY_CLASS.today,
+  upcoming: URGENCY_CLASS.upcoming,
+  noDueDate: URGENCY_CLASS.none,
+};
+
+function dueLabel(task: Task, urgency: TaskUrgency): string | null {
+  if (!task.due_at) return null;
+  const date = new Date(task.due_at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  if (urgency === "overdue") return `Overdue · ${date}`;
+  if (urgency === "today") return "Due today";
+  return `Due ${date}`;
+}
+
+function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: () => void; onOpen: () => void }) {
+  const urgency = taskUrgency(task);
+  const label = dueLabel(task, urgency);
+  return (
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onOpen();
+      }}
+      className="flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover cursor-pointer"
+    >
+      <input
+        type="checkbox"
+        checked={task.done}
+        onClick={(e) => e.stopPropagation()}
+        onChange={onToggle}
+        aria-label={task.done ? `Reopen "${task.title}"` : `Mark "${task.title}" done`}
+        className="mt-1 h-4 w-4 shrink-0 accent-fg"
+      />
+      <div className="min-w-0 flex-1">
+        <p className={`truncate text-sm font-medium ${task.done ? "text-fg-muted line-through" : "text-fg"}`}>
+          {task.title}
+        </p>
+        <p className="mt-0.5 truncate text-xs text-fg-muted">
+          <Link
+            href={taskContextHref(task)}
+            onClick={(e) => e.stopPropagation()}
+            className="hover:text-fg hover:underline"
+          >
+            {taskContextName(task)}
+          </Link>
+          {task.assigned_user_name && <span> · {task.assigned_user_name}</span>}
+        </p>
+      </div>
+      {label && !task.done && (
+        <span className={`mt-1 shrink-0 text-xs font-medium ${URGENCY_CLASS[urgency]}`}>{label}</span>
+      )}
+    </li>
+  );
+}
 
 export default function TasksPage() {
+  const showToast = useToast();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [linkType, setLinkType] = useState<"lead" | "project">("lead");
-  const [linkId, setLinkId] = useState("");
-  const [title, setTitle] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [assignedUserId, setAssignedUserId] = useState("");
-  const [saving, setSaving] = useState(false);
+
+  const [tab, setTab] = useState<TaskTab>("open");
+  const [search, setSearch] = useState("");
+  const [filterKey, setFilterKey] = useState("");
+
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   function load() {
     api
@@ -34,134 +131,105 @@ export default function TasksPage() {
 
   useEffect(load, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!linkId) return;
-    setSaving(true);
+  function updateTaskInState(updated: Task) {
+    setTasks((prev) => (prev ? prev.map((t) => (t.id === updated.id ? updated : t)) : prev));
+    setDetailTask((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
+  async function handleToggle(task: Task) {
     try {
-      await api.createTask({
-        title,
-        due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
-        lead_id: linkType === "lead" ? linkId : undefined,
-        project_id: linkType === "project" ? linkId : undefined,
-        assigned_user_id: assignedUserId || undefined,
-      });
-      setTitle("");
-      setDueAt("");
-      setLinkId("");
-      setAssignedUserId("");
-      setShowForm(false);
-      load();
-    } catch {
-      setError("Couldn't create task.");
-    } finally {
-      setSaving(false);
+      const updated = await api.updateTask(task.id, { done: !task.done });
+      updateTaskInState(updated);
+      showToast(updated.done ? "Marked complete" : "Reopened");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Couldn't update this task.", "error");
     }
   }
 
-  async function handleToggle(id: string, done: boolean) {
-    await api.updateTask(id, { done });
-    load();
-  }
+  const filterOptions = useMemo(() => listTaskFilterOptions(tasks ?? []), [tasks]);
 
-  async function handleAssigneeChange(id: string, assigneeId: string) {
-    await api.updateTask(id, { assigned_user_id: assigneeId || null });
-    load();
+  const filteredTasks = useMemo(() => {
+    if (!tasks) return null;
+    return tasks.filter(
+      (t) => taskMatchesTab(t, tab) && taskMatchesFilter(t, filterKey) && taskMatchesSearch(t, search),
+    );
+  }, [tasks, tab, filterKey, search]);
+
+  const groups = useMemo(
+    () => groupOpenTasksByUrgency(tab === "done" ? [] : (filteredTasks ?? [])),
+    [filteredTasks, tab],
+  );
+
+  const completedTasks = useMemo(() => {
+    if (!filteredTasks) return [];
+    return filteredTasks
+      .filter((t) => t.done)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [filteredTasks]);
+
+  const openGroupEntries = (["overdue", "today", "upcoming", "noDueDate"] as const).filter(
+    (key) => groups[key].length > 0,
+  );
+  const hasOpenWork = openGroupEntries.length > 0;
+  const hasAnyFilters = search.trim() !== "" || filterKey !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setFilterKey("");
   }
 
   return (
     <div className="p-6">
       <PageHeader
         title="Tasks"
-        description="Every to-do across leads and projects, in one list."
+        description="Everything that needs doing, across every lead and project."
         actions={
-          <button onClick={() => setShowForm((v) => !v)} className="btn btn-primary">
-            {showForm ? "Cancel" : "Add task"}
+          <button onClick={() => setShowNewTask(true)} className="btn btn-primary">
+            New task
           </button>
         }
       />
 
-      {showForm && (
-        <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
+          {TASK_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`rounded px-3 py-1 ${
+                tab === t.id ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
           <input
-            required
-            placeholder="Task title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            placeholder="Search tasks or projects…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input w-full sm:w-56"
           />
-
-          <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                checked={linkType === "lead"}
-                onChange={() => {
-                  setLinkType("lead");
-                  setLinkId("");
-                }}
-              />
-              Lead
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                checked={linkType === "project"}
-                onChange={() => {
-                  setLinkType("project");
-                  setLinkId("");
-                }}
-              />
-              Project
-            </label>
-          </div>
-
-          <select
-            required
-            value={linkId}
-            onChange={(e) => setLinkId(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
-          >
-            <option value="">{linkType === "lead" ? "Select a lead…" : "Select a project…"}</option>
-            {(linkType === "lead" ? leads : projects).map((item) => (
-              <option key={item.id} value={item.id}>
-                {"business_name" in item ? item.business_name : item.name}
-              </option>
-            ))}
-          </select>
-
-          <div>
-            <label className="text-xs text-fg-muted">Due (optional)</label>
-            <input
-              type="datetime-local"
-              value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
-            />
-          </div>
-
-          <select
-            value={assignedUserId}
-            onChange={(e) => setAssignedUserId(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
-          >
-            <option value="">Unassigned</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="btn btn-primary"
-          >
-            {saving ? "Saving…" : "Save task"}
-          </button>
-        </form>
-      )}
+          {filterOptions.length > 1 && (
+            <select
+              value={filterKey}
+              onChange={(e) => setFilterKey(e.target.value)}
+              className="input w-auto"
+              aria-label="Filter by project or lead"
+            >
+              <option value="">All projects &amp; leads</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
 
       {error && (
         <div className="mt-4">
@@ -169,61 +237,128 @@ export default function TasksPage() {
         </div>
       )}
 
-      {tasks && (
-        <div className="mt-6 overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-            <tr>
-              <th className="w-8 px-3 py-2"></th>
-              <th className="px-3 py-2">Task</th>
-              <th className="px-3 py-2">Context</th>
-              <th className="px-3 py-2">Due</th>
-              <th className="px-3 py-2">Assigned to</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {tasks.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-fg-muted">
-                  No tasks yet.
-                </td>
-              </tr>
-            )}
-            {tasks.map((task) => (
-              <tr key={task.id} className={task.done ? "text-fg-subtle" : undefined}>
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={task.done}
-                    onChange={(e) => handleToggle(task.id, e.target.checked)}
-                  />
-                </td>
-                <td className={`px-3 py-2 ${task.done ? "line-through" : "font-medium text-fg"}`}>
-                  {task.title}
-                </td>
-                <td className="px-3 py-2 text-fg-muted">{task.context}</td>
-                <td className="px-3 py-2 text-fg-muted">
-                  {task.due_at ? new Date(task.due_at).toLocaleString() : "—"}
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    value={task.assigned_user_id ?? ""}
-                    onChange={(e) => handleAssigneeChange(task.id, e.target.value)}
-                    className="rounded-md border border-border-strong px-2 py-1 text-sm"
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {!tasks && !error && (
+        <div className="mt-4">
+          <ListSkeleton rows={5} />
         </div>
+      )}
+
+      {tasks && tasks.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No tasks yet"
+            description="Add a task for a lead or project to start building your work queue."
+            action={
+              <button onClick={() => setShowNewTask(true)} className="btn btn-primary">
+                Add your first task
+              </button>
+            }
+          />
+        </div>
+      )}
+
+      {tasks && tasks.length > 0 && filteredTasks && filteredTasks.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title={hasAnyFilters ? "No tasks match your filters" : "Nothing here"}
+            description={hasAnyFilters ? "Try a different search or clear the filters above." : undefined}
+            action={
+              hasAnyFilters ? (
+                <button onClick={clearFilters} className="btn btn-secondary">
+                  Clear filters
+                </button>
+              ) : undefined
+            }
+          />
+        </div>
+      )}
+
+      {tasks && tasks.length > 0 && filteredTasks && filteredTasks.length > 0 && (
+        <div className="mt-4 space-y-4">
+          {tab !== "done" && (
+            <div className="card overflow-hidden">
+              {!hasOpenWork && (
+                <EmptyState compact title="All caught up" description="No open tasks match this view." />
+              )}
+              {openGroupEntries.map((key, i) => (
+                <div key={key} className={i > 0 ? "border-t border-border" : undefined}>
+                  <div
+                    className={`flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wide ${GROUP_TONE[key]}`}
+                  >
+                    <span>{GROUP_LABEL[key]}</span>
+                    <span className="text-fg-subtle">{groups[key].length}</span>
+                  </div>
+                  <ul className="divide-y divide-border">
+                    {groups[key].map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        onToggle={() => handleToggle(task)}
+                        onOpen={() => setDetailTask(task)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {completedTasks.length > 0 && tab === "all" && (
+            <Disclosure
+              title="Completed"
+              badge={<span className="text-xs text-fg-subtle">{completedTasks.length}</span>}
+            >
+              <ul className="-m-4 divide-y divide-border">
+                {completedTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onToggle={() => handleToggle(task)}
+                    onOpen={() => setDetailTask(task)}
+                  />
+                ))}
+              </ul>
+            </Disclosure>
+          )}
+
+          {tab === "done" && (
+            <div className="card overflow-hidden">
+              <ul className="divide-y divide-border">
+                {completedTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onToggle={() => handleToggle(task)}
+                    onOpen={() => setDetailTask(task)}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showNewTask && (
+        <NewTaskModal
+          leads={leads}
+          projects={projects}
+          users={users}
+          onClose={() => setShowNewTask(false)}
+          onCreated={() => {
+            setShowNewTask(false);
+            showToast("Task added");
+            load();
+          }}
+        />
+      )}
+
+      {detailTask && (
+        <TaskDetailModal
+          task={detailTask}
+          users={users}
+          onClose={() => setDetailTask(null)}
+          onChanged={updateTaskInState}
+        />
       )}
     </div>
   );

@@ -70,6 +70,128 @@ keep scope to Clients only.
 
 ---
 
+## 2026-09-13 — Project-scoped "Next task", removed from the global attention feed
+**Mode:** background job, worktree (`project-scoped-next-task`), branch
+`worktree-project-scoped-next-task` off main. Merged to main and pushed
+per [[feedback-always-merge]]'s standing policy.
+**Scope touched:** `apps/api/app/modules/dashboard/service.py` (removed
+the per-task `AttentionItem` block from `get_overview`'s `needs_attention`
+feed — deleted `_OVERDUE_TASK`/`_UPCOMING_TASK` priorities and the
+now-unused `_task_detail` helper; the `tasks_needing_attention` *count*
+metric is unchanged), `apps/api/tests/test_dashboard.py` (updated the two
+tests that asserted a task appeared in `needs_attention` or was ordered
+against other kinds there), `apps/web/src/app/dashboard/projects/[id]/page.tsx`
+(new "Next task" callout — reuses `nextOpenTask` from `lib/projects.ts`,
+the same helper the Projects list card already used — above the existing
+full task list, with its own "Mark done" action and an explicit empty
+state).
+**What happened:** The dashboard's global `<DoThisNext>` queue (mounted
+once in `dashboard/layout.tsx`, so it renders under every page — Today,
+Discovery, Leads, Sales, Follow-ups, Settings, etc.) mixed several
+unrelated "needs attention" kinds into one feed: project approval gates,
+follow-ups, meetings, stale leads, and — the one this task was about —
+individual `Task` rows selected from *every* project and lead in the
+workspace, shown with a generic `/dashboard/tasks` link regardless of
+which project they belonged to. That's a workspace-wide "next task"
+selected from the whole database, displayed on pages that have nothing
+to do with the project it belongs to — not project-scoped at all.
+Fixed by removing only the task-sourced items from that shared feed
+(everything else `<DoThisNext>` does — project gates, follow-ups,
+meetings, stale leads — is unrelated to per-project task tracking and
+was left alone, so Dashboard/Leads/Sales/Follow-ups keep their existing
+behavior otherwise) and adding a real "Next task" section to the
+project detail page, which already had a fully project-scoped task list
+(`loadTasks()` already filtered by `project_id`, and task creation from
+that page already auto-set `project_id` with no manual project picker —
+both pre-existing, reused as-is). No schema change: `tasks.project_id`
+already existed with a check constraint that a task belongs to exactly
+one of project or lead.
+**Blockers/issues:** None outstanding. Full backend suite (1162 tests)
+and full frontend suite (149 tests) pass; `next build` (which runs
+`tsc`) is clean. Live-verified end to end against a real Postgres-backed
+API + Next dev server on isolated ports (8001/3001, to avoid the user's
+own running dev server on 8000/3000) with two real projects each given
+their own tasks: confirmed via Playwright that Project A never shows
+Project B's task and vice versa, that completing the shown task
+immediately surfaces the project's next open one, that a fully-done
+project shows the empty state with an inline way to add the next task,
+and that `/dashboard`, `/dashboard/projects` (list), and other pages'
+"Do this next" panel no longer lists any individual task. All smoke-test
+data was created in and then removed from the shared dev DB.
+**Next up:** Nothing pending on this change. If a similar "per-entity
+next-item" pattern comes up again (e.g. a lead's next task), the same
+approach — keep the shared cross-cutting feed for cross-cutting kinds,
+build entity-scoped ones on that entity's own page — is probably right
+here too.
+
+---
+
+## 2026-09-13 — Tasks page redesign (work queue, not admin table)
+**Mode:** interactive session, feature branch `redesign-tasks-page`.
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/web/src/lib/tasks.ts` + `tasks.test.ts` (urgency
+bucketing, tab filtering, project/lead filter options, search matching —
+15 unit tests), new `apps/web/src/components/NewTaskModal.tsx` and
+`TaskDetailModal.tsx`, rewritten `apps/web/src/app/dashboard/tasks/page.tsx`.
+No backend changes — `Task` model/schemas/routes untouched.
+
+**What happened:** UI/UX-only redesign of the Tasks page per the
+operator's brief: turn a dense admin table into a scannable work queue.
+The old page was one flat `<table>` with every task (open and done)
+mixed together, a per-row assignee `<select>` widening every row, and
+an always-visible creation form.
+
+Key finding during inspection: `Task` has no priority field (only
+`Lead` does — see `LeadPriority`), and `TaskUpdate` only accepts `done`
+and `assigned_user_id` (title/due date aren't patchable after
+creation). Rather than add backend fields the brief said not to touch,
+"how important is this" is answered by due-date urgency instead of a
+fabricated priority: tasks group into Overdue / Due today / Upcoming /
+No due date (reusing the same red/amber/muted colour convention as
+`deadlineStatus` on the Projects page), soonest first. Completed tasks
+never mix into that list — a flat Completed tab, or a collapsed
+`Disclosure` under "All" — so they don't compete with active work.
+
+Status tabs are To do / All / Completed (a `done` boolean has no
+"in progress" state to represent, so no fake middle tab was added).
+Filters are a compact search (title + project/client name) and a
+project/lead dropdown built from the tasks actually present — no due-
+date filter dropdown, since the urgency grouping already answers that.
+Each row shows title, a clickable project/lead link (routes to the
+existing project or lead detail page), assignee (if any), and a due
+badge; a checkbox toggles done inline without opening anything.
+Everything else (assignee, due date, created-at) moved into a
+`TaskDetailModal` opened by clicking the row, per "don't put every
+field on the main page." "Do this next" was deliberately left alone —
+it's the existing global `DoThisNext` bar in the dashboard layout, out
+of scope for this page-only redesign.
+
+Live-QA'd against the real dev database (Playwright, a throwaway QA
+login created and deleted afterward): create task → shows in the
+correct urgency group; toggle done → moves to Completed and the toast
+fires; open a row → detail modal shows project link, due date,
+assignee select, created-at; reassign from the modal → row updates
+live; search and the project filter both narrow the list correctly,
+with a "Clear filters" empty state when they exclude everything;
+narrow-viewport (375px) layout confirmed via accessibility snapshot
+(the flex-row rows have no table to overflow, so nothing goes
+horizontally cramped). One incidental discovery, not a bug: the real
+dev workspace had a job runner actively creating project onboarding
+tasks mid-session — unrelated background automation, not this change.
+
+**Not changed:** the Projects page's own inline per-project task list,
+`Task`/`TaskCreate`/`TaskUpdate` schemas, the tasks API routes, and the
+global `DoThisNext` component/layout placement.
+
+**Checks:** `npm run test` 164/164 pass (new `tasks.test.ts`, 15
+tests). `npm run lint` — zero new issues (the 1 error / 2 warnings
+reported are pre-existing, in files this change didn't touch:
+`dashboard/layout.tsx`, `dashboard/calendar/page.tsx`,
+`dashboard/projects/[id]/page.tsx`). `tsc --noEmit` clean. `npm run
+build` succeeds.
+
+---
+
 ## 2026-09-10 — Google Review Insights inside Planning
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review

@@ -99,9 +99,7 @@ _BROKEN_DEPLOYMENT = 0
 _OVERDUE_FOLLOW_UP = 1
 _IMMINENT_MEETING = 2
 _PROJECT_BLOCKED = 3
-_OVERDUE_TASK = 4
 _FOLLOW_UP_DUE_TODAY = 5
-_UPCOMING_TASK = 6
 _STALE_LEAD = 7
 
 _ProjectBusiness = aliased(Business)
@@ -258,31 +256,13 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
         )
     )
 
+    # Individual tasks are deliberately NOT surfaced here: "next task" is a
+    # per-project concept (see the Projects area), not a workspace-wide
+    # feed selected from every task in the database. `tasks_needing_attention`
+    # below stays as a plain count — a number carries no cross-project
+    # task content, so it can't leak one project's task into another's view.
     attention_due_before = now + ATTENTION_DUE_WINDOW
-    due_tasks = db.scalars(
-        task_base.options(joinedload(Task.project), joinedload(Task.lead).joinedload(Lead.business))
-        .where(Task.done.is_(False))
-        .where(or_(Task.due_at.is_(None), Task.due_at <= attention_due_before))
-        .order_by(Task.due_at.asc().nulls_last())
-        .limit(ATTENTION_LIMIT)
-    )
     scored: list[tuple[int, AttentionItem]] = []
-    for task in due_tasks:
-        overdue = task.due_at is not None and task.due_at <= now
-        scored.append(
-            (
-                _OVERDUE_TASK if overdue else _UPCOMING_TASK,
-                AttentionItem(
-                    kind="task",
-                    label="Task",
-                    id=task.id,
-                    title=task.title,
-                    detail=_task_detail(task, now),
-                    action="Do it, or tick it off",
-                    href="/dashboard/tasks",
-                ),
-            )
-        )
 
     attention_task_subquery = (
         task_base.where(Task.done.is_(False))
@@ -570,12 +550,3 @@ def _next_project_action(
         return (_PROJECT_BLOCKED, "Deploy", "every approval is in — ready to launch", "Deploy the site", "")
 
     return None
-
-
-def _task_detail(task: Task, now: datetime) -> str:
-    context = f"Project: {task.project.name}" if task.project else f"Lead: {task.lead.business.name}"
-    if task.due_at is None:
-        return f"{context} — no due date"
-    if task.due_at <= now:
-        return f"{context} — overdue"
-    return f"{context} — due {task.due_at.date().isoformat()}"

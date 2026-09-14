@@ -33,7 +33,7 @@ import { WebsiteBriefView } from "@/components/WebsiteBriefView";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { checkpointProgress, deadlineStatus, stageProgress } from "@/lib/projects";
+import { checkpointProgress, deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
 
 function money(cents: number | null): string {
   return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
@@ -354,6 +354,10 @@ export default function ProjectDetailPage() {
 
   const openTasks = useMemo(() => (tasks ?? []).filter((t) => !t.done), [tasks]);
   const doneTasks = useMemo(() => (tasks ?? []).filter((t) => t.done), [tasks]);
+  // Same helper the Projects list card uses, so "next task" means the same
+  // thing everywhere — the earliest-due (or oldest undated) open task
+  // belonging to *this* project specifically, never one from another.
+  const nextTask = useMemo(() => nextOpenTask(tasks ?? [], projectId), [tasks, projectId]);
 
   const progress = approvalStatus
     ? checkpointProgress(approvalStatus.checkpoints)
@@ -812,9 +816,30 @@ export default function ProjectDetailPage() {
         </Disclosure>
       </section>
 
-      {/* Tasks */}
+      {/* Tasks — "Next task" is this project's, and only this project's:
+          derived from `tasks`, which is already filtered to this project's
+          id in loadTasks() above. */}
       <section className="rounded-md border border-border bg-surface p-4">
-        <h2 className="section-title">Tasks</h2>
+        <h2 className="section-title">Next task</h2>
+        {tasks === null ? (
+          <p className="mt-2 text-sm text-fg-muted">Loading…</p>
+        ) : nextTask ? (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-fg">{nextTask.title}</p>
+              {nextTask.due_at && (
+                <p className="text-xs text-fg-muted">Due {new Date(nextTask.due_at).toLocaleDateString()}</p>
+              )}
+            </div>
+            <button onClick={() => handleToggleTask(nextTask.id, true)} className="btn btn-secondary btn-sm shrink-0">
+              Mark done
+            </button>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-fg-muted">No open tasks for this project — add one below.</p>
+        )}
+
+        <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-fg-subtle">All tasks</h3>
         <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
           <input
             value={newTask}
