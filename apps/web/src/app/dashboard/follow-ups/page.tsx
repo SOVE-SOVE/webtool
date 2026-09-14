@@ -39,17 +39,25 @@ const FOLLOW_UP_ELIGIBLE_STATUSES: LeadStatus[] = [
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-/** "today" / "3 days overdue" / "in 5 days" — WHEN, in plain words. */
-function dueLabel(due: string, now: number = Date.now()): string {
+type DueTone = "overdue" | "today" | "upcoming";
+
+const DUE_LABEL_CLASSES: Record<DueTone, string> = {
+  overdue: "font-medium text-red-700 dark:text-red-400",
+  today: "font-medium text-amber-700 dark:text-amber-400",
+  upcoming: "text-fg-muted",
+};
+
+/** "today" / "3 days overdue" / "in 5 days" — WHEN, in plain words, plus how urgent it is. */
+function dueLabel(due: string, now: number = Date.now()): { text: string; tone: DueTone } {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   const day = new Date(due);
   day.setHours(0, 0, 0, 0);
   const diff = Math.round((day.getTime() - start.getTime()) / MS_PER_DAY);
-  if (diff === 0) return "due today";
-  if (diff < 0) return `${-diff} day${diff === -1 ? "" : "s"} overdue`;
-  if (diff === 1) return "due tomorrow";
-  return `due in ${diff} days`;
+  if (diff === 0) return { text: "due today", tone: "today" };
+  if (diff < 0) return { text: `${-diff} day${diff === -1 ? "" : "s"} overdue`, tone: "overdue" };
+  if (diff === 1) return { text: "due tomorrow", tone: "upcoming" };
+  return { text: `due in ${diff} days`, tone: "upcoming" };
 }
 
 function FollowUpRow({
@@ -67,15 +75,18 @@ function FollowUpRow({
     item.previous_outreach
       ? `After ${item.previous_outreach.channel.replace("_", " ")} (${item.previous_outreach.status.replace("_", " ")}): ${item.previous_outreach.excerpt}`
       : "No prior outreach on record";
+  const due = dueLabel(item.due_date);
   return (
-    <li className="px-4 py-3 text-sm">
+    <li
+      className={`px-4 py-3 text-sm ${due.tone === "overdue" ? "border-l-2 border-red-500/70 dark:border-red-400/70" : ""}`}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-fg">{item.business_name}</span>
             {leadStatus && <LeadStatusBadge status={leadStatus} />}
-            <span className="text-xs text-fg-muted">
-              {dueLabel(item.due_date)} · via {item.channel.replace("_", " ")}
+            <span className={`text-xs ${DUE_LABEL_CLASSES[due.tone]}`}>
+              {due.text} · via {item.channel.replace("_", " ")}
             </span>
           </div>
           <p className="mt-1 text-fg">{item.suggested_next_action}</p>
