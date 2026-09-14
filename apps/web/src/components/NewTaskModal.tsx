@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ApiError, api, type Lead, type Project, type User } from "@/lib/api";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 
 /**
  * Task creation for the Tasks page. Deliberately small: a task only has
@@ -32,6 +33,8 @@ export function NewTaskModal({
   const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEscapeToClose(onClose);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

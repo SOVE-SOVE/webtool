@@ -186,12 +186,7 @@ function ProjectsPageInner() {
 
       {showForm && !onlyLive && (
         <form onSubmit={handleCreate} className="mt-4 max-w-xl space-y-3 rounded-md border border-border p-4">
-          <select
-            required
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
-          >
+          <select required value={clientId} onChange={(e) => setClientId(e.target.value)} className="input">
             <option value="">Select a client…</option>
             {clients.map((client) => (
               <option key={client.id} value={client.id}>
@@ -204,12 +199,12 @@ function ProjectsPageInner() {
             placeholder="Project name (e.g. “Riverside Plumbing Website”)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            className="input"
           />
           <select
             value={assignedUserId}
             onChange={(e) => setAssignedUserId(e.target.value)}
-            className="w-full rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            className="input"
           >
             <option value="">Unassigned</option>
             {users.map((user) => (
@@ -229,13 +224,13 @@ function ProjectsPageInner() {
           placeholder="Search project, client, package…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-60 rounded-md border border-border-strong px-3 py-1.5 text-sm"
+          className="input w-60"
         />
         {!onlyLive && (
           <select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value as ProjectStage | "")}
-            className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+            className="input w-auto"
           >
             <option value="">All stages</option>
             {PROJECT_STAGES.map((stage) => (
@@ -248,7 +243,7 @@ function ProjectsPageInner() {
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          className="input w-auto"
         >
           <option value="">Anyone assigned</option>
           <option value={UNASSIGNED}>Unassigned</option>

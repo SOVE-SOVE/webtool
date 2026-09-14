@@ -12,15 +12,17 @@ import {
   type DiscoveredBusinessReviewItem,
   type OpportunityScoreCategory,
 } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
-const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
+const CATEGORY_TONE: Record<OpportunityScoreCategory, BadgeTone> = {
+  hot: "danger",
+  warm: "warning",
+  cold: "info",
+  review: "muted",
 };
 
 const ACTIVITY_LABEL: Record<string, string> = { high: "HIGH", medium: "MEDIUM", low: "LOW", unknown: "UNKNOWN" };
@@ -209,7 +211,7 @@ export default function ReviewPage() {
         <select
           value={websiteFilter}
           onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          className="input w-auto"
           aria-label="Filter by website"
         >
           <option value="">Any website status</option>
@@ -245,15 +247,15 @@ export default function ReviewPage() {
       )}
 
       {visibleItems && visibleItems.length === 0 && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          Nothing to review yet — run a discovery search first.
+        <div className="mt-6">
+          <EmptyState title="Nothing to review yet" description="Run a discovery search first." />
         </div>
       )}
 
       {visibleItems && visibleItems.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full border border-border text-left text-sm">
-            <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
+        <div className="mt-4 table-shell">
+          <table className="table">
+            <thead>
               <tr>
                 <th className="px-2 py-2">
                   <input
@@ -286,6 +288,7 @@ export default function ReviewPage() {
                         disabled={settled}
                         checked={selected.has(item.id)}
                         onChange={() => toggleSelected(item.id)}
+                        aria-label={`Select ${item.name}`}
                       />
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -342,11 +345,9 @@ export default function ReviewPage() {
                     </td>
                     <td className="px-3 py-2 align-top">
                       {item.opportunity_score !== null && item.score_category ? (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${CATEGORY_STYLE[item.score_category]}`}
-                        >
+                        <Badge tone={CATEGORY_TONE[item.score_category]} className="uppercase">
                           {item.score_category} · {item.opportunity_score}
-                        </span>
+                        </Badge>
                       ) : (
                         <span className="text-fg-subtle">Not scored</span>
                       )}
@@ -374,19 +375,11 @@ export default function ReviewPage() {
                       ) : item.status === "archived" ? (
                         <span className="text-xs text-fg-subtle">Archived</span>
                       ) : (
-                        <div className="flex gap-3">
-                          <button
-                            disabled={busy}
-                            onClick={() => handleApprove(item)}
-                            className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                          >
+                        <div className="flex gap-2">
+                          <button disabled={busy} onClick={() => handleApprove(item)} className="btn btn-secondary btn-sm">
                             {busy ? "Adding…" : "Approve"}
                           </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => handleReject(item)}
-                            className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
-                          >
+                          <button disabled={busy} onClick={() => handleReject(item)} className="btn btn-secondary btn-sm">
                             Reject
                           </button>
                         </div>

@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TabBar } from "@/components/ui/Tabs";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
@@ -83,6 +84,10 @@ function SettingsPageInner() {
   const [role, setRole] = useState<Role>("member");
   const [savingUser, setSavingUser] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+
+  useEscapeToClose(() => {
+    if (showAddUser) setShowAddUser(false);
+  });
 
   const sectionParam = searchParams.get("section");
   // A calendar-connect redirect always lands back on this page with
@@ -314,7 +319,7 @@ function SettingsPageInner() {
                                       aria-label={`Role for ${user.name}`}
                                       value={user.role}
                                       onChange={(e) => handleRoleChange(user.id, e.target.value as Role)}
-                                      className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                                      className="input w-auto"
                                     >
                                       <option value="member">Member</option>
                                       <option value="admin">Admin</option>

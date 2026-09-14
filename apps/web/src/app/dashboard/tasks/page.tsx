@@ -67,9 +67,12 @@ function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: () => void;
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
-        if (e.key === "Enter") onOpen();
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
       }}
-      className="flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover cursor-pointer"
+      className="flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
     >
       <input
         type="checkbox"

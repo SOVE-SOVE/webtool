@@ -13,7 +13,9 @@ import {
   type User,
 } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { DetailField } from "@/components/ui/DetailField";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { EmptyRow } from "@/components/ui/Panel";
 import { ClientStatusBadge } from "@/components/ClientStatusBadge";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import {
@@ -26,13 +28,10 @@ import { nextOpenTask } from "@/lib/projects";
 import { timeAgo } from "@/lib/format";
 import { ChecklistSection } from "./ChecklistSection";
 
+// Thin positional-argument wrapper over the shared DetailField primitive
+// (docs/11_UI_REDESIGN_PLAN.md §2.4/§4), matching Lead detail's `field()`.
 function field(label: string, value: React.ReactNode) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className="mt-1">{value}</div>
-    </div>
-  );
+  return <DetailField label={label} value={value} />;
 }
 
 const inputClass = "input";
@@ -151,7 +150,7 @@ export default function ClientDetailPage() {
       </Link>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+        <h1 className="page-title">{business.name}</h1>
         <ClientStatusBadge tone={tone} />
       </div>
 
@@ -334,8 +333,8 @@ export default function ClientDetailPage() {
         </div>
         <ul className="mt-3 divide-y divide-border border border-border">
           {clientProjects.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">
-              No projects yet. Start intake creates one and opens its client intake form.
+            <li>
+              <EmptyRow>No projects yet. Start intake creates one and opens its client intake form.</EmptyRow>
             </li>
           )}
           {clientProjects.map((project) => (
@@ -368,7 +367,9 @@ export default function ClientDetailPage() {
         <h2 className="text-sm font-semibold text-fg">Activity history</h2>
         <ul className="mt-3 divide-y divide-border border border-border">
           {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
+            <li>
+              <EmptyRow>No activity yet.</EmptyRow>
+            </li>
           )}
           {activity?.map((item) => (
             <li key={item.id} className="px-3 py-2 text-sm">

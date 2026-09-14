@@ -31,8 +31,10 @@ import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
+import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { DetailField, DetailRow } from "@/components/ui/DetailField";
+import { EmptyRow } from "@/components/ui/Panel";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -558,14 +560,11 @@ export default function LeadDetailPage() {
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+          <h1 className="page-title">{business.name}</h1>
           <LeadStatusBadge status={lead.status} />
           <LeadPriorityBadge priority={lead.priority} score={lead.score} />
         </div>
-        <button
-          onClick={handleArchiveToggle}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-        >
+        <button onClick={handleArchiveToggle} className="btn btn-secondary">
           {lead.archived_at ? "Unarchive lead" : "Archive lead"}
         </button>
       </div>
@@ -971,7 +970,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {opportunities && opportunities.length === 0 && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No proposal logged yet.</li>
+                  <li>
+                    <EmptyRow>No proposal logged yet.</EmptyRow>
+                  </li>
                 )}
                 {opportunities?.map((op) => (
                   <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
@@ -1016,7 +1017,7 @@ export default function LeadDetailPage() {
                   <button
                     type="submit"
                     disabled={loggingProposal}
-                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                    className="btn btn-secondary"
                   >
                     {loggingProposal ? "Logging…" : "Log proposal"}
                   </button>
@@ -1031,7 +1032,7 @@ export default function LeadDetailPage() {
                 <button
                   onClick={handleGenerateSalesAudit}
                   disabled={generatingAudit}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary"
                 >
                   {generatingAudit ? "Generating…" : "Generate sales audit"}
                 </button>
@@ -1045,7 +1046,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {salesAudits && salesAudits.length === 0 && !generatingAudit && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No sales audits generated yet.</li>
+                  <li>
+                    <EmptyRow>No sales audits generated yet.</EmptyRow>
+                  </li>
                 )}
                 {salesAudits?.map((report) => {
                   const expanded = expandedAuditId === report.id;
@@ -1059,11 +1062,7 @@ export default function LeadDetailPage() {
                           {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-3">
-                          {report.flagged_for_review && (
-                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                              Flagged for review
-                            </span>
-                          )}
+                          {report.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
                           <Link
                             href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
                             className="text-xs text-fg-muted hover:underline"
@@ -1092,7 +1091,7 @@ export default function LeadDetailPage() {
                       key={channel}
                       onClick={() => handleGenerateOutreach(channel)}
                       disabled={generatingChannel !== null}
-                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                      className="btn btn-secondary"
                     >
                       {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
                     </button>
@@ -1101,7 +1100,7 @@ export default function LeadDetailPage() {
                     <button
                       onClick={() => handleGenerateOutreach("follow_up")}
                       disabled={generatingChannel !== null}
-                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                      className="btn btn-secondary"
                       title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
                     >
                       {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
@@ -1113,7 +1112,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No outreach drafted yet.</li>
+                  <li>
+                    <EmptyRow>No outreach drafted yet.</EmptyRow>
+                  </li>
                 )}
                 {outreachMessages?.map((message) => {
                   const expanded = expandedOutreachId === message.id;
@@ -1130,12 +1131,8 @@ export default function LeadDetailPage() {
                           {new Date(message.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-2">
-                          {message.flagged_for_review && (
-                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
-                          )}
-                          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
-                            {OUTREACH_STATUS_LABELS[message.status]}
-                          </span>
+                          {message.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
+                          <Badge tone="muted">{OUTREACH_STATUS_LABELS[message.status]}</Badge>
                         </div>
                       </div>
                       {expanded && editingOutreachId === message.id && (
@@ -1190,14 +1187,14 @@ export default function LeadDetailPage() {
                             <button
                               onClick={() => handleSaveOutreachEdit(message)}
                               disabled={savingOutreachEdit}
-                              className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                              className="btn btn-primary btn-sm"
                             >
                               {savingOutreachEdit ? "Saving…" : "Save"}
                             </button>
                             <button
                               onClick={cancelEditOutreach}
                               disabled={savingOutreachEdit}
-                              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                              className="btn btn-secondary btn-sm"
                             >
                               Cancel
                             </button>
@@ -1211,7 +1208,7 @@ export default function LeadDetailPage() {
                             {(message.status === "drafted" || message.status === "approved") && (
                               <button
                                 onClick={() => startEditOutreach(message)}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Edit
                               </button>
@@ -1220,7 +1217,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "approve")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Approve
                               </button>
@@ -1229,7 +1226,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleSendEmail(message.id)}
                                 disabled={sendingEmailId === message.id}
-                                className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                                className="btn btn-primary btn-sm"
                                 title="Dispatches this approved email through the configured provider and records the attempt."
                               >
                                 {sendingEmailId === message.id
@@ -1243,7 +1240,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "mark-sent")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                                 title={
                                   message.channel === "email"
                                     ? "Records that this went out by hand, without dispatching it from the app."
@@ -1257,7 +1254,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "mark-replied")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Mark replied
                               </button>
@@ -1266,7 +1263,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "close")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Close
                               </button>
@@ -1280,7 +1277,7 @@ export default function LeadDetailPage() {
                                     className={
                                       send.status === "sent"
                                         ? "font-medium text-emerald-800 dark:text-emerald-300"
-                                        : "font-medium text-error"
+                                        : "font-medium text-danger"
                                     }
                                   >
                                     {send.status === "sent" ? "Sent" : "Failed"}
@@ -1290,7 +1287,7 @@ export default function LeadDetailPage() {
                                     {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
                                   </span>
                                   {send.error_message && (
-                                    <span className="w-full text-error">{send.error_message}</span>
+                                    <span className="w-full text-danger">{send.error_message}</span>
                                   )}
                                 </li>
                               ))}
@@ -1319,7 +1316,9 @@ export default function LeadDetailPage() {
             </div>
             <ul className="mt-3 divide-y divide-border border border-border">
               {meetings && meetings.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
+                <li>
+                  <EmptyRow>No meetings scheduled yet.</EmptyRow>
+                </li>
               )}
               {meetings?.map((m) => (
                 <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
@@ -1345,9 +1344,11 @@ export default function LeadDetailPage() {
             </div>
             <ul className="mt-3 divide-y divide-border border border-border">
               {pipelineEvents && pipelineEvents.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">
-                  No stage changes yet — this lead has been {LEAD_STATUS_LABEL[lead.status].toLowerCase()} since it was
-                  created.
+                <li>
+                  <EmptyRow>
+                    No stage changes yet — this lead has been {LEAD_STATUS_LABEL[lead.status].toLowerCase()} since it
+                    was created.
+                  </EmptyRow>
                 </li>
               )}
               {pipelineEvents?.map((event) => (
@@ -1363,7 +1364,9 @@ export default function LeadDetailPage() {
             <h3 className="text-sm font-semibold text-fg">Activity history</h3>
             <ul className="mt-3 divide-y divide-border border border-border">
               {activity && activity.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
+                <li>
+                  <EmptyRow>No activity yet.</EmptyRow>
+                </li>
               )}
               {activity?.map((item) => (
                 <li key={item.id} className="px-3 py-2 text-sm">
