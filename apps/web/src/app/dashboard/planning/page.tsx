@@ -17,10 +17,11 @@ export default function PlanningListPage() {
   const [items, setItems] = useState<PlanningListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [showTransferred, setShowTransferred] = useState(false);
 
   function load() {
     api
-      .listPlanning()
+      .listPlanning({ includeTransferred: showTransferred })
       .then((list) => {
         setError(null);
         setItems(list);
@@ -28,7 +29,7 @@ export default function PlanningListPage() {
       .catch(() => setError("Couldn't load Planning."));
   }
 
-  useEffect(load, []);
+  useEffect(load, [showTransferred]);
 
   async function handleRemove(item: PlanningListItem) {
     const ok = await confirm({
@@ -69,6 +70,11 @@ export default function PlanningListPage() {
         description="Automated website analysis run against a lead's existing site — a neutral summary and evidence-backed key points to prepare the next conversation and the build, before any Project exists."
       />
 
+      <label className="flex w-fit items-center gap-1.5 text-sm text-fg-muted">
+        <input type="checkbox" checked={showTransferred} onChange={(e) => setShowTransferred(e.target.checked)} />
+        Show transferred to a Project
+      </label>
+
       {items === null ? (
         <TableSkeleton rows={5} cols={4} />
       ) : items.length === 0 ? (
@@ -106,15 +112,30 @@ export default function PlanningListPage() {
                     {item.website_url ?? "No website yet"}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
-                      {PLANNING_STATUS_LABELS[item.status]}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
+                        {PLANNING_STATUS_LABELS[item.status]}
+                      </span>
+                      {item.project_id && (
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          Transferred
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-sm text-fg-muted">{new Date(item.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2 text-right">
                     <Link href={`/dashboard/planning/${item.id}`} className="text-sm font-medium text-fg hover:underline">
                       Open →
                     </Link>
+                    {item.project_id && (
+                      <Link
+                        href={`/dashboard/projects/${item.project_id}`}
+                        className="ml-2 text-sm text-fg-muted hover:text-fg hover:underline"
+                      >
+                        Open project →
+                      </Link>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -142,11 +163,21 @@ export default function PlanningListPage() {
                 {item.lead_business_name}
               </Link>
               <p className="mt-0.5 truncate text-xs text-fg-muted">{item.website_url ?? "No website yet"}</p>
+              {item.project_id && (
+                <Link href={`/dashboard/projects/${item.project_id}`} className="mt-0.5 block text-xs text-fg-muted hover:underline">
+                  Open project →
+                </Link>
+              )}
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
                     {PLANNING_STATUS_LABELS[item.status]}
                   </span>
+                  {item.project_id && (
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      Transferred
+                    </span>
+                  )}
                   <span className="text-xs text-fg-subtle">{new Date(item.created_at).toLocaleDateString()}</span>
                 </div>
                 <button

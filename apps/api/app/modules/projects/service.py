@@ -9,6 +9,7 @@ from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.deployments.models import Deployment
+from app.modules.leads.models import Lead
 from app.modules.pipeline import service as pipeline_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.projects.schemas import (
@@ -87,11 +88,12 @@ DEFAULT_LAUNCH_TASK_TITLES = [
 
 
 def _to_read(project: Project) -> ProjectRead:
+    owner_business = project.owner_business
     return ProjectRead(
         id=project.id,
         client_id=project.client_id,
-        business_id=project.client.business_id,
-        client_business_name=project.client.business.name,
+        business_id=owner_business.id,
+        client_business_name=owner_business.name,
         source_lead_id=project.source_lead_id,
         name=project.name,
         stage=project.stage,
@@ -125,11 +127,10 @@ def create_launch_tasks(db: Session, project_id: uuid.UUID) -> None:
 def _base_query(workspace_id: uuid.UUID):
     return (
         select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
+        .where(Project.workspace_id == workspace_id)
         .options(
             joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.source_lead).joinedload(Lead.business),
             joinedload(Project.assigned_user),
             joinedload(Project.delivered_by_user),
         )
@@ -154,17 +155,49 @@ def _get_client_in_workspace(db: Session, workspace_id: uuid.UUID, client_id: uu
     )
 
 
+def _get_lead_in_workspace(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> Lead | None:
+    return db.scalar(
+        select(Lead)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Lead.id == lead_id, Business.workspace_id == workspace_id)
+    )
+
+
 def create_project(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, data: ProjectCreate
 ) -> ProjectRead:
-    if _get_client_in_workspace(db, workspace_id, data.client_id) is None:
-        raise HTTPException(status_code=404, detail="Client not found")
+    """
+    Either a Client-owned project (today's original path) or a
+    Lead-owned prospect project — speculative build work started before
+    the operator explicitly converts the lead (docs/05_DECISIONS.md).
+    A prospect project gets no checklist (ClientChecklistItem is
+    Client-scoped) and never touches the Lead's status or creates a
+    SalesOpportunity — only clients/service.py::create_client's explicit
+    conversion does that.
+    """
+    if data.client_id is not None:
+        if _get_client_in_workspace(db, workspace_id, data.client_id) is None:
+            raise HTTPException(status_code=404, detail="Client not found")
+    else:
+        if _get_lead_in_workspace(db, workspace_id, data.lead_id) is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        # A lead has at most one prospect project — repeated calls (a
+        # second "Start website project" click, or Planning's own
+        # "Create Project" finding one already made via that button)
+        # reopen it instead of creating a duplicate.
+        existing_prospect = db.scalar(
+            select(Project).where(Project.source_lead_id == data.lead_id, Project.client_id.is_(None))
+        )
+        if existing_prospect is not None:
+            return get_project(db, workspace_id, existing_prospect.id)
 
     if data.assigned_user_id is not None:
         require_user_in_workspace(db, workspace_id, data.assigned_user_id)
 
     project = Project(
         client_id=data.client_id,
+        source_lead_id=data.lead_id,
+        workspace_id=workspace_id,
         name=data.name,
         assigned_user_id=data.assigned_user_id,
         package=data.package,
@@ -173,6 +206,12 @@ def create_project(
     )
     db.add(project)
     db.flush()
+
+    if data.client_id is not None:
+        # Local import to avoid a circular import.
+        from app.modules.checklists import service as checklists_service
+
+        checklists_service.initialise_project_checklist(db, data.client_id, project.id)
 
     activity_service.record(
         db,
@@ -186,7 +225,7 @@ def create_project(
 
     db.commit()
     db.refresh(project)
-    return get_project(db, workspace_id, project.id)  # reload with the joined client/business
+    return get_project(db, workspace_id, project.id)  # reload with the joined client/lead/business
 
 
 def update_project(
@@ -196,12 +235,7 @@ def update_project(
     project_id: uuid.UUID,
     data: ProjectUpdate,
 ) -> ProjectRead | None:
-    project = db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Project.id == project_id, Business.workspace_id == workspace_id)
-    )
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id))
     if project is None:
         return None
 
@@ -251,12 +285,7 @@ def update_project(
 
 
 def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
-    return db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Project.id == project_id, Business.workspace_id == workspace_id)
-    )
+    return db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id))
 
 
 def _latest_deployment(db: Session, project_id: uuid.UUID) -> Deployment | None:

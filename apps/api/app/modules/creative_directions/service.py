@@ -35,10 +35,11 @@ _READ_OPTIONS = (
 def _get_project_with_business(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID):
     return db.scalar(
         select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Project.id == project_id)
-        .options(joinedload(Project.client).joinedload(Client.business))
+        .where(Project.workspace_id == workspace_id, Project.id == project_id)
+        .options(
+            joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.source_lead).joinedload(Lead.business),
+        )
     )
 
 
@@ -175,7 +176,7 @@ def generate_creative_direction(
     project = _get_project_with_business(db, workspace_id, project_id)
     if project is None:
         return None
-    business = project.client.business
+    business = project.owner_business
 
     lead = db.scalar(select(Lead).where(Lead.business_id == business.id))
     website_audit = _latest_website_audit(db, lead.id) if lead else None
@@ -263,9 +264,7 @@ def _base_query(workspace_id: uuid.UUID):
     return (
         select(CreativeDirectionBrief)
         .join(Project, CreativeDirectionBrief.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
+        .where(Project.workspace_id == workspace_id)
         .options(*_READ_OPTIONS)
     )
 
@@ -288,9 +287,7 @@ def _get_brief_in_workspace(db: Session, workspace_id: uuid.UUID, brief_id: uuid
     return db.scalar(
         select(CreativeDirectionBrief)
         .join(Project, CreativeDirectionBrief.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, CreativeDirectionBrief.id == brief_id)
+        .where(Project.workspace_id == workspace_id, CreativeDirectionBrief.id == brief_id)
         .options(*_READ_OPTIONS)
     )
 

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   api,
   WORKFLOW_STATUS_LABELS,
@@ -41,7 +41,9 @@ const STATUS_MARK: Record<ChecklistItem["status"], { mark: string; cls: string }
   todo: { mark: "○", cls: "text-fg-subtle" },
 };
 
-export default function ProjectWebsiteWorkspace() {
+// useSearchParams() needs a Suspense-boundary ancestor for Next's
+// static generation — see the default export below.
+function ProjectWebsiteWorkspaceInner() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
 
@@ -65,8 +67,21 @@ export default function ProjectWebsiteWorkspace() {
   const [clientApproving, setClientApproving] = useState(false);
   const [clientApproveError, setClientApproveError] = useState<string | null>(null);
 
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("content");
   const [previewSlug, setPreviewSlug] = useState<string | null>(null);
+
+  // Deep-link support (e.g. the Client checklist linking straight to
+  // "Open QA report") — re-derived on every navigation, not just on
+  // mount, since this page component can stay mounted across a
+  // same-route link (only the tab query param changing).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const requested = searchParams.get("tab");
+    const match = TABS.find((t) => t.id === requested);
+    if (match) setTab(match.id);
+  }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function loadLatestQaReport(websiteId: string) {
     api
@@ -240,9 +255,17 @@ export default function ProjectWebsiteWorkspace() {
             <h1 className="page-title">{project?.name ?? "Website"}</h1>
             <p className="text-sm text-fg-muted">
               {project ? (
-                <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
-                  {project.client_business_name}
-                </Link>
+                project.client_id ? (
+                  <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                    {project.client_business_name}
+                  </Link>
+                ) : project.source_lead_id ? (
+                  <Link href={`/dashboard/leads/${project.source_lead_id}`} className="hover:underline">
+                    {project.client_business_name} (prospect)
+                  </Link>
+                ) : (
+                  project.client_business_name
+                )
               ) : (
                 "Loading…"
               )}
@@ -570,5 +593,13 @@ export default function ProjectWebsiteWorkspace() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProjectWebsiteWorkspace() {
+  return (
+    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+      <ProjectWebsiteWorkspaceInner />
+    </Suspense>
   );
 }

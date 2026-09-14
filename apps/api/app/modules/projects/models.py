@@ -3,13 +3,14 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import CheckConstraint, Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.modules.businesses.models import Business
     from app.modules.clients.models import Client
     from app.modules.design_briefs.models import DesignBrief
     from app.modules.leads.models import Lead
@@ -43,16 +44,39 @@ class ProjectStage(str, enum.Enum):
 
 
 class Project(Base):
-    """The delivery-side unit of work for a client."""
+    """
+    The delivery-side unit of work — for a Client, or (before the
+    operator explicitly converts) a speculative prospect Project owned
+    directly by a Lead. Exactly one of `client_id`/`source_lead_id` is
+    the *current* owner:
+    - `client_id` set: a real, paying Client's project (today's
+      original meaning). `source_lead_id` may ALSO be set here, purely
+      as history — this is the same lead the project (and its Client)
+      originated from.
+    - `client_id` null: a prospect Project, owned by `source_lead_id`
+      directly. No Client exists yet. Converting the Lead to a Client
+      (clients/service.py::create_client) reassigns this same row
+      (`client_id` set) rather than creating a second Project.
+
+    `workspace_id` is denormalized directly onto Project (rather than
+    reached via `client.business.workspace_id`) specifically so every
+    workspace-scoped query across the app (briefs, sitemaps, websites,
+    QA, deployments, tasks, dashboard counts, ...) keeps working
+    identically for a prospect Project, which has no Client to join
+    through.
+    """
 
     __tablename__ = "projects"
+    __table_args__ = (
+        CheckConstraint("client_id IS NOT NULL OR source_lead_id IS NOT NULL", name="project_has_an_owner"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
-    # Set when this project was created by converting a won lead — the
-    # direct traceability pointer back to that lead (see
-    # docs/05_DECISIONS.md). Null for projects added independently of a
-    # conversion (e.g. a second project for an existing client).
+    client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"))
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    # The originating (or, for a prospect project, the *owning*) lead —
+    # see the class docstring above. Null only for a project added
+    # directly to an existing Client with no lead history at all.
     source_lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
     name: Mapped[str] = mapped_column(String(255))
     stage: Mapped[ProjectStage] = mapped_column(
@@ -83,7 +107,7 @@ class Project(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    client: Mapped["Client"] = relationship(back_populates="projects")
+    client: Mapped["Client | None"] = relationship(back_populates="projects")
     source_lead: Mapped["Lead | None"] = relationship()
     assigned_user: Mapped["User | None"] = relationship(foreign_keys=[assigned_user_id])
     delivered_by_user: Mapped["User | None"] = relationship(foreign_keys=[delivered_by_user_id])
@@ -91,3 +115,11 @@ class Project(Base):
     meetings: Mapped[list["Meeting"]] = relationship(back_populates="project")
     design_briefs: Mapped["DesignBrief | None"] = relationship(back_populates="project", uselist=False)
     websites: Mapped[list["Website"]] = relationship(back_populates="project")
+
+    @property
+    def owner_business(self) -> "Business":
+        """The business behind whichever of Client/Lead currently owns
+        this project — see the class docstring. Callers must have
+        eager-loaded `client.business` or `source_lead.business` as
+        appropriate; this never issues its own query."""
+        return self.client.business if self.client is not None else self.source_lead.business

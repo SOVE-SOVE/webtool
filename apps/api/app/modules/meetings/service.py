@@ -14,7 +14,6 @@ from app.integrations.calendar import registry as calendar_registry
 from app.integrations.calendar.base import CalendarEventInput
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.interactions.models import Interaction
 from app.modules.leads.models import Lead, LeadStatus
 from app.modules.meetings.models import (
@@ -57,7 +56,6 @@ _PRICE_TIERS: list[tuple[str, str]] = [
 # workspace via a different FK chain, so both paths are joined (outer,
 # since only one side is ever populated) and matched with OR — same
 # pattern as app/modules/tasks/service.py.
-_ProjectBusiness = aliased(Business)
 _LeadBusiness = aliased(Business)
 
 # A meeting only bumps a lead's status forward, never regresses one
@@ -106,13 +104,11 @@ def _base_query(workspace_id: uuid.UUID):
     return (
         select(Meeting)
         .outerjoin(Project, Meeting.project_id == Project.id)
-        .outerjoin(Client, Project.client_id == Client.id)
-        .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
         .outerjoin(Lead, Meeting.lead_id == Lead.id)
         .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
         .where(
             or_(
-                _ProjectBusiness.workspace_id == workspace_id,
+                Project.workspace_id == workspace_id,
                 _LeadBusiness.workspace_id == workspace_id,
             )
         )
@@ -158,12 +154,7 @@ def get_meeting(db: Session, workspace_id: uuid.UUID, meeting_id: uuid.UUID) -> 
 
 
 def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
-    return db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Project.id == project_id, Business.workspace_id == workspace_id)
-    )
+    return db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id))
 
 
 def _get_lead_in_workspace(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> Lead | None:

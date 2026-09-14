@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, PLANNING_STATUS_LABELS, type Lead, type Planning, type PlanningStatus } from "@/lib/api";
+import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { TabBar } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -11,6 +12,8 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { STATUS_BADGE_CLASS, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
 import { AuditTab } from "./AuditTab";
+import { BuildBriefTab } from "./BuildBriefTab";
+import { ContentDraftTab } from "./ContentDraftTab";
 import { NotesTab } from "./NotesTab";
 import { OverviewTab } from "./OverviewTab";
 import { ReviewInsightsTab } from "./ReviewInsightsTab";
@@ -72,15 +75,16 @@ export default function PlanningDetailPage() {
   const [now, setNow] = useState(() => Date.now());
   const isAnalysing = planning?.status === "analysing";
   const isAnalysingComparableSites = planning?.comparable_research_status === "analysing";
+  const isGeneratingContentDraft = planning?.content_draft_status === "generating";
   useEffect(() => {
-    if (!isAnalysing && !isAnalysingComparableSites) return;
+    if (!isAnalysing && !isAnalysingComparableSites && !isGeneratingContentDraft) return;
     const id = setInterval(() => {
       load();
       setNow(Date.now());
     }, 4000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnalysing, isAnalysingComparableSites, planningId]);
+  }, [isAnalysing, isAnalysingComparableSites, isGeneratingContentDraft, planningId]);
 
   // "Completed: automatically open Overview" — only on the transition
   // into completed (e.g. a run finished while the operator had Notes
@@ -121,6 +125,18 @@ export default function PlanningDetailPage() {
     }
   }
 
+  async function handleRetryContentDraft() {
+    setRetrying(true);
+    try {
+      setPlanning(await api.generateContentDraft(planningId));
+      showToast("Retrying content draft generation.");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Couldn't retry content draft generation.", "error");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   async function handleRemove() {
     if (!planning) return;
     const ok = await confirm({
@@ -156,6 +172,8 @@ export default function PlanningDetailPage() {
   if (!planning) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   const isStale = isAnalysing && now - new Date(planning.updated_at).getTime() > STALE_ANALYSING_MS;
+  const isContentDraftStale =
+    isGeneratingContentDraft && now - new Date(planning.updated_at).getTime() > STALE_ANALYSING_MS;
   const hasAudit = planning.website_audit_id !== null;
   const mode = planningMode(planning);
   // "Ready to hand off" for either mode: a real audit, or a generated
@@ -234,6 +252,21 @@ export default function PlanningDetailPage() {
           </button>
         </div>
       )}
+      {isContentDraftStale && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="text-sm text-amber-900 dark:text-amber-300">
+            Content draft generation is taking longer than expected — it may be stuck.
+          </p>
+          <button
+            type="button"
+            onClick={handleRetryContentDraft}
+            disabled={retrying}
+            className="btn btn-secondary btn-sm shrink-0"
+          >
+            {retrying ? "Retrying…" : "Retry generation"}
+          </button>
+        </div>
+      )}
       {planning.status === "failed" && hasAudit && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
           <p className="text-sm text-red-800 dark:text-red-300">
@@ -251,11 +284,17 @@ export default function PlanningDetailPage() {
         </div>
       )}
 
+      <div className="mb-4">
+        <StageChecklistPanel ownerType="planning" ownerId={planning.id} title="Stage checklist" />
+      </div>
+
       <TabBar
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "audit", label: mode === "existing" ? "Website Audit" : "Website Plan" },
           { id: "reviews", label: "Google Review Insights" },
+          { id: "build-brief", label: "Build Brief" },
+          { id: "content-draft", label: "Content Draft" },
           { id: "notes", label: "Notes" },
         ]}
         active={activeTab}
@@ -276,9 +315,11 @@ export default function PlanningDetailPage() {
           (mode === "existing" ? (
             <AuditTab planning={planning} />
           ) : (
-            <WebsitePlanTab planning={planning} onUpdated={setPlanning} />
+            <WebsitePlanTab planning={planning} lead={lead} onUpdated={setPlanning} />
           ))}
         {activeTab === "reviews" && <ReviewInsightsTab planning={planning} onUpdated={setPlanning} />}
+        {activeTab === "build-brief" && <BuildBriefTab planning={planning} lead={lead} onUpdated={setPlanning} />}
+        {activeTab === "content-draft" && <ContentDraftTab planning={planning} onUpdated={setPlanning} />}
         {activeTab === "notes" && <NotesTab planning={planning} onUpdated={setPlanning} />}
       </div>
     </div>

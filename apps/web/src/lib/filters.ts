@@ -87,6 +87,11 @@ export type DiscoveredBusinessFilters = {
   contactableOnly: boolean;
   activeRecentlyOnly: boolean;
   minFollowers: number | null;
+  // Default (false): hide rows already imported into a Lead — the
+  // "actionable results" view. true = the "Already imported" history
+  // filter. Never affects rejected/archived visibility, which the
+  // existing archived toggle already covers separately.
+  showImported: boolean;
 };
 
 export type LocatedBusiness = DiscoveredBusiness & { latitude: number; longitude: number };
@@ -101,6 +106,7 @@ export function filterDiscoveredBusinesses(
 ): DiscoveredBusiness[] {
   const activeRecentlyCutoff = Date.now() - ACTIVE_RECENTLY_DAYS * 24 * 60 * 60 * 1000;
   return businesses.filter((business) => {
+    if (!filters.showImported && business.status === "imported") return false;
     if (filters.website === "has" && business.website_status !== "found") return false;
     if (filters.website === "no" && business.website_status !== "none") return false;
     if (filters.mappedOnly && !hasCoordinates(business)) return false;

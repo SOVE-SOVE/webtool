@@ -10,6 +10,8 @@ from app.modules.ai_usage import models as _ai_usage  # noqa: F401
 from app.modules.business_research import models as _business_research  # noqa: F401
 from app.modules.businesses import models as _businesses  # noqa: F401
 from app.modules.calendar import models as _calendar  # noqa: F401
+from app.modules.checklists import models as _checklists  # noqa: F401
+from app.modules.stage_checklists import models as _stage_checklists  # noqa: F401
 from app.modules.clients import models as _clients  # noqa: F401
 from app.modules.contacts import models as _contacts  # noqa: F401
 from app.modules.creative_directions import models as _creative_directions  # noqa: F401

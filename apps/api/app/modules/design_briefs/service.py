@@ -29,12 +29,7 @@ def _get_client_in_workspace(db: Session, workspace_id: uuid.UUID, client_id: uu
 
 
 def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
-    return db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Project.id == project_id, Business.workspace_id == workspace_id)
-    )
+    return db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id))
 
 
 def _load_brief(db: Session, brief_id: uuid.UUID) -> DesignBrief:
@@ -149,7 +144,7 @@ def start_intake(
             return BriefRead.from_model(_load_brief(db, brief.id))
 
     project_name = data.project_name or f"{client.business.name} — Website"
-    project = Project(client_id=client.id, name=project_name)
+    project = Project(client_id=client.id, workspace_id=workspace_id, name=project_name)
     db.add(project)
     db.flush()
 

@@ -2,13 +2,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
 from app.modules.discovery.models import DiscoveredBusiness
 from app.modules.leads.models import Lead, LeadPriority, LeadStatus
-from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate
+from app.modules.leads.schemas import LeadCreate, LeadRead, LeadUpdate, ProspectProjectRef
 from app.modules.pipeline import service as pipeline_service
 from app.modules.review_intelligence import service as review_intelligence_service
 from app.modules.users.service import require_user_in_workspace
@@ -32,9 +32,17 @@ def _to_read(db: Session, lead: Lead) -> LeadRead:
         review_intelligence_service.get_review_summary(db, discovered_business) if discovered_business else None
     )
 
+    prospect_project = lead.prospect_projects[0] if lead.prospect_projects else None
     return LeadRead(
         id=lead.id,
         business_id=lead.business_id,
+        client_id=lead.business.client.id if lead.business.client else None,
+        planning_id=lead.planning.id if lead.planning else None,
+        prospect_project=(
+            ProspectProjectRef(id=prospect_project.id, name=prospect_project.name, stage=prospect_project.stage)
+            if prospect_project
+            else None
+        ),
         business_name=lead.business.name,
         industry=lead.business.industry,
         suburb=lead.business.suburb,
@@ -70,7 +78,16 @@ def _base_query(workspace_id: uuid.UUID):
         select(Lead)
         .join(Business, Lead.business_id == Business.id)
         .where(Business.workspace_id == workspace_id)
-        .options(joinedload(Lead.business), joinedload(Lead.assigned_user))
+        .options(
+            joinedload(Lead.business).joinedload(Business.client),
+            joinedload(Lead.assigned_user),
+            joinedload(Lead.planning),
+            # selectinload, not joinedload — a joined one-to-many
+            # collection on this same query would cartesian-product the
+            # row count (see modules/meetings/service.py's own note on
+            # the identical issue).
+            selectinload(Lead.prospect_projects),
+        )
     )
 
 

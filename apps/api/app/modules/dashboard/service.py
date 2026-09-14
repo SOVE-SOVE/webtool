@@ -104,7 +104,6 @@ _FOLLOW_UP_DUE_TODAY = 5
 _UPCOMING_TASK = 6
 _STALE_LEAD = 7
 
-_ProjectBusiness = aliased(Business)
 _LeadBusiness = aliased(Business)
 
 
@@ -159,17 +158,17 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
 
     # Meetings belong to a project or a lead (see docs/05_DECISIONS.md),
     # so both paths are outer-joined and matched with OR — same pattern
-    # as the task_base query below.
+    # as the task_base query below. Project.workspace_id is checked
+    # directly (denormalized onto Project) rather than via Client, so
+    # this also matches a Lead-owned prospect Project's meetings.
     meeting_base = (
         select(Meeting)
         .outerjoin(Project, Meeting.project_id == Project.id)
-        .outerjoin(Client, Project.client_id == Client.id)
-        .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
         .outerjoin(Lead, Meeting.lead_id == Lead.id)
         .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
         .where(
             or_(
-                _ProjectBusiness.workspace_id == workspace_id,
+                Project.workspace_id == workspace_id,
                 _LeadBusiness.workspace_id == workspace_id,
             )
         )
@@ -200,13 +199,14 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     active_project_rows = list(
         db.scalars(
             select(Project)
-            .join(Client, Project.client_id == Client.id)
-            .join(Business, Client.business_id == Business.id)
             .where(
-                Business.workspace_id == workspace_id,
+                Project.workspace_id == workspace_id,
                 Project.stage.not_in(FINISHED_PROJECT_STAGES),
             )
-            .options(joinedload(Project.client).joinedload(Client.business))
+            .options(
+                joinedload(Project.client).joinedload(Client.business),
+                joinedload(Project.source_lead).joinedload(Lead.business),
+            )
             .order_by(Project.created_at.asc())
         )
     )
@@ -218,11 +218,7 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     # (the operator-set delivery stage every project has), not recomputed
     # from website/QA/deployment rows.
     stage_counts_rows = db.execute(
-        select(Project.stage, func.count())
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
-        .group_by(Project.stage)
+        select(Project.stage, func.count()).where(Project.workspace_id == workspace_id).group_by(Project.stage)
     ).all()
     stage_counts = {stage: count for stage, count in stage_counts_rows}
     websites = WebsitePipeline(
@@ -246,13 +242,11 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
     task_base = (
         select(Task)
         .outerjoin(Project, Task.project_id == Project.id)
-        .outerjoin(Client, Project.client_id == Client.id)
-        .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
         .outerjoin(Lead, Task.lead_id == Lead.id)
         .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
         .where(
             or_(
-                _ProjectBusiness.workspace_id == workspace_id,
+                Project.workspace_id == workspace_id,
                 _LeadBusiness.workspace_id == workspace_id,
             )
         )
@@ -475,7 +469,7 @@ def _project_attention_items(db: Session, projects: list[Project]) -> list[tuple
                     label=label,
                     id=project.id,
                     title=project.name,
-                    detail=f"{project.client.business.name} — {detail}",
+                    detail=f"{project.owner_business.name} — {detail}",
                     action=action,
                     href=f"/dashboard/projects/{project.id}{path}",
                 ),

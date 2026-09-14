@@ -9,8 +9,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.settings import settings
 from app.modules.activity_log import service as activity_service
-from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.previews.models import PreviewAudience, PreviewLink
 from app.modules.previews.schemas import (
     PreviewLinkCreate,
@@ -41,12 +39,7 @@ def _hash_token(token: str) -> str:
 
 
 def _project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
-    return db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Project.id == project_id)
-    )
+    return db.scalar(select(Project).where(Project.workspace_id == workspace_id, Project.id == project_id))
 
 
 def _to_read(link: PreviewLink, *, url: str | None = None) -> PreviewLinkRead:
@@ -127,9 +120,7 @@ def _get_link_in_workspace(db: Session, workspace_id: uuid.UUID, link_id: uuid.U
     return db.scalar(
         select(PreviewLink)
         .join(Project, PreviewLink.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, PreviewLink.id == link_id)
+        .where(Project.workspace_id == workspace_id, PreviewLink.id == link_id)
         .options(*_READ_OPTIONS)
     )
 
@@ -197,7 +188,7 @@ def _section_read(section: dict) -> PublicPreviewSection:
 def _to_public(link: PreviewLink, website: Website, visible_versions: list[Website]) -> PublicPreviewRead:
     config = website.config or {}
     return PublicPreviewRead(
-        project_name=link.project.client.business.name,
+        project_name=link.project.owner_business.name,
         audience=link.audience,
         website_id=website.id,
         approved=website.approved,

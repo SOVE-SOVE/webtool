@@ -12,17 +12,35 @@
 
 import type { Lead, LeadStatus } from "@/lib/api";
 
-export type LeadTab = "all" | "new" | "contacted" | "interested" | "proposal" | "won" | "lost" | "nurture";
+export type LeadTab =
+  | "all"
+  | "new"
+  | "contacted"
+  | "interested"
+  | "proposal"
+  | "won"
+  | "converted"
+  | "lost"
+  | "nurture";
 
 export type LeadTabDef = {
   id: LeadTab;
   label: string;
-  /** null = every status (the "All" tab). */
+  /** null = every status (the "All" tab). Ignored for "converted",
+   * which matches on `client_id` instead — see leadMatchesTab. */
   statuses: LeadStatus[] | null;
 };
 
 // Ordered left→right as the lifecycle runs:
-// Lead → Contacted → Interested → Proposal → Won  (Lost / Nurture off to the side)
+// Lead → Contacted → Interested → Proposal → Won → Converted  (Lost / Nurture off to the side)
+//
+// "Won" and "Converted" are deliberately separate: a lead can reach
+// `status === "won"` (a pipeline-board move, "the deal is agreed")
+// with no Client ever created — conversion to Client is always a
+// separate, explicit operator action (docs/05_DECISIONS.md). Every
+// tab except "converted" itself excludes an already-converted lead —
+// see leadMatchesTab — so a converted lead disappears from the
+// active/default views once it's actually a Client.
 export const LEAD_TABS: LeadTabDef[] = [
   { id: "all", label: "All", statuses: null },
   { id: "new", label: "New", statuses: ["new", "researched", "qualified"] },
@@ -30,6 +48,7 @@ export const LEAD_TABS: LeadTabDef[] = [
   { id: "interested", label: "Interested", statuses: ["replied", "meeting"] },
   { id: "proposal", label: "Proposal", statuses: ["proposal"] },
   { id: "won", label: "Won", statuses: ["won"] },
+  { id: "converted", label: "Converted", statuses: null },
   { id: "lost", label: "Lost", statuses: ["lost"] },
   { id: "nurture", label: "Nurture", statuses: ["nurture"] },
 ];
@@ -76,10 +95,11 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
  * from the current status. Pure — `now` is injectable for tests.
  */
 export function leadNextAction(
-  lead: Pick<Lead, "status">,
+  lead: Pick<Lead, "status" | "client_id">,
   nextFollowUp?: string | null,
   now: number = Date.now(),
 ): string {
+  if (lead.client_id != null) return "Open the client record";
   if (nextFollowUp) {
     const due = new Date(nextFollowUp);
     const startOfToday = new Date(now);
@@ -122,13 +142,17 @@ export function statusesForTab(tab: LeadTab): LeadStatus[] | null {
   return LEAD_TABS.find((t) => t.id === tab)?.statuses ?? null;
 }
 
-export function leadMatchesTab(lead: Pick<Lead, "status">, tab: LeadTab): boolean {
+export function leadMatchesTab(lead: Pick<Lead, "status" | "client_id">, tab: LeadTab): boolean {
+  if (tab === "converted") return lead.client_id != null;
+  // An already-converted lead is a Client now — hidden from every
+  // other tab (including "all" and "won") once conversion happens.
+  if (lead.client_id != null) return false;
   const statuses = statusesForTab(tab);
   return statuses === null || statuses.includes(lead.status);
 }
 
 /** Count of (non-archived) leads in each tab, for the tab-bar badges. */
-export function countLeadsByTab(leads: Pick<Lead, "status" | "archived_at">[]): Record<LeadTab, number> {
+export function countLeadsByTab(leads: Pick<Lead, "status" | "archived_at" | "client_id">[]): Record<LeadTab, number> {
   const counts = Object.fromEntries(LEAD_TABS.map((t) => [t.id, 0])) as Record<LeadTab, number>;
   for (const lead of leads) {
     if (lead.archived_at) continue;

@@ -136,6 +136,13 @@ export type LeadPriority = (typeof LEAD_PRIORITIES)[number];
 export type Lead = {
   id: string;
   business_id: string;
+  // Set once this lead's business has a Client row (conversion has
+  // happened) — null otherwise.
+  client_id: string | null;
+  // Set once this lead has started a Planning workspace.
+  planning_id: string | null;
+  // This lead's own prospect (Lead-owned, no Client yet) Project, if any.
+  prospect_project: { id: string; name: string; stage: ProjectStage } | null;
   business_name: string;
   industry: string | null;
   suburb: string | null;
@@ -261,6 +268,139 @@ export type ClientUpdate = {
   assigned_user_id?: string | null;
 };
 
+// Client Setup & Delivery checklist. AUTOMATIC items are never toggled
+// directly by the operator (the backend refuses that) — their status
+// is computed live from a real approval/build/QA/deployment signal, so
+// it can revert on its own if that signal is revoked or edited. MANUAL
+// items (including every custom task) are the operator's own record.
+export const CHECKLIST_COMPLETION_MODES = ["automatic", "manual"] as const;
+export type ChecklistCompletionMode = (typeof CHECKLIST_COMPLETION_MODES)[number];
+
+// "needs_review" is read-time-only (never stored) — a manual review task
+// whose linked signal changed after it was marked complete. "blocked" is
+// a stored operator override, same precedence tier as "not_required"
+// (docs/05_DECISIONS.md).
+export const CHECKLIST_ITEM_STATUSES = ["pending", "complete", "not_required", "blocked", "needs_review"] as const;
+export type ChecklistItemStatus = (typeof CHECKLIST_ITEM_STATUSES)[number];
+// A status an operator can actually set — "needs_review" is computed only.
+export const SETTABLE_CHECKLIST_ITEM_STATUSES = ["pending", "complete", "not_required", "blocked"] as const;
+export type SettableChecklistItemStatus = (typeof SETTABLE_CHECKLIST_ITEM_STATUSES)[number];
+
+export type ChecklistLink = { label: string; href: string };
+
+export type ChecklistCompletedBy = { type: "user" | "system"; name: string | null; via: string | null };
+
+export type ChecklistItem = {
+  id: string;
+  client_id: string;
+  project_id: string | null;
+  title: string;
+  order_index: number;
+  is_default: boolean;
+  is_required: boolean;
+  completion_mode: ChecklistCompletionMode;
+  status: ChecklistItemStatus;
+  completed_at: string | null;
+  completed_by: ChecklistCompletedBy | null;
+  link: ChecklistLink | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  blocked_reason: string | null;
+  needs_review_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Required and optional tasks are tracked separately — e.g. "Required: 5
+// of 5 complete · Optional: 1 of 3" (docs/05_DECISIONS.md).
+export type ChecklistProgressPart = { completed: number; total: number; pct: number | null };
+export type ChecklistProgress = { required: ChecklistProgressPart; optional: ChecklistProgressPart };
+
+// A compact "what to do next" summary — prioritises actionable required
+// tasks in checklist order; "blocked" surfaces every remaining required
+// task's reason when none of them are actionable; "done" once nothing
+// actionable or blocked remains.
+export type ChecklistNextAction =
+  | { kind: "task"; item: ChecklistItem }
+  | { kind: "blocked"; items: ChecklistItem[] }
+  | { kind: "done" };
+
+export type ClientChecklistProjectSection = {
+  project_id: string;
+  project_name: string;
+  items: ChecklistItem[];
+  progress: ChecklistProgress;
+  next_item: ChecklistItem | null;
+  next_action: ChecklistNextAction;
+};
+
+export type ClientChecklist = {
+  client_id: string;
+  client_items: ChecklistItem[];
+  client_progress: ChecklistProgress;
+  client_next_action: ChecklistNextAction;
+  projects: ClientChecklistProjectSection[];
+};
+
+export type AddChecklistItemRequest = { title: string; project_id?: string | null; assigned_user_id?: string | null };
+export type UpdateChecklistItemRequest = {
+  title?: string;
+  status?: SettableChecklistItemStatus;
+  assigned_user_id?: string | null;
+  blocked_reason?: string;
+  note?: string;
+};
+export type ReorderChecklistItemsRequest = { items: { id: string; order_index: number }[] };
+export type ClientChecklistSummary = { client_id: string; completed: number; total: number; pct: number | null };
+
+// Stage-specific checklists (Discovery review / Lead / Planning / Project)
+// — a separate, earlier-stage checklist for businesses that aren't a
+// Client yet. Same item/progress/next-action shape as the Client
+// checklist above — one consistent task system (docs/05_DECISIONS.md).
+export type StageChecklistItemStatus = ChecklistItemStatus;
+
+export type StageChecklistItem = {
+  id: string;
+  title: string;
+  order_index: number;
+  is_default: boolean;
+  is_required: boolean;
+  completion_mode: ChecklistCompletionMode;
+  status: StageChecklistItemStatus;
+  completed_at: string | null;
+  completed_by: ChecklistCompletedBy | null;
+  link: ChecklistLink | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  blocked_reason: string | null;
+  needs_review_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StageChecklistProgress = ChecklistProgress;
+
+export type StageChecklistNextAction =
+  | { kind: "task"; item: StageChecklistItem }
+  | { kind: "blocked"; items: StageChecklistItem[] }
+  | { kind: "done" };
+
+export type StageChecklist = {
+  items: StageChecklistItem[];
+  progress: StageChecklistProgress;
+  next_item: StageChecklistItem | null;
+  next_action: StageChecklistNextAction;
+};
+
+export type StageChecklistOwnerType = "discovered-business" | "lead" | "planning" | "project";
+
+const STAGE_CHECKLIST_OWNER_PATH: Record<StageChecklistOwnerType, string> = {
+  "discovered-business": "discovered-businesses",
+  lead: "leads",
+  planning: "planning",
+  project: "projects",
+};
+
 export const PROJECT_STAGES = [
   "intake",
   "research",
@@ -294,7 +434,9 @@ export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
 
 export type Project = {
   id: string;
-  client_id: string;
+  // Null for a prospect project — Lead-owned (source_lead_id), no
+  // Client yet. See docs/05_DECISIONS.md.
+  client_id: string | null;
   business_id: string;
   client_business_name: string;
   source_lead_id: string | null;
@@ -329,7 +471,10 @@ export type DeliveryStatus = {
 };
 
 export type ProjectCreate = {
-  client_id: string;
+  // Exactly one of client_id/lead_id — client_id for a Client-owned
+  // project, lead_id for a Lead-owned prospect project (no Client yet).
+  client_id?: string;
+  lead_id?: string;
   name: string;
   assigned_user_id?: string;
   package?: string;
@@ -764,9 +909,273 @@ export type PlanningComparableSite = {
   created_at: string;
 };
 
+export const SOCIAL_FIELD_SOURCES = ["discovered_business", "operator_entered", "meta_enrichment"] as const;
+export type SocialFieldSource = (typeof SOCIAL_FIELD_SOURCES)[number];
+
+export type PlanningSocialProfile = {
+  instagram_handle: string | null;
+  instagram_profile_url: string | null;
+  instagram_bio: string | null;
+  instagram_bio_link_url: string | null;
+  instagram_profile_image_url: string | null;
+  instagram_follower_count: number | null;
+  instagram_source: SocialFieldSource | null;
+  instagram_verified_at: string | null;
+
+  facebook_page_url: string | null;
+  facebook_page_name: string | null;
+  facebook_bio: string | null;
+  facebook_source: SocialFieldSource | null;
+  facebook_verified_at: string | null;
+
+  has_any: boolean;
+};
+
+export type UpdateSocialProfileRequest = {
+  instagram_handle?: string | null;
+  instagram_profile_url?: string | null;
+  instagram_bio?: string | null;
+  instagram_bio_link_url?: string | null;
+  facebook_page_url?: string | null;
+  facebook_page_name?: string | null;
+  facebook_bio?: string | null;
+};
+
+// --- Build Brief: Keep / Improve / Add --------------------------------------
+
+export const RECOMMENDATION_CATEGORIES = ["keep", "improve", "add"] as const;
+export type RecommendationCategory = (typeof RECOMMENDATION_CATEGORIES)[number];
+
+export const RECOMMENDATION_SOURCE_TYPES = [
+  "audit_finding",
+  "review_theme",
+  "social_presence",
+  "business_info",
+  "comparable_research",
+  "operator",
+] as const;
+export type RecommendationSourceType = (typeof RECOMMENDATION_SOURCE_TYPES)[number];
+
+export const RECOMMENDATION_STATUSES = ["proposed", "accepted", "dismissed"] as const;
+export type RecommendationStatus = (typeof RECOMMENDATION_STATUSES)[number];
+
+export type Recommendation = {
+  id: string;
+  category: RecommendationCategory;
+  title: string;
+  explanation: string;
+  source_type: RecommendationSourceType;
+  source_evidence: string | null;
+  status: RecommendationStatus;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateRecommendationRequest = {
+  category: RecommendationCategory;
+  title: string;
+  explanation: string;
+  source_evidence?: string | null;
+};
+
+export type UpdateRecommendationRequest = {
+  title?: string;
+  explanation?: string;
+  status?: RecommendationStatus;
+};
+
+// --- Build Brief: Proposed Sitemap and Homepage Outline ---------------------
+
+export type SitemapPageProposal = {
+  id: string;
+  order_index: number;
+  title: string;
+  page_type: string;
+  purpose: string;
+  reason: string;
+  key_sections: string[];
+  needs_confirmation: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateSitemapPageRequest = {
+  title: string;
+  page_type?: string;
+  purpose: string;
+  reason?: string;
+  key_sections?: string[];
+  needs_confirmation?: boolean;
+};
+
+export type UpdateSitemapPageRequest = {
+  title?: string;
+  page_type?: string;
+  purpose?: string;
+  reason?: string;
+  key_sections?: string[];
+  needs_confirmation?: boolean;
+};
+
+export type ReorderSitemapPagesRequest = {
+  pages: { id: string; order_index: number }[];
+};
+
+// --- Build Brief: Visual Direction Choices ----------------------------------
+
+export type VisualDirectionOption = {
+  character: string;
+  typography: string;
+  colour_palette: string;
+  imagery: string;
+  layout: string;
+};
+
+export type SelectVisualDirectionRequest = {
+  option_index?: number;
+  character?: string;
+  typography?: string;
+  colour_palette?: string;
+  imagery?: string;
+  layout?: string;
+};
+
+// --- Build Brief: Assets Checklist ------------------------------------------
+
+export const ASSET_STATUSES = ["ready_to_use", "reference_only", "needs_owner_approval", "missing"] as const;
+export type AssetStatus = (typeof ASSET_STATUSES)[number];
+
+export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
+  ready_to_use: "Ready to use",
+  reference_only: "Reference only",
+  needs_owner_approval: "Needs owner approval",
+  missing: "Missing",
+};
+
+export type PlanningAsset = {
+  id: string;
+  category: string;
+  label: string;
+  status: AssetStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateAssetRequest = {
+  category: string;
+  label: string;
+  status?: AssetStatus;
+  note?: string | null;
+};
+
+export type UpdateAssetRequest = {
+  label?: string;
+  status?: AssetStatus;
+  note?: string | null;
+};
+
+// --- Build Brief: compiled preview + approval -------------------------------
+
+export type BuildBriefFact = { fact: string; source: string };
+
+export type BuildBrief = {
+  objective: string | null;
+  confirmed_facts: BuildBriefFact[];
+  accepted_recommendations: Recommendation[];
+  sitemap: SitemapPageProposal[];
+  visual_direction: VisualDirectionOption | null;
+  content_priorities: string[];
+  contact_priorities: string[];
+  visual_priorities: string[];
+  assets: PlanningAsset[];
+  open_questions: string[];
+  is_approved: boolean;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
+  project_id: string | null;
+};
+
+// --- Content Draft -----------------------------------------------------
+
+export const CONTENT_SOURCES = ["generated", "operator_edited"] as const;
+export type ContentSource = (typeof CONTENT_SOURCES)[number];
+
+export const CONTENT_PAGE_STATUSES = ["draft", "edited", "approved"] as const;
+export type ContentPageStatus = (typeof CONTENT_PAGE_STATUSES)[number];
+
+export const CONTENT_PAGE_STATUS_LABELS: Record<ContentPageStatus, string> = {
+  draft: "Draft",
+  edited: "Edited",
+  approved: "Approved",
+};
+
+// The real packages/site-templates section type strings Content Draft
+// can produce — see agents/planning_content_draft.py.
+export const CONTENT_SECTION_TYPES = ["hero", "about", "serviceCards", "gallery", "contact", "cta", "faq"] as const;
+export type ContentSectionType = (typeof CONTENT_SECTION_TYPES)[number];
+
+export type ContentSection = {
+  id: string;
+  order_index: number;
+  section_type: string;
+  content: Record<string, unknown>;
+  needs_confirmation_notes: string[];
+  source: ContentSource;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContentPage = {
+  id: string;
+  sitemap_page_id: string;
+  seo_title: string | null;
+  seo_meta_description: string | null;
+  status: ContentPageStatus;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
+  sections: ContentSection[];
+  created_at: string;
+  updated_at: string;
+  stale: boolean;
+};
+
+export type UpdateContentSectionRequest = {
+  content: Record<string, unknown>;
+};
+
+export type UpdateContentPageSeoRequest = {
+  seo_title?: string | null;
+  seo_meta_description?: string | null;
+};
+
+export type ContentSectionPreview = {
+  section_id: string;
+  candidate_content: Record<string, unknown>;
+  candidate_needs_confirmation_notes: string[];
+};
+
+export type ApplyContentSectionPreviewRequest = {
+  content: Record<string, unknown>;
+  needs_confirmation_notes?: string[];
+};
+
+export type RegenerateContentSectionResponse = {
+  is_preview: boolean;
+  planning: Planning | null;
+  preview: ContentSectionPreview | null;
+};
+
+export const CONTENT_DRAFT_STATUSES = ["generating", "completed", "needs_review", "failed"] as const;
+export type ContentDraftStatus = (typeof CONTENT_DRAFT_STATUSES)[number];
+
 export type Planning = {
   id: string;
   lead_id: string;
+  // Set once transferred to a Project (approved Build Brief handed
+  // off) — "transferred to Project."
+  project_id: string | null;
   lead_business_name: string;
   website_url: string | null;
   website_audit_id: string | null;
@@ -813,11 +1222,42 @@ export type Planning = {
   comparable_research_patterns: PlanningComparablePattern[];
   comparable_research_opportunities: PlanningComparableOpportunity[];
   comparable_research_generated_at: string | null;
+
+  // Social Presence — Instagram/Facebook input, always present (empty
+  // when nothing is available yet). See PlanningSocialProfile above.
+  social_profile: PlanningSocialProfile;
+
+  // Build Brief — Keep/Improve/Add, proposed sitemap, visual direction
+  // choices, assets checklist. Mode-agnostic (docs/05_DECISIONS.md);
+  // never touches the New-Website-Plan-only fields above.
+  recommendations_objective: string | null;
+  recommendations_generated_at: string | null;
+  recommendations: Recommendation[];
+
+  sitemap_proposal_generated_at: string | null;
+  sitemap_pages: SitemapPageProposal[];
+
+  visual_direction_options: VisualDirectionOption[];
+  selected_visual_direction: VisualDirectionOption | null;
+  visual_directions_generated_at: string | null;
+
+  assets_checklist_generated_at: string | null;
+  assets: PlanningAsset[];
+
+  // Content Draft — job-queued (see JOB_CONTENT_DRAFT_GENERATE).
+  // content_draft_status is null until generation is first triggered.
+  content_draft_status: ContentDraftStatus | null;
+  content_draft_progress_label: string | null;
+  content_draft_generated_at: string | null;
+  content_draft_error: string | null;
+  content_pages: ContentPage[];
 };
 
 export type PlanningListItem = {
   id: string;
   lead_id: string;
+  // Set once transferred to a Project — see Planning's own field.
+  project_id: string | null;
   lead_business_name: string;
   website_url: string | null;
   status: PlanningStatus;
@@ -2118,6 +2558,48 @@ export const api = {
   updateClient: (id: string, data: ClientUpdate) =>
     request<Client>(`/api/v1/clients/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Client Setup & Delivery checklist.
+  getClientChecklist: (clientId: string) => request<ClientChecklist>(`/api/v1/clients/${clientId}/checklist`),
+  listChecklistSummaries: () => request<ClientChecklistSummary[]>("/api/v1/clients/checklist-summaries"),
+  addChecklistItem: (clientId: string, data: AddChecklistItemRequest) =>
+    request<ClientChecklist>(`/api/v1/clients/${clientId}/checklist/items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateChecklistItem: (itemId: string, data: UpdateChecklistItemRequest) =>
+    request<ClientChecklist>(`/api/v1/clients/checklist/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  reorderChecklistItems: (clientId: string, data: ReorderChecklistItemsRequest) =>
+    request<ClientChecklist>(`/api/v1/clients/${clientId}/checklist/items/reorder`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  removeChecklistItem: (itemId: string) =>
+    request<ClientChecklist>(`/api/v1/clients/checklist/items/${itemId}`, { method: "DELETE" }),
+
+  // Stage checklists — Discovery review / Lead / Planning / Project.
+  getStageChecklist: (ownerType: StageChecklistOwnerType, ownerId: string) =>
+    request<StageChecklist>(`/api/v1/${STAGE_CHECKLIST_OWNER_PATH[ownerType]}/${ownerId}/checklist`),
+  addStageChecklistItem: (ownerType: StageChecklistOwnerType, ownerId: string, data: AddChecklistItemRequest) =>
+    request<StageChecklist>(`/api/v1/${STAGE_CHECKLIST_OWNER_PATH[ownerType]}/${ownerId}/checklist/items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateStageChecklistItem: (itemId: string, data: UpdateChecklistItemRequest) =>
+    request<StageChecklist>(`/api/v1/stage-checklist-items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  reorderStageChecklistItems: (ownerType: StageChecklistOwnerType, ownerId: string, data: ReorderChecklistItemsRequest) =>
+    request<StageChecklist>(`/api/v1/${STAGE_CHECKLIST_OWNER_PATH[ownerType]}/${ownerId}/checklist/items/reorder`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  removeStageChecklistItem: (itemId: string) =>
+    request<StageChecklist>(`/api/v1/stage-checklist-items/${itemId}`, { method: "DELETE" }),
+
   listProjects: () => request<Project[]>("/api/v1/projects"),
   getProject: (id: string) => request<Project>(`/api/v1/projects/${id}`),
   createProject: (data: ProjectCreate) =>
@@ -2193,7 +2675,10 @@ export const api = {
   // workspace. Never runs an audit; see analysePlanning for that.
   startPlanning: (leadId: string) => request<Planning>(`/api/v1/leads/${leadId}/planning`, { method: "POST" }),
   getPlanningForLead: (leadId: string) => request<Planning | null>(`/api/v1/leads/${leadId}/planning`),
-  listPlanning: () => request<PlanningListItem[]>("/api/v1/planning"),
+  listPlanning: (opts?: { includeTransferred?: boolean }) =>
+    request<PlanningListItem[]>(
+      `/api/v1/planning${opts?.includeTransferred ? "?include_transferred=true" : ""}`,
+    ),
   getPlanningItem: (id: string) => request<Planning>(`/api/v1/planning/${id}`),
   // "Analyse Website" — the explicit trigger that enqueues the real
   // background audit pipeline.
@@ -2218,6 +2703,12 @@ export const api = {
   // "New Website Plan" mode — for a Lead with no website to audit.
   generateWebsitePlan: (id: string) =>
     request<Planning>(`/api/v1/planning/${id}/generate-website-plan`, { method: "POST" }),
+  // Social Presence — operator-confirmed Instagram/Facebook details.
+  updateSocialProfile: (id: string, data: UpdateSocialProfileRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/social-profile`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   // "Research Comparable Websites" — search (synchronous), include/
   // exclude a candidate, then analyse the included ones (background job).
   searchComparableSites: (id: string) =>
@@ -2229,6 +2720,81 @@ export const api = {
     }),
   analyseComparableSites: (id: string) =>
     request<Planning>(`/api/v1/planning/${id}/comparable-sites/analyse`, { method: "POST" }),
+
+  // Build Brief — Keep / Improve / Add.
+  generateRecommendations: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/recommendations/generate`, { method: "POST" }),
+  addRecommendation: (id: string, data: CreateRecommendationRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/recommendations`, { method: "POST", body: JSON.stringify(data) }),
+  updateRecommendation: (id: string, recommendationId: string, data: UpdateRecommendationRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/recommendations/${recommendationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteRecommendation: (id: string, recommendationId: string) =>
+    request<Planning>(`/api/v1/planning/${id}/recommendations/${recommendationId}`, { method: "DELETE" }),
+
+  // Build Brief — Proposed Sitemap and Homepage Outline (Planning's own
+  // pre-Project proposal — distinct from generateSitemap/addSitemapPage/
+  // etc. below, which operate on a real Project's Sitemap).
+  generateSitemapProposal: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap/generate`, { method: "POST" }),
+  addPlanningSitemapPage: (id: string, data: CreateSitemapPageRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap`, { method: "POST", body: JSON.stringify(data) }),
+  updatePlanningSitemapPage: (id: string, pageId: string, data: UpdateSitemapPageRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap/${pageId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deletePlanningSitemapPage: (id: string, pageId: string) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap/${pageId}`, { method: "DELETE" }),
+  reorderPlanningSitemapPages: (id: string, data: ReorderSitemapPagesRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap/reorder`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Build Brief — Visual Direction Choices.
+  generateVisualDirections: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/visual-directions/generate`, { method: "POST" }),
+  selectVisualDirection: (id: string, data: SelectVisualDirectionRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/visual-directions/select`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  // Build Brief — Assets Checklist.
+  refreshAssetsChecklist: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/assets/refresh`, { method: "POST" }),
+  addAsset: (id: string, data: CreateAssetRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/assets`, { method: "POST", body: JSON.stringify(data) }),
+  updateAsset: (id: string, assetId: string, data: UpdateAssetRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/assets/${assetId}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // Build Brief — compiled preview + explicit approval.
+  getBuildBrief: (id: string) => request<BuildBrief>(`/api/v1/planning/${id}/build-brief`),
+  approveBuildBrief: (id: string) =>
+    request<BuildBrief>(`/api/v1/planning/${id}/build-brief/approve`, { method: "POST" }),
+
+  // Content Draft.
+  generateContentDraft: (id: string) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/generate`, { method: "POST" }),
+  updateContentPageSeo: (id: string, pageId: string, data: UpdateContentPageSeoRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  updateContentSection: (id: string, pageId: string, sectionId: string, data: UpdateContentSectionRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/${sectionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  regenerateContentSection: (id: string, pageId: string, sectionId: string) =>
+    request<RegenerateContentSectionResponse>(
+      `/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/${sectionId}/regenerate`,
+      { method: "POST" },
+    ),
+  applyContentSectionPreview: (id: string, pageId: string, sectionId: string, data: ApplyContentSectionPreviewRequest) =>
+    request<Planning>(
+      `/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/${sectionId}/apply-preview`,
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+  approveContentPage: (id: string, pageId: string) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}/approve`, { method: "POST" }),
 
   generateCreativeDirection: (projectId: string, data?: GenerateCreativeDirectionRequest) =>
     request<CreativeDirectionBrief>(`/api/v1/projects/${projectId}/creative-directions`, {

@@ -1,13 +1,22 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.modules.projects.models import ProjectStage
 
 
 class ProjectCreate(BaseModel):
-    client_id: uuid.UUID
+    """
+    Exactly one of `client_id`/`lead_id` — a Client-owned project (today's
+    original path) or a Lead-owned prospect project (speculative work
+    before the operator explicitly converts the lead — see
+    docs/05_DECISIONS.md). Mirrors `clients/schemas.py::ClientCreate`'s
+    own `_exactly_one_source` validator.
+    """
+
+    client_id: uuid.UUID | None = None
+    lead_id: uuid.UUID | None = None
     name: str
     assigned_user_id: uuid.UUID | None = None
     # The agreed terms of this project's engagement — optional here since
@@ -17,6 +26,12 @@ class ProjectCreate(BaseModel):
     package: str | None = None
     price_cents: int | None = None
     deadline: date | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_owner(self) -> "ProjectCreate":
+        if bool(self.client_id) == bool(self.lead_id):
+            raise ValueError("Provide exactly one of client_id or lead_id")
+        return self
 
 
 class ProjectUpdate(BaseModel):
@@ -35,8 +50,13 @@ class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    client_id: uuid.UUID
+    client_id: uuid.UUID | None
     business_id: uuid.UUID
+    # The name of whichever business currently owns this project (its
+    # Client's business, or — for a prospect project with no Client yet
+    # — its owning Lead's business). Kept non-nullable and under its
+    # original name for backward compatibility; every project always
+    # has exactly one live owner business at read time.
     client_business_name: str
     source_lead_id: uuid.UUID | None
     name: str

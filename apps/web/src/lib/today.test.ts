@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { activityHref, computeNextActions, computePipelineStages } from "./today";
 import type { ActivityItem, Lead, PlanningListItem, Project } from "./api";
 
-function lead(overrides: Partial<Lead> = {}): Pick<Lead, "id" | "status" | "archived_at"> {
-  return { id: "l1", status: "new", archived_at: null, ...overrides };
+function lead(overrides: Partial<Lead> = {}): Pick<Lead, "id" | "status" | "archived_at" | "client_id"> {
+  return { id: "l1", status: "new", archived_at: null, client_id: null, ...overrides };
 }
 
 function planningItem(overrides: Partial<PlanningListItem> = {}): Pick<PlanningListItem, "lead_id" | "status"> {

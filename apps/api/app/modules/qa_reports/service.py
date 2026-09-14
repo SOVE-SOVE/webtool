@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.agents import technical_qa
 from app.modules.activity_log import service as activity_service
-from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.design_briefs.models import DesignBrief
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
@@ -33,9 +31,7 @@ def _get_website_in_workspace(db: Session, workspace_id: uuid.UUID, website_id: 
     return db.scalar(
         select(Website)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Website.id == website_id)
+        .where(Project.workspace_id == workspace_id, Website.id == website_id)
     )
 
 
@@ -176,9 +172,7 @@ def _base_query(workspace_id: uuid.UUID):
         select(QaReport)
         .join(Website, QaReport.website_id == Website.id)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
+        .where(Project.workspace_id == workspace_id)
         .options(*_READ_OPTIONS)
     )
 

@@ -94,6 +94,13 @@ class SitemapPageContent(BaseModel):
     primary_cta: str | None = None
     secondary_cta: str | None = None
     key_sections: list[str] = Field(default_factory=list)
+    # Optional overrides — set when this page's real SitemapPage row
+    # carries an SEO title/meta description from Planning's Content
+    # Draft (modules/planning) at Create Project handoff. See
+    # _build_seo: when present, used verbatim instead of the mechanical
+    # derivation below.
+    seo_title: str | None = None
+    seo_meta_description: str | None = None
 
 
 class WebsiteGeneratorInput(BaseModel):
@@ -187,7 +194,10 @@ _META_DESCRIPTION_MAX = 155
 
 
 def _build_seo(page: SitemapPageContent, business_name: str, brief: BriefContent) -> PageSeo:
-    title = business_name if page.page_type == "home" else f"{page.title} | {business_name}"
+    title = page.seo_title or (business_name if page.page_type == "home" else f"{page.title} | {business_name}")
+
+    if page.seo_meta_description:
+        return PageSeo(title=title, meta_description=page.seo_meta_description)
 
     description = None
     if page.page_type == "home":

@@ -429,6 +429,24 @@ def test_workspace_wide_planning_list(authed_client, monkeypatch):
     assert len(items) == 1
     assert items[0]["lead_business_name"] == "Coastal Cafe"
     assert "screenshot_desktop_base64" not in items[0]
+    assert items[0]["project_id"] is None
+
+
+def test_planning_list_excludes_transferred_items_by_default(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    authed_client.post(f"/api/v1/planning/{result['id']}/build-brief/approve")
+    project = authed_client.post(f"/api/v1/planning/{result['id']}/create-project").json()
+
+    default_items = authed_client.get("/api/v1/planning").json()
+    assert default_items == []
+
+    all_items = authed_client.get("/api/v1/planning?include_transferred=true").json()
+    assert len(all_items) == 1
+    assert all_items[0]["project_id"] == project["id"]
+
+    single = authed_client.get(f"/api/v1/planning/{result['id']}").json()
+    assert single["project_id"] == project["id"]
 
 
 # --- Editing --------------------------------------------------------------------
@@ -453,9 +471,18 @@ def test_update_planning_returns_404_for_missing_item(authed_client):
 # --- Create Project handoff ----------------------------------------------------
 
 
+def test_create_project_from_planning_requires_an_approved_build_brief(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    res = authed_client.post(f"/api/v1/planning/{result['id']}/create-project")
+    assert res.status_code == 400
+
+
 def test_create_project_from_planning_carries_forward_summary_and_points(authed_client, monkeypatch):
     lead = _create_lead(authed_client)
     result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    authed_client.post(f"/api/v1/planning/{result['id']}/build-brief/approve")
 
     res = authed_client.post(f"/api/v1/planning/{result['id']}/create-project")
     assert res.status_code == 201
@@ -464,8 +491,28 @@ def test_create_project_from_planning_carries_forward_summary_and_points(authed_
     assert SUMMARY_LLM_OUTPUT["website_summary"] in project["build_direction"]
     assert "Key points:" in project["build_direction"]
 
+
+def test_create_project_from_planning_does_not_convert_the_lead(authed_client, monkeypatch):
+    """A speculative Project from Planning must not convert the Lead —
+    docs/05_DECISIONS.md. The Project is Lead-owned (no client_id) and
+    the Lead's status/history are untouched."""
+    lead = _create_lead(authed_client)
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    authed_client.post(f"/api/v1/planning/{result['id']}/build-brief/approve")
+
+    res = authed_client.post(f"/api/v1/planning/{result['id']}/create-project")
+    assert res.status_code == 201
+    project = res.json()
+    assert project["client_id"] is None
+    assert project["source_lead_id"] == lead["id"]
+
     lead_after = authed_client.get(f"/api/v1/leads/{lead['id']}").json()
-    assert lead_after["status"] == "won"
+    assert lead_after["status"] == "new"
+    assert lead_after["client_id"] is None
+    assert lead_after["prospect_project"]["id"] == project["id"]
+
+    clients = authed_client.get("/api/v1/clients").json()
+    assert clients == []
 
 
 def test_create_project_from_planning_returns_404_for_missing_item(authed_client):
@@ -473,13 +520,20 @@ def test_create_project_from_planning_returns_404_for_missing_item(authed_client
     assert res.status_code == 404
 
 
-def test_create_project_from_planning_conflicts_if_lead_already_converted(authed_client, monkeypatch):
+def test_create_project_from_planning_is_idempotent_on_repeated_clicks(authed_client, monkeypatch):
     lead = _create_lead(authed_client)
     result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
-    authed_client.post(f"/api/v1/planning/{result['id']}/create-project")
+    authed_client.post(f"/api/v1/planning/{result['id']}/build-brief/approve")
+    first = authed_client.post(f"/api/v1/planning/{result['id']}/create-project").json()
 
     res = authed_client.post(f"/api/v1/planning/{result['id']}/create-project")
-    assert res.status_code == 409
+    assert res.status_code == 201
+    second = res.json()
+    assert second["id"] == first["id"]
+
+    all_projects = authed_client.get("/api/v1/projects").json()
+    matching = [p for p in all_projects if p["source_lead_id"] == lead["id"]]
+    assert len(matching) == 1
 
 
 # --- Workspace scoping -----------------------------------------------------------
@@ -545,6 +599,7 @@ def test_delete_planning_preserves_the_lead_which_can_start_planning_again(authe
 def test_delete_planning_does_not_affect_a_client_or_project_created_from_it(authed_client, monkeypatch):
     lead = _create_lead(authed_client)
     result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    authed_client.post(f"/api/v1/planning/{result['id']}/build-brief/approve")
     project = authed_client.post(f"/api/v1/planning/{result['id']}/create-project").json()
 
     res = authed_client.delete(f"/api/v1/planning/{result['id']}")
@@ -636,7 +691,7 @@ def _patch_review_insights(monkeypatch, *, reviews=None, rating=4.8, review_coun
     )
 
 
-def _link_discovered_business(db_session, authed_client, lead, *, place_id="places/abc123"):
+def _link_discovered_business(db_session, authed_client, lead, *, place_id="places/abc123", **instagram_fields):
     search = DiscoverySearch(workspace_id=uuid.UUID(authed_client.get("/api/v1/auth/me").json()["workspace_id"]), industry="Cafes", provider="manual")
     db_session.add(search)
     db_session.commit()
@@ -648,6 +703,7 @@ def _link_discovered_business(db_session, authed_client, lead, *, place_id="plac
         source_external_id=place_id,
         dedup_key="coastal cafe||",
         imported_lead_id=uuid.UUID(lead["id"]),
+        **instagram_fields,
     )
     db_session.add(business)
     db_session.commit()
@@ -883,12 +939,167 @@ def test_create_project_from_new_website_plan_carries_forward_plan_content(authe
     planning = _start_planning(authed_client, lead)
     monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", lambda **kwargs: dict(PLAN_LLM_OUTPUT))
     authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
 
     res = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
     assert res.status_code == 201
     project = res.json()
     assert PLAN_LLM_OUTPUT["recommended_objective"] in project["build_direction"]
     assert "Home: Introduce the business" in project["build_direction"]
+
+
+# --- Social Presence (Instagram/Facebook input) -----------------------------
+
+
+def test_social_profile_falls_back_to_discovered_business_instagram_data(authed_client, db_session):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _link_discovered_business(
+        db_session,
+        authed_client,
+        lead,
+        instagram_handle="coastalcafe",
+        instagram_bio="Beachside coffee and brunch.",
+        instagram_profile_url="https://instagram.com/coastalcafe",
+        instagram_follower_count=1200,
+    )
+
+    res = authed_client.get(f"/api/v1/planning/{planning['id']}")
+    assert res.status_code == 200
+    profile = res.json()["social_profile"]
+    assert profile["instagram_handle"] == "coastalcafe"
+    assert profile["instagram_bio"] == "Beachside coffee and brunch."
+    assert profile["instagram_follower_count"] == 1200
+    assert profile["instagram_source"] == "discovered_business"
+    assert profile["facebook_page_url"] is None
+    assert profile["has_any"] is True
+
+
+def test_social_profile_with_no_data_at_all_is_empty(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.get(f"/api/v1/planning/{planning['id']}")
+    assert res.status_code == 200
+    profile = res.json()["social_profile"]
+    assert profile["has_any"] is False
+    assert profile["instagram_source"] is None
+    assert profile["facebook_source"] is None
+
+
+def test_operator_edit_locks_in_instagram_as_operator_entered_and_preserves_untouched_fields(
+    authed_client, db_session
+):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _link_discovered_business(
+        db_session,
+        authed_client,
+        lead,
+        instagram_handle="coastalcafe",
+        instagram_bio="Beachside coffee and brunch.",
+    )
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/social-profile", json={"instagram_handle": "coastal_cafe_official"}
+    )
+    assert res.status_code == 200
+    profile = res.json()["social_profile"]
+    assert profile["instagram_handle"] == "coastal_cafe_official"
+    assert profile["instagram_source"] == "operator_entered"
+    assert profile["instagram_verified_at"] is not None
+    # The bio wasn't touched by this edit — it must be preserved, not wiped.
+    assert profile["instagram_bio"] == "Beachside coffee and brunch."
+
+
+def test_operator_can_add_facebook_page_with_no_fallback_source(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/social-profile",
+        json={"facebook_page_url": "https://facebook.com/coastalcafe", "facebook_page_name": "Coastal Cafe"},
+    )
+    assert res.status_code == 200
+    profile = res.json()["social_profile"]
+    assert profile["facebook_page_url"] == "https://facebook.com/coastalcafe"
+    assert profile["facebook_source"] == "operator_entered"
+    assert profile["has_any"] is True
+
+
+def test_update_social_profile_returns_404_for_missing_item(authed_client):
+    res = authed_client.patch(f"/api/v1/planning/{uuid.uuid4()}/social-profile", json={"facebook_page_url": "x"})
+    assert res.status_code == 404
+
+
+def test_update_social_profile_is_workspace_scoped(authed_client, other_authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = other_authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/social-profile", json={"facebook_page_url": "https://facebook.com/x"}
+    )
+    assert res.status_code == 404
+
+
+def test_generate_website_plan_includes_facebook_and_extended_instagram_fields_in_agent_input(
+    authed_client, monkeypatch, db_session
+):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    _link_discovered_business(
+        db_session,
+        authed_client,
+        lead,
+        instagram_handle="coastalcafe",
+        instagram_bio="Beachside coffee and brunch.",
+        instagram_profile_url="https://instagram.com/coastalcafe",
+        instagram_follower_count=1200,
+        instagram_profile_image_url="https://instagram.com/coastalcafe/profile.jpg",
+    )
+    authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/social-profile",
+        json={"facebook_page_url": "https://facebook.com/coastalcafe", "facebook_bio": "A beachside cafe."},
+    )
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return dict(PLAN_LLM_OUTPUT)
+
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", fake_generate)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 200
+    assert "coastalcafe" in captured["user"]
+    assert "1200 followers" in captured["user"]
+    assert "facebook.com/coastalcafe" in captured["user"]
+    assert "A beachside cafe." in captured["user"]
+    assert "reference only" in captured["user"]
+
+
+def test_generate_website_plan_still_degrades_gracefully_with_no_social_data(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    def _boom(**kwargs):
+        raise LlmUnavailableError("no API key configured")
+
+    monkeypatch.setattr("app.agents.planning_website_direction.generate_structured", _boom)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/generate-website-plan")
+    assert res.status_code == 200
+    assert res.json()["status"] == "needs_review"
+
+
+def test_existing_website_mode_social_profile_is_empty(authed_client, monkeypatch):
+    """Existing Website mode never surfaces Social Presence — confirms
+    _to_read's mode check correctly skips it once a real audit exists."""
+    lead = _create_lead(authed_client)
+    body = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    assert body["website_audit_id"] is not None
+    assert body["social_profile"]["has_any"] is False
 
 
 # --- Research Comparable Websites -------------------------------------------
@@ -1098,3 +1309,748 @@ def test_comparable_sites_are_removed_when_planning_is_deleted(authed_client, mo
     res = authed_client.delete(f"/api/v1/planning/{planning['id']}")
     assert res.status_code == 204
     assert db_session.query(LeadPlanningComparableSite).count() == 0
+
+
+# --- Build Brief: Keep / Improve / Add --------------------------------------
+
+RECOMMENDATIONS_LLM_OUTPUT = {
+    "website_objective": "Generate phone enquiries for kitchen renovation quotes.",
+    "keep": [
+        {
+            "title": "Fast page load",
+            "explanation": "The homepage loads quickly, which keeps visitors engaged.",
+            "source_type": "audit_finding",
+            "source_evidence": "Load time is within acceptable range.",
+        }
+    ],
+    "improve": [
+        {
+            "title": "Fix mobile overflow",
+            "explanation": "Content overflows on mobile, forcing visitors to scroll sideways.",
+            "source_type": "audit_finding",
+            "source_evidence": "Content overflows horizontally at mobile width.",
+        }
+    ],
+    "add": [
+        {
+            "title": "Services page",
+            "explanation": "A dedicated services page would make offerings clear.",
+            "source_type": "business_info",
+            "source_evidence": None,
+        }
+    ],
+}
+
+
+def test_generate_recommendations_existing_website_mode_grounds_improve_in_audit_findings(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    monkeypatch.setattr(
+        "app.agents.planning_recommendations.generate_structured", lambda **kwargs: dict(RECOMMENDATIONS_LLM_OUTPUT)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{result['id']}/recommendations/generate")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["recommendations_objective"] == RECOMMENDATIONS_LLM_OUTPUT["website_objective"]
+    by_category = {"keep": [], "improve": [], "add": []}
+    for r in body["recommendations"]:
+        by_category[r["category"]].append(r)
+    assert len(by_category["keep"]) == 1
+    assert len(by_category["improve"]) == 1
+    assert by_category["improve"][0]["status"] == "proposed"
+    assert len(by_category["add"]) == 1
+
+
+def test_generate_recommendations_new_website_plan_mode_has_no_audit_to_cite(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return {"website_objective": "Generate bookings.", "keep": [], "improve": [], "add": []}
+
+    monkeypatch.setattr("app.agents.planning_recommendations.generate_structured", fake_generate)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/recommendations/generate")
+    assert res.status_code == 200
+    assert "no — building the first one" in captured["user"]
+    assert "Audit findings: none on file" in captured["user"]
+
+
+def test_generate_recommendations_degrades_gracefully_without_llm(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Cafes")
+    planning = _start_planning(authed_client, lead)
+
+    def _boom(**kwargs):
+        raise LlmUnavailableError("no API key configured")
+
+    monkeypatch.setattr("app.agents.planning_recommendations.generate_structured", _boom)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/recommendations/generate")
+    assert res.status_code == 503
+
+
+def test_regenerating_recommendations_only_appends_never_edits_existing_rows(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    monkeypatch.setattr(
+        "app.agents.planning_recommendations.generate_structured", lambda **kwargs: dict(RECOMMENDATIONS_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{result['id']}/recommendations/generate")
+
+    body = authed_client.get(f"/api/v1/planning/{result['id']}").json()
+    keep_rec = next(r for r in body["recommendations"] if r["category"] == "keep")
+    authed_client.patch(
+        f"/api/v1/planning/{result['id']}/recommendations/{keep_rec['id']}", json={"status": "accepted", "title": "Edited by operator"}
+    )
+
+    # Regenerate with one new item plus the same "Fix mobile overflow" title.
+    new_output = dict(RECOMMENDATIONS_LLM_OUTPUT)
+    new_output["add"] = RECOMMENDATIONS_LLM_OUTPUT["add"] + [
+        {"title": "Gallery page", "explanation": "Show finished work.", "source_type": "business_info", "source_evidence": None}
+    ]
+    monkeypatch.setattr("app.agents.planning_recommendations.generate_structured", lambda **kwargs: dict(new_output))
+    authed_client.post(f"/api/v1/planning/{result['id']}/recommendations/generate")
+
+    body = authed_client.get(f"/api/v1/planning/{result['id']}").json()
+    titles = [r["title"] for r in body["recommendations"]]
+    assert titles.count("Fix mobile overflow") == 1  # not duplicated
+    assert "Edited by operator" in titles  # the operator's edit survived
+    assert "Gallery page" in titles  # the genuinely new item was appended
+    edited = next(r for r in body["recommendations"] if r["title"] == "Edited by operator")
+    assert edited["status"] == "accepted"
+
+
+def test_add_dismiss_and_delete_recommendation(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/recommendations",
+        json={"category": "add", "title": "Custom page", "explanation": "Operator's own idea."},
+    )
+    assert res.status_code == 200
+    rec = next(r for r in res.json()["recommendations"] if r["title"] == "Custom page")
+    assert rec["status"] == "accepted"  # operator-added starts accepted
+    assert rec["source_type"] == "operator"
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/recommendations/{rec['id']}", json={"status": "dismissed"}
+    )
+    assert res.json()["recommendations"][0]["status"] == "dismissed"
+
+    res = authed_client.delete(f"/api/v1/planning/{planning['id']}/recommendations/{rec['id']}")
+    assert res.json()["recommendations"] == []
+
+
+def test_recommendations_are_workspace_scoped(authed_client, other_authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    res = other_authed_client.post(f"/api/v1/planning/{planning['id']}/recommendations/generate")
+    assert res.status_code == 404
+
+
+# --- Build Brief: Proposed Sitemap and Homepage Outline ---------------------
+
+SITEMAP_PROPOSAL_LLM_OUTPUT = {
+    "pages": [
+        {
+            "title": "Home",
+            "page_type": "home",
+            "purpose": "Introduce the business.",
+            "reason": "Every site needs an entry point.",
+            "key_sections": ["hero", "cta"],
+            "needs_confirmation": False,
+        },
+        {
+            "title": "Services",
+            "page_type": "services",
+            "purpose": "List services offered.",
+            "reason": "Core offering for this category.",
+            "key_sections": ["service cards"],
+            "needs_confirmation": True,
+        },
+    ]
+}
+
+
+def test_generate_sitemap_proposal_and_reuses_real_page_type_enum(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(
+        "app.agents.planning_sitemap_proposal.generate_structured", lambda **kwargs: dict(SITEMAP_PROPOSAL_LLM_OUTPUT)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/sitemap/generate")
+    assert res.status_code == 200
+    pages = res.json()["sitemap_pages"]
+    assert len(pages) == 2
+    assert pages[0]["page_type"] == "home"
+    assert pages[1]["needs_confirmation"] is True
+
+
+def test_sitemap_proposal_falls_back_to_custom_for_an_invalid_page_type(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    bad_output = {"pages": [{"title": "Menu", "page_type": "not_a_real_type", "purpose": "Show the menu.", "reason": "Restaurant.", "key_sections": [], "needs_confirmation": False}]}
+    monkeypatch.setattr("app.agents.planning_sitemap_proposal.generate_structured", lambda **kwargs: dict(bad_output))
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/sitemap/generate")
+    assert res.status_code == 200
+    assert res.json()["sitemap_pages"][0]["page_type"] == "custom"
+
+
+def test_add_edit_reorder_and_delete_sitemap_page(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/sitemap",
+        json={"title": "Gallery", "page_type": "portfolio", "purpose": "Show finished work."},
+    )
+    page = res.json()["sitemap_pages"][0]
+
+    res = authed_client.patch(f"/api/v1/planning/{planning['id']}/sitemap/{page['id']}", json={"title": "Our Work"})
+    assert res.json()["sitemap_pages"][0]["title"] == "Our Work"
+
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/sitemap", json={"title": "Contact", "page_type": "contact", "purpose": "Enquiries."}
+    )
+    pages = res.json()["sitemap_pages"]
+    contact_id = next(p["id"] for p in pages if p["title"] == "Contact")
+    our_work_id = next(p["id"] for p in pages if p["title"] == "Our Work")
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/sitemap/reorder",
+        json={"pages": [{"id": contact_id, "order_index": 0}, {"id": our_work_id, "order_index": 1}]},
+    )
+    ordered = sorted(res.json()["sitemap_pages"], key=lambda p: p["order_index"])
+    assert ordered[0]["title"] == "Contact"
+
+    res = authed_client.delete(f"/api/v1/planning/{planning['id']}/sitemap/{contact_id}")
+    assert len(res.json()["sitemap_pages"]) == 1
+
+
+# --- Build Brief: Visual Direction Choices ----------------------------------
+
+VISUAL_DIRECTIONS_LLM_OUTPUT = {
+    "options": [
+        {
+            "character": "Warm and handcrafted",
+            "typography": "Rounded, friendly sans-serif",
+            "colour_palette": "Terracotta and cream",
+            "imagery": "Real photos of finished work",
+            "layout": "Generous whitespace",
+        },
+        {
+            "character": "Clean and modern",
+            "typography": "Geometric sans-serif",
+            "colour_palette": "Charcoal and white",
+            "imagery": "Minimal product shots",
+            "layout": "Grid-based",
+        },
+    ]
+}
+
+
+def test_generate_and_select_visual_direction(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(
+        "app.agents.planning_visual_directions.generate_structured", lambda **kwargs: dict(VISUAL_DIRECTIONS_LLM_OUTPUT)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["visual_direction_options"]) == 2
+    assert body["selected_visual_direction"] is None
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/visual-directions/select", json={"option_index": 0, "character": "Warm, handcrafted, and inviting"}
+    )
+    assert res.status_code == 200
+    selected = res.json()["selected_visual_direction"]
+    assert selected["character"] == "Warm, handcrafted, and inviting"  # operator edit applied
+    assert selected["typography"] == VISUAL_DIRECTIONS_LLM_OUTPUT["options"][0]["typography"]  # untouched field kept
+
+
+def test_regenerating_visual_directions_never_touches_an_existing_selection(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(
+        "app.agents.planning_visual_directions.generate_structured", lambda **kwargs: dict(VISUAL_DIRECTIONS_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
+    authed_client.patch(f"/api/v1/planning/{planning['id']}/visual-directions/select", json={"option_index": 1})
+
+    new_output = {"options": [{"character": "Bold", "typography": "Heavy display type", "colour_palette": "Black and yellow", "imagery": "High-contrast", "layout": "Asymmetric"}]}
+    monkeypatch.setattr("app.agents.planning_visual_directions.generate_structured", lambda **kwargs: dict(new_output))
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
+
+    body = res.json()
+    assert len(body["visual_direction_options"]) == 1  # candidate pool replaced
+    assert body["selected_visual_direction"]["character"] == "Clean and modern"  # selection untouched
+
+
+def test_select_visual_direction_without_index_or_prior_selection_returns_400(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    res = authed_client.patch(f"/api/v1/planning/{planning['id']}/visual-directions/select", json={})
+    assert res.status_code == 400
+
+
+# --- Build Brief: Assets Checklist ------------------------------------------
+
+
+def test_assets_checklist_seeds_from_real_records_and_instagram_image_is_reference_only(
+    authed_client, monkeypatch, db_session
+):
+    lead = _create_lead(authed_client, phone="0400111222")
+    planning = _start_planning(authed_client, lead)
+    _link_discovered_business(
+        db_session, authed_client, lead, instagram_profile_image_url="https://instagram.com/x/pic.jpg"
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/assets/refresh")
+    assert res.status_code == 200
+    assets = {a["category"]: a for a in res.json()["assets"]}
+    assert assets["photos"]["status"] == "reference_only"  # never ready_to_use from a social image
+    assert assets["contact_details"]["status"] == "ready_to_use"
+    assert assets["logo"]["status"] == "missing"
+
+
+def test_refreshing_assets_checklist_only_adds_never_touches_existing_rows(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/assets/refresh")
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    logo_asset = next(a for a in body["assets"] if a["category"] == "logo")
+
+    authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/assets/{logo_asset['id']}",
+        json={"status": "ready_to_use", "note": "Received via email."},
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/assets/refresh")
+    body = res.json()
+    assert len(body["assets"]) == 5  # no duplicates
+    logo_after = next(a for a in body["assets"] if a["category"] == "logo")
+    assert logo_after["status"] == "ready_to_use"  # operator's edit preserved
+    assert logo_after["note"] == "Received via email."
+
+
+def test_add_and_update_custom_asset(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/assets", json={"category": "video", "label": "Intro video", "status": "missing"}
+    )
+    asset = res.json()["assets"][0]
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/assets/{asset['id']}", json={"status": "needs_owner_approval"}
+    )
+    assert res.json()["assets"][0]["status"] == "needs_owner_approval"
+
+
+# --- Build Brief: compiled preview + approval + Create Project handoff -----
+
+
+def test_build_brief_compute_reflects_accepted_recommendations_and_open_questions(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    monkeypatch.setattr(
+        "app.agents.planning_recommendations.generate_structured", lambda **kwargs: dict(RECOMMENDATIONS_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{result['id']}/recommendations/generate")
+    body = authed_client.get(f"/api/v1/planning/{result['id']}").json()
+    add_rec = next(r for r in body["recommendations"] if r["category"] == "add")
+    authed_client.patch(f"/api/v1/planning/{result['id']}/recommendations/{add_rec['id']}", json={"status": "accepted"})
+
+    res = authed_client.get(f"/api/v1/planning/{result['id']}/build-brief")
+    assert res.status_code == 200
+    brief = res.json()
+    assert brief["objective"] == RECOMMENDATIONS_LLM_OUTPUT["website_objective"]
+    assert len(brief["accepted_recommendations"]) == 1  # "keep"/"improve" still proposed, not accepted
+    assert brief["is_approved"] is False
+    assert any("Business name" in f["fact"] for f in brief["confirmed_facts"])
+
+
+def test_approve_build_brief_snapshots_current_state(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["is_approved"] is True
+    assert body["approved_at"] is not None
+    assert body["project_id"] is None
+
+
+def test_reapproving_before_a_project_exists_updates_the_snapshot(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    authed_client.post(
+        f"/api/v1/planning/{planning['id']}/recommendations",
+        json={"category": "add", "title": "New idea", "explanation": "x"},
+    )
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+    assert any(r["title"] == "New idea" for r in res.json()["accepted_recommendations"])
+
+
+def test_create_project_builds_real_sitemap_creative_direction_and_design_brief_rows(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(
+        "app.agents.planning_sitemap_proposal.generate_structured", lambda **kwargs: dict(SITEMAP_PROPOSAL_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/sitemap/generate")
+    monkeypatch.setattr(
+        "app.agents.planning_visual_directions.generate_structured", lambda **kwargs: dict(VISUAL_DIRECTIONS_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
+    authed_client.patch(f"/api/v1/planning/{planning['id']}/visual-directions/select", json={"option_index": 0})
+    authed_client.post(f"/api/v1/planning/{planning['id']}/assets/refresh")
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
+    assert res.status_code == 201
+    project = res.json()
+
+    sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
+    assert len(sitemaps) == 1
+    assert {p["title"] for p in sitemaps[0]["pages"]} == {"Home", "Services"}
+
+    directions = authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()
+    assert len(directions) == 1
+    assert directions[0]["visual_direction"] == VISUAL_DIRECTIONS_LLM_OUTPUT["options"][0]["character"]
+    assert directions[0]["colour_direction"] == VISUAL_DIRECTIONS_LLM_OUTPUT["options"][0]["colour_palette"]
+    assert directions[0]["status"] == "draft"
+
+    assert "Build Brief objective" in project["build_direction"] or project["build_direction"] is not None
+
+
+# --- Content Draft -----------------------------------------------------
+
+CONTENT_DRAFT_PAGE_OUTPUT = {
+    "seo_title": "Kitchen Renovations | Coastal Cafe",
+    "seo_meta_description": "Custom kitchen renovations for your home.",
+    "sections": [
+        {
+            "section_type": "hero",
+            "content": {"heading": "Custom Kitchen Renovations", "subheading": "Quality craftsmanship, built to last."},
+            "needs_confirmation": [],
+        },
+        {
+            "section_type": "faq",
+            "content": {"items": []},
+            "needs_confirmation": ["Opening hours not confirmed."],
+        },
+    ],
+}
+
+CONTENT_SECTION_OUTPUT = {
+    "section_type": "hero",
+    "content": {"heading": "Freshly Regenerated Heading", "subheading": "A brand new subheading."},
+    "needs_confirmation": [],
+}
+
+
+def _add_sitemap_pages(authed_client, planning_id, titles):
+    for title in titles:
+        authed_client.post(
+            f"/api/v1/planning/{planning_id}/sitemap",
+            json={"title": title, "page_type": "custom", "purpose": f"{title} page purpose."},
+        )
+    return authed_client.get(f"/api/v1/planning/{planning_id}").json()["sitemap_pages"]
+
+
+def test_generate_content_draft_requires_at_least_one_sitemap_page(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    assert res.status_code == 400
+
+
+def test_generate_content_draft_creates_one_page_per_sitemap_page(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home", "Services"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    assert res.status_code == 200
+    assert res.json()["content_draft_status"] == "generating"
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["content_draft_status"] == "completed"
+    assert body["content_draft_generated_at"] is not None
+    assert body["content_draft_progress_label"] is None
+    assert len(body["content_pages"]) == 2
+    for page in body["content_pages"]:
+        assert page["status"] == "draft"
+        assert page["seo_title"] == CONTENT_DRAFT_PAGE_OUTPUT["seo_title"]
+        assert len(page["sections"]) == 2
+        faq_section = next(s for s in page["sections"] if s["section_type"] == "faq")
+        assert faq_section["needs_confirmation_notes"] == ["Opening hours not confirmed."]
+
+
+def test_generate_content_draft_degrades_gracefully_without_llm(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["content_draft_status"] == "needs_review"
+    assert body["content_draft_error"] is not None
+    assert body["content_pages"] == []
+
+
+def test_regenerating_content_draft_skips_edited_and_approved_pages(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home", "Services", "Contact"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    pages_by_title = {p["sitemap_page_id"]: p for p in body["content_pages"]}
+    sitemap_by_id = {p["id"]: p["title"] for p in body["sitemap_pages"]}
+    home_page = next(p for p in body["content_pages"] if sitemap_by_id[p["sitemap_page_id"]] == "Home")
+    services_page = next(p for p in body["content_pages"] if sitemap_by_id[p["sitemap_page_id"]] == "Services")
+
+    hero_section = next(s for s in home_page["sections"] if s["section_type"] == "hero")
+    authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{home_page['id']}/sections/{hero_section['id']}",
+        json={"content": {"heading": "Operator's own heading", "subheading": "Edited by hand."}},
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{services_page['id']}/approve")
+
+    new_output = dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    new_output["seo_title"] = "A completely different regenerated title"
+    monkeypatch.setattr("app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(new_output))
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    by_id = {p["id"]: p for p in body["content_pages"]}
+    home_after = by_id[home_page["id"]]
+    services_after = by_id[services_page["id"]]
+    contact_after = next(p for p in body["content_pages"] if sitemap_by_id[p["sitemap_page_id"]] == "Contact")
+
+    assert home_after["status"] == "edited"
+    assert home_after["seo_title"] == CONTENT_DRAFT_PAGE_OUTPUT["seo_title"]  # untouched — not regenerated
+    assert services_after["status"] == "approved"
+    assert services_after["seo_title"] == CONTENT_DRAFT_PAGE_OUTPUT["seo_title"]  # untouched — not regenerated
+    assert contact_after["seo_title"] == new_output["seo_title"]  # still draft — regenerated
+
+
+def test_update_content_section_reverts_approved_page_to_edited(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+
+    section = page["sections"][0]
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/sections/{section['id']}",
+        json={"content": {"heading": "Edited after approval"}},
+    )
+    assert res.status_code == 200
+    updated_page = res.json()["content_pages"][0]
+    assert updated_page["status"] == "edited"
+    updated_section = next(s for s in updated_page["sections"] if s["id"] == section["id"])
+    assert updated_section["source"] == "operator_edited"
+    assert updated_section["content"] == {"heading": "Edited after approval"}
+
+
+def test_update_content_page_seo_reverts_approved_page_to_edited(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}",
+        json={"seo_title": "Operator's own SEO title", "seo_meta_description": "Operator's own meta description."},
+    )
+    assert res.status_code == 200
+    updated_page = res.json()["content_pages"][0]
+    assert updated_page["status"] == "edited"
+    assert updated_page["seo_title"] == "Operator's own SEO title"
+    assert updated_page["seo_meta_description"] == "Operator's own meta description."
+
+
+def test_regenerate_untouched_section_replaces_immediately(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+    hero_section = next(s for s in page["sections"] if s["section_type"] == "hero")
+
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_SECTION_OUTPUT)
+    )
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/sections/{hero_section['id']}/regenerate"
+    )
+    assert res.status_code == 200
+    result = res.json()
+    assert result["is_preview"] is False
+    updated_page = next(p for p in result["planning"]["content_pages"] if p["id"] == page["id"])
+    updated_section = next(s for s in updated_page["sections"] if s["id"] == hero_section["id"])
+    assert updated_section["content"]["heading"] == "Freshly Regenerated Heading"
+
+
+def test_regenerate_edited_section_returns_preview_without_persisting(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+    hero_section = next(s for s in page["sections"] if s["section_type"] == "hero")
+
+    authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/sections/{hero_section['id']}",
+        json={"content": {"heading": "My own careful edit"}},
+    )
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_SECTION_OUTPUT)
+    )
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/sections/{hero_section['id']}/regenerate"
+    )
+    assert res.status_code == 200
+    result = res.json()
+    assert result["is_preview"] is True
+    assert result["preview"]["candidate_content"]["heading"] == "Freshly Regenerated Heading"
+
+    # Nothing persisted yet — the operator's edit is still there.
+    body_after = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page_after = body_after["content_pages"][0]
+    section_after = next(s for s in page_after["sections"] if s["id"] == hero_section["id"])
+    assert section_after["content"] == {"heading": "My own careful edit"}
+
+    # Now apply it.
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/sections/{hero_section['id']}/apply-preview",
+        json={"content": result["preview"]["candidate_content"], "needs_confirmation_notes": []},
+    )
+    assert res.status_code == 200
+    applied_page = res.json()["content_pages"][0]
+    applied_section = next(s for s in applied_page["sections"] if s["id"] == hero_section["id"])
+    assert applied_section["content"]["heading"] == "Freshly Regenerated Heading"
+    assert applied_section["source"] == "generated"
+
+
+def test_approve_content_page_and_stale_flag_on_source_change(authed_client, monkeypatch, db_session):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+    assert res.status_code == 200
+    approved_page = res.json()["content_pages"][0]
+    assert approved_page["status"] == "approved"
+    assert approved_page["stale"] is False
+
+    from app.modules.planning.models import LeadPlanning as _LP
+
+    row = db_session.get(_LP, uuid.UUID(planning["id"]))
+    row.recommendations_objective = "A brand new objective that changes everything."
+    db_session.commit()
+
+    body_after = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page_after = body_after["content_pages"][0]
+    assert page_after["status"] == "approved"  # unchanged — never silently rewritten
+    assert page_after["stale"] is True
+    assert page_after["sections"] == approved_page["sections"]  # content itself untouched
+
+
+def test_content_draft_endpoints_are_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+
+    res = other_authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    assert res.status_code == 404
+
+
+def test_create_project_handoff_includes_approved_content_draft(authed_client, monkeypatch, db_session):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    page = body["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
+    assert res.status_code == 201
+    project = res.json()
+    assert "Content Draft" in project["build_direction"]
+    assert "Opening hours not confirmed." in project["build_direction"]
+
+    sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
+    home = next(p for p in sitemaps[0]["pages"] if p["title"] == "Home")
+
+    from app.modules.sitemaps.models import SitemapPage as _RealSitemapPage
+
+    real_page = db_session.get(_RealSitemapPage, uuid.UUID(home["id"]))
+    assert real_page.seo_title == CONTENT_DRAFT_PAGE_OUTPUT["seo_title"]
+    assert real_page.seo_meta_description == CONTENT_DRAFT_PAGE_OUTPUT["seo_meta_description"]
+
+    from app.modules.design_briefs.models import DesignBrief as _DesignBrief
+
+    design_brief = db_session.query(_DesignBrief).filter_by(project_id=uuid.UUID(project["id"])).first()
+    assert design_brief.business_description == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]

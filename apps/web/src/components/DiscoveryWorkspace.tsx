@@ -41,6 +41,7 @@ const NO_FILTERS: DiscoveredBusinessFilters = {
   contactableOnly: false,
   activeRecentlyOnly: false,
   minFollowers: null,
+  showImported: false,
 };
 
 const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], string> = {
@@ -541,6 +542,14 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                 onChange={(e) => setFilters((f) => ({ ...f, mappedOnly: e.target.checked }))}
               />
               On map only
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-fg-muted">
+              <input
+                type="checkbox"
+                checked={filters.showImported}
+                onChange={(e) => setFilters((f) => ({ ...f, showImported: e.target.checked }))}
+              />
+              Already imported
             </label>
           </div>
 

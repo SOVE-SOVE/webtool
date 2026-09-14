@@ -6,8 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.modules.activity_log import service as activity_service
-from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.previews import service as previews_service
 from app.modules.projects.models import Project
 from app.modules.website_feedback.models import FeedbackStatus, FeedbackType, WebsiteFeedback
@@ -89,7 +87,7 @@ def submit_feedback(db: Session, token: str, website_id: uuid.UUID, request: Fee
             db, website, WebsiteWorkflowStatus.CHANGES_REQUESTED, actor_label=f"{who} (via preview link)", notes=request.message
         )
 
-    workspace_id = link.project.client.business.workspace_id
+    workspace_id = link.project.workspace_id
     activity_service.record(
         db,
         workspace_id=workspace_id,
@@ -105,12 +103,7 @@ def submit_feedback(db: Session, token: str, website_id: uuid.UUID, request: Fee
 
 
 def _project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
-    return db.scalar(
-        select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Project.id == project_id)
-    )
+    return db.scalar(select(Project).where(Project.workspace_id == workspace_id, Project.id == project_id))
 
 
 def list_feedback(
@@ -131,9 +124,7 @@ def _get_feedback_in_workspace(db: Session, workspace_id: uuid.UUID, feedback_id
     return db.scalar(
         select(WebsiteFeedback)
         .join(Project, WebsiteFeedback.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, WebsiteFeedback.id == feedback_id)
+        .where(Project.workspace_id == workspace_id, WebsiteFeedback.id == feedback_id)
         .options(*_READ_OPTIONS)
     )
 

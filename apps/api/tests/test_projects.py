@@ -3,6 +3,11 @@ def _create_client(authed_client, name: str = "Coastal Cafe") -> str:
     return res.json()["id"]
 
 
+def _create_lead(authed_client, name: str = "Hilltop Roofing") -> str:
+    res = authed_client.post("/api/v1/leads", json={"business_name": name})
+    return res.json()["id"]
+
+
 def test_create_and_list_projects(authed_client):
     client_id = _create_client(authed_client)
 
@@ -76,3 +81,83 @@ def test_project_agreed_terms_settable_and_editable(authed_client):
     assert patched["price_cents"] == 99900
     assert patched["deadline"] is None
     assert patched["package"] == "Core"
+
+
+def test_create_project_requires_exactly_one_owner(authed_client):
+    res = authed_client.post("/api/v1/projects", json={"name": "New website"})
+    assert res.status_code == 422
+
+    client_id = _create_client(authed_client)
+    lead_id = _create_lead(authed_client)
+    res = authed_client.post(
+        "/api/v1/projects", json={"client_id": client_id, "lead_id": lead_id, "name": "New website"}
+    )
+    assert res.status_code == 422
+
+
+def test_create_prospect_project_from_lead_has_no_client(authed_client):
+    lead_id = _create_lead(authed_client)
+
+    res = authed_client.post("/api/v1/projects", json={"lead_id": lead_id, "name": "Hilltop Roofing Website"})
+    assert res.status_code == 201
+    body = res.json()
+    assert body["client_id"] is None
+    assert body["source_lead_id"] == lead_id
+    assert body["stage"] == "intake"
+
+    lead_after = authed_client.get(f"/api/v1/leads/{lead_id}").json()
+    assert lead_after["status"] == "new"
+    assert lead_after["client_id"] is None
+    assert lead_after["prospect_project"]["id"] == body["id"]
+
+    assert authed_client.get("/api/v1/clients").json() == []
+
+
+def test_create_prospect_project_unknown_lead_404s(authed_client):
+    res = authed_client.post(
+        "/api/v1/projects",
+        json={"lead_id": "00000000-0000-0000-0000-000000000000", "name": "New website"},
+    )
+    assert res.status_code == 404
+
+
+def test_start_website_project_is_idempotent_on_repeated_clicks(authed_client):
+    lead_id = _create_lead(authed_client)
+
+    first = authed_client.post("/api/v1/projects", json={"lead_id": lead_id, "name": "Hilltop Roofing Website"}).json()
+    second = authed_client.post("/api/v1/projects", json={"lead_id": lead_id, "name": "Hilltop Roofing Website"}).json()
+    assert second["id"] == first["id"]
+
+    all_projects = authed_client.get("/api/v1/projects").json()
+    matching = [p for p in all_projects if p["source_lead_id"] == lead_id]
+    assert len(matching) == 1
+
+
+def test_prospect_project_is_reachable_through_every_normal_workspace_scoped_endpoint(authed_client):
+    """The core regression risk of the workspace_id migration: a
+    Lead-owned Project (no client_id) must be just as reachable through
+    every workspace-scoped module as a Client-owned one, since a plain
+    Project.client_id == Client.id join would silently exclude it."""
+    lead_id = _create_lead(authed_client)
+    project_id = authed_client.post(
+        "/api/v1/projects", json={"lead_id": lead_id, "name": "Hilltop Roofing Website"}
+    ).json()["id"]
+
+    assert authed_client.get(f"/api/v1/projects/{project_id}").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/brief").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/sitemaps").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/creative-directions").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/websites").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/deployments").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/approvals").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/previews").status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}/feedback").status_code == 200
+
+    task = authed_client.post("/api/v1/tasks", json={"project_id": project_id, "title": "Do the thing"})
+    assert task.status_code == 201
+    tasks = authed_client.get("/api/v1/tasks").json()
+    assert any(t["project_id"] == project_id for t in tasks)
+
+    approve = authed_client.post(f"/api/v1/projects/{project_id}/brief/approve")
+    assert approve.status_code == 200
+    assert authed_client.get(f"/api/v1/projects/{project_id}").json()["stage"] == "brief"

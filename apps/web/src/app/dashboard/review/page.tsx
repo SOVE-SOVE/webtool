@@ -70,6 +70,7 @@ export default function ReviewPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
+  const [showImported, setShowImported] = useState(false);
   const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
   const [checkingWebsiteId, setCheckingWebsiteId] = useState<string | null>(null);
@@ -168,11 +169,12 @@ export default function ReviewPage() {
   const visibleItems = useMemo(() => {
     if (!items) return null;
     return items.filter((i) => {
+      if (!showImported && i.status === "imported") return false;
       if (websiteFilter === "has" && i.website_status !== "found") return false;
       if (websiteFilter === "no" && i.website_status !== "none") return false;
       return true;
     });
-  }, [items, websiteFilter]);
+  }, [items, websiteFilter, showImported]);
 
   const selectableIds = useMemo(
     () =>
@@ -217,6 +219,10 @@ export default function ReviewPage() {
         <label className="flex items-center gap-1.5 text-sm text-fg-muted">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Show rejected &amp; archived
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
+          <input type="checkbox" checked={showImported} onChange={(e) => setShowImported(e.target.checked)} />
+          Already imported
         </label>
       </div>
 

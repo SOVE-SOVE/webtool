@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from app.modules.businesses.models import Business
     from app.modules.interactions.models import Interaction
     from app.modules.outreach.models import EmailSend, FollowUp, OutreachMessage
+    from app.modules.planning.models import LeadPlanning
+    from app.modules.projects.models import Project
     from app.modules.sales_audits.models import SalesAuditReport
     from app.modules.sales_opportunities.models import SalesOpportunity
     from app.modules.users.models import User
@@ -76,3 +78,16 @@ class Lead(Base):
     outreach_messages: Mapped[list["OutreachMessage"]] = relationship(back_populates="lead")
     follow_ups: Mapped[list["FollowUp"]] = relationship(back_populates="lead")
     email_sends: Mapped[list["EmailSend"]] = relationship(back_populates="lead")
+    # This lead's one Planning workspace, if it has started one
+    # (LeadPlanning.lead_id is unique) — read-only, mirrors client_id's
+    # own "relationship pointer" role on LeadRead.
+    planning: Mapped["LeadPlanning | None"] = relationship(viewonly=True)
+    # A prospect (Lead-owned, no Client yet) Project this lead owns
+    # directly — see Project's own docstring. In practice at most one
+    # (projects/service.py::create_project reuses an existing one rather
+    # than creating a second), but modeled as a list since nothing at
+    # the DB level enforces that.
+    prospect_projects: Mapped[list["Project"]] = relationship(
+        viewonly=True,
+        primaryjoin="and_(Project.source_lead_id == Lead.id, Project.client_id == None)",
+    )

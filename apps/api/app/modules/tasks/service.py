@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.leads.models import Lead
 from app.modules.projects.models import Project
 from app.modules.tasks.models import Task
@@ -14,9 +13,9 @@ from app.modules.tasks.schemas import TaskCreate, TaskRead, TaskUpdate
 from app.modules.users.service import require_user_in_workspace
 
 # Tasks belong to exactly one of project or lead, and each reaches the
-# workspace via a different FK chain, so both paths are joined (outer,
-# since only one side is ever populated) and matched with OR.
-_ProjectBusiness = aliased(Business)
+# workspace via a different path (Project.workspace_id directly, Lead
+# via its Business), so both paths are joined (outer, since only one
+# side is ever populated) and matched with OR.
 _LeadBusiness = aliased(Business)
 
 
@@ -45,13 +44,11 @@ def _base_query(workspace_id: uuid.UUID):
     return (
         select(Task)
         .outerjoin(Project, Task.project_id == Project.id)
-        .outerjoin(Client, Project.client_id == Client.id)
-        .outerjoin(_ProjectBusiness, Client.business_id == _ProjectBusiness.id)
         .outerjoin(Lead, Task.lead_id == Lead.id)
         .outerjoin(_LeadBusiness, Lead.business_id == _LeadBusiness.id)
         .where(
             or_(
-                _ProjectBusiness.workspace_id == workspace_id,
+                Project.workspace_id == workspace_id,
                 _LeadBusiness.workspace_id == workspace_id,
             )
         )
@@ -75,12 +72,7 @@ def get_task(db: Session, workspace_id: uuid.UUID, task_id: uuid.UUID) -> TaskRe
 
 def _project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> bool:
     return (
-        db.scalar(
-            select(Project.id)
-            .join(Client, Project.client_id == Client.id)
-            .join(Business, Client.business_id == Business.id)
-            .where(Project.id == project_id, Business.workspace_id == workspace_id)
-        )
+        db.scalar(select(Project.id).where(Project.id == project_id, Project.workspace_id == workspace_id))
         is not None
     )
 

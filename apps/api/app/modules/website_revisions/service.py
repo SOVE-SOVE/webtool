@@ -14,9 +14,9 @@ from app.agents.anti_slop import PageInput as AntiSlopPageInput
 from app.agents.anti_slop import SectionInput as AntiSlopSectionInput
 from app.agents.anti_slop import run as run_anti_slop
 from app.modules.activity_log import service as activity_service
-from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
+from app.modules.leads.models import Lead
 from app.modules.projects.models import Project
 from app.modules.website_revisions.models import RevisionKind, RevisionStatus, WebsiteRevision
 from app.modules.website_revisions.schemas import DecisionRequest, RequestRevisionRequest, WebsiteRevisionRead
@@ -51,9 +51,7 @@ def _get_website_in_workspace(db: Session, workspace_id: uuid.UUID, website_id: 
     return db.scalar(
         select(Website)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Website.id == website_id)
+        .where(Project.workspace_id == workspace_id, Website.id == website_id)
     )
 
 
@@ -110,9 +108,7 @@ def _resolve_creative_direction(db: Session, workspace_id: uuid.UUID, project_id
     base = (
         select(CreativeDirectionBrief)
         .join(Project, CreativeDirectionBrief.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, CreativeDirectionBrief.project_id == project_id)
+        .where(Project.workspace_id == workspace_id, CreativeDirectionBrief.project_id == project_id)
     )
     approved = db.scalar(
         base.where(CreativeDirectionBrief.status == CreativeDirectionStatus.APPROVED).order_by(CreativeDirectionBrief.generated_at.desc())
@@ -121,13 +117,15 @@ def _resolve_creative_direction(db: Session, workspace_id: uuid.UUID, project_id
 
 
 def _business_name(db: Session, project_id: uuid.UUID) -> str:
-    name = db.scalar(
-        select(Business.name)
-        .join(Client, Business.id == Client.business_id)
-        .join(Project, Client.id == Project.client_id)
+    project = db.scalar(
+        select(Project)
         .where(Project.id == project_id)
+        .options(
+            joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.source_lead).joinedload(Lead.business),
+        )
     )
-    return name or ""
+    return project.owner_business.name if project else ""
 
 
 def _next_revision_number(db: Session, project_id: uuid.UUID) -> int:
@@ -358,9 +356,7 @@ def _base_query(workspace_id: uuid.UUID):
     return (
         select(WebsiteRevision)
         .join(Project, WebsiteRevision.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
+        .where(Project.workspace_id == workspace_id)
         .options(joinedload(WebsiteRevision.created_by_user), joinedload(WebsiteRevision.decided_by_user))
     )
 

@@ -248,6 +248,55 @@ def test_convert_lead_preserves_original_lead_and_its_history(authed_client, db_
     assert len(outreach) == 1
 
 
+def test_convert_lead_with_existing_prospect_project_reassigns_it(authed_client):
+    """A Lead that already has a speculative (Lead-owned) prospect
+    Project must have that same Project reassigned to the new Client on
+    conversion — never a second, duplicate Project (docs/05_DECISIONS.md:
+    'initialise any client checklist using work already completed')."""
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"}).json()["id"]
+
+    prospect = authed_client.post(
+        "/api/v1/projects", json={"lead_id": lead_id, "name": "Hilltop Roofing Website"}
+    ).json()
+    assert prospect["client_id"] is None
+    assert prospect["source_lead_id"] == lead_id
+
+    # Real, already-completed work on the prospect project before conversion.
+    authed_client.post(f"/api/v1/projects/{prospect['id']}/brief/approve")
+
+    client_res = authed_client.post("/api/v1/clients", json={"from_lead_id": lead_id})
+    assert client_res.status_code == 201
+    client = client_res.json()
+    assert client["project_count"] == 1
+
+    projects = authed_client.get("/api/v1/projects").json()
+    assert len(projects) == 1
+    project = projects[0]
+    assert project["id"] == prospect["id"]
+    assert project["client_id"] == client["id"]
+    assert project["source_lead_id"] == lead_id
+
+    checklist = authed_client.get(f"/api/v1/clients/{client['id']}/checklist").json()
+    section = next(s for s in checklist["projects"] if s["project_id"] == project["id"])
+    scope_item = next(i for i in section["items"] if i["title"] == "Confirm website scope")
+    assert scope_item["status"] == "complete"
+    assert scope_item["completed_by"]["type"] == "system"
+
+
+def test_convert_lead_without_prospect_project_still_auto_creates_one(authed_client):
+    """No prospect Project existed yet — conversion falls back to
+    today's behaviour of creating a fresh starter Project."""
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "Hilltop Roofing"}).json()["id"]
+
+    client = authed_client.post("/api/v1/clients", json={"from_lead_id": lead_id}).json()
+    assert client["project_count"] == 1
+
+    projects = authed_client.get("/api/v1/projects").json()
+    assert len(projects) == 1
+    assert projects[0]["client_id"] == client["id"]
+    assert projects[0]["source_lead_id"] == lead_id
+
+
 def test_update_client_billing_and_contract_fields(authed_client):
     client_row = authed_client.post("/api/v1/clients", json={"business_name": "Coastal Cafe"}).json()
 

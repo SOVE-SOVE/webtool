@@ -1,4 +1,12 @@
-import type { ComparableResearchStatus, Lead, Planning, PlanningKeyPoint, PlanningStatus, ReviewIntelligenceResult } from "@/lib/api";
+import type {
+  ComparableResearchStatus,
+  Lead,
+  Planning,
+  PlanningKeyPoint,
+  PlanningSocialProfile,
+  PlanningStatus,
+  ReviewIntelligenceResult,
+} from "@/lib/api";
 
 // Which of Planning's two modes a workspace is in — derived, never
 // stored (mirrors the backend: see LeadPlanning's docstring). A Lead
@@ -246,13 +254,20 @@ export function computeTopOpportunities(planning: Planning, maxCount = 5): Oppor
 // information on file to plan from" instead of "what did the audit
 // find". Same restrained dot+label shape, reused as-is.
 
-export type BusinessInputRowKey = "business_details" | "location" | "contact" | "google_reviews" | "comparable_research";
+export type BusinessInputRowKey =
+  | "business_details"
+  | "location"
+  | "contact"
+  | "google_reviews"
+  | "social_presence"
+  | "comparable_research";
 
 export const BUSINESS_INPUT_ROW_LABELS: Record<BusinessInputRowKey, string> = {
   business_details: "Business details",
   location: "Location",
   contact: "Contact details",
   google_reviews: "Google reviews",
+  social_presence: "Social presence",
   comparable_research: "Comparable research",
 };
 
@@ -303,9 +318,151 @@ export function computeBusinessInputRows(
       state: googleReviewsRowState(planning.review_intelligence),
     },
     {
+      key: "social_presence",
+      label: BUSINESS_INPUT_ROW_LABELS.social_presence,
+      state: planning.social_profile.has_any ? "good" : "not_checked",
+    },
+    {
       key: "comparable_research",
       label: BUSINESS_INPUT_ROW_LABELS.comparable_research,
       state: comparableResearchRowState(planning.comparable_research_status),
     },
   ];
+}
+
+// --- Information to Confirm (New Website Plan mode) ------------------------
+// Deterministic gap checks (never invented, purely presence-based) shown
+// ahead of the website-plan agent's own open_questions — both together
+// back the "Information to Confirm" Disclosure in WebsitePlanTab.
+
+export function computeInformationToConfirm(
+  planning: Planning,
+  lead: Pick<Lead, "business_phone" | "business_email"> | null,
+  social: PlanningSocialProfile,
+): string[] {
+  const items: string[] = [];
+
+  if (!social.instagram_handle && !social.instagram_profile_url) {
+    items.push("Confirm whether this business has an Instagram profile.");
+  }
+  if (!social.facebook_page_url) {
+    items.push("Confirm whether this business has a Facebook Page.");
+  }
+  if (lead && !lead.business_phone && !lead.business_email) {
+    items.push("No phone or email on file — confirm a primary contact method.");
+  }
+
+  const seen = new Set(items.map((i) => i.trim().toLowerCase()));
+  for (const q of planning.open_questions) {
+    const key = q.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    items.push(q);
+  }
+  return items;
+}
+
+// --- Build Brief: Facts, Suggestions & Open Questions -----------------------
+// A lightweight, always-on-hand summary computed purely from the already-
+// fetched Planning object (mirrors the backend's compute_build_brief, but
+// recomputes instantly on every local update — no extra fetch needed just
+// to show this section of the Build Brief tab).
+
+export type BuildBriefFact = { fact: string; source: string };
+
+export type BuildBriefSummary = {
+  confirmedFacts: BuildBriefFact[];
+  proposedDecisions: string[];
+  openQuestions: string[];
+};
+
+export function computeBuildBriefFacts(
+  planning: Planning,
+  lead: Pick<Lead, "industry" | "suburb" | "state" | "business_phone" | "business_email"> | null,
+): BuildBriefSummary {
+  const confirmedFacts: BuildBriefFact[] = [];
+  if (lead?.industry) confirmedFacts.push({ fact: `Category: ${lead.industry}`, source: "Business record" });
+  const location = [lead?.suburb, lead?.state].filter(Boolean).join(", ");
+  if (location) confirmedFacts.push({ fact: `Location: ${location}`, source: "Business record" });
+  if (lead?.business_phone) confirmedFacts.push({ fact: `Phone: ${lead.business_phone}`, source: "Business record" });
+  if (lead?.business_email) confirmedFacts.push({ fact: `Email: ${lead.business_email}`, source: "Business record" });
+  if (planning.social_profile.instagram_handle) {
+    confirmedFacts.push({ fact: `Instagram: @${planning.social_profile.instagram_handle}`, source: "Social Presence" });
+  }
+  if (planning.social_profile.facebook_page_url) {
+    confirmedFacts.push({ fact: `Facebook Page: ${planning.social_profile.facebook_page_url}`, source: "Social Presence" });
+  }
+  if (planning.review_intelligence?.google_rating != null) {
+    confirmedFacts.push({
+      fact: `Google rating: ${planning.review_intelligence.google_rating}★ (${planning.review_intelligence.google_review_count ?? 0} reviews)`,
+      source: "Google Review Insights",
+    });
+  }
+
+  const proposedDecisions: string[] = [];
+  if (planning.recommendations_objective) proposedDecisions.push(`Objective: ${planning.recommendations_objective}`);
+  const acceptedCount = planning.recommendations.filter((r) => r.status === "accepted").length;
+  if (acceptedCount > 0) {
+    proposedDecisions.push(`${acceptedCount} accepted Keep/Improve/Add recommendation${acceptedCount === 1 ? "" : "s"}`);
+  }
+  if (planning.sitemap_pages.length > 0) {
+    proposedDecisions.push(`${planning.sitemap_pages.length} proposed page${planning.sitemap_pages.length === 1 ? "" : "s"}`);
+  }
+  if (planning.selected_visual_direction) {
+    proposedDecisions.push(`Visual direction selected: ${planning.selected_visual_direction.character}`);
+  }
+
+  const openQuestions = computeInformationToConfirm(planning, lead, planning.social_profile);
+  const seen = new Set(openQuestions.map((q) => q.trim().toLowerCase()));
+  const add = (q: string) => {
+    const key = q.trim().toLowerCase();
+    if (!seen.has(key)) {
+      openQuestions.push(q);
+      seen.add(key);
+    }
+  };
+  for (const page of planning.sitemap_pages) {
+    if (page.needs_confirmation) add(`Confirm content for the proposed '${page.title}' page.`);
+  }
+  for (const asset of planning.assets) {
+    if (asset.status === "missing") add(`Missing asset: ${asset.label}.`);
+  }
+
+  return { confirmedFacts, proposedDecisions, openQuestions };
+}
+
+// --- Content Draft -----------------------------------------------------
+// A pre-generation explainer, computed purely from the already-fetched
+// Planning object — no extra request. Sitemap pages are the one
+// essential input (content is organised by page); everything else
+// informs quality but never blocks generation.
+
+export type ContentDraftReadinessItem = { label: string; available: boolean };
+
+export type ContentDraftReadiness = {
+  items: ContentDraftReadinessItem[];
+  blocker: string | null;
+};
+
+export function computeContentDraftReadiness(planning: Planning): ContentDraftReadiness {
+  const acceptedCount = planning.recommendations.filter((r) => r.status === "accepted").length;
+  const hasReviewThemes = Boolean(
+    planning.review_intelligence &&
+      (planning.review_intelligence.positive_review_themes.length > 0 ||
+        planning.review_intelligence.negative_review_themes.length > 0),
+  );
+
+  const items: ContentDraftReadinessItem[] = [
+    { label: "Website objective", available: Boolean(planning.recommendations_objective) },
+    { label: `Accepted Keep/Improve/Add (${acceptedCount})`, available: acceptedCount > 0 },
+    { label: `Proposed sitemap (${planning.sitemap_pages.length} page${planning.sitemap_pages.length === 1 ? "" : "s"})`, available: planning.sitemap_pages.length > 0 },
+    { label: "Selected visual direction", available: Boolean(planning.selected_visual_direction) },
+    { label: "Google review themes", available: hasReviewThemes },
+    { label: "Social presence", available: planning.social_profile.has_any },
+  ];
+
+  const blocker =
+    planning.sitemap_pages.length === 0 ? "Generate a proposed sitemap in Build Brief before drafting content." : null;
+
+  return { items, blocker };
 }

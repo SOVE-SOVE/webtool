@@ -11,12 +11,12 @@ from app.integrations.deployment.base import DeploymentBundle, DeploymentProvide
 from app.integrations.deployment.registry import get_deployment_provider
 from app.modules.activity_log import service as activity_service
 from app.modules.approvals import service as approvals_service
-from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.deployments.checks import run_predeploy_checks
 from app.modules.deployments.models import Deployment
 from app.modules.deployments.schemas import CreateDeploymentRequest, DeploymentRead, RollbackDeploymentRequest
 from app.modules.design_briefs.models import DesignBrief
+from app.modules.leads.models import Lead
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.qa_reports.models import QaReport
@@ -30,9 +30,7 @@ def _latest_website(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID)
     return db.scalar(
         select(Website)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Website.project_id == project_id)
+        .where(Project.workspace_id == workspace_id, Website.project_id == project_id)
         .order_by(Website.generated_at.desc())
     )
 
@@ -121,10 +119,12 @@ def _get_deployment_in_workspace(db: Session, workspace_id: uuid.UUID, deploymen
         select(Deployment)
         .join(Website, Deployment.website_id == Website.id)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Deployment.id == deployment_id)
-        .options(*_READ_OPTIONS, joinedload(Deployment.website).joinedload(Website.project).joinedload(Project.client).joinedload(Client.business))
+        .where(Project.workspace_id == workspace_id, Deployment.id == deployment_id)
+        .options(
+            *_READ_OPTIONS,
+            joinedload(Deployment.website).joinedload(Website.project).joinedload(Project.client).joinedload(Client.business),
+            joinedload(Deployment.website).joinedload(Website.project).joinedload(Project.source_lead).joinedload(Lead.business),
+        )
     )
 
 
@@ -143,7 +143,7 @@ def _run_provider(deployment: Deployment, provider: DeploymentProvider) -> None:
     deployment.started_at = datetime.now(timezone.utc)
 
     website = deployment.website
-    business = website.project.client.business
+    business = website.project.owner_business
     bundle = DeploymentBundle(business_slug=business.name, environment=deployment.environment, config=website.config or {})
 
     try:
@@ -513,9 +513,7 @@ def list_deployments(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID
         select(Deployment)
         .join(Website, Deployment.website_id == Website.id)
         .join(Project, Website.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Website.project_id == project_id)
+        .where(Project.workspace_id == workspace_id, Website.project_id == project_id)
         .order_by(Deployment.created_at.desc())
         .options(*_READ_OPTIONS)
     ).unique()

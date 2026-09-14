@@ -11,6 +11,15 @@ facts and is instructed never to invent a service, guarantee, price, or
 business fact beyond what it's given — anything not covered by the
 input must come back as an open question, not a guess. See
 agents/prompts/planning_website_direction.md.
+
+Instagram/Facebook fields are Social Presence input (modules/planning/
+service.py's _build_social_profile_read) — never a live fetch here,
+and never scraped: Instagram data is either Discovery's own Brave-
+search-derived fields on a linked DiscoveredBusiness, or something an
+operator has confirmed by hand; Facebook is operator-entered only,
+since no Facebook provider exists. A profile image, when present, is
+reference-only — the prompt is explicit that its contents must never be
+described or invented, only acknowledged as existing.
 """
 
 from pathlib import Path
@@ -43,6 +52,13 @@ class PlanningWebsiteDirectionInput(BaseModel):
     negative_review_themes: list[ThemeOutput] = []
     instagram_handle: str | None = None
     instagram_bio: str | None = None
+    instagram_profile_url: str | None = None
+    instagram_bio_link_url: str | None = None
+    instagram_follower_count: int | None = None
+    has_instagram_profile_image: bool = False
+    facebook_page_url: str | None = None
+    facebook_page_name: str | None = None
+    facebook_bio: str | None = None
 
 
 class PriorityPage(BaseModel):
@@ -89,9 +105,30 @@ def _build_user_message(input: PlanningWebsiteDirectionInput) -> str:
     else:
         lines.append("Named contacts: none on file")
     if input.instagram_handle:
-        lines.append(f"Instagram: @{input.instagram_handle}" + (f" — bio: \"{input.instagram_bio}\"" if input.instagram_bio else ""))
+        instagram_parts = [f"Instagram: @{input.instagram_handle}"]
+        if input.instagram_bio:
+            instagram_parts.append(f'bio: "{input.instagram_bio}"')
+        if input.instagram_follower_count is not None:
+            instagram_parts.append(f"{input.instagram_follower_count} followers")
+        if input.instagram_bio_link_url:
+            instagram_parts.append(f"bio link: {input.instagram_bio_link_url}")
+        lines.append(" — ".join(instagram_parts))
+        if input.has_instagram_profile_image:
+            lines.append(
+                "A profile image is on file for this Instagram account — reference only; "
+                "do not describe or invent its contents."
+            )
     else:
         lines.append("Instagram: none on file")
+    if input.facebook_page_url:
+        facebook_parts = [f"Facebook Page: {input.facebook_page_url}"]
+        if input.facebook_page_name:
+            facebook_parts.append(f"name: {input.facebook_page_name}")
+        if input.facebook_bio:
+            facebook_parts.append(f'about: "{input.facebook_bio}"')
+        lines.append(" — ".join(facebook_parts))
+    else:
+        lines.append("Facebook: none on file")
     lines.append(f"Operator notes: {input.operator_notes or 'none'}")
     lines.append(_format_themes("Recurring positive review themes", input.positive_review_themes))
     lines.append(_format_themes("Recurring negative/friction review themes", input.negative_review_themes))

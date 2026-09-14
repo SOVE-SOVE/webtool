@@ -8,6 +8,181 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-14 — Checklist ownership/blocked/next-action: shared logic and UI, not a merged table
+
+**Decision:** Extended both checklist systems (`checklists/` — Client
+Setup & Delivery, and `stage_checklists/` — Discovery/Lead/Planning/
+Project) with task ownership, a Blocked status, a next-action summary,
+required-vs-optional progress, generalized review-version staleness, and
+completion notes — without merging `ClientChecklistItem` and
+`StageChecklistItem` into one table. The two tables stay separate (each
+already shipped and tested, per the two prior entries below); what's
+actually shared is a new pure-logic module, `checklists/shared.py`
+(`compute_progress_split`, `select_next_action`,
+`resolve_manual_review_status`), called identically by both services'
+`_to_read`, and — on the frontend — one new shared row/list component,
+`components/checklists/TaskChecklistList.tsx`, that replaced the two
+near-duplicate `ChecklistTaskList.tsx`/`StageChecklistTaskList.tsx`
+entirely. `ChecklistItemStatus` (the shared enum both tables already
+imported) gained one new member, `BLOCKED`, given the exact same
+override precedence as the pre-existing `NOT_REQUIRED` — either can win
+over a live AUTOMATIC signal, so an automatic item like "Complete QA"
+can be manually blocked ("QA environment is down") the same way it could
+already be marked not required.
+
+Assignment reuses `app/modules/users/service.py::require_user_in_workspace`
+and the exact `"assigned_user_id" in data.model_fields_set` present-vs-
+omitted convention `tasks`/`projects`/`clients`/`leads` already use for
+their own `assigned_user_id` — no new validation logic, no new permission
+gate (per `app/core/auth.py`, ADMIN and MEMBER are already equivalent for
+every existing assignment path; this doesn't add role-gating that isn't
+already absent elsewhere). Completion notes and "which version was
+reviewed" are both folded into the *existing* `activity_log` service's
+`summary` sentence rather than a new table or column — `activity_log` is
+documented as deliberately the one polymorphic table in this schema, and
+the user's own instruction was to "implement using existing... activity-
+log patterns," so extending its summary text is the direct reuse path
+rather than inventing a parallel history mechanism.
+
+**Why:** The request said to "use one consistent task system across the
+existing workspaces." Physically merging the two tables was considered
+and rejected — both are live, tested (39+ existing tests), and a merge
+would need a data migration plus a materially more complex ownership
+CHECK constraint (client-vs-project-vs-4-stage-owner) purely to save two
+otherwise-independent tables from a small amount of column duplication.
+Consistency that operators actually feel — same badges, same next-action
+behaviour, same expand-to-reveal layout, same progress math — comes from
+one shared logic module and one shared UI component, not from a shared
+SQL table, and carries far less regression risk to two already-shipped
+features.
+
+**Alternatives considered:** Storing "needs_review" (and a hypothetical
+"was blocked" state) as a real persisted `ChecklistItemStatus` value was
+rejected for the same reason the original needs_review design already
+established — it's a live comparison (a task's own `completed_at` vs. a
+freshly-resolved signal's timestamp), not a fact to cache, so it stays
+response-only. A dedicated "task completion history" table (one row per
+completion event, with its own `note`/`reviewed_version` columns) was
+also considered for the notes/review-version requirements and rejected
+once it became clear `activity_log` already does exactly this job for
+every other checklist mutation (`completed`/`not_required`/`reopened`/
+`removed`/`created`) — adding a second, parallel history mechanism
+alongside an existing one would itself violate "one consistent system."
+
+---
+
+## 2026-09-13 — Stage-specific checklists: a new table, not a relaxed `ClientChecklistItem`
+
+**Decision:** Added a per-stage "Stage Checklist" for Discovery review,
+Lead, Planning, and Project via a brand-new model (`StageChecklistItem`,
+module `stage_checklists/`) rather than making `ClientChecklistItem
+.client_id` nullable and reusing that table. `StageChecklistItem` has four
+nullable owner FKs (`discovered_business_id`/`lead_id`/`lead_planning_id`/
+`project_id`) with a `CHECK (num_nonnulls(...) = 1)` constraint — the same
+XOR-via-nullable-columns pattern `ReviewIntelligenceResult` already
+established for 2 owner types, generalized to 4. `ChecklistCompletionMode`
+and `ChecklistItemStatus` (the enums, not the table) are imported and
+reused as-is from `checklists.models` — storage only ever holds
+`pending/complete/not_required`, identical to the Client checklist.
+
+A new `needs_review` status exists only in the API response schema, never
+stored: a MANUAL item can optionally carry an `auto_signal` used purely
+for staleness detection (not completion) — if the item is stored
+`complete` and the signal's underlying source timestamp is newer than the
+item's own `completed_at`, the read-time effective status becomes
+`needs_review` with a generated explanation. This reuses the exact
+discipline the existing Client checklist already applies to AUTOMATIC
+items (live-computed, never cached) rather than inventing a new
+cache-invalidation mechanism. Only Planning's "Approve the build brief"
+and the 3 Project items are genuinely AUTOMATIC; the 3 Project ones are
+thin wrappers calling the *existing* `checklists.signals.resolve` — same
+`Website`/`QaReport` rows the Client Delivery checklist already reads, no
+duplicated query logic.
+
+**Why:** The user asked to add these panels "reusing/extending the
+existing checklist architecture wherever possible," but every one of these
+four stages can exist with no Client yet (a Discovery result, a bare Lead,
+a Planning workspace, or a Lead-owned prospect Project) — `ClientChecklistItem
+.client_id` is `NOT NULL` today and is the already-shipped, tested Client
+Setup & Delivery feature from earlier this session; relaxing it would
+touch every one of its 21 existing tests and its live-verified behavior
+for what's supposed to be a purely additive feature. The Project stage
+specifically got its own new task list (not a re-exposure of the existing
+per-project Delivery checklist) because the user's own request phrased it
+as a distinct suggested list, separate from the Client stage's explicit
+"reuse the existing checklist" instruction — and the existing Delivery
+checklist has never rendered anywhere but the Client page, so there's no
+overlap risk in giving the Project page its own, additional panel.
+
+**Alternatives considered:** A generic `owner_type: str` + `owner_id: UUID`
+pair (no real FK) was considered and rejected in favor of four typed
+nullable FKs — real referential integrity and `ondelete=CASCADE` per owner
+matters more here than saving four columns, and it's a direct precedent
+match with `ReviewIntelligenceResult`. Storing `needs_review` as a fourth
+persisted enum value on `ClientChecklistItem`'s existing `checklist_item_status`
+Postgres type was also considered and rejected — that would change a
+Postgres enum type shared with the already-shipped Client checklist table
+purely to serve a table that doesn't need it yet.
+
+---
+
+## 2026-09-13 — Pipeline Visibility: Lead-owned prospect Projects, `client_id` becomes optional
+
+**Decision:** Separated "is this business a Client yet" from "does it have
+a website being built" by making `Project.client_id` nullable and reusing
+the pre-existing `source_lead_id` as the ownership pointer whenever
+`client_id` is null — a `CHECK (client_id IS NOT NULL OR source_lead_id IS
+NOT NULL)` constraint ("at least one," not "exactly one," since a
+Client-owned Project converted from a Lead legitimately keeps both) replaces
+the old implicit "client_id is required" guarantee. No new column, no
+parallel status system. A new denormalized `Project.workspace_id` (set once
+at creation, backfilled by migration) replaces the `Project → Client →
+Business` join used purely for workspace-scoping at ~46 call sites across 15
+files — a nullable `client_id` would otherwise silently exclude every
+Lead-owned Project (and everything hanging off it: sitemap, creative
+direction, website, QA, deployment, tasks) from those queries, since an
+inner join on a null FK matches nothing.
+
+Both prior "start building" entry points (`planning_service
+.create_project_from_planning`, the Lead page's "Start website project")
+used to call `clients_service.create_client(from_lead_id=...)`, which
+unconditionally marked the Lead WON and created a Client as a side effect of
+what should be a purely speculative decision. Both now construct a
+Lead-owned Project directly via the generalized `projects_service
+.create_project` (which accepts `lead_id` as an alternative to `client_id`,
+enforced exactly-one by a `model_validator`). `clients_service.create_client`
+now checks for an existing Lead-owned prospect Project before its old
+"auto-create a starter Project" fallback; if one exists it is reassigned
+(`client_id` set, `source_lead_id` kept for history) and its checklist
+initialised — which, since automatic checklist items read live signals,
+means "using work already completed" happens for free rather than needing
+special-cased carry-forward logic.
+
+**Why:** The user's spec was explicit that a business's relationship status
+(Lead vs. Client) and its website's development progress are separate
+concepts, and that creating a speculative Project must never auto-convert a
+Lead into a Client. The existing schema already had every field needed
+(`source_lead_id` was already nullable and already populated on every
+lead-conversion Project) — the fix was recognizing `source_lead_id` could
+double as an ownership pointer rather than adding new state.
+
+**Alternatives considered:** A parallel "prospect project" table or a
+`ProjectOwnerType` enum column were both rejected — they'd duplicate
+every workspace-scoping query path this refactor was trying to simplify.
+Converting the ~46 call sites to a two-path `client OR lead` join instead of
+denormalizing `workspace_id` was also considered and rejected: the
+denormalized column turns each site into a *simpler* one-hop check instead
+of a more complex either-or join, and it's mechanically easy to verify
+(every occurrence follows the identical join-then-where shape).
+
+**Note:** live QA of this feature surfaced three frontend bugs the test
+suites didn't cover (a next-action label not accounting for `client_id`, a
+Planning button not reading the new `planning_id` field, and a stale
+`projects` list after conversion) — all fixed same-session; see
+[[07_SESSION_LOG]].
+
+---
+
 ## 2026-09-10 — Google Review Insights: a Planning-scoped tool, not a second review-intelligence system
 
 **Decision:** Added "Google Review Insights" inside the standalone

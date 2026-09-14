@@ -11,12 +11,12 @@ from app.agents.sitemap import SitemapInput
 from app.integrations.ai import router as ai_router
 from app.integrations.ai.tasks import AITask
 from app.modules.activity_log import service as activity_service
-from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.design_briefs.models import DesignBrief
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import JOB_WEBSITE_GENERATE
+from app.modules.leads.models import Lead
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
@@ -38,10 +38,11 @@ _READ_OPTIONS = (
 def _get_project_with_business(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Project | None:
     return db.scalar(
         select(Project)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Project.id == project_id)
-        .options(joinedload(Project.client).joinedload(Client.business))
+        .where(Project.workspace_id == workspace_id, Project.id == project_id)
+        .options(
+            joinedload(Project.client).joinedload(Client.business),
+            joinedload(Project.source_lead).joinedload(Lead.business),
+        )
     )
 
 
@@ -55,9 +56,7 @@ def _resolve_creative_direction(
     base = (
         select(CreativeDirectionBrief)
         .join(Project, CreativeDirectionBrief.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, CreativeDirectionBrief.project_id == project_id)
+        .where(Project.workspace_id == workspace_id, CreativeDirectionBrief.project_id == project_id)
     )
     if creative_direction_id is not None:
         return db.scalar(base.where(CreativeDirectionBrief.id == creative_direction_id))
@@ -145,7 +144,7 @@ def generate_sitemap(
     project = _get_project_with_business(db, workspace_id, project_id)
     if project is None:
         return None
-    business = project.client.business
+    business = project.owner_business
 
     brief = _get_design_brief(db, project.id)
     creative_direction = _resolve_creative_direction(db, workspace_id, project.id, request.creative_direction_id)
@@ -246,9 +245,7 @@ def _base_query(workspace_id: uuid.UUID):
     return (
         select(Sitemap)
         .join(Project, Sitemap.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id)
+        .where(Project.workspace_id == workspace_id)
         .options(*_READ_OPTIONS)
     )
 
@@ -269,9 +266,7 @@ def _get_sitemap_in_workspace(db: Session, workspace_id: uuid.UUID, sitemap_id: 
     return db.scalar(
         select(Sitemap)
         .join(Project, Sitemap.project_id == Project.id)
-        .join(Client, Project.client_id == Client.id)
-        .join(Business, Client.business_id == Business.id)
-        .where(Business.workspace_id == workspace_id, Sitemap.id == sitemap_id)
+        .where(Project.workspace_id == workspace_id, Sitemap.id == sitemap_id)
         .options(*_READ_OPTIONS)
     )
 

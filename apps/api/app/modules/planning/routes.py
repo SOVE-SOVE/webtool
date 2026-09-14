@@ -10,10 +10,24 @@ from app.integrations.discovery.base import ProviderUnavailableError
 from app.modules.planning import service
 from app.modules.planning.schemas import (
     AnalysePlanningRequest,
+    ApplyContentSectionPreviewRequest,
+    BuildBriefRead,
+    CreateAssetRequest,
+    CreateRecommendationRequest,
+    CreateSitemapPageRequest,
     PlanningListItem,
     PlanningRead,
+    RegenerateContentSectionResponse,
+    ReorderSitemapPagesRequest,
+    SelectVisualDirectionRequest,
+    UpdateAssetRequest,
     UpdateComparableSiteRequest,
+    UpdateContentPageSeoRequest,
+    UpdateContentSectionRequest,
     UpdatePlanningRequest,
+    UpdateRecommendationRequest,
+    UpdateSitemapPageRequest,
+    UpdateSocialProfileRequest,
 )
 from app.modules.projects.schemas import ProjectRead
 from app.modules.users.models import User
@@ -98,6 +112,365 @@ def generate_website_plan(
     return planning
 
 
+@router.patch("/api/v1/planning/{planning_id}/social-profile", response_model=PlanningRead)
+def update_social_profile(
+    planning_id: uuid.UUID,
+    body: UpdateSocialProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Operator-confirmed Instagram/Facebook details. A plain DB write —
+    no LLM or network call — so unlike the generation actions above,
+    this isn't rate-limited."""
+    planning = service.update_social_profile(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+# --- Build Brief: Keep / Improve / Add --------------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/recommendations/generate", response_model=PlanningRead)
+def generate_recommendations(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Build Brief "Keep / Improve / Add". Rate-limited: calls an LLM."""
+    planning = service.generate_recommendations(db, current_user.workspace_id, current_user.id, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.post("/api/v1/planning/{planning_id}/recommendations", response_model=PlanningRead)
+def add_recommendation(
+    planning_id: uuid.UUID,
+    body: CreateRecommendationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.add_recommendation(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/recommendations/{recommendation_id}", response_model=PlanningRead)
+def update_recommendation(
+    planning_id: uuid.UUID,
+    recommendation_id: uuid.UUID,
+    body: UpdateRecommendationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_recommendation(db, current_user.workspace_id, planning_id, recommendation_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or recommendation not found")
+    return planning
+
+
+@router.delete("/api/v1/planning/{planning_id}/recommendations/{recommendation_id}", response_model=PlanningRead)
+def delete_recommendation(
+    planning_id: uuid.UUID,
+    recommendation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.delete_recommendation(db, current_user.workspace_id, planning_id, recommendation_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or recommendation not found")
+    return planning
+
+
+# --- Build Brief: Proposed Sitemap and Homepage Outline ---------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/sitemap/generate", response_model=PlanningRead)
+def generate_sitemap_proposal(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Build Brief "Proposed Sitemap and Homepage Outline". Rate-limited:
+    calls an LLM."""
+    planning = service.generate_sitemap_proposal(db, current_user.workspace_id, current_user.id, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.post("/api/v1/planning/{planning_id}/sitemap", response_model=PlanningRead)
+def add_sitemap_page(
+    planning_id: uuid.UUID,
+    body: CreateSitemapPageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.add_sitemap_page(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/sitemap/reorder", response_model=PlanningRead)
+def reorder_sitemap_pages(
+    planning_id: uuid.UUID,
+    body: ReorderSitemapPagesRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.reorder_sitemap_pages(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/sitemap/{page_id}", response_model=PlanningRead)
+def update_sitemap_page(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    body: UpdateSitemapPageRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_sitemap_page(db, current_user.workspace_id, planning_id, page_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or sitemap page not found")
+    return planning
+
+
+@router.delete("/api/v1/planning/{planning_id}/sitemap/{page_id}", response_model=PlanningRead)
+def delete_sitemap_page(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.delete_sitemap_page(db, current_user.workspace_id, planning_id, page_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or sitemap page not found")
+    return planning
+
+
+# --- Build Brief: Visual Direction Choices ----------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/visual-directions/generate", response_model=PlanningRead)
+def generate_visual_directions(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Build Brief "Visual Direction Choices". Rate-limited: calls an
+    LLM (PREMIUM — see agents/planning_visual_directions.py)."""
+    planning = service.generate_visual_directions(db, current_user.workspace_id, current_user.id, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/visual-directions/select", response_model=PlanningRead)
+def select_visual_direction(
+    planning_id: uuid.UUID,
+    body: SelectVisualDirectionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    try:
+        planning = service.select_visual_direction(db, current_user.workspace_id, planning_id, body)
+    except service.NoVisualDirectionSelectedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+# --- Build Brief: Assets Checklist ------------------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/assets/refresh", response_model=PlanningRead)
+def generate_assets_checklist(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Seeds/refreshes the Assets Checklist — a plain DB write over
+    already-known records, no LLM call, so unlike the generation actions
+    above this isn't rate-limited."""
+    planning = service.generate_assets_checklist(db, current_user.workspace_id, current_user.id, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.post("/api/v1/planning/{planning_id}/assets", response_model=PlanningRead)
+def add_asset(
+    planning_id: uuid.UUID,
+    body: CreateAssetRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.add_asset(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/assets/{asset_id}", response_model=PlanningRead)
+def update_asset(
+    planning_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    body: UpdateAssetRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_asset(db, current_user.workspace_id, planning_id, asset_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or asset not found")
+    return planning
+
+
+# --- Build Brief: compiled preview + approval -------------------------------
+
+
+@router.get("/api/v1/planning/{planning_id}/build-brief", response_model=BuildBriefRead)
+def get_build_brief(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BuildBriefRead:
+    brief = service.compute_build_brief(db, current_user.workspace_id, planning_id)
+    if brief is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return brief
+
+
+@router.post("/api/v1/planning/{planning_id}/build-brief/approve", response_model=BuildBriefRead)
+def approve_build_brief(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BuildBriefRead:
+    brief = service.approve_build_brief(db, current_user.workspace_id, current_user.id, planning_id)
+    if brief is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return brief
+
+
+# --- Content Draft -----------------------------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/content-draft/generate", response_model=PlanningRead)
+def generate_content_draft(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """"Generate Content Draft" — job-queued (see JOB_CONTENT_DRAFT_GENERATE);
+    rate-limited since it calls a PREMIUM LLM once per planned page."""
+    try:
+        planning = service.run_content_draft(db, current_user.workspace_id, current_user.id, planning_id)
+    except service.NoSitemapPagesError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}",
+    response_model=PlanningRead,
+)
+def update_content_page_seo(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    body: UpdateContentPageSeoRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_content_page_seo(
+        db, current_user.workspace_id, planning_id, page_id, body.seo_title, body.seo_meta_description
+    )
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or content page not found")
+    return planning
+
+
+@router.patch(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/{section_id}",
+    response_model=PlanningRead,
+)
+def update_content_section(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    section_id: uuid.UUID,
+    body: UpdateContentSectionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_content_section(
+        db, current_user.workspace_id, planning_id, page_id, section_id, body.content
+    )
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item, content page, or section not found")
+    return planning
+
+
+@router.post(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/{section_id}/regenerate",
+    response_model=RegenerateContentSectionResponse,
+)
+def regenerate_content_section(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    section_id: uuid.UUID,
+    current_user: User = Depends(enforce_generation_rate_limit),
+    db: Session = Depends(get_db),
+) -> RegenerateContentSectionResponse:
+    """Replaces an untouched section immediately; returns a preview
+    (nothing persisted) for an edited section or one on an approved
+    page — see service.regenerate_content_section's own docstring."""
+    result = service.regenerate_content_section(db, current_user.workspace_id, planning_id, page_id, section_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Planning item, content page, or section not found")
+    return result
+
+
+@router.post(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/{section_id}/apply-preview",
+    response_model=PlanningRead,
+)
+def apply_content_section_preview(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    section_id: uuid.UUID,
+    body: ApplyContentSectionPreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.apply_content_section_preview(
+        db, current_user.workspace_id, planning_id, page_id, section_id, body.content, body.needs_confirmation_notes
+    )
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item, content page, or section not found")
+    return planning
+
+
+@router.post("/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/approve", response_model=PlanningRead)
+def approve_content_page(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.approve_content_page(db, current_user.workspace_id, current_user.id, planning_id, page_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or content page not found")
+    return planning
+
+
 @router.post("/api/v1/planning/{planning_id}/comparable-sites/search", response_model=PlanningRead)
 def search_comparable_sites(
     planning_id: uuid.UUID,
@@ -154,10 +527,11 @@ def analyse_comparable_sites(
 
 @router.get("/api/v1/planning", response_model=list[PlanningListItem])
 def list_planning(
+    include_transferred: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[PlanningListItem]:
-    return service.list_planning_workspace(db, current_user.workspace_id)
+    return service.list_planning_workspace(db, current_user.workspace_id, include_transferred=include_transferred)
 
 
 @router.get("/api/v1/planning/{planning_id}", response_model=PlanningRead)
@@ -204,7 +578,10 @@ def create_project_from_planning(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProjectRead:
-    project = service.create_project_from_planning(db, current_user.workspace_id, current_user.id, planning_id)
+    try:
+        project = service.create_project_from_planning(db, current_user.workspace_id, current_user.id, planning_id)
+    except service.NoApprovedBriefError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if project is None:
         raise HTTPException(status_code=404, detail="Planning item not found")
     return project

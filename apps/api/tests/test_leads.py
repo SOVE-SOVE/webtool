@@ -51,6 +51,42 @@ def test_create_lead_with_priority(authed_client):
     assert res.json()["priority"] == "high"
 
 
+def test_lead_read_has_no_planning_or_prospect_project_by_default(authed_client):
+    lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
+    assert lead["planning_id"] is None
+    assert lead["prospect_project"] is None
+
+
+def test_lead_read_planning_id_populates_once_planning_starts(authed_client):
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()["id"]
+
+    planning = authed_client.post(f"/api/v1/leads/{lead_id}/planning").json()
+
+    lead_after = authed_client.get(f"/api/v1/leads/{lead_id}").json()
+    assert lead_after["planning_id"] == planning["id"]
+
+
+def test_lead_read_prospect_project_populates_then_clears_on_conversion(authed_client):
+    lead_id = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()["id"]
+
+    project = authed_client.post(
+        "/api/v1/projects", json={"lead_id": lead_id, "name": "Northside Electrical Website"}
+    ).json()
+    lead_after_project = authed_client.get(f"/api/v1/leads/{lead_id}").json()
+    assert lead_after_project["prospect_project"] == {
+        "id": project["id"],
+        "name": project["name"],
+        "stage": project["stage"],
+    }
+    assert lead_after_project["client_id"] is None
+
+    client = authed_client.post("/api/v1/clients", json={"from_lead_id": lead_id}).json()
+
+    lead_after_conversion = authed_client.get(f"/api/v1/leads/{lead_id}").json()
+    assert lead_after_conversion["client_id"] == client["id"]
+    assert lead_after_conversion["prospect_project"] is None
+
+
 def test_archive_and_unarchive_lead(authed_client):
     lead = authed_client.post("/api/v1/leads", json={"business_name": "Northside Electrical"}).json()
 

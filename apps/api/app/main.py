@@ -14,6 +14,8 @@ from app.modules.auth.routes import router as auth_router
 from app.modules.business_research.routes import router as business_research_router
 from app.modules.businesses.routes import router as businesses_router
 from app.modules.calendar.routes import router as calendar_router
+from app.modules.checklists.routes import router as checklists_router
+from app.modules.stage_checklists.routes import router as stage_checklists_router
 from app.modules.clients.routes import router as clients_router
 from app.modules.creative_directions.routes import router as creative_directions_router
 from app.modules.dashboard.routes import router as dashboard_router
@@ -105,6 +107,8 @@ def health() -> dict[str, str]:
 app.include_router(auth_router)
 app.include_router(businesses_router)
 app.include_router(leads_router)
+app.include_router(checklists_router)
+app.include_router(stage_checklists_router)
 app.include_router(clients_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)

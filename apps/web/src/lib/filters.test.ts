@@ -226,11 +226,18 @@ describe("filterDiscoveredBusinesses", () => {
     contactableOnly: false,
     activeRecentlyOnly: false,
     minFollowers: null,
+    showImported: false,
   };
 
   it("returns everything with no filters", () => {
     const rows = [discovered({ id: "a" }), discovered({ id: "b" })];
     expect(filterDiscoveredBusinesses(rows, NONE)).toHaveLength(2);
+  });
+
+  it("hides already-imported rows by default, shows them with showImported", () => {
+    const rows = [discovered({ id: "a", status: "new" }), discovered({ id: "b", status: "imported" })];
+    expect(filterDiscoveredBusinesses(rows, NONE).map((b) => b.id)).toEqual(["a"]);
+    expect(filterDiscoveredBusinesses(rows, { ...NONE, showImported: true }).map((b) => b.id)).toEqual(["a", "b"]);
   });
 
   it("filters by website status", () => {

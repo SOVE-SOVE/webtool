@@ -33,7 +33,7 @@ export type NextAction = {
 };
 
 export function computeNextActions(input: {
-  leads: Pick<Lead, "id" | "status" | "archived_at">[];
+  leads: Pick<Lead, "id" | "status" | "archived_at" | "client_id">[];
   planning: Pick<PlanningListItem, "lead_id" | "status">[];
   projects: Pick<Project, "stage">[];
 }): NextAction[] {
@@ -42,7 +42,7 @@ export function computeNextActions(input: {
 
   const newLeadsCount = activeLeads.filter((l) => leadMatchesTab(l, "new")).length;
   const readyForPlanningCount = activeLeads.filter(
-    (l) => PLANNING_READY_STATUSES.has(l.status) && !planningLeadIds.has(l.id),
+    (l) => l.client_id == null && PLANNING_READY_STATUSES.has(l.status) && !planningLeadIds.has(l.id),
   ).length;
   const planningNeedsReviewCount = input.planning.filter((p) => p.status === "needs_review").length;
   const readyToBuildCount = input.projects.filter((p) => p.stage === "intake").length;

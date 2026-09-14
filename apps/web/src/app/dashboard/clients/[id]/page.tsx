@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ChecklistSection } from "./ChecklistSection";
 
 function field(label: string, value: React.ReactNode) {
   return (
@@ -315,6 +316,8 @@ export default function ClientDetailPage() {
           ))}
         </ul>
       </section>
+
+      <ChecklistSection clientId={clientId} />
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-fg">Activity history</h2>

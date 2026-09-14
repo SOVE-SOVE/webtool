@@ -17,6 +17,7 @@ import {
   type ReviewIntelligenceResult,
   type WebsiteQualityAudit,
 } from "@/lib/api";
+import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
 
 const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
@@ -547,6 +548,10 @@ export default function DiscoveredBusinessDetailPage() {
       {business?.instagram_handle && (
         <InstagramCard business={business} onCheckWebsite={handleCheckWebsite} checking={checkingWebsite} />
       )}
+
+      <div className="mt-4 max-w-2xl">
+        <StageChecklistPanel ownerType="discovered-business" ownerId={params.id} title="Stage checklist" />
+      </div>
 
       {error && (
         <div className="mt-4">

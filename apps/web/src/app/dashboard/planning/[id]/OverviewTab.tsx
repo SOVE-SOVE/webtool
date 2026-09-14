@@ -237,7 +237,7 @@ function NewWebsitePlanOverview({
         </section>
 
         <section>
-          <h2 className="section-title">Business inputs</h2>
+          <h2 className="section-title">Business Information Available</h2>
           <ul className="mt-2 divide-y divide-border rounded-md border border-border">
             {rows.map((row) => (
               <li key={row.key} className="flex items-center justify-between gap-3 px-3 py-2">

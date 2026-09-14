@@ -163,40 +163,77 @@ def create_client(
         summary=f"Added client {business.name}",
     )
 
-    project: Project | None = None
-    if lead is not None:
-        # Lead-to-client conversion: the delivery side starts here — one
-        # Project at INTAKE, carrying the agreed terms and a direct
-        # traceability pointer back to the originating lead (see
-        # docs/05_DECISIONS.md), plus its starter task checklist.
-        project = Project(
-            client_id=client.id,
-            source_lead_id=lead.id,
-            name=data.project_name or f"{business.name} Website",
-            stage=ProjectStage.INTAKE,
-            package=data.package,
-            price_cents=data.won_price_cents,
-            deadline=data.deadline,
-            assigned_user_id=data.assigned_user_id,
-        )
-        db.add(project)
-        db.flush()
-        projects_service.create_default_tasks(db, project.id)
+    # Local import to avoid a circular import (checklists/service.py
+    # doesn't import back into clients) — same convention job handlers
+    # use for their own local domain-service imports.
+    from app.modules.checklists import service as checklists_service
 
-        activity_service.record(
-            db,
-            workspace_id=workspace_id,
-            user_id=actor_id,
-            entity_type="project",
-            entity_id=project.id,
-            action="created",
-            summary=f"Created project {project.name} from won lead conversion",
+    checklists_service.initialise_client_checklist(db, client.id)
+
+    projects: list[Project] = []
+    if lead is not None:
+        # If this lead already has one or more prospect Projects
+        # (speculative build work started before conversion — see
+        # docs/05_DECISIONS.md), link them to the new Client instead of
+        # creating a duplicate: reassign ownership and seed each one's
+        # delivery checklist now (its automatic items compute from
+        # whatever's already been approved/built, so "work already
+        # completed" shows up immediately, not from a blank slate).
+        prospect_projects = list(
+            db.scalars(
+                select(Project).where(Project.source_lead_id == lead.id, Project.client_id.is_(None))
+            )
         )
+        if prospect_projects:
+            for prospect in prospect_projects:
+                prospect.client_id = client.id
+                checklists_service.initialise_project_checklist(db, client.id, prospect.id)
+                activity_service.record(
+                    db,
+                    workspace_id=workspace_id,
+                    user_id=actor_id,
+                    entity_type="project",
+                    entity_id=prospect.id,
+                    action="reassigned",
+                    summary=f"Linked existing prospect project {prospect.name} to new client {business.name}",
+                )
+            projects = prospect_projects
+        else:
+            # No prospect Project yet: the delivery side starts here —
+            # one Project at INTAKE, carrying the agreed terms and a
+            # direct traceability pointer back to the originating lead,
+            # plus its starter task checklist.
+            project = Project(
+                client_id=client.id,
+                source_lead_id=lead.id,
+                workspace_id=workspace_id,
+                name=data.project_name or f"{business.name} Website",
+                stage=ProjectStage.INTAKE,
+                package=data.package,
+                price_cents=data.won_price_cents,
+                deadline=data.deadline,
+                assigned_user_id=data.assigned_user_id,
+            )
+            db.add(project)
+            db.flush()
+            projects_service.create_default_tasks(db, project.id)
+            checklists_service.initialise_project_checklist(db, client.id, project.id)
+
+            activity_service.record(
+                db,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                entity_type="project",
+                entity_id=project.id,
+                action="created",
+                summary=f"Created project {project.name} from won lead conversion",
+            )
+            projects = [project]
 
     db.commit()
     db.refresh(client)
     client.business = business
-    client.projects = [project] if project is not None else []
+    client.projects = projects
     return _to_read(client)
 
 

@@ -24,6 +24,7 @@ import {
   type WebsiteBrief,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
+import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeliveryPanel } from "@/components/DeliveryPanel";
 import { DeploymentPanel } from "@/components/DeploymentPanel";
@@ -393,10 +394,18 @@ export default function ProjectDetailPage() {
               <ProjectStatusBadge project={project} />
             </div>
             <p className="text-sm text-fg-muted">
-              <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
-                {project.client_business_name}
-              </Link>
-              {project.source_lead_id && (
+              {project.client_id ? (
+                <Link href={`/dashboard/clients/${project.client_id}`} className="hover:underline">
+                  {project.client_business_name}
+                </Link>
+              ) : project.source_lead_id ? (
+                <Link href={`/dashboard/leads/${project.source_lead_id}`} className="hover:underline">
+                  {project.client_business_name} (prospect)
+                </Link>
+              ) : (
+                project.client_business_name
+              )}
+              {project.client_id && project.source_lead_id && (
                 <>
                   {" · "}
                   <Link href={`/dashboard/leads/${project.source_lead_id}`} className="hover:underline">
@@ -576,6 +585,8 @@ export default function ProjectDetailPage() {
           <p className="mt-2 text-sm text-fg-muted">Loading build status…</p>
         )}
       </section>
+
+      <StageChecklistPanel ownerType="project" ownerId={projectId} title="Stage checklist" />
 
       {/* 4. Build direction — bring in direction worked out elsewhere */}
       <section className="rounded-md border border-border bg-surface p-4">

@@ -32,6 +32,7 @@ from app.modules.jobs.job_types import (
     DEFAULT_DISCOVERY_INTERVAL_HOURS,
     JOB_BUSINESS_RESEARCH,
     JOB_CHECK_INSTAGRAM_WEBSITE,
+    JOB_CONTENT_DRAFT_GENERATE,
     JOB_DISCOVERY_SEARCH,
     JOB_FOLLOW_UP_DRAFT,
     JOB_OPPORTUNITY_SCORE,
@@ -279,6 +280,20 @@ def handle_planning_comparable_analysis(db: Session, job: Job) -> dict:
     return planning_service.run_comparable_analysis_job(db, planning_id)
 
 
+def handle_content_draft_generate(db: Session, job: Job) -> dict:
+    """
+    "Generate Content Draft" — the background half (modules/planning).
+    Drafts real page copy one page at a time, skipping any page an
+    operator has already edited or approved. See
+    planning_service.run_content_draft_job's own docstring for the
+    append-only-at-page-granularity behaviour.
+    """
+    from app.modules.planning import service as planning_service
+
+    planning_id = uuid.UUID(job.payload["planning_id"])
+    return planning_service.run_content_draft_job(db, planning_id)
+
+
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
@@ -292,4 +307,5 @@ HANDLERS = {
     JOB_QA_REPORT: handle_qa_report,
     JOB_PLANNING_ANALYSIS: handle_planning_analysis,
     JOB_PLANNING_COMPARABLE_ANALYSIS: handle_planning_comparable_analysis,
+    JOB_CONTENT_DRAFT_GENERATE: handle_content_draft_generate,
 }

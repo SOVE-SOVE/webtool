@@ -16,8 +16,8 @@ const ALL_STATUSES: LeadStatus[] = [
   "meeting", "proposal", "won", "lost", "nurture",
 ];
 
-function lead(status: LeadStatus, archived = false) {
-  return { status, archived_at: archived ? "2026-08-01T00:00:00Z" : null };
+function lead(status: LeadStatus, archived = false, clientId: string | null = null) {
+  return { status, archived_at: archived ? "2026-08-01T00:00:00Z" : null, client_id: clientId };
 }
 
 describe("LEAD_TABS", () => {
@@ -61,6 +61,23 @@ describe("leadMatchesTab", () => {
     expect(leadMatchesTab(lead("qualified"), "new")).toBe(true);
     expect(leadMatchesTab(lead("contacted"), "new")).toBe(false);
   });
+
+  it("matches Converted on client_id, not status", () => {
+    expect(leadMatchesTab(lead("won", false, "c1"), "converted")).toBe(true);
+    expect(leadMatchesTab(lead("won"), "converted")).toBe(false);
+  });
+
+  it("excludes an already-converted lead from every other tab, including All and Won", () => {
+    const converted = lead("won", false, "c1");
+    expect(leadMatchesTab(converted, "all")).toBe(false);
+    expect(leadMatchesTab(converted, "won")).toBe(false);
+  });
+
+  it("keeps a won-but-not-yet-converted lead visible under All and Won", () => {
+    const won = lead("won");
+    expect(leadMatchesTab(won, "all")).toBe(true);
+    expect(leadMatchesTab(won, "converted")).toBe(false);
+  });
 });
 
 describe("statusesForTab", () => {
@@ -96,27 +113,32 @@ describe("leadNextAction", () => {
   const now = new Date("2026-09-10T12:00:00Z").getTime();
 
   it("prioritises a scheduled follow-up over status", () => {
-    expect(leadNextAction({ status: "new" }, "2026-09-10", now)).toBe("Follow up today");
-    expect(leadNextAction({ status: "new" }, "2026-09-05", now)).toBe("Follow-up overdue");
-    expect(leadNextAction({ status: "new" }, "2026-09-20", now)).toMatch(/^Follow up /);
+    expect(leadNextAction({ status: "new", client_id: null }, "2026-09-10", now)).toBe("Follow up today");
+    expect(leadNextAction({ status: "new", client_id: null }, "2026-09-05", now)).toBe("Follow-up overdue");
+    expect(leadNextAction({ status: "new", client_id: null }, "2026-09-20", now)).toMatch(/^Follow up /);
   });
 
   it("falls back to a status hint when there is no follow-up", () => {
-    expect(leadNextAction({ status: "new" }, null, now)).toBe("Needs first contact");
-    expect(leadNextAction({ status: "qualified" }, undefined, now)).toBe("Needs first contact");
-    expect(leadNextAction({ status: "contacted" }, null, now)).toBe("Waiting on a reply");
-    expect(leadNextAction({ status: "replied" }, null, now)).toBe("Move toward a proposal");
-    expect(leadNextAction({ status: "meeting" }, null, now)).toBe("Move toward a proposal");
-    expect(leadNextAction({ status: "proposal" }, null, now)).toBe("Chase the proposal");
-    expect(leadNextAction({ status: "won" }, null, now)).toBe("Convert to a client");
-    expect(leadNextAction({ status: "nurture" }, null, now)).toBe("Check back later");
-    expect(leadNextAction({ status: "lost" }, null, now)).toBe("—");
+    expect(leadNextAction({ status: "new", client_id: null }, null, now)).toBe("Needs first contact");
+    expect(leadNextAction({ status: "qualified", client_id: null }, undefined, now)).toBe("Needs first contact");
+    expect(leadNextAction({ status: "contacted", client_id: null }, null, now)).toBe("Waiting on a reply");
+    expect(leadNextAction({ status: "replied", client_id: null }, null, now)).toBe("Move toward a proposal");
+    expect(leadNextAction({ status: "meeting", client_id: null }, null, now)).toBe("Move toward a proposal");
+    expect(leadNextAction({ status: "proposal", client_id: null }, null, now)).toBe("Chase the proposal");
+    expect(leadNextAction({ status: "won", client_id: null }, null, now)).toBe("Convert to a client");
+    expect(leadNextAction({ status: "nurture", client_id: null }, null, now)).toBe("Check back later");
+    expect(leadNextAction({ status: "lost", client_id: null }, null, now)).toBe("—");
   });
 
   it("returns a non-empty string for every status", () => {
     for (const s of ALL_STATUSES) {
-      expect(leadNextAction({ status: s }, null, now).length).toBeGreaterThan(0);
+      expect(leadNextAction({ status: s, client_id: null }, null, now).length).toBeGreaterThan(0);
     }
+  });
+
+  it("shows a client-record hint once a lead has been converted, regardless of status or follow-up", () => {
+    expect(leadNextAction({ status: "won", client_id: "c1" }, null, now)).toBe("Open the client record");
+    expect(leadNextAction({ status: "won", client_id: "c1" }, "2026-09-05", now)).toBe("Open the client record");
   });
 });
 

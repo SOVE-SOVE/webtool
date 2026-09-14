@@ -11,6 +11,330 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-14 — Checklist task ownership, blocked states, next actions, required/optional, review versions, notes
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** shared enum/logic — `apps/api/app/modules/checklists/models.py`
+(`ChecklistItemStatus` gains `BLOCKED`), new `apps/api/app/modules/
+checklists/shared.py` (`compute_progress_split`, `select_next_action`,
+`resolve_manual_review_status` — used by both checklist systems); both
+tables gain `assigned_user_id`/`blocked_reason`/`is_required` columns +
+an `assigned_user` relationship (`checklists/models.py`,
+`stage_checklists/models.py`); both `_to_read`/`update_item`/`add_item`
+rewritten in `checklists/service.py` and `stage_checklists/service.py`
+(assignment via the existing `require_user_in_workspace`, block/unblock
+transitions, a `next_action` field, required/optional split progress,
+completion notes folded into the existing `activity_log`); both schema
+files gain the new response/request fields; new migration
+`b7c2e94a1f6d_checklist_ownership_blocked_required.py`; ~40 new tests
+across `tests/test_client_checklists.py`/`tests/test_stage_checklists.py`.
+Frontend: `apps/web/src/lib/api.ts` (extended types, nested
+`ChecklistProgress`, new `ChecklistNextAction`/`StageChecklistNextAction`);
+new `apps/web/src/components/checklists/{AssigneeAvatar,TaskChecklistList}.tsx`
+replacing (deleted) `ChecklistTaskList.tsx`/`StageChecklistTaskList.tsx`;
+`ChecklistSection.tsx` and `StageChecklistPanel.tsx` rewired as thin
+wrappers over the shared component. See [[05_DECISIONS]].
+
+**What happened:** Extended both existing checklist systems (Client
+Setup & Delivery, and the four Stage Checklists) with the same six
+capabilities at once, reusing one shared backend logic module and one
+shared frontend component rather than building either capability twice.
+Tasks can now be assigned to a workspace member (reusing the exact
+`require_user_in_workspace` + `"field" in model_fields_set` pattern
+`tasks`/`projects` already use) and show a compact initials-avatar; an
+incomplete task can be marked Blocked with a required reason (same
+override precedence tier as the existing Not Required, so it also works
+on AUTOMATIC items) and blocked tasks count as incomplete but not
+complete in progress math; a new `next_action` field picks the first
+actionable required task in checklist order, falls back to surfacing
+every blocked required task's reason when none are actionable, and only
+then falls back to an optional task; `ChecklistProgress` is now a
+required/optional split ("Required: 5 of 5 complete · Optional: 1 of 3")
+computed by one shared pure function; the existing stage-checklist-only
+"needs_review" staleness mechanism was generalized into
+`checklists/shared.py` so both systems share the exact same comparison;
+completing a MANUAL+signal item now appends a "(reviewed X as of date)"
+note to its activity-log entry — a permanent, human-readable record of
+which version was reviewed, reusing `activity_log` rather than a new
+table; an optional completion note is folded into the same activity
+entry (or a standalone "noted" entry) without ever gating a plain tick.
+No new workflow gates were introduced — required/optional/blocked are
+purely informational, and Start Planning/Create Project/conversion are
+untouched.
+
+Verified: 1286 backend tests (33 new — assignment incl. cross-workspace
+rejection, block/unblock incl. history preservation and the
+cannot-block-a-complete-task/must-have-a-reason guards, blocking an
+AUTOMATIC item, required/optional math, all four next-action branches,
+completion notes, and the review-version note capture), 165 frontend
+tests, tsc/lint/build clean, and a live desktop QA pass through the
+full new interaction set (assign/reassign, block/unblock with history,
+plain single-click completion, a custom optional task, and the
+next-action summary's blocked-reasons and optional-fallback states) on
+both the Client Delivery checklist and a Stage Checklist, confirming
+persistence across reload.
+
+**Limitations:** true mobile-viewport resizing could not be exercised
+live in this session — the browser automation tooling's viewport stayed
+fixed at 1440×900 regardless of window-resize calls, so the new
+per-row expand/collapse UI's mobile layout is verified only by matching
+the exact `sm:` breakpoint classes the original (already mobile-QA'd)
+row component used, not by an independent live resize. The "reviewed
+version" record is a permanent activity-log sentence, not a queryable
+structured field. `is_required` has no per-instance runtime toggle in
+this pass beyond the existing Not Required control — changing which
+*default* tasks count as required means editing the seed tables.
+
+---
+
+## 2026-09-13 — Stage-specific checklists (Discovery/Lead/Planning/Project)
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/api/app/modules/stage_checklists/` module
+(`models.py`: `StageChecklistItem` with 4 nullable owner FKs + a
+`num_nonnulls(...) = 1` CHECK constraint; `signals.py`: 12 resolvers, 9 new
+plus 3 thin wrappers around the existing `checklists.signals.resolve`;
+`service.py`: per-stage default task tables + idempotent lazy-seed +
+add/update/reorder/remove generalized over whichever owner column is set;
+`routes.py`), new migration `f3c7a91b2d40_stage_checklists.py`, `main.py`/
+`app/db/all_models.py` registration, new `tests/test_stage_checklists.py`
+(18 tests); frontend: `apps/web/src/lib/api.ts` (new types + 5 new `api.*`
+methods), new `apps/web/src/components/checklists/{StageChecklistPanel,
+StageChecklistTaskList}.tsx`, wired into `discovered-businesses/[id]/
+page.tsx`, `leads/[id]/page.tsx`, `planning/[id]/page.tsx`, `projects/[id]/
+page.tsx`. See [[05_DECISIONS]].
+
+**What happened:** Added one compact, collapsible "Stage Checklist" panel
+per pre-Client stage (Discovery review: 3 tasks, Lead: 4, Planning: 6,
+Project: 6), reusing the existing Client Setup & Delivery checklist's
+shape (same `ChecklistCompletionMode`/`ChecklistItemStatus` enums, same
+progress/next-item math, same `Disclosure`/`ProgressBar` UI) without
+touching that already-shipped, tested table — a new table with 4 nullable
+owner columns (`discovered_business_id`/`lead_id`/`lead_planning_id`/
+`project_id`, exactly one set) anchors each stage's rows to whichever
+record already exists at that point, so checklists persist automatically
+across pipeline advancement (importing to a Lead, starting Planning,
+creating a prospect Project, or converting to a Client never deletes the
+earlier record). A new "needs_review" status exists only in API
+responses, never stored: a manual review task that was marked complete
+flips to `needs_review` on read if its linked signal's underlying source
+(a Planning field's generated-at timestamp, a Discovery research/score
+timestamp, etc.) changed after completion — computed live, same discipline
+the existing automatic items already use, so there's no stale cache to
+invalidate. Only Planning's "Approve the build brief" and all 3 Project
+items (`Generate first preview`/`Complete QA`/`Approve the website for
+presentation or launch`) are genuinely automatic; the Project ones
+literally call the existing Client-checklist signal resolvers rather than
+re-querying the same Website/QaReport rows. Verified: 1253 backend tests
+(18 new — idempotent seeding, automatic items, the needs-review
+transition and its clearing, Not Required math, custom task add/reorder/
+remove, cross-owner isolation, zero side effects on the owning record,
+and persistence through Lead→Planning→Project→Client), 165 frontend tests,
+tsc/lint/build clean, and a full live pass through all 4 pages (Discovery
+review, Lead, Planning, Project) confirming render, tick, persist-on-
+reload, and progress math.
+
+**Limitations:** the needs-review live-transition wasn't re-confirmed
+against a real external "Research again" run in browser QA (the sandbox's
+outbound fetch to the live target site didn't visibly complete within the
+QA session) — it's covered deterministically by the automated backend test
+instead, which mocks the underlying signal directly. Client stage was
+intentionally left untouched (its existing checklist already carries
+forward completed work on conversion, per Phase C).
+
+---
+
+## 2026-09-13 — Pipeline Visibility (Lead vs. Client, prospect Projects)
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/api/app/modules/projects/{models,schemas,service}.py`
+(`client_id` nullable, new `workspace_id` denormalized column + `owner_business`
+property, generalized `create_project` to accept `lead_id`), new migration
+`a8f9da92d242_prospect_projects_lead_owned.py`, `planning/{schemas,service,
+routes}.py` (`create_project_from_planning` no longer converts the Lead;
+computed `project_id`/"transferred" filtering), `clients/service.py::create_client`
+(reassigns an existing prospect Project instead of duplicating one),
+`leads/{models,schemas,service}.py` (`planning_id`, `prospect_project`), the
+15-file mechanical join-pattern swap from `Project→Client→Business` to
+`Project.workspace_id` (`approvals`, `creative_directions`, `dashboard`,
+`deployments`, `design_briefs`, `meetings`, `previews`, `qa_reports`, `sitemaps`,
+`tasks`, `website_briefs`, `website_feedback`, `website_revisions`, `websites`,
+`projects` itself), new tests in `test_planning.py`/`test_clients.py`/
+`test_projects.py`/`test_leads.py`; frontend `apps/web/src/lib/{api,leads,
+today}.ts` (`"converted"` tab, `client_id`-aware next-action text), `leads/
+page.tsx` (In Planning badge, Converted tab, Open client links), `leads/[id]/
+page.tsx` (Open Planning vs. Start Planning, 3-way Project & website branch,
+`handleStartProject` now creates a prospect Project not a Client), `planning/
+page.tsx` (transferred filter), `filters.ts`/`DiscoveryWorkspace.tsx`/`review/
+page.tsx` (Already-imported filter), `projects/[id]/{page,website/page}.tsx`
+(prospect vs. client-owned header link). See [[05_DECISIONS]].
+
+**What happened:** Separated "relationship status" (Lead vs. Client) from
+"website build progress" per the user's spec. A Project can now be Lead-owned
+(`client_id IS NULL`, `source_lead_id` set) — a genuine "prospect Project" that
+is fully buildable (sitemap/creative-direction/website/QA/deployment/tasks all
+work through the same workspace-scoped endpoints) without ever creating a
+Client or touching the Lead's status. Both prior auto-conversion paths
+(Planning's "Create Project" and the Lead page's "Start website project")
+now create/reuse a prospect Project instead of a Client; converting a Lead
+that already has one reassigns it (keeps `source_lead_id`, sets `client_id`,
+re-seeds its checklist which picks up already-completed signals for free)
+rather than creating a duplicate. Discovery/Leads/Planning each gained a
+default-actionable view plus a history filter (Already imported / In Planning
+badge + Open Planning / Transferred to Project), and Leads gained a
+`client_id`-keyed "Converted" tab independent of `status`. Full backend
+(1235 tests) and frontend (165 tests, tsc, lint, build) suites pass.
+
+Live browser QA of the complete Discovery → Lead → Planning → Prospect
+Project → Conversion workflow surfaced and fixed three real bugs the test
+suites didn't catch: (1) `leadNextAction` still said "Convert to a client" for
+already-converted leads viewed under the new "Converted" tab — added a
+`client_id` check so it now says "Open the client record"; (2) the Lead
+detail page's Planning button never switched to "Open Planning →" because it
+never read the new `lead.planning_id` field; (3) `handleConvert` never
+refreshed the `projects` list after conversion, so a just-reassigned prospect
+Project briefly appeared to have vanished ("No project yet") on the same page
+that had shown it seconds earlier. All three are fixed and covered by the
+final QA pass (bug 1 also has a new unit test).
+
+**Limitations:** the reassignment-on-conversion activity log entry
+(`action="reassigned"`) is written but not surfaced on the Client detail
+page's Activity History panel (that panel appears scoped to `entity_type`
+other than `project`) — cosmetic, not a data-integrity issue. This is a
+large cross-cutting refactor (1 migration, ~15 backend files, ~10 frontend
+files); the full test suites plus one live end-to-end pass are the practical
+verification ceiling for a single session — see [[05_DECISIONS]] for any
+narrower call-site risk not independently re-derived by hand.
+
+---
+
+## 2026-09-13 — Client Setup & Delivery checklist
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/api/app/modules/checklists/` module
+(`models.py`: `ClientChecklistItem` + `ChecklistCompletionMode`/
+`ChecklistItemStatus`/`ChecklistAutoSignal` enums; `signals.py`: live
+resolver reading `DesignBrief`/`CreativeDirectionBrief`/`Sitemap`/
+`Website`/`QaReport`/`Deployment` per automatic item, never cached;
+`service.py`: seed/read/add/update/reorder/remove + lazy backfill on
+read; `routes.py`), new migration `32118c81e86f_client_checklist.py`,
+hooks added to `apps/api/app/modules/clients/service.py::create_client`
+and `apps/api/app/modules/projects/service.py::create_project`,
+`apps/api/app/modules/leads/schemas.py`+`service.py` (new
+`LeadRead.client_id`), new `tests/test_client_checklists.py` (21
+tests); frontend: `apps/web/src/lib/api.ts` (new types + calls), new
+`apps/web/src/app/dashboard/clients/[id]/ChecklistSection.tsx` +
+`ChecklistTaskList.tsx`, wired into `clients/[id]/page.tsx`,
+`components/ui/ProgressBar.tsx` (duration/easing/reduced-motion +
+`aria-valuetext`), `apps/web/src/app/dashboard/leads/page.tsx` (compact
+bar + count in the Won tab, fed by a new `GET
+/api/v1/clients/checklist-summaries`), `apps/web/src/app/dashboard/
+projects/[id]/website/page.tsx` (added `?tab=` deep-link support so
+automatic items' links actually land on the right tab). See
+[[05_DECISIONS]] for the full design.
+
+**What happened:** Implemented the Client Setup & Delivery checklist
+per the user's spec — one "Client setup" list (client-level, currently
+just "Confirm business and contact details") plus one full "Delivery"
+list per project (9 defaults), each with its own animated progress bar
+and next-task callout, never conflating two projects' completion.
+7 of the 9 delivery defaults are wired to a real signal (client brief/
+creative direction/sitemap approval, website existence, QA sign-off,
+client-review approval, verified deployment) and are never manually
+toggled — their status and the `completed_by`/link shown are always
+read fresh from the underlying record, so a revoked approval
+immediately shows the task needing attention again with no stale
+cache to invalidate. The other 3 defaults (business/contact
+confirmation, logo/image collection, reviewing client feedback) have no
+reliable automated signal and stay plain manual checkboxes, same tri-
+state (pending/complete/not-required) as the automatic ones. Custom
+tasks are fully operator-owned (add/reorder/remove); defaults can be
+marked Not Required but never removed or reordered. Seeding is
+idempotent at both the client and per-project level, hooked into both
+places a Project row is created, plus a lazy backfill on first read so
+a client created before this feature shipped (or by any future path
+that bypasses both hooks) is never stuck with a permanently empty
+checklist. Verified live end-to-end: real client-brief approval
+flipping "Confirm website scope" to complete with a working deep link
+and correct system attribution; the automatic→Not-required override
+and its attribution text; manual complete/reopen with user attribution
+and animation (including the reverse-direction transition on reopen,
+confirmed via a mid-transition screenshot); all-Not-Required's calm
+"nothing to track here" state; add/reorder/remove of a custom task; the
+compact bar in the Leads Won tab. 21 new backend tests plus the full
+1222-test backend suite and 160-test frontend suite all pass; `tsc`,
+`next build`, and lint are clean (lint's 3 warnings/1 error are all
+pre-existing, in files this feature didn't touch). Mobile-width visual
+confirmation wasn't possible — the browser automation's window-resize
+tool doesn't take visual effect in this environment (same limitation
+noted in the previous session's entry) — though every new component
+reuses the same responsive Tailwind conventions as already-verified
+sibling components.
+
+---
+
+## 2026-09-13 — Content Draft inside Planning
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/api/app/modules/planning/{models,schemas,service,routes}.py`
+(new `ContentDraftStatus`/`ContentPageStatus`/`ContentSource` enums,
+`LeadPlanningContentPage`/`LeadPlanningContentSection` tables, 4 new
+`lead_planning` columns, `content_draft_snapshot` on
+`LeadPlanningApprovedBrief`, `run_content_draft`/`run_content_draft_job`/
+`update_content_section`/`update_content_page_seo`/
+`regenerate_content_section`/`apply_content_section_preview`/
+`approve_content_page`, `_content_source_fingerprint` staleness check,
+`_apply_content_draft_to_design_brief` handoff), new
+`apps/api/app/agents/planning_content_draft.py` +
+`agents/prompts/planning_content_draft.md`, `apps/api/app/integrations/ai/tasks.py`
++ `router.py` (new `AITask.PLANNING_CONTENT_DRAFT`, PREMIUM), new
+`app/modules/jobs/job_types.py` entry + `app/jobs/handlers.py`
+(`handle_content_draft_generate`), `apps/api/app/modules/sitemaps/models.py`
+(`seo_title`/`seo_meta_description` nullable columns), `apps/api/app/agents/website_generator.py`
+(`_build_seo` precedence), new migration
+`ca0a45a263c8_planning_content_draft.py`, 13 new tests in
+`tests/test_planning.py`; frontend: `apps/web/src/lib/api.ts` (new types +
+API calls), `apps/web/src/app/dashboard/planning/lib.ts`
+(`computeContentDraftReadiness`), new `ContentDraftTab.tsx`,
+`ContentDraftPageCard.tsx`, `ContentSectionEditor.tsx`,
+`ContentDraftProgress.tsx`, `apps/web/src/app/dashboard/planning/[id]/page.tsx`
+(new tab + polling). See [[05_DECISIONS]] for the full design.
+
+**What happened:** Implemented "Content Draft" inside standalone
+Planning per the user's spec — turns the approved sitemap and verified
+business/creative-direction inputs into real, editable, page/section
+copy that flows into the existing Create Project handoff. Reused the
+existing Build Brief tables (sitemap pages, recommendations, visual
+direction), the job-queue system (`run_analysis_job`'s exact
+progress/failure pattern), the AI task router, and
+`website_generator.py`'s existing `BriefContent` parsing — only two new
+nullable SEO columns and a 2-line precedence check were added to the
+real pipeline. New conventions this feature introduces: page-level
+approval with section-level editing (edit/regenerate-preview-apply
+reverts an APPROVED page to EDITED, matching the established
+Sitemap/CreativeDirectionBrief/DesignBrief rule), append-only
+regeneration at page granularity (a second "Generate" run only touches
+still-DRAFT pages), a non-destructive computed `stale` flag (a stored
+SHA-256 fingerprint of upstream inputs compared fresh on every read —
+approved content is never silently rewritten), and a preview-before-
+apply flow for regenerating anything already edited or approved
+(`ContentSectionPreviewRead`, applied only via an explicit second
+call). No LLM is configured in this dev environment (same limitation
+as every prior Planning feature), so live AI generation could not be
+observed; the `LlmUnavailableError` → `needs_review` path, including
+its clear inline error banner and Retry action, WAS verified live end
+to end. All other flows (page/section editing, approve, regenerate-
+immediate vs. regenerate-preview, staleness on an upstream change,
+Create Project handoff into `DesignBrief`/`SitemapPage`) were verified
+live against manually-seeded content pages (mirroring the mocked
+backend test fixtures) since generation itself couldn't run; 13 new
+backend tests (mocked agent) plus the full 1202-test backend suite and
+160-test frontend suite all pass with zero regressions. `tsc --noEmit`,
+`next build`, and lint are all clean (lint has 3 pre-existing warnings
+in unrelated files, none touched by this feature).
+
+---
+
 ## 2026-09-10 — Google Review Insights inside Planning
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review

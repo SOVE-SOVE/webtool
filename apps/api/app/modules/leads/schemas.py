@@ -4,7 +4,19 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.leads.models import LeadPriority, LeadStatus
+from app.modules.projects.models import ProjectStage
 from app.modules.review_intelligence.models import ReviewActivityLevel, ReviewSentimentTrend
+
+
+class ProspectProjectRef(BaseModel):
+    """A lead-owned prospect Project (no Client yet) — see Project's own
+    docstring. Surfaced on LeadRead so the Leads list/detail pages can
+    show "there's already build work happening here" without a second
+    fetch."""
+
+    id: uuid.UUID
+    name: str
+    stage: ProjectStage
 
 
 class LeadCreate(BaseModel):
@@ -39,6 +51,16 @@ class LeadRead(BaseModel):
 
     id: uuid.UUID
     business_id: uuid.UUID
+    # Set once this lead's business has a Client row (i.e. the lead has
+    # been converted) — null otherwise. Lets the Won tab show the
+    # client's checklist progress without a second lookup per row.
+    client_id: uuid.UUID | None
+    # Set once this lead has started a Planning workspace — drives the
+    # "In Planning" badge and the Start/Open Planning button swap.
+    planning_id: uuid.UUID | None = None
+    # This lead's own prospect Project (speculative build work before
+    # conversion), if any — see ProspectProjectRef.
+    prospect_project: ProspectProjectRef | None = None
     business_name: str
     industry: str | None
     suburb: str | None

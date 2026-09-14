@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { computeBusinessInputRows, planningMode } from "./lib";
-import type { ComparableResearchStatus, Lead, Planning, ReviewIntelligenceResult } from "../../../lib/api";
+import {
+  computeBuildBriefFacts,
+  computeBusinessInputRows,
+  computeContentDraftReadiness,
+  computeInformationToConfirm,
+  planningMode,
+} from "./lib";
+import type {
+  ComparableResearchStatus,
+  Lead,
+  Planning,
+  PlanningSocialProfile,
+  Recommendation,
+  ReviewIntelligenceResult,
+  SitemapPageProposal,
+} from "../../../lib/api";
 
 function planning(overrides: Partial<Planning> = {}): Planning {
   return {
     id: "p1",
     lead_id: "l1",
+    project_id: null,
     lead_business_name: "Coastal Cafe",
     website_url: null,
     website_audit_id: null,
@@ -41,6 +56,42 @@ function planning(overrides: Partial<Planning> = {}): Planning {
     comparable_research_patterns: [],
     comparable_research_opportunities: [],
     comparable_research_generated_at: null,
+    social_profile: socialProfile(),
+    recommendations_objective: null,
+    recommendations_generated_at: null,
+    recommendations: [],
+    sitemap_proposal_generated_at: null,
+    sitemap_pages: [],
+    visual_direction_options: [],
+    selected_visual_direction: null,
+    visual_directions_generated_at: null,
+    assets_checklist_generated_at: null,
+    assets: [],
+    content_draft_status: null,
+    content_draft_progress_label: null,
+    content_draft_generated_at: null,
+    content_draft_error: null,
+    content_pages: [],
+    ...overrides,
+  };
+}
+
+function socialProfile(overrides: Partial<PlanningSocialProfile> = {}): PlanningSocialProfile {
+  return {
+    instagram_handle: null,
+    instagram_profile_url: null,
+    instagram_bio: null,
+    instagram_bio_link_url: null,
+    instagram_profile_image_url: null,
+    instagram_follower_count: null,
+    instagram_source: null,
+    instagram_verified_at: null,
+    facebook_page_url: null,
+    facebook_page_name: null,
+    facebook_bio: null,
+    facebook_source: null,
+    facebook_verified_at: null,
+    has_any: false,
     ...overrides,
   };
 }
@@ -82,7 +133,22 @@ describe("planningMode", () => {
 describe("computeBusinessInputRows", () => {
   it("marks every row not_checked when nothing is on file", () => {
     const rows = computeBusinessInputRows(planning(), null);
-    expect(rows.map((r) => r.state)).toEqual(["not_checked", "not_checked", "not_checked", "not_checked", "not_checked"]);
+    expect(rows.map((r) => r.state)).toEqual([
+      "not_checked",
+      "not_checked",
+      "not_checked",
+      "not_checked",
+      "not_checked",
+      "not_checked",
+    ]);
+  });
+
+  it("marks social presence good once Instagram or Facebook is on file", () => {
+    const rows = computeBusinessInputRows(
+      planning({ social_profile: socialProfile({ facebook_page_url: "https://facebook.com/x", has_any: true }) }),
+      null,
+    );
+    expect(rows.find((r) => r.key === "social_presence")!.state).toBe("good");
   });
 
   it("marks business details/location/contact good once present on the Lead", () => {
@@ -118,4 +184,159 @@ describe("computeBusinessInputRows", () => {
       expect(rows.find((r) => r.key === "comparable_research")!.state).toBe(expected);
     },
   );
+});
+
+describe("computeInformationToConfirm", () => {
+  it("prompts to confirm Instagram, Facebook, and contact when nothing is on file", () => {
+    const items = computeInformationToConfirm(planning(), lead(), socialProfile());
+    expect(items).toContain("Confirm whether this business has an Instagram profile.");
+    expect(items).toContain("Confirm whether this business has a Facebook Page.");
+    expect(items).toContain("No phone or email on file — confirm a primary contact method.");
+  });
+
+  it("makes no contact-method claim when the Lead hasn't loaded yet", () => {
+    const items = computeInformationToConfirm(planning(), null, socialProfile());
+    expect(items).not.toContain("No phone or email on file — confirm a primary contact method.");
+  });
+
+  it("drops the Instagram/Facebook prompts once either is on file", () => {
+    const items = computeInformationToConfirm(
+      planning(),
+      lead({ business_phone: "0400000000" }),
+      socialProfile({ instagram_handle: "coastalcafe", facebook_page_url: "https://facebook.com/coastalcafe" }),
+    );
+    expect(items).not.toContain("Confirm whether this business has an Instagram profile.");
+    expect(items).not.toContain("Confirm whether this business has a Facebook Page.");
+    expect(items).not.toContain("No phone or email on file — confirm a primary contact method.");
+  });
+
+  it("appends the agent's own open_questions, deduped against the deterministic checklist", () => {
+    const items = computeInformationToConfirm(
+      planning({ open_questions: ["No services list on file — confirm exact services offered."] }),
+      null,
+      socialProfile(),
+    );
+    expect(items).toContain("No services list on file — confirm exact services offered.");
+    // Deterministic items still come first.
+    expect(items[0]).toBe("Confirm whether this business has an Instagram profile.");
+  });
+});
+
+function recommendation(overrides: Partial<Recommendation> = {}): Recommendation {
+  return {
+    id: "r1",
+    category: "add",
+    title: "Services page",
+    explanation: "x",
+    source_type: "operator",
+    source_evidence: null,
+    status: "accepted",
+    order_index: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function sitemapPage(overrides: Partial<SitemapPageProposal> = {}): SitemapPageProposal {
+  return {
+    id: "sp1",
+    order_index: 0,
+    title: "Services",
+    page_type: "services",
+    purpose: "List services.",
+    reason: "Core offering.",
+    key_sections: [],
+    needs_confirmation: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("computeBuildBriefFacts", () => {
+  it("lists confirmed facts with their source", () => {
+    const summary = computeBuildBriefFacts(
+      planning({ social_profile: socialProfile({ instagram_handle: "coastalcafe" }) }),
+      lead({ industry: "Cafe", suburb: "Byron Bay", business_phone: "0400000000" }),
+    );
+    expect(summary.confirmedFacts).toContainEqual({ fact: "Category: Cafe", source: "Business record" });
+    expect(summary.confirmedFacts).toContainEqual({ fact: "Instagram: @coastalcafe", source: "Social Presence" });
+  });
+
+  it("summarises proposed decisions from accepted recommendations, sitemap pages, and a selected direction", () => {
+    const summary = computeBuildBriefFacts(
+      planning({
+        recommendations_objective: "Generate bookings.",
+        recommendations: [recommendation({ status: "accepted" }), recommendation({ id: "r2", status: "proposed" })],
+        sitemap_pages: [sitemapPage()],
+        selected_visual_direction: {
+          character: "Warm and handcrafted",
+          typography: "Rounded sans-serif",
+          colour_palette: "Terracotta",
+          imagery: "Real photos",
+          layout: "Generous whitespace",
+        },
+      }),
+      null,
+    );
+    expect(summary.proposedDecisions).toContain("Objective: Generate bookings.");
+    expect(summary.proposedDecisions).toContain("1 accepted Keep/Improve/Add recommendation");
+    expect(summary.proposedDecisions).toContain("1 proposed page");
+    expect(summary.proposedDecisions).toContain("Visual direction selected: Warm and handcrafted");
+  });
+
+  it("merges sitemap needs_confirmation and missing assets into open questions", () => {
+    const summary = computeBuildBriefFacts(
+      planning({
+        sitemap_pages: [sitemapPage({ needs_confirmation: true, title: "Services" })],
+        assets: [
+          {
+            id: "a1",
+            category: "logo",
+            label: "Logo",
+            status: "missing",
+            note: null,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+      lead(),
+    );
+    expect(summary.openQuestions).toContain("Confirm content for the proposed 'Services' page.");
+    expect(summary.openQuestions).toContain("Missing asset: Logo.");
+  });
+});
+
+describe("computeContentDraftReadiness", () => {
+  it("blocks on zero sitemap pages and reports every input as unavailable", () => {
+    const readiness = computeContentDraftReadiness(planning());
+    expect(readiness.blocker).toMatch(/sitemap/i);
+    expect(readiness.items.every((i) => !i.available)).toBe(true);
+  });
+
+  it("clears the blocker once at least one sitemap page exists", () => {
+    const readiness = computeContentDraftReadiness(planning({ sitemap_pages: [sitemapPage()] }));
+    expect(readiness.blocker).toBeNull();
+    const sitemapItem = readiness.items.find((i) => i.label.includes("Proposed sitemap"));
+    expect(sitemapItem?.available).toBe(true);
+  });
+
+  it("reflects accepted recommendations and a selected visual direction", () => {
+    const readiness = computeContentDraftReadiness(
+      planning({
+        recommendations: [recommendation({ status: "accepted" })],
+        selected_visual_direction: {
+          character: "Warm",
+          typography: "Rounded",
+          colour_palette: "Terracotta",
+          imagery: "Real photos",
+          layout: "Generous whitespace",
+        },
+      }),
+    );
+    expect(readiness.items.find((i) => i.label.includes("Accepted Keep/Improve/Add"))?.available).toBe(true);
+    expect(readiness.items.find((i) => i.label === "Selected visual direction")?.available).toBe(true);
+  });
 });

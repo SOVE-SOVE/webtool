@@ -30,6 +30,7 @@ import {
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -408,30 +409,18 @@ export default function LeadDetailPage() {
     const ok = await confirm({
       title: `Start a website project for ${business.name}?`,
       description:
-        "Marks the lead WON and creates the client and an intake-stage project in one step, then opens the project " +
-        "so you can build the website. The lead's history — audits, outreach, and notes — stays attached to it. " +
-        "This can't be undone.",
+        "Creates a speculative project owned by this lead, then opens it so you can build the website. The lead " +
+        "stays a Lead — no client is created and nothing here is final. Convert to a client separately once the " +
+        "business agrees to work with you.",
       confirmLabel: "Start project",
-      danger: true,
     });
     if (!ok) return;
 
     setConverting(true);
     setConvertError(null);
     try {
-      const newClient = await api.createClient({ from_lead_id: leadId });
-      setConvertedClient(newClient);
-      setClients((prev) => [newClient, ...prev]);
-      const allProjects = await api.listProjects();
-      setProjects(allProjects);
-      const project = allProjects.find((p) => p.client_id === newClient.id);
-      if (project) {
-        router.push(`/dashboard/projects/${project.id}?created=1`);
-        return;
-      }
-      const updatedLead = await api.getLead(leadId);
-      setLead(updatedLead);
-      refreshActivity();
+      const project = await api.createProject({ lead_id: leadId, name: `${business.name} Website` });
+      router.push(`/dashboard/projects/${project.id}?created=1`);
     } catch (err) {
       setConvertError(err instanceof ApiError ? err.message : "Couldn't start the project.");
     } finally {
@@ -445,7 +434,10 @@ export default function LeadDetailPage() {
     const ok = await confirm({
       title: `Convert ${business.name} to a client?`,
       description:
-        "This marks the lead WON and creates a new client and an INTAKE-stage project" +
+        "This marks the lead WON and creates a new client" +
+        (lead?.prospect_project
+          ? `, linking its existing prospect project (${lead.prospect_project.name}) to it`
+          : " and an INTAKE-stage project") +
         (convertPackage ? ` (${convertPackage})` : "") +
         ". The lead's history — audits, outreach, sales opportunities, and notes — stays exactly where it is, attached to the lead. This can't be undone.",
       confirmLabel: "Convert to client",
@@ -469,8 +461,9 @@ export default function LeadDetailPage() {
       setConvertedClient(newClient);
       setClients((prev) => [newClient, ...prev]);
       setShowConvertForm(false);
-      const updatedLead = await api.getLead(leadId);
+      const [updatedLead, allProjects] = await Promise.all([api.getLead(leadId), api.listProjects()]);
       setLead(updatedLead);
+      setProjects(allProjects);
       refreshActivity();
     } catch (err) {
       setConvertError(err instanceof ApiError ? err.message : "Couldn't convert this lead.");
@@ -494,6 +487,65 @@ export default function LeadDetailPage() {
     clientProjects.find((p) => p.stage !== "maintenance" && p.stage !== "complete") ??
     clientProjects[0] ??
     null;
+
+  // Shared by both "no client yet" branches below (with or without an
+  // existing prospect project) — the one genuine, explicit conversion
+  // action (docs/05_DECISIONS.md).
+  const convertForm = showConvertForm && (
+    <form onSubmit={handleConvert} className="mt-3 max-w-2xl space-y-3 border border-border p-4">
+      <input
+        placeholder="Project name (defaults to “{business} Website”)"
+        value={convertProjectName}
+        onChange={(e) => setConvertProjectName(e.target.value)}
+        className={inputClass}
+      />
+      <div className="flex gap-3">
+        <input
+          placeholder="Package (e.g. Core, $899)"
+          value={convertPackage}
+          onChange={(e) => setConvertPackage(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          type="number"
+          min="0"
+          step="1"
+          placeholder="Agreed price, AUD"
+          value={convertPrice}
+          onChange={(e) => setConvertPrice(e.target.value)}
+          className={inputClass}
+        />
+      </div>
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-xs uppercase tracking-wide text-fg-muted">Agreed deadline</label>
+          <input
+            type="date"
+            value={convertDeadline}
+            onChange={(e) => setConvertDeadline(e.target.value)}
+            className={`${inputClass} mt-1`}
+          />
+        </div>
+        <input
+          placeholder="Billing email (optional)"
+          value={convertBillingEmail}
+          onChange={(e) => setConvertBillingEmail(e.target.value)}
+          className={`${inputClass} mt-5`}
+        />
+      </div>
+      <select value={convertAssignedUserId} onChange={(e) => setConvertAssignedUserId(e.target.value)} className={inputClass}>
+        <option value="">Unassigned</option>
+        {users.map((user) => (
+          <option key={user.id} value={user.id}>
+            {user.name}
+          </option>
+        ))}
+      </select>
+      <button type="submit" disabled={converting} className="btn btn-primary">
+        {converting ? "Converting…" : "Convert to client"}
+      </button>
+    </form>
+  );
 
   const contactLine = [business.phone, business.email].filter(Boolean).join(" · ") || "No contact details";
   const locationLine = [business.suburb, business.state].filter(Boolean).join(", ") || "Location unknown";
@@ -629,9 +681,15 @@ export default function LeadDetailPage() {
             </p>
             {startPlanningError && <p className="mt-2 text-error">{startPlanningError}</p>}
           </div>
-          <button onClick={handleStartPlanning} disabled={startingPlanning} className="btn btn-primary shrink-0">
-            {startingPlanning ? "Opening…" : "Start Planning →"}
-          </button>
+          {lead.planning_id ? (
+            <Link href={`/dashboard/planning/${lead.planning_id}`} className="btn btn-primary shrink-0">
+              Open Planning →
+            </Link>
+          ) : (
+            <button onClick={handleStartPlanning} disabled={startingPlanning} className="btn btn-primary shrink-0">
+              {startingPlanning ? "Opening…" : "Start Planning →"}
+            </button>
+          )}
         </section>
       )}
 
@@ -669,89 +727,56 @@ export default function LeadDetailPage() {
                 <p className="text-fg-subtle">No project yet — start intake from the client record.</p>
               )}
             </div>
+          ) : lead.prospect_project ? (
+            <div className="mt-2 space-y-2">
+              <p className="text-sm text-fg-muted">
+                Prospect project{" "}
+                <Link href={`/dashboard/projects/${lead.prospect_project.id}`} className="text-fg hover:underline">
+                  {lead.prospect_project.name}
+                </Link>{" "}
+                · <span className="text-fg">{PROJECT_STAGE_LABELS[lead.prospect_project.stage]}</span>
+                {" · "}
+                <Link
+                  href={`/dashboard/projects/${lead.prospect_project.id}/website`}
+                  className="text-fg-muted hover:underline"
+                >
+                  Open website workspace →
+                </Link>
+              </p>
+              <p className="text-xs text-fg-subtle">
+                Speculative — this lead stays a Lead until you explicitly convert it below.
+              </p>
+              <button onClick={() => setShowConvertForm((v) => !v)} className="btn btn-secondary btn-sm">
+                {showConvertForm ? "Cancel" : "Convert to client"}
+              </button>
+              {convertError && <p className="mt-2 text-error">{convertError}</p>}
+              {convertForm}
+            </div>
           ) : (
             <div className="mt-2">
               <p className="text-sm text-fg-muted">
-                Create the website project now — you build and show the site before the business has committed. Marks
-                the lead WON, creates the client and an intake-stage project, and keeps this lead&apos;s history
-                attached.
+                Build the website now — speculative work you can show before the business has committed. This
+                creates a prospect project owned by the lead; the lead stays a Lead until you explicitly convert it
+                with the form below.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button onClick={handleStartProject} disabled={converting} className="btn btn-primary">
                   {converting ? "Starting…" : "Start website project →"}
                 </button>
-                <button
-                  onClick={() => setShowConvertForm((v) => !v)}
-                  className="btn btn-ghost btn-sm"
-                >
+                <button onClick={() => setShowConvertForm((v) => !v)} className="btn btn-ghost btn-sm">
                   {showConvertForm ? "Cancel" : "Convert with full details"}
                 </button>
               </div>
               {convertError && <p className="mt-2 text-error">{convertError}</p>}
-
-              {showConvertForm && (
-                <form onSubmit={handleConvert} className="mt-3 max-w-2xl space-y-3 border border-border p-4">
-                  <input
-                    placeholder="Project name (defaults to “{business} Website”)"
-                    value={convertProjectName}
-                    onChange={(e) => setConvertProjectName(e.target.value)}
-                    className={inputClass}
-                  />
-                  <div className="flex gap-3">
-                    <input
-                      placeholder="Package (e.g. Core, $899)"
-                      value={convertPackage}
-                      onChange={(e) => setConvertPackage(e.target.value)}
-                      className={inputClass}
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="Agreed price, AUD"
-                      value={convertPrice}
-                      onChange={(e) => setConvertPrice(e.target.value)}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="text-xs uppercase tracking-wide text-fg-muted">Agreed deadline</label>
-                      <input
-                        type="date"
-                        value={convertDeadline}
-                        onChange={(e) => setConvertDeadline(e.target.value)}
-                        className={`${inputClass} mt-1`}
-                      />
-                    </div>
-                    <input
-                      placeholder="Billing email (optional)"
-                      value={convertBillingEmail}
-                      onChange={(e) => setConvertBillingEmail(e.target.value)}
-                      className={`${inputClass} mt-5`}
-                    />
-                  </div>
-                  <select
-                    value={convertAssignedUserId}
-                    onChange={(e) => setConvertAssignedUserId(e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="">Unassigned</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="submit" disabled={converting} className="btn btn-primary">
-                    {converting ? "Converting…" : "Convert to client"}
-                  </button>
-                </form>
-              )}
+              {convertForm}
             </div>
           )}
         </section>
       )}
+
+      <div className="mt-4">
+        <StageChecklistPanel ownerType="lead" ownerId={leadId} title="Stage checklist" />
+      </div>
 
       {/* Editable detail — collapsed by default */}
       <div className="mt-8">

@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   api,
   LEAD_PRIORITIES,
+  type ClientChecklistSummary,
   type Lead,
   type LeadPriority,
   type LeadStatus,
@@ -16,6 +17,7 @@ import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
@@ -49,6 +51,40 @@ function nextFollowUpByLead(
   return map;
 }
 
+// This lead has an active Planning workspace — a relationship-status
+// signal (still just a Lead) shown alongside, never instead of, its
+// LeadStatusBadge (docs/05_DECISIONS.md: relationship status and
+// website-development progress are tracked separately).
+function InPlanningBadge() {
+  return (
+    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-500/15 dark:text-blue-300">
+      In Planning
+    </span>
+  );
+}
+
+// A won lead with no client yet (client_id null) shows nothing here —
+// today's plain "Convert to a client" next-action text already covers
+// that case, so this stays quiet rather than showing an empty bar.
+function ChecklistProgressCell({
+  clientId,
+  summary,
+  wide = false,
+  className = "",
+}: {
+  clientId: string | null;
+  summary: ClientChecklistSummary | undefined;
+  wide?: boolean;
+  className?: string;
+}) {
+  if (!clientId || !summary) return null;
+  return (
+    <Link href={`/dashboard/clients/${clientId}`} className={`block ${wide ? "w-full" : "w-32"} ${className}`}>
+      <ProgressBar value={summary.pct ?? 0} label={`${summary.completed} of ${summary.total} · ${summary.pct ?? 0}%`} />
+    </Link>
+  );
+}
+
 // useSearchParams() needs a Suspense-boundary ancestor for Next's static
 // generation — see the default export below. It's also what makes the
 // deep-linked state below correctly reset navigating between two
@@ -64,6 +100,7 @@ function LeadsPageInner() {
   const [users, setUsers] = useState<User[]>([]);
   const [stages, setStages] = useState<PipelineStage[] | null>(null);
   const [followUpMap, setFollowUpMap] = useState<Map<string, string>>(new Map());
+  const [checklistSummaries, setChecklistSummaries] = useState<Map<string, ClientChecklistSummary>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<LeadTab>("all");
@@ -98,6 +135,10 @@ function LeadsPageInner() {
       .catch(() => setError("Couldn't load leads."));
     api.listUsers().then(setUsers).catch(() => {});
     api.listPipelineStages().then(setStages).catch(() => {});
+    api
+      .listChecklistSummaries()
+      .then((rows) => setChecklistSummaries(new Map(rows.map((r) => [r.client_id, r]))))
+      .catch(() => {});
     api.listFollowUps().then((b) => setFollowUpMap(nextFollowUpByLead(b))).catch(() => {});
   }
 
@@ -392,14 +433,28 @@ function LeadsPageInner() {
                           .join(" · ") || "—"}
                       </div>
                     </div>
-                    <LeadStatusBadge status={lead.status} className="shrink-0" />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {lead.planning_id && <InPlanningBadge />}
+                      <LeadStatusBadge status={lead.status} />
+                    </div>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
                     <span>{lead.website_url ? "Has a website" : "No website"}</span>
                     <span className="text-fg">{leadNextAction(lead, followUpMap.get(lead.id))}</span>
                   </div>
                 </Link>
-                <div className="mt-2 flex items-center justify-end border-t border-border pt-2">
+                <ChecklistProgressCell
+                  clientId={lead.client_id}
+                  summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
+                  wide
+                  className="mt-2"
+                />
+                <div className="mt-2 flex items-center justify-end gap-3 border-t border-border pt-2">
+                  {lead.client_id && (
+                    <Link href={`/dashboard/clients/${lead.client_id}`} className="text-xs text-fg-muted hover:text-fg hover:underline">
+                      Open client →
+                    </Link>
+                  )}
                   {lead.archived_at ? (
                     <button
                       type="button"
@@ -433,6 +488,7 @@ function LeadsPageInner() {
                   <th className="px-3 py-2">Website</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Next</th>
+                  <th className="px-3 py-2">Setup progress</th>
                   <th className="px-3 py-2"></th>
                   <th className="px-3 py-2"></th>
                 </tr>
@@ -454,10 +510,19 @@ function LeadsPageInner() {
                       {lead.website_url ? "Has a website" : "No website"}
                     </td>
                     <td className="px-3 py-2">
-                      <LeadStatusBadge status={lead.status} />
+                      <div className="flex items-center gap-1.5">
+                        {lead.planning_id && <InPlanningBadge />}
+                        <LeadStatusBadge status={lead.status} />
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-sm text-fg">
                       {leadNextAction(lead, followUpMap.get(lead.id))}
+                    </td>
+                    <td className="px-3 py-2">
+                      <ChecklistProgressCell
+                        clientId={lead.client_id}
+                        summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
+                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Link
@@ -466,6 +531,14 @@ function LeadsPageInner() {
                       >
                         Open lead →
                       </Link>
+                      {lead.client_id && (
+                        <Link
+                          href={`/dashboard/clients/${lead.client_id}`}
+                          className="ml-2 text-sm text-fg-muted hover:text-fg hover:underline"
+                        >
+                          Open client →
+                        </Link>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       {lead.archived_at ? (

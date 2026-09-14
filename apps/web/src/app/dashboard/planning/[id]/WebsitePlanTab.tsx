@@ -1,9 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, type Planning, type PlanningComparableSite } from "@/lib/api";
+import { api, ApiError, type Lead, type Planning, type PlanningComparableSite } from "@/lib/api";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { computeInformationToConfirm } from "../lib";
 import { GenerateWebsitePlanAction } from "./GenerateWebsitePlanAction";
+import { SocialPresenceSection } from "./SocialPresenceSection";
+
+type LeadContactFields = Pick<Lead, "business_phone" | "business_email">;
 
 // Shown wherever comparable-site output appears — this is public
 // reference research to inform planning, never a copy source and
@@ -75,7 +79,15 @@ function ComparableSiteRow({
  * reference-research label — this is context for planning, never a
  * copy source and never a performance claim.
  */
-export function WebsitePlanTab({ planning, onUpdated }: { planning: Planning; onUpdated: (p: Planning) => void }) {
+export function WebsitePlanTab({
+  planning,
+  lead,
+  onUpdated,
+}: {
+  planning: Planning;
+  lead: LeadContactFields | null;
+  onUpdated: (p: Planning) => void;
+}) {
   const [searching, setSearching] = useState(false);
   const [analysing, setAnalysing] = useState(false);
   const [comparableError, setComparableError] = useState<string | null>(null);
@@ -83,6 +95,8 @@ export function WebsitePlanTab({ planning, onUpdated }: { planning: Planning; on
   if (planning.website_plan_generated_at === null) {
     return <GenerateWebsitePlanAction planning={planning} onGenerated={onUpdated} />;
   }
+
+  const informationToConfirm = computeInformationToConfirm(planning, lead, planning.social_profile);
 
   const hasSites = planning.comparable_sites.length > 0;
   const includedCount = planning.comparable_sites.filter((s) => s.included).length;
@@ -156,10 +170,18 @@ export function WebsitePlanTab({ planning, onUpdated }: { planning: Planning; on
         </Disclosure>
       )}
 
-      {planning.open_questions.length > 0 && (
+      <Disclosure
+        title="Social Presence"
+        hint="Instagram and Facebook details used as planning input"
+        defaultOpen={planning.social_profile.has_any}
+      >
+        <SocialPresenceSection planning={planning} onUpdated={onUpdated} />
+      </Disclosure>
+
+      {informationToConfirm.length > 0 && (
         <Disclosure
-          title="Open questions"
-          hint={`${planning.open_questions.length} to confirm`}
+          title="Information to Confirm"
+          hint={`${informationToConfirm.length} to confirm`}
           badge={
             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
               Needs confirmation
@@ -167,7 +189,7 @@ export function WebsitePlanTab({ planning, onUpdated }: { planning: Planning; on
           }
         >
           <ul className="list-disc space-y-1.5 pl-4 text-sm text-fg">
-            {planning.open_questions.map((q, i) => (
+            {informationToConfirm.map((q, i) => (
               <li key={i}>{q}</li>
             ))}
           </ul>

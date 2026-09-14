@@ -53,6 +53,17 @@ class AITask(str, Enum):
     # and opportunities. Same LOCAL rationale. See
     # agents/planning_comparable_patterns.py.
     PLANNING_COMPARABLE_PATTERNS = "planning_comparable_patterns"
+    # Build Brief's "Keep / Improve / Add" — turns already-recorded audit
+    # findings/review themes/social/business facts into three evidence-
+    # grounded lists + an objective statement. Mode-agnostic (Existing-
+    # Website and New-Website-Plan alike). Same LOCAL rationale as
+    # PLANNING_WEBSITE_DIRECTION. See agents/planning_recommendations.py.
+    PLANNING_RECOMMENDATIONS = "planning_recommendations"
+    # Build Brief's "Proposed Sitemap and Homepage Outline" — a page-list
+    # proposal from already-known facts/objective, same LOCAL rationale
+    # as SITEMAP_PLANNING's own pre-Project analog. See
+    # agents/planning_sitemap_proposal.py.
+    PLANNING_SITEMAP_PROPOSAL = "planning_sitemap_proposal"
     # 9-part sales-preparation report over already-gathered evidence
     # (website audit + public search) — app/agents/sales_audit.py. Same
     # "no unsupported claims" / fact-constrained profile as MEETING_BRIEF.
@@ -88,3 +99,15 @@ class AITask(str, Enum):
     # generic") — app/agents/planning_visual_review.py. The one routed
     # task that sends images; needs a vision-capable premium model.
     VISUAL_DESIGN_REVIEW = "visual_design_review"
+    # Build Brief's "Visual Direction Choices" — 2-3 concise, distinct
+    # visual directions in one call. Same "shapes what the client sees"
+    # rationale as CREATIVE_DIRECTION, even though it's a lighter
+    # Planning-owned agent — see agents/planning_visual_directions.py.
+    PLANNING_VISUAL_DIRECTIONS = "planning_visual_directions"
+    # Content Draft — real page copy (headline, service descriptions,
+    # About, FAQs, SEO title/meta) an operator reviews and approves
+    # before it reaches a client. Same "shapes what the client sees"
+    # rationale as CREATIVE_DIRECTION/WEBSITE_GENERATION/WEBSITE_BRIEF —
+    # this is the actual words a website visitor reads. See
+    # agents/planning_content_draft.py.
+    PLANNING_CONTENT_DRAFT = "planning_content_draft"

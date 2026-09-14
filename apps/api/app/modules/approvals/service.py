@@ -4,8 +4,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.approvals.schemas import ApprovalCheckpoint, ProjectApprovalStatus
-from app.modules.businesses.models import Business
-from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
 from app.modules.deployments.models import Deployment
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
@@ -24,12 +22,7 @@ from app.modules.websites.models import Website
 
 def _project_exists(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> bool:
     return (
-        db.scalar(
-            select(Project.id)
-            .join(Client, Project.client_id == Client.id)
-            .join(Business, Client.business_id == Business.id)
-            .where(Business.workspace_id == workspace_id, Project.id == project_id)
-        )
+        db.scalar(select(Project.id).where(Project.workspace_id == workspace_id, Project.id == project_id))
         is not None
     )
 

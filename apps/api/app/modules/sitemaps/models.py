@@ -145,6 +145,16 @@ class SitemapPage(Base):
     required_content: Mapped[str | None] = mapped_column(Text)
     required_functionality: Mapped[str | None] = mapped_column(Text)
 
+    # Optional overrides for agents/website_generator.py's own _build_seo
+    # (which otherwise derives a title/meta description automatically —
+    # see that function). Populated when Planning's Content Draft
+    # (modules/planning) carries an approved page's own drafted SEO
+    # title/meta description into a newly-created Project's sitemap at
+    # handoff — null for every page created any other way, in which
+    # case _build_seo's existing behavior is unchanged.
+    seo_title: Mapped[str | None] = mapped_column(String(255))
+    seo_meta_description: Mapped[str | None] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
