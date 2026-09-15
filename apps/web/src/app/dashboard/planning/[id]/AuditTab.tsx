@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { Planning, PlanningKeyPoint } from "@/lib/api";
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Disclosure } from "@/components/ui/Disclosure";
-import { AREA_LABELS, SEVERITY_CLASS, SEVERITY_LABEL, groupByArea } from "../lib";
+import { Badge } from "@/components/ui/Badge";
+import { AREA_LABELS, SEVERITY_LABEL, SEVERITY_TONE, groupByArea } from "../lib";
 import { EvidencePanel } from "./SidePanels";
 
 const AREA_ORDER = ["technical", "usability", "seo", "accessibility", "visual"];
@@ -20,11 +21,9 @@ function FindingItem({ point }: { point: PlanningKeyPoint }) {
     <li className="rounded-md border border-border p-2.5 text-sm">
       <div className="flex items-start justify-between gap-2">
         <span className="text-fg">{point.message}</span>
-        <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${SEVERITY_CLASS[point.severity] ?? SEVERITY_CLASS.low}`}
-        >
+        <Badge tone={SEVERITY_TONE[point.severity] ?? SEVERITY_TONE.low} className="shrink-0">
           {SEVERITY_LABEL[point.severity] ?? point.severity}
-        </span>
+        </Badge>
       </div>
       <button
         type="button"
@@ -89,13 +88,7 @@ export function AuditTab({ planning }: { planning: Planning }) {
             defaultOpen={i === 0}
             title={AREA_LABELS[area] ?? area}
             hint={`${points.length} finding${points.length === 1 ? "" : "s"}`}
-            badge={
-              worstSeverityRank(points) <= 1 ? (
-                <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-500/15 dark:text-red-300">
-                  Needs attention
-                </span>
-              ) : undefined
-            }
+            badge={worstSeverityRank(points) <= 1 ? <Badge tone="danger">Needs attention</Badge> : undefined}
           >
             <ul className="space-y-2">
               {points.map((point, j) => (

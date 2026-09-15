@@ -16,28 +16,36 @@ import {
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Metric } from "@/components/ui/Metric";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
-import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { Badge } from "@/components/ui/Badge";
+import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
 import { LeadPreviewPanel } from "@/components/leads/LeadPreviewPanel";
-import { DensityToggle } from "@/components/ui/DensityToggle";
 import { withParam, withoutParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
-import { useDensity } from "@/lib/useDensity";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   isLeadTab,
+  LEAD_SORT_LABEL,
+  LEAD_SORTS,
   LEAD_TABS,
   leadMatchesTab,
   leadNextAction,
+  type LeadSort,
   type LeadTab,
+  sortLeads,
 } from "@/lib/leads";
 
 type ViewMode = "table" | "board";
 type WebsiteFilter = "" | "has" | "none";
+type PriorityFilter = "" | LeadPriority;
 
 function nextFollowUpByLead(
   buckets:
@@ -62,11 +70,7 @@ function nextFollowUpByLead(
 // LeadStatusBadge (docs/05_DECISIONS.md: relationship status and
 // website-development progress are tracked separately).
 function InPlanningBadge() {
-  return (
-    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-500/15 dark:text-blue-300">
-      In Planning
-    </span>
-  );
+  return <Badge tone="info">In Planning</Badge>;
 }
 
 // A won lead with no client yet (client_id null) shows nothing here —
@@ -75,19 +79,103 @@ function InPlanningBadge() {
 function ChecklistProgressCell({
   clientId,
   summary,
-  wide = false,
   className = "",
 }: {
   clientId: string | null;
   summary: ClientChecklistSummary | undefined;
-  wide?: boolean;
   className?: string;
 }) {
   if (!clientId || !summary) return null;
   return (
-    <Link href={`/dashboard/clients/${clientId}`} className={`block ${wide ? "w-full" : "w-32"} ${className}`}>
+    <Link href={`/dashboard/clients/${clientId}`} className={`block w-full ${className}`}>
       <ProgressBar value={summary.pct ?? 0} label={`${summary.completed} of ${summary.total} · ${summary.pct ?? 0}%`} />
     </Link>
+  );
+}
+
+// One lead, as a compact grid card — replaces the old full-width table row.
+// Every column from the former table (business/website/status/next/setup
+// progress/open client/archive) is kept, just laid out densely instead of
+// spread across a viewport-wide row. Mirrors the Clients page's ClientCard
+// density (rounded-md border p-3, stacked fields, bordered footer row).
+function LeadCard({
+  lead,
+  nextAction,
+  checklistSummary,
+  archivingId,
+  onArchive,
+  onRestore,
+  onPreview,
+}: {
+  lead: Lead;
+  nextAction: string;
+  checklistSummary: ClientChecklistSummary | undefined;
+  archivingId: string | null;
+  onArchive: (lead: Lead) => void;
+  onRestore: (lead: Lead) => void;
+  onPreview: (lead: Lead) => void;
+}) {
+  return (
+    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
+      <Link href={`/dashboard/leads/${lead.id}`} className="block">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate font-medium text-fg">{lead.business_name}</div>
+            <div className="truncate text-xs text-fg-muted">
+              {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {lead.planning_id && <InPlanningBadge />}
+            <LeadStatusBadge status={lead.status} />
+            <LeadPriorityBadge priority={lead.priority} score={lead.score} />
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
+          <span>{lead.website_url ? "Has a website" : "No website"}</span>
+          <span className="truncate text-fg">{nextAction}</span>
+        </div>
+      </Link>
+      <ChecklistProgressCell clientId={lead.client_id} summary={checklistSummary} className="mt-2" />
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+        <span className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => onPreview(lead)}
+            title="Quick preview"
+            className="text-xs text-fg-muted hover:text-fg hover:underline"
+          >
+            Preview
+          </button>
+          {lead.client_id && (
+            <Link href={`/dashboard/clients/${lead.client_id}`} className="text-xs text-fg-muted hover:text-fg hover:underline">
+              Open client →
+            </Link>
+          )}
+        </span>
+        {lead.archived_at ? (
+          <button
+            type="button"
+            onClick={() => onRestore(lead)}
+            disabled={archivingId === lead.id}
+            className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
+          >
+            {archivingId === lead.id ? "Restoring…" : "Restore"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onArchive(lead)}
+            disabled={archivingId === lead.id}
+            className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+          >
+            {archivingId === lead.id ? "Archiving…" : "Archive"}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -103,7 +191,6 @@ function LeadsPageInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const showToast = useToast();
-  const [density, setDensity] = useDensity();
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -120,6 +207,8 @@ function LeadsPageInner() {
   // read back — avoids the URL "correcting" the field mid-keystroke.
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("");
+  const [sort, setSort] = useState<LeadSort>("updated");
   const [showArchived, setShowArchived] = useState(false);
 
   useDebouncedUrlSync("search", search);
@@ -282,21 +371,18 @@ function LeadsPageInner() {
       if (view === "table" && !leadMatchesTab(lead, tab)) return false;
       if (websiteFilter === "has" && !lead.website_url) return false;
       if (websiteFilter === "none" && lead.website_url) return false;
+      if (priorityFilter && lead.priority !== priorityFilter) return false;
       if (!q) return true;
       return [lead.business_name, lead.industry, lead.suburb, lead.source, lead.notes, lead.business_email]
         .filter(Boolean)
         .some((field) => field!.toLowerCase().includes(q));
     });
-  }, [leads, view, tab, search, websiteFilter]);
+  }, [leads, view, tab, search, websiteFilter, priorityFilter]);
 
   const visibleLeads = useMemo(() => {
     if (!filteredLeads) return null;
-    return [...filteredLeads].sort((a, b) => {
-      // Archived sink to the bottom; otherwise most recently touched first.
-      if (!!a.archived_at !== !!b.archived_at) return a.archived_at ? 1 : -1;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-  }, [filteredLeads]);
+    return sortLeads(filteredLeads, sort, followUpMap);
+  }, [filteredLeads, sort, followUpMap]);
 
   const boardLeads = useMemo(
     () => (filteredLeads ?? []).filter((l) => !l.archived_at),
@@ -335,6 +421,19 @@ function LeadsPageInner() {
     router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
   }
 
+  // Top-of-page "what's worth my attention" summary — active (non-archived,
+  // non-converted) leads only, so a stale or already-won lead doesn't
+  // inflate these counts. Mirrors the Sales page's metrics row.
+  const summary = useMemo(() => {
+    const active = (leads ?? []).filter((l) => !l.archived_at && l.client_id == null);
+    return {
+      active: active.length,
+      highPriority: active.filter((l) => l.priority === "high").length,
+      needsFollowUp: active.filter((l) => followUpMap.has(l.id)).length,
+      noWebsite: active.filter((l) => !l.website_url).length,
+    };
+  }, [leads, followUpMap]);
+
   const viewToggle = (
     <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
       <button
@@ -363,31 +462,38 @@ function LeadsPageInner() {
       <PageHeader
         title="Leads"
         description="The businesses you're pursuing — where each one is, and what to do next. New leads arrive automatically when you approve a business in Discovery."
-        actions={
-          <div className="flex items-center gap-2">
-            {viewToggle}
-            <DensityToggle density={density} onChange={setDensity} />
-          </div>
-        }
+        actions={viewToggle}
       />
 
-      {/* Controls: search + status + website + archived (list view only) */}
+      {/* At-a-glance: active pipeline size and where the commercial value /
+          urgency is, before scanning the list itself — same idea as the
+          Sales metrics row. */}
+      {leads && leads.length > 0 && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Active leads" value={summary.active} />
+          <Metric label="High priority" value={summary.highPriority} hint="chase these first" />
+          <Metric label="Needs follow-up" value={summary.needsFollowUp} href="/dashboard/follow-ups" />
+          <Metric label="No website" value={summary.noWebsite} hint="strongest pitch" />
+        </div>
+      )}
+
+      {/* Controls: search + status + website + priority + sort + archived (list view only) */}
       {view === "table" && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <input
+          <Input
             placeholder="Search business, industry, suburb, email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64 rounded-md border border-border-strong px-3 py-1.5 text-sm"
+            className="input w-64"
           />
-          <select
+          <Select
             value={tab}
             onChange={(e) => {
               const next = e.target.value as LeadTab;
               setTab(next);
               updateParam("tab", next === "all" ? null : next);
             }}
-            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input w-auto"
             aria-label="Filter by status"
           >
             {LEAD_TABS.map((t) => (
@@ -395,24 +501,48 @@ function LeadsPageInner() {
                 {t.label} ({tabCounts.get(t.id) ?? 0})
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
+            className="input w-auto"
+            aria-label="Filter by priority"
+          >
+            <option value="">Any priority</option>
+            {LEAD_PRIORITIES.map((p) => (
+              <option key={p} value={p} className="capitalize">
+                {p} priority
+              </option>
+            ))}
+          </Select>
+          <Select
             value={websiteFilter}
             onChange={(e) => {
               const next = e.target.value as WebsiteFilter;
               setWebsiteFilter(next);
               updateParam("website", next || null);
             }}
-            className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+            className="input w-auto"
             aria-label="Filter by website"
           >
             <option value="">Any website</option>
             <option value="has">Has a website</option>
             <option value="none">No website</option>
-          </select>
+          </Select>
+          <Select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as LeadSort)}
+            className="input ml-auto w-auto"
+            aria-label="Sort leads"
+          >
+            {LEAD_SORTS.map((s) => (
+              <option key={s} value={s}>
+                Sort: {LEAD_SORT_LABEL[s]}
+              </option>
+            ))}
+          </Select>
           <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={showArchived}
               onChange={(e) => {
                 setShowArchived(e.target.checked);
@@ -431,8 +561,14 @@ function LeadsPageInner() {
       )}
 
       {!leads && !error && (
-        <div className="mt-4">
-          <TableSkeleton rows={6} cols={5} />
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="card p-3">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="mt-2 h-3 w-1/2" />
+              <Skeleton className="mt-3 h-3 w-full" />
+            </div>
+          ))}
         </div>
       )}
 
@@ -479,6 +615,7 @@ function LeadsPageInner() {
                 onClick={() => {
                   setSearch("");
                   setWebsiteFilter("");
+                  setPriorityFilter("");
                   setTab("all");
                 }}
                 className="btn btn-secondary btn-sm"
@@ -491,167 +628,20 @@ function LeadsPageInner() {
       )}
 
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
-        <>
-          {/* Mobile cards */}
-          <div className="mt-4 space-y-2 md:hidden">
-            {visibleLeads.map((lead) => (
-              <div key={lead.id} className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
-                <Link href={`/dashboard/leads/${lead.id}`} className="block">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-medium text-fg">{lead.business_name}</div>
-                      <div className="text-xs text-fg-muted">
-                        {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {lead.planning_id && <InPlanningBadge />}
-                      <LeadStatusBadge status={lead.status} />
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-xs text-fg-muted">
-                    <span>{lead.website_url ? "Has a website" : "No website"}</span>
-                    <span className="text-fg">{leadNextAction(lead, followUpMap.get(lead.id))}</span>
-                  </div>
-                </Link>
-                <ChecklistProgressCell
-                  clientId={lead.client_id}
-                  summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
-                  wide
-                  className="mt-2"
-                />
-                <div className="mt-2 flex items-center justify-end gap-3 border-t border-border pt-2">
-                  {lead.client_id && (
-                    <Link href={`/dashboard/clients/${lead.client_id}`} className="text-xs text-fg-muted hover:text-fg hover:underline">
-                      Open client →
-                    </Link>
-                  )}
-                  {lead.archived_at ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRestoreLead(lead)}
-                      disabled={archivingId === lead.id}
-                      className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                    >
-                      {archivingId === lead.id ? "Restoring…" : "Restore"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleArchiveLead(lead)}
-                      disabled={archivingId === lead.id}
-                      className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-                    >
-                      {archivingId === lead.id ? "Archiving…" : "Archive"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop table */}
-          <div className="table-shell mt-4 hidden md:block">
-            <table className={`table ${density === "compact" ? "table--compact" : ""}`}>
-              <thead>
-                <tr>
-                  <th className="px-3 py-2">Business</th>
-                  <th className="px-3 py-2">Website</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Next</th>
-                  <th className="px-3 py-2">Setup progress</th>
-                  <th className="px-3 py-2"></th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleLeads.map((lead) => (
-                  <tr key={lead.id} className={lead.archived_at ? "opacity-50" : undefined}>
-                    <td className="px-3 py-2">
-                      <Link href={`/dashboard/leads/${lead.id}`} className="font-medium text-fg hover:underline">
-                        {lead.business_name}
-                      </Link>
-                      <div className="max-w-[260px] truncate text-xs text-fg-muted">
-                        {[lead.industry, [lead.suburb, lead.state].filter(Boolean).join(", ")]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-fg-muted">
-                      {lead.website_url ? "Has a website" : "No website"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1.5">
-                        {lead.planning_id && <InPlanningBadge />}
-                        <LeadStatusBadge status={lead.status} />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-sm text-fg">
-                      {leadNextAction(lead, followUpMap.get(lead.id))}
-                    </td>
-                    <td className="px-3 py-2">
-                      <ChecklistProgressCell
-                        clientId={lead.client_id}
-                        summary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openPreview(lead.id)}
-                        title="Quick preview"
-                        className="mr-2 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg hover:underline"
-                      >
-                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
-                          <path d="M2 10s2.8-5.5 8-5.5S18 10 18 10s-2.8 5.5-8 5.5S2 10 2 10Z" />
-                          <circle cx="10" cy="10" r="2.25" />
-                        </svg>
-                        Preview
-                      </button>
-                      <Link
-                        href={`/dashboard/leads/${lead.id}`}
-                        className="text-sm font-medium text-fg hover:underline"
-                      >
-                        Open lead →
-                      </Link>
-                      {lead.client_id && (
-                        <Link
-                          href={`/dashboard/clients/${lead.client_id}`}
-                          className="ml-2 text-sm text-fg-muted hover:text-fg hover:underline"
-                        >
-                          Open client →
-                        </Link>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {lead.archived_at ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreLead(lead)}
-                          disabled={archivingId === lead.id}
-                          className="text-sm font-medium text-fg hover:underline disabled:opacity-50"
-                        >
-                          {archivingId === lead.id ? "Restoring…" : "Restore"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleArchiveLead(lead)}
-                          disabled={archivingId === lead.id}
-                          className="text-sm text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-                        >
-                          {archivingId === lead.id ? "Archiving…" : "Archive"}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {visibleLeads.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              nextAction={leadNextAction(lead, followUpMap.get(lead.id))}
+              checklistSummary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
+              archivingId={archivingId}
+              onArchive={handleArchiveLead}
+              onRestore={handleRestoreLead}
+              onPreview={(l) => openPreview(l.id)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Manual entry — secondary */}
@@ -663,23 +653,23 @@ function LeadsPageInner() {
         {showAdd && (
           <div className="mt-3 max-w-2xl space-y-4">
             <form onSubmit={handleCreate} className="grid grid-cols-1 gap-3 border border-border p-4 sm:grid-cols-2">
-              <input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm sm:col-span-2" />
-              <input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="rounded-md border border-border-strong px-3 py-1.5 text-sm">
+              <Input required placeholder="Business name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input sm:col-span-2" />
+              <Input placeholder="Industry" value={industry} onChange={(e) => setIndustry(e.target.value)} className="input" />
+              <Input placeholder="Source" value={source} onChange={(e) => setSource(e.target.value)} className="input" />
+              <Input placeholder="Suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} className="input" />
+              <Input placeholder="State" value={state} onChange={(e) => setState(e.target.value)} className="input" />
+              <Select value={priority} onChange={(e) => setPriority(e.target.value as LeadPriority | "")} className="input">
                 <option value="">Medium priority</option>
                 {LEAD_PRIORITIES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
-              </select>
-              <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="rounded-md border border-border-strong px-3 py-1.5 text-sm">
+              </Select>
+              <Select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
                 <option value="">Unassigned</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
-              </select>
+              </Select>
               <button type="submit" disabled={saving} className="btn btn-primary sm:col-span-2">
                 {saving ? "Saving…" : "Save lead"}
               </button>
@@ -687,8 +677,8 @@ function LeadsPageInner() {
 
             <form onSubmit={handleCreateClient} className="flex flex-wrap items-end gap-2 border border-border p-4">
               <div className="w-full text-xs text-fg-muted">Already signed, no lead to track? Add the client directly.</div>
-              <input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="flex-1 rounded-md border border-border-strong px-3 py-1.5 text-sm" />
-              <input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="flex-1 rounded-md border border-border-strong px-3 py-1.5 text-sm" />
+              <Input required placeholder="Business name" value={clientBusinessName} onChange={(e) => setClientBusinessName(e.target.value)} className="input flex-1" />
+              <Input placeholder="Billing email (optional)" value={clientBillingEmail} onChange={(e) => setClientBillingEmail(e.target.value)} className="input flex-1" />
               <button type="submit" disabled={savingClient} className="btn btn-secondary btn-sm">
                 {savingClient ? "Saving…" : "Add client"}
               </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FocusEvent } from "react";
+import { Input } from "@/components/ui/Input";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 
 /**
@@ -48,7 +49,7 @@ export function AutoSaveInput({
 
   return (
     <div>
-      <input
+      <Input
         type="text"
         defaultValue={defaultValue}
         onChange={() => {
@@ -58,7 +59,7 @@ export function AutoSaveInput({
         onBlur={handleBlur}
         placeholder={placeholder}
         disabled={disabled || status === "saving"}
-        className={`w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm ${className}`}
+        className={`input ${className}`}
       />
       <SaveStatus status={status} dirtyText="Unsaved — click outside the field to save" className="mt-1" />
     </div>

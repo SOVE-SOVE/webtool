@@ -34,28 +34,29 @@ import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
+import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { EmptyRow } from "@/components/ui/Panel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 import { checkpointProgress, deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
 import { formatMoney } from "@/lib/format";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Checkbox } from "@/components/ui/Checkbox";
 
+// Thin wrapper over the shared Badge primitive (docs/11_UI_REDESIGN_PLAN.md
+// §2.1/§4) — kept as its own component since every call site here passes a
+// draft/build-step `status` rather than a tone directly.
 function StatusChip({ status }: { status: "approved" | "draft" | undefined }) {
-  if (status === "approved") {
-    return (
-      <span className="rounded px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/15">
-        Approved
-      </span>
-    );
-  }
-  if (status === "draft") {
-    return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">Draft</span>;
-  }
-  return <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-subtle">Not started</span>;
+  if (status === "approved") return <Badge tone="success">Approved</Badge>;
+  if (status === "draft") return <Badge tone="muted">Draft</Badge>;
+  return <Badge tone="muted">Not started</Badge>;
 }
 
-const detailInputClass = "w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm";
+const detailInputClass = "input";
 
 function DetailField({
   label,
@@ -71,7 +72,7 @@ function DetailField({
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-fg-subtle">{label}</p>
-      <input
+      <Input
         defaultValue={value}
         placeholder={placeholder}
         onBlur={(e) => {
@@ -472,21 +473,23 @@ export default function ProjectDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select
+            <Select
               value={project.stage}
               onChange={(e) => handleStageChange(e.target.value as ProjectStage)}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+              className="input w-auto"
+              aria-label="Project stage"
             >
               {PROJECT_STAGES.map((stage) => (
                 <option key={stage} value={stage}>
                   {PROJECT_STAGE_LABELS[stage]}
                 </option>
               ))}
-            </select>
-            <select
+            </Select>
+            <Select
               value={project.assigned_user_id ?? ""}
               onChange={(e) => handleAssigneeChange(e.target.value)}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
+              className="input w-auto"
+              aria-label="Assigned to"
             >
               <option value="">Unassigned</option>
               {users.map((user) => (
@@ -494,7 +497,7 @@ export default function ProjectDetailPage() {
                   {user.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
       </div>
@@ -518,13 +521,11 @@ export default function ProjectDetailPage() {
       <ProjectPaymentSummarySection projectId={projectId} currency={workspaceCurrency} />
 
       {/* 2. Business details — carried over from the lead, editable */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Business details</h2>
           {detailsConfirmed ? (
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-              Confirmed
-            </span>
+            <Badge tone="success">Confirmed</Badge>
           ) : (
             <button
               onClick={handleConfirmDetails}
@@ -567,7 +568,7 @@ export default function ProjectDetailPage() {
             />
             <div className="sm:col-span-2 lg:col-span-3">
               <p className="text-xs uppercase tracking-wide text-fg-subtle">Business description</p>
-              <textarea
+              <Textarea
                 defaultValue={business.notes ?? ""}
                 placeholder="What the business does — only if we already know it"
                 onBlur={(e) => {
@@ -584,7 +585,7 @@ export default function ProjectDetailPage() {
       </section>
 
       {/* 3. Website / build workspace — the primary area */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Website &amp; build</h2>
           {websites && websites.length === 0 ? (
@@ -647,13 +648,13 @@ export default function ProjectDetailPage() {
       <StageChecklistPanel ownerType="project" ownerId={projectId} title="Stage checklist" />
 
       {/* 4. Build direction — bring in direction worked out elsewhere */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Build direction</h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           Optional. Worked out the concept, visual direction, copy direction, page structure or generation prompts in
           ChatGPT or Claude? Paste it here — it&apos;s fed into the creative-direction and sitemap steps as context.
         </p>
-        <textarea
+        <Textarea
           value={directionDraft}
           onChange={(e) => {
             setDirectionDraft(e.target.value);
@@ -661,7 +662,7 @@ export default function ProjectDetailPage() {
           }}
           rows={10}
           placeholder="Paste your build direction, prompts, or instructions here…"
-          className="mt-3 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm"
+          className="input mt-3"
         />
         <div className="mt-2 flex items-center gap-3">
           <button
@@ -699,25 +700,25 @@ export default function ProjectDetailPage() {
                 Optional — left blank, target audience and business goals come from the business details and your
                 saved build direction.
               </p>
-              <textarea
+              <Textarea
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Target audience"
               />
-              <textarea
+              <Textarea
                 value={businessGoals}
                 onChange={(e) => setBusinessGoals(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Business goals for the new site"
               />
-              <textarea
+              <Textarea
                 value={additionalNotes}
                 onChange={(e) => setAdditionalNotes(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Additional notes"
               />
               <button type="submit" disabled={generating} className="btn btn-primary btn-sm">
@@ -729,7 +730,9 @@ export default function ProjectDetailPage() {
           {generateError && <p className="mt-2 text-error">{generateError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {briefs && briefs.length === 0 && !generating && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {briefs?.map((cd) => {
               const expanded = expandedId === cd.id;
@@ -751,11 +754,7 @@ export default function ProjectDetailPage() {
                     </button>
                     <div className="flex items-center gap-2">
                       <StatusChip status={cd.status} />
-                      {cd.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Flagged
-                        </span>
-                      )}
+                      {cd.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
                     </div>
                   </div>
                   <AnimatedHeight open={expanded}>
@@ -785,10 +784,10 @@ export default function ProjectDetailPage() {
           </div>
           {showGenerateSitemapForm && (
             <form onSubmit={handleGenerateSitemap} className="mt-3 space-y-3 rounded-md border border-border p-3">
-              <select
+              <Select
                 value={sitemapCreativeDirectionId}
                 onChange={(e) => setSitemapCreativeDirectionId(e.target.value)}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
               >
                 <option value="">Creative direction: auto (latest approved)</option>
                 {briefs?.map((cd) => (
@@ -796,12 +795,12 @@ export default function ProjectDetailPage() {
                     {new Date(cd.generated_at).toLocaleString()} — {cd.status}
                   </option>
                 ))}
-              </select>
-              <textarea
+              </Select>
+              <Textarea
                 value={sitemapAdditionalNotes}
                 onChange={(e) => setSitemapAdditionalNotes(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input"
                 placeholder="Additional notes"
               />
               <button type="submit" disabled={generatingSitemap} className="btn btn-primary btn-sm">
@@ -813,7 +812,9 @@ export default function ProjectDetailPage() {
           {generateSitemapError && <p className="mt-2 text-error">{generateSitemapError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {sitemaps && sitemaps.length === 0 && !generatingSitemap && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {sitemaps?.map((s) => {
               const expanded = sitemapExpandedId === s.id;
@@ -828,11 +829,7 @@ export default function ProjectDetailPage() {
                     </button>
                     <div className="flex items-center gap-2">
                       <StatusChip status={s.status} />
-                      {s.flagged_for_review && (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                          Flagged
-                        </span>
-                      )}
+                      {s.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
                     </div>
                   </div>
                   {expanded && (
@@ -864,7 +861,9 @@ export default function ProjectDetailPage() {
           {generateWebsiteBriefError && <p className="mt-2 text-error">{generateWebsiteBriefError}</p>}
           <ul className="mt-3 divide-y divide-border rounded-md border border-border">
             {websiteBriefs && websiteBriefs.length === 0 && !generatingWebsiteBrief && (
-              <li className="px-3 py-3 text-sm text-fg-muted">Not generated yet.</li>
+              <li>
+                <EmptyRow>Not generated yet.</EmptyRow>
+              </li>
             )}
             {websiteBriefs?.map((b) => {
               const expanded = websiteBriefExpandedId === b.id;
@@ -894,7 +893,7 @@ export default function ProjectDetailPage() {
       {/* Tasks — "Next task" is this project's, and only this project's:
           derived from `tasks`, which is already filtered to this project's
           id in loadTasks() above. */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Next task</h2>
         {tasks === null ? (
           <p className="mt-2 text-sm text-fg-muted">Loading…</p>
@@ -916,11 +915,11 @@ export default function ProjectDetailPage() {
 
         <h3 className="mt-4 text-xs font-semibold uppercase tracking-wider text-fg-subtle">All tasks</h3>
         <form onSubmit={handleAddTask} className="mt-2 flex gap-2">
-          <input
+          <Input
             value={newTask}
             onChange={(e) => setNewTask(e.target.value)}
             placeholder="Add a task for this project…"
-            className="flex-1 rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm"
+            className="input flex-1"
           />
           <button type="submit" disabled={addingTask || !newTask.trim()} className="btn btn-secondary btn-sm">
             {addingTask ? "Adding…" : "Add"}
@@ -933,8 +932,7 @@ export default function ProjectDetailPage() {
           )}
           {openTasks.map((t) => (
             <li key={t.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={false}
                 onChange={() => handleToggleTask(t.id, true)}
                 aria-label={`Mark "${t.title}" done`}
@@ -948,8 +946,7 @@ export default function ProjectDetailPage() {
           {doneTasks.length > 0 && <li className="pt-1 text-xs text-fg-subtle">{doneTasks.length} done</li>}
           {doneTasks.slice(0, 5).map((t) => (
             <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked
                 onChange={() => handleToggleTask(t.id, false)}
                 aria-label={`Reopen "${t.title}"`}
@@ -965,7 +962,9 @@ export default function ProjectDetailPage() {
         <Disclosure title="Meetings" badge={<span className="text-xs text-fg-muted">{meetings?.length ?? 0}</span>}>
           <ul className="divide-y divide-border rounded-md border border-border">
             {meetings && meetings.length === 0 && (
-              <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled.</li>
+              <li>
+                <EmptyRow>No meetings scheduled.</EmptyRow>
+              </li>
             )}
             {meetings?.map((m) => (
               <li key={m.id} className="px-3 py-2 text-sm">
@@ -983,7 +982,11 @@ export default function ProjectDetailPage() {
 
         <Disclosure title="Activity history" badge={<span className="text-xs text-fg-muted">{activity?.length ?? 0}</span>}>
           <ul className="divide-y divide-border rounded-md border border-border">
-            {activity && activity.length === 0 && <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>}
+            {activity && activity.length === 0 && (
+              <li>
+                <EmptyRow>No activity yet.</EmptyRow>
+              </li>
+            )}
             {activity?.slice(0, 20).map((item) => (
               <li key={item.id} className="px-3 py-2 text-sm">
                 <span className="text-fg">{item.summary ?? item.action}</span>

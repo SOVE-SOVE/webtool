@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { Lead, LeadPriority, LeadStatus, PipelineStage } from "@/lib/api";
+import type { Lead, LeadStatus, PipelineStage } from "@/lib/api";
+import { LeadPriorityBadge } from "@/components/LeadStatusBadge";
 import { daysSince, groupLeadsByStatus, isStale, orderStages } from "@/lib/pipeline";
 
 /**
@@ -12,12 +13,6 @@ import { daysSince, groupLeadsByStatus, isStale, orderStages } from "@/lib/pipel
  * page so the Leads page can show it as a "Board" view; the pipeline
  * route now redirects here.
  */
-
-const PRIORITY_STYLE: Record<LeadPriority, string> = {
-  low: "bg-surface-subtle text-fg-muted",
-  medium: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-  high: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-};
 
 export function LeadsBoard({
   leads,
@@ -114,11 +109,7 @@ export function LeadsBoard({
                     </div>
                     {lead.industry && <p className="mt-0.5 text-xs text-fg-muted">{lead.industry}</p>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${PRIORITY_STYLE[lead.priority]}`}
-                      >
-                        {lead.priority}
-                      </span>
+                      <LeadPriorityBadge priority={lead.priority} />
                       {lead.assigned_user_name && (
                         <span className="text-[11px] text-fg-muted">{lead.assigned_user_name}</span>
                       )}

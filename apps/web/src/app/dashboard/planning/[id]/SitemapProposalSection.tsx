@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError, type Planning, type SitemapPageProposal } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 
 function PageRow({
   planningId,
@@ -44,15 +46,15 @@ function PageRow({
         <div className="min-w-0 flex-1">
           {editing ? (
             <div className="space-y-1.5">
-              <input
+              <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
+                className="input font-medium"
               />
-              <input
+              <Input
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
-                className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                className="input text-xs"
               />
               <button
                 type="button"
@@ -69,12 +71,8 @@ function PageRow({
             <>
               <div className="flex flex-wrap items-center gap-1.5">
                 <p className="text-sm font-medium text-fg">{page.title}</p>
-                <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">{page.page_type}</span>
-                {page.needs_confirmation && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                    Needs confirmation
-                  </span>
-                )}
+                <Badge tone="muted">{page.page_type}</Badge>
+                {page.needs_confirmation && <Badge tone="warning">Needs confirmation</Badge>}
               </div>
               <p className="mt-0.5 text-sm text-fg-muted">{page.purpose}</p>
               <p className="mt-1 text-xs text-fg-subtle">{page.reason}</p>
@@ -155,17 +153,17 @@ export function SitemapProposalSection({ planning, onUpdated }: { planning: Plan
       {error && <p className="text-error">{error}</p>}
       {adding && (
         <div className="space-y-2 rounded-md border border-border p-3">
-          <input
+          <Input
             placeholder="Page title"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
-          <input
+          <Input
             placeholder="Purpose"
             value={newPurpose}
             onChange={(e) => setNewPurpose(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <button type="button" onClick={handleAdd} className="btn btn-secondary btn-sm">
             Add

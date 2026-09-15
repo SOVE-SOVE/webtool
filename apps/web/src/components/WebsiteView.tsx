@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { api, type QualityIssue, type Website, type WebsiteSection } from "@/lib/api";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
-const SEVERITY_CLASSES: Record<QualityIssue["severity"], string> = {
-  high: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  low: "bg-surface-subtle text-fg-muted",
+const SEVERITY_TONE: Record<QualityIssue["severity"], BadgeTone> = {
+  high: "danger",
+  medium: "warning",
+  low: "muted",
 };
 
 function SectionSummary({ section }: { section: WebsiteSection }) {
@@ -87,10 +89,8 @@ function SectionCard({
     <div className="rounded-md border border-border p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs font-medium text-fg-muted">{section.type}</span>
-          {section.approved && (
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">Approved</span>
-          )}
+          <Badge tone="muted">{section.type}</Badge>
+          {section.approved && <Badge tone="success">Approved</Badge>}
         </div>
         <div className="flex items-center gap-2 text-xs">
           <button onClick={() => setEditing((v) => !v)} disabled={busy} className="text-fg-muted hover:underline">
@@ -114,7 +114,7 @@ function SectionCard({
       <div className="mt-2">
         {editing ? (
           <div>
-            <textarea
+            <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={10}
@@ -140,16 +140,10 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`rounded px-2 py-0.5 text-xs font-medium ${
-            website.anti_slop_passed ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
-          }`}
-        >
+        <Badge tone={website.anti_slop_passed ? "success" : "warning"}>
           Quality score {website.anti_slop_score}/100{website.anti_slop_passed ? " — passed" : ""}
-        </span>
-        {website.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-        )}
+        </Badge>
+        {website.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
       </div>
 
       {website.sources_note && (
@@ -175,9 +169,9 @@ export function WebsiteView({ website, onChange }: { website: Website; onChange:
           <ul className="mt-2 space-y-1.5">
             {website.anti_slop_issues.map((issue, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${SEVERITY_CLASSES[issue.severity]}`}>
+                <Badge tone={SEVERITY_TONE[issue.severity]} className="shrink-0">
                   {issue.severity}
-                </span>
+                </Badge>
                 <span className="text-fg-muted">
                   {issue.message}
                   {issue.location && <span className="text-fg-subtle"> — {issue.location}</span>}

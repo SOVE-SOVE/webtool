@@ -35,7 +35,7 @@ export function ContentDraftTab({ planning, onUpdated }: { planning: Planning; o
 
   return (
     <div className="space-y-5">
-      <div className="rounded-md border border-border bg-surface p-4">
+      <div className="panel">
         <p className="text-sm font-medium text-fg">What will be used</p>
         <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
           {readiness.items.map((item) => (

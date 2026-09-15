@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type DeliveryStatus } from "@/lib/api";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 export function DeliveryPanel({
   projectId,
@@ -61,8 +62,7 @@ export function DeliveryPanel({
         <ul className="mt-2 space-y-1">
           {deliveryStatus.checklist.map((item) => (
             <li key={item.task_id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={item.done}
                 disabled={taskBusyId === item.task_id}
                 onChange={() => toggleTask(item.task_id, item.done)}
@@ -78,7 +78,7 @@ export function DeliveryPanel({
           onClick={deliver}
           disabled={!deliveryStatus.can_deliver || busy}
           title={deliveryStatus.can_deliver ? undefined : `Missing: ${deliveryStatus.missing.join("; ")}`}
-          className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+          className="btn btn-primary"
         >
           {busy ? "Marking delivered…" : "Mark project delivered"}
         </button>

@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const SECTION_TYPE_LABEL: Record<string, string> = {
   hero: "Homepage headline",
@@ -14,9 +17,6 @@ const SECTION_TYPE_LABEL: Record<string, string> = {
   faq: "FAQs",
 };
 
-const inputClass = "w-full rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm";
-const textareaClass = `${inputClass}`;
-
 type Draft = Record<string, unknown>;
 
 function ServiceRows({ services, onChange }: { services: { title: string; description: string }[]; onChange: (v: { title: string; description: string }[]) => void }) {
@@ -24,17 +24,17 @@ function ServiceRows({ services, onChange }: { services: { title: string; descri
     <div className="space-y-2">
       {services.map((s, i) => (
         <div key={i} className="flex gap-2">
-          <input
+          <Input
             value={s.title}
             placeholder="Service title"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, title: e.target.value } : row)))}
-            className={`${inputClass} flex-1`}
+            className="input flex-1"
           />
-          <input
+          <Input
             value={s.description}
             placeholder="Description"
             onChange={(e) => onChange(services.map((row, j) => (j === i ? { ...row, description: e.target.value } : row)))}
-            className={`${inputClass} flex-[2]`}
+            className="input flex-[2]"
           />
           <button type="button" onClick={() => onChange(services.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -53,18 +53,18 @@ function FaqRows({ items, onChange }: { items: { question: string; answer: strin
     <div className="space-y-2">
       {items.map((item, i) => (
         <div key={i} className="space-y-1 rounded-md border border-border p-2">
-          <input
+          <Input
             value={item.question}
             placeholder="Question"
             onChange={(e) => onChange(items.map((row, j) => (j === i ? { ...row, question: e.target.value } : row)))}
-            className={`${inputClass} font-medium`}
+            className="input font-medium"
           />
-          <textarea
+          <Textarea
             value={item.answer}
             placeholder="Confirmed answer"
             rows={2}
             onChange={(e) => onChange(items.map((row, j) => (j === i ? { ...row, answer: e.target.value } : row)))}
-            className={textareaClass}
+            className="input"
           />
           <button type="button" onClick={() => onChange(items.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -83,17 +83,17 @@ function ContactDetailRows({ details, onChange }: { details: { label: string; va
     <div className="space-y-2">
       {details.map((d, i) => (
         <div key={i} className="flex gap-2">
-          <input
+          <Input
             value={d.label}
             placeholder="Label (e.g. Phone)"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, label: e.target.value } : row)))}
-            className={`${inputClass} flex-1`}
+            className="input flex-1"
           />
-          <input
+          <Input
             value={d.value}
             placeholder="Value"
             onChange={(e) => onChange(details.map((row, j) => (j === i ? { ...row, value: e.target.value } : row)))}
-            className={`${inputClass} flex-[2]`}
+            className="input flex-[2]"
           />
           <button type="button" onClick={() => onChange(details.filter((_, j) => j !== i))} className="text-xs text-fg-subtle hover:underline">
             Remove
@@ -198,29 +198,29 @@ export function ContentSectionEditor({
       case "gallery":
         return (
           <div className="space-y-2">
-            <input
+            <Input
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
-              className={`${inputClass} font-medium`}
+              className="input font-medium"
             />
-            <textarea
+            <Textarea
               value={(draft.subheading as string) ?? ""}
               placeholder="Subheading"
               rows={2}
               onChange={(e) => set("subheading", e.target.value)}
-              className={textareaClass}
+              className="input"
             />
           </div>
         );
       case "about":
         return (
-          <textarea
+          <Textarea
             value={(draft.body as string) ?? ""}
             placeholder="About paragraph"
             rows={4}
             onChange={(e) => set("body", e.target.value)}
-            className={textareaClass}
+            className="input"
           />
         );
       case "serviceCards":
@@ -237,29 +237,29 @@ export function ContentSectionEditor({
               details={(draft.details as { label: string; value: string }[]) ?? []}
               onChange={(v) => set("details", v)}
             />
-            <textarea
+            <Textarea
               value={(draft.booking_instructions as string) ?? ""}
               placeholder="Booking instructions (optional)"
               rows={2}
               onChange={(e) => set("booking_instructions", e.target.value)}
-              className={textareaClass}
+              className="input"
             />
           </div>
         );
       case "cta":
         return (
           <div className="space-y-2">
-            <input
+            <Input
               value={(draft.heading as string) ?? ""}
               placeholder="Heading"
               onChange={(e) => set("heading", e.target.value)}
-              className={inputClass}
+              className="input"
             />
-            <input
+            <Input
               value={(draft.label as string) ?? ""}
               placeholder="Button label"
               onChange={(e) => set("label", e.target.value)}
-              className={inputClass}
+              className="input"
             />
           </div>
         );
@@ -275,9 +275,7 @@ export function ContentSectionEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold text-fg">{SECTION_TYPE_LABEL[section.section_type] ?? section.section_type}</h4>
-          {section.source === "operator_edited" && (
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs font-medium text-fg-muted">Edited</span>
-          )}
+          {section.source === "operator_edited" && <Badge tone="muted">Edited</Badge>}
         </div>
         <button type="button" onClick={handleRegenerate} disabled={regenerating} className="text-xs font-medium text-fg-muted hover:underline">
           {regenerating ? "Regenerating…" : "Regenerate"}

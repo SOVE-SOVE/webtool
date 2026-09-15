@@ -6,6 +6,9 @@ import { ApiError, api, type Task, type User } from "@/lib/api";
 import { taskContextHref, taskContextKind, taskContextName } from "@/lib/tasks";
 import { timeAgo } from "@/lib/format";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
+import { Select } from "@/components/ui/Select";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Secondary task detail, opened by clicking a row on the Tasks page. The
@@ -32,6 +35,8 @@ export function TaskDetailModal({
   const showToast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEscapeToClose(onClose);
 
   async function toggleDone() {
     setBusy(true);
@@ -76,13 +81,9 @@ export function TaskDetailModal({
           <h2 id="task-detail-title" className={`text-base font-semibold text-fg ${task.done ? "line-through" : ""}`}>
             {task.title}
           </h2>
-          <span
-            className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
-              task.done ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-            }`}
-          >
+          <Badge tone={task.done ? "success" : "muted"} className="shrink-0">
             {task.done ? "Completed" : "Open"}
-          </span>
+          </Badge>
         </div>
 
         <dl className="mt-4 space-y-3 text-sm">
@@ -103,11 +104,11 @@ export function TaskDetailModal({
           <div className="flex items-center justify-between gap-3">
             <dt className="text-fg-muted">Assigned to</dt>
             <dd>
-              <select
+              <Select
                 value={task.assigned_user_id ?? ""}
                 disabled={busy}
                 onChange={(e) => changeAssignee(e.target.value)}
-                className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                className="input w-auto"
               >
                 <option value="">Unassigned</option>
                 {users.map((user) => (
@@ -115,7 +116,7 @@ export function TaskDetailModal({
                     {user.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </dd>
           </div>
 

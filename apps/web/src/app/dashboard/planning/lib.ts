@@ -8,6 +8,7 @@ import type {
   PlanningStatus,
   ReviewIntelligenceResult,
 } from "@/lib/api";
+import type { BadgeTone } from "@/components/ui/Badge";
 
 // Which of Planning's two modes a workspace is in — derived, never
 // stored (mirrors the backend: see LeadPlanning's docstring). A Lead
@@ -40,19 +41,19 @@ export const SEVERITY_LABEL: Record<string, string> = {
   low: "Low",
 };
 
-export const SEVERITY_CLASS: Record<string, string> = {
-  critical: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  high: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  medium: "bg-surface-subtle text-fg-muted",
-  low: "bg-surface-subtle text-fg-subtle",
+export const SEVERITY_TONE: Record<string, BadgeTone> = {
+  critical: "danger",
+  high: "warning",
+  medium: "muted",
+  low: "muted",
 };
 
-export const STATUS_BADGE_CLASS: Record<PlanningStatus, string> = {
-  ready_to_analyse: "bg-surface-subtle text-fg-muted",
-  analysing: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
-  needs_review: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+export const STATUS_BADGE_TONE: Record<PlanningStatus, BadgeTone> = {
+  ready_to_analyse: "muted",
+  analysing: "warning",
+  completed: "success",
+  needs_review: "warning",
+  failed: "danger",
 };
 
 export const PLANNING_MODE_LABEL: Record<PlanningMode, string> = {

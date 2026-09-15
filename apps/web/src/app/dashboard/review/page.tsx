@@ -2,137 +2,133 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  api,
-  ApiError,
-  DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_CHECK_STATE_BADGE,
-  INSTAGRAM_CHECK_STATE_LABEL,
-  instagramCheckDisplayState,
-  type DiscoveredBusinessReviewItem,
-  type OpportunityScoreCategory,
-} from "@/lib/api";
+import { api, ApiError, type DiscoveredBusinessReviewItem } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { TableSkeleton } from "@/components/ui/Skeleton";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { Metric, MetricGrid } from "@/components/ui/Metric";
+import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
+import { ReviewItemDrawer } from "@/components/ReviewItemDrawer";
+import { timeAgo } from "@/lib/format";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { TabBar } from "@/components/ui/Tabs";
+import {
+  countReviewItemsByTab,
+  REVIEW_SORT_LABEL,
+  REVIEW_TABS,
+  reviewItemMatchesQuery,
+  reviewItemMatchesTab,
+  reviewItemNeedsAttention,
+  reviewQueueSummary,
+  sortReviewItems,
+  type ReviewSortKey,
+  type ReviewTab,
+} from "@/lib/reviewQueue";
 
-const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
-};
+function ReviewQueueRow({
+  item,
+  selected,
+  selectable,
+  needsAttention,
+  onToggleSelect,
+  onOpen,
+}: {
+  item: DiscoveredBusinessReviewItem;
+  selected: boolean;
+  selectable: boolean;
+  needsAttention: boolean;
+  onToggleSelect: () => void;
+  onOpen: () => void;
+}) {
+  const location = [item.suburb, item.state].filter(Boolean).join(", ");
+  const whatNeedsReview =
+    item.research_error ?? item.quality_summary ?? (item.researched_at ? null : "Not researched yet");
 
-const ACTIVITY_LABEL: Record<string, string> = { high: "HIGH", medium: "MEDIUM", low: "LOW", unknown: "UNKNOWN" };
-
-function GoogleReviewsCell({ item }: { item: DiscoveredBusinessReviewItem }) {
-  if (item.google_rating === null && item.google_review_count === null) {
-    return <span className="text-fg-subtle">—</span>;
-  }
   return (
-    <div>
-      <div className="text-fg">
-        {item.google_rating !== null ? `${item.google_rating.toFixed(1)}★` : "No rating"}
-        {item.google_review_count !== null && (
-          <span className="text-fg-muted"> ({item.google_review_count})</span>
+    <div
+      onClick={onOpen}
+      className="flex cursor-pointer flex-col gap-2 px-3 py-3 hover:bg-surface-hover sm:flex-row sm:items-center sm:gap-4"
+    >
+      <div className="flex shrink-0 items-center pt-0.5 sm:pt-0" onClick={(e) => e.stopPropagation()}>
+        {selectable ? (
+          <Checkbox checked={selected} onChange={onToggleSelect} aria-label={`Select ${item.name}`} />
+        ) : (
+          <span className="block h-4 w-4" />
         )}
       </div>
-      <div className="text-xs text-fg-muted">
-        {item.review_health_score !== null ? `Health ${item.review_health_score}` : "Health n/a"}
-        {item.review_activity_level && item.review_activity_level !== "unknown" && (
-          <> · {ACTIVITY_LABEL[item.review_activity_level]}</>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="truncate font-medium text-fg">{item.name}</span>
+          {needsAttention && (
+            <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Needs attention</span>
+          )}
+        </div>
+        <p className="truncate text-xs text-fg-muted">
+          {[item.industry, location].filter(Boolean).join(" · ") || "No details on record"}
+        </p>
+        {whatNeedsReview && <p className="mt-1 line-clamp-1 text-sm text-fg-muted">{whatNeedsReview}</p>}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <ReviewStatusBadge status={item.status} />
+          {item.score_category && <ScoreCategoryBadge category={item.score_category} score={item.opportunity_score} />}
+          <span className="text-xs text-fg-subtle">{timeAgo(item.discovered_at)}</span>
+        </div>
+      </div>
+
+      <div className="shrink-0 self-start sm:self-center" onClick={(e) => e.stopPropagation()}>
+        {item.status === "imported" && item.imported_lead_id ? (
+          <Link href={`/dashboard/leads/${item.imported_lead_id}`} className="text-sm text-fg-muted hover:underline">
+            View lead →
+          </Link>
+        ) : (
+          <button onClick={onOpen} className="btn btn-secondary btn-sm">
+            Review
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-function Truncated({ text }: { text: string | null }) {
-  if (!text) return <span className="text-fg-subtle">—</span>;
-  return (
-    <span title={text} className="block max-w-[320px] truncate">
-      {text}
-    </span>
-  );
-}
-
-/** The single line that tells the operator why this prospect is worth a look. */
-function whyReview(item: DiscoveredBusinessReviewItem): string | null {
-  return (
-    item.recommended_sales_angle || item.quality_summary || item.key_problems[0] || item.raw_snippet || null
-  );
-}
-
 export default function ReviewPage() {
   const [items, setItems] = useState<DiscoveredBusinessReviewItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [showArchived, setShowArchived] = useState(false);
-  const [showImported, setShowImported] = useState(false);
-  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [bulkApproving, setBulkApproving] = useState(false);
-  const [checkingWebsiteId, setCheckingWebsiteId] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<ReviewTab>("needs_review");
+  const [search, setSearch] = useState("");
+  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
+  const [sort, setSort] = useState<ReviewSortKey>("score");
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
 
   function load() {
     api
-      .listReviewItems({ includeArchived: showArchived })
+      .listReviewItems({ includeArchived: true })
       .then((rows) => {
         setError(null);
         setItems(rows);
         setSelected((prev) => new Set([...prev].filter((id) => rows.some((r) => r.id === id))));
       })
-      .catch(() => setError("Couldn't load the review list."));
+      .catch(() => setError("Couldn't load the review queue."));
   }
 
-  useEffect(load, [showArchived]);
+  useEffect(load, []);
 
-  async function handleApprove(item: DiscoveredBusinessReviewItem) {
-    setBusyId(item.id);
+  async function runAction(id: string, action: () => Promise<unknown>) {
+    setBusyId(id);
     setError(null);
-    setNotice(null);
     try {
-      const result = await api.approveDiscoveredBusiness(item.id);
-      setNotice(
-        result.outcome === "already_in_crm"
-          ? `${item.name} was already in the CRM.`
-          : `Added ${item.name} to the CRM as a lead.`,
-      );
+      await action();
       load();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : `Couldn't add ${item.name} to the CRM — try again.`,
-      );
+      setError(err instanceof ApiError ? err.message : "That action failed.");
     } finally {
       setBusyId(null);
-    }
-  }
-
-  async function handleReject(item: DiscoveredBusinessReviewItem) {
-    setBusyId(item.id);
-    setError(null);
-    setNotice(null);
-    try {
-      await api.rejectDiscoveredBusiness(item.id);
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't reject that.");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleCheckWebsite(item: DiscoveredBusinessReviewItem) {
-    setCheckingWebsiteId(item.id);
-    setError(null);
-    try {
-      await api.checkInstagramWebsite(item.id);
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Couldn't check a website for ${item.name}.`);
-    } finally {
-      setCheckingWebsiteId(null);
     }
   }
 
@@ -140,14 +136,8 @@ export default function ReviewPage() {
     if (selected.size === 0) return;
     setBulkApproving(true);
     setError(null);
-    setNotice(null);
     try {
-      const result = await api.bulkApproveDiscoveredBusinesses([...selected]);
-      const parts: string[] = [];
-      if (result.imported.length) parts.push(`${result.imported.length} added to the CRM`);
-      if (result.already_in_crm.length) parts.push(`${result.already_in_crm.length} already in the CRM`);
-      if (result.failed.length) parts.push(`${result.failed.length} couldn't be added`);
-      setNotice(parts.join(" · ") || "Nothing to approve.");
+      await api.bulkApproveDiscoveredBusinesses([...selected]);
       setSelected(new Set());
       load();
     } catch (err) {
@@ -166,21 +156,33 @@ export default function ReviewPage() {
     });
   }
 
-  const visibleItems = useMemo(() => {
+  const tabCounts = useMemo(() => (items ? countReviewItemsByTab(items) : null), [items]);
+  const summary = useMemo(() => (items ? reviewQueueSummary(items) : null), [items]);
+
+  const tabItems = useMemo(() => {
     if (!items) return null;
-    return items.filter((i) => {
-      if (!showImported && i.status === "imported") return false;
+    return items.filter((i) => reviewItemMatchesTab(i, tab));
+  }, [items, tab]);
+
+  const filtersActive = search.trim() !== "" || websiteFilter !== "";
+
+  const visibleItems = useMemo(() => {
+    if (!tabItems) return null;
+    const filtered = tabItems.filter((i) => {
       if (websiteFilter === "has" && i.website_status !== "found") return false;
       if (websiteFilter === "no" && i.website_status !== "none") return false;
-      return true;
+      return reviewItemMatchesQuery(i, search);
     });
-  }, [items, websiteFilter, showImported]);
+    return sortReviewItems(filtered, sort);
+  }, [tabItems, websiteFilter, search, sort]);
+
+  function clearFilters() {
+    setSearch("");
+    setWebsiteFilter("");
+  }
 
   const selectableIds = useMemo(
-    () =>
-      (visibleItems ?? [])
-        .filter((i) => i.status !== "imported" && i.status !== "rejected" && i.status !== "archived")
-        .map((i) => i.id),
+    () => (visibleItems ?? []).filter((i) => i.status !== "imported").map((i) => i.id),
     [visibleItems],
   );
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
@@ -189,46 +191,94 @@ export default function ReviewPage() {
     setSelected(allSelected ? new Set() : new Set(selectableIds));
   }
 
+  const activeItem = useMemo(() => items?.find((i) => i.id === activeItemId) ?? null, [items, activeItemId]);
+
   return (
     <div className="p-6">
       <PageHeader
         title="Review queue"
-        description="Discovered businesses worth a look. Approve one to add it to the CRM as a lead, or reject it."
-        actions={
-          <button
-            onClick={handleBulkApprove}
-            disabled={selected.size === 0 || bulkApproving}
-            className="btn btn-primary"
-          >
-            {bulkApproving ? "Adding…" : `Approve & add to CRM (${selected.size})`}
-          </button>
-        }
+        description="Discovered prospects with research and scoring context — approve, reject, or bring the good ones into the CRM."
+      />
+
+      {summary ? (
+        <MetricGrid className="mt-4">
+          <Metric
+            label="Needs review"
+            value={summary.pending}
+            hint={summary.pending === 0 ? "All caught up" : "Awaiting a decision"}
+          />
+          <Metric label="Approved" value={summary.approved} />
+          <Metric label="Rejected" value={summary.rejected} />
+          <Metric
+            label="Needs attention"
+            value={summary.needsAttention}
+            hint="Failed research or thin evidence"
+          />
+        </MetricGrid>
+      ) : (
+        !error && (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        )
+      )}
+
+      <TabBar
+        className="mt-5"
+        tabs={REVIEW_TABS.map((t) => ({ id: t.id, label: t.label, count: tabCounts?.[t.id] ?? 0 }))}
+        active={tab}
+        onChange={(id) => setTab(id as ReviewTab)}
       />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <select
+        <Input
+          placeholder="Search business, industry, suburb…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input w-64"
+        />
+        <Select
           value={websiteFilter}
           onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
-          className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+          className="input w-auto"
           aria-label="Filter by website"
         >
           <option value="">Any website status</option>
           <option value="has">Has website</option>
           <option value="no">No website</option>
-        </select>
-        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show rejected &amp; archived
-        </label>
-        <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-          <input type="checkbox" checked={showImported} onChange={(e) => setShowImported(e.target.checked)} />
-          Already imported
-        </label>
+        </Select>
+        <Select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as ReviewSortKey)}
+          className="input w-auto"
+          aria-label="Sort"
+        >
+          {Object.entries(REVIEW_SORT_LABEL).map(([key, label]) => (
+            <option key={key} value={key}>
+              Sort: {label}
+            </option>
+          ))}
+        </Select>
+        {filtersActive && (
+          <button onClick={clearFilters} className="text-xs text-fg-muted hover:text-fg hover:underline">
+            Clear filters
+          </button>
+        )}
       </div>
 
-      {notice && (
-        <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-          {notice}
+      {selected.size > 0 && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border-strong bg-surface-subtle px-3 py-2 text-sm">
+          <span className="text-fg">{selected.size} selected</span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSelected(new Set())} className="text-fg-muted hover:underline">
+              Clear
+            </button>
+            <button onClick={handleBulkApprove} disabled={bulkApproving} className="btn btn-primary btn-sm">
+              {bulkApproving ? "Approving…" : `Approve ${selected.size}`}
+            </button>
+          </div>
         </div>
       )}
 
@@ -240,165 +290,78 @@ export default function ReviewPage() {
 
       {!items && !error && (
         <div className="mt-4">
-          <TableSkeleton rows={5} cols={6} />
+          <TableSkeleton rows={6} cols={5} />
         </div>
       )}
 
-      {visibleItems && visibleItems.length === 0 && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          Nothing to review yet — run a discovery search first.
+      {items && items.length === 0 && !error && (
+        <div className="mt-4">
+          <EmptyState
+            title="Nothing to review yet"
+            description="Run a Discovery search to find businesses, then come back here to approve, reject, or bring the good ones into the CRM."
+            action={
+              <Link href="/dashboard/discovery" className="btn btn-primary">
+                Go to Discovery
+              </Link>
+            }
+          />
+        </div>
+      )}
+
+      {items && items.length > 0 && visibleItems && visibleItems.length === 0 && (
+        <div className="mt-4">
+          <EmptyState
+            title="No items in this view"
+            description="Try a different tab, or clear the search and filters above."
+            action={
+              <button
+                onClick={() => {
+                  clearFilters();
+                  setTab("all");
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                Clear filters
+              </button>
+            }
+          />
         </div>
       )}
 
       {visibleItems && visibleItems.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full border border-border text-left text-sm">
-            <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-              <tr>
-                <th className="px-2 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
-                    aria-label="Select all"
-                  />
-                </th>
-                <th className="px-3 py-2">Business</th>
-                <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2">Website</th>
-                <th className="px-3 py-2">Score</th>
-                <th className="px-3 py-2">Google reviews</th>
-                <th className="px-3 py-2">Why review</th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibleItems.map((item) => {
-                const busy = busyId === item.id;
-                const settled =
-                  item.status === "imported" || item.status === "rejected" || item.status === "archived";
-                const igState = instagramCheckDisplayState(item);
-                return (
-                  <tr key={item.id} className={item.status === "archived" ? "opacity-50" : undefined}>
-                    <td className="px-2 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        disabled={settled}
-                        checked={selected.has(item.id)}
-                        onChange={() => toggleSelected(item.id)}
-                      />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Link
-                        href={`/dashboard/discovered-businesses/${item.id}`}
-                        className="font-medium text-fg hover:underline"
-                      >
-                        {item.name}
-                      </Link>
-                      {(item.business_category || item.industry) && (
-                        <div className="text-xs text-fg-muted">{item.business_category || item.industry}</div>
-                      )}
-                      {item.instagram_handle && (
-                        <div className="text-xs text-fg-subtle">@{item.instagram_handle}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      {[item.suburb, item.state].filter(Boolean).join(", ") || "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      {item.website_url ? (
-                        <a
-                          href={item.website_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-fg-muted hover:underline"
-                        >
-                          {item.website_url}
-                        </a>
-                      ) : igState ? (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${INSTAGRAM_CHECK_STATE_BADGE[igState]}`}
-                        >
-                          {INSTAGRAM_CHECK_STATE_LABEL[igState]}
-                        </span>
-                      ) : (
-                        <span className="text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[item.website_status]}</span>
-                      )}
-                      {igState && igState !== "website_found" && (
-                        <div>
-                          <button
-                            onClick={() => handleCheckWebsite(item)}
-                            disabled={checkingWebsiteId === item.id}
-                            className="text-xs text-fg-muted hover:underline disabled:opacity-50"
-                          >
-                            {checkingWebsiteId === item.id
-                              ? "Checking…"
-                              : igState === "check_pending"
-                                ? "Check now"
-                                : "Check for website"}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      {item.opportunity_score !== null && item.score_category ? (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${CATEGORY_STYLE[item.score_category]}`}
-                        >
-                          {item.score_category} · {item.opportunity_score}
-                        </span>
-                      ) : (
-                        <span className="text-fg-subtle">Not scored</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <GoogleReviewsCell item={item} />
-                    </td>
-                    <td className="px-3 py-2 align-top text-fg-muted">
-                      <Truncated text={whyReview(item)} />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      {item.status === "imported" ? (
-                        item.imported_lead_id ? (
-                          <Link
-                            href={`/dashboard/leads/${item.imported_lead_id}`}
-                            className="text-xs text-fg-muted hover:underline"
-                          >
-                            View lead →
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-fg-subtle">In the CRM</span>
-                        )
-                      ) : item.status === "rejected" ? (
-                        <span className="text-xs text-fg-subtle">Rejected</span>
-                      ) : item.status === "archived" ? (
-                        <span className="text-xs text-fg-subtle">Archived</span>
-                      ) : (
-                        <div className="flex gap-3">
-                          <button
-                            disabled={busy}
-                            onClick={() => handleApprove(item)}
-                            className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
-                          >
-                            {busy ? "Adding…" : "Approve"}
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => handleReject(item)}
-                            className="text-xs text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="mt-4 rounded-md border border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-surface-subtle px-3 py-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
+            <Checkbox checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
+            <span>
+              {visibleItems.length} of {tabItems?.length ?? visibleItems.length} shown
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {visibleItems.map((item) => (
+              <ReviewQueueRow
+                key={item.id}
+                item={item}
+                selected={selected.has(item.id)}
+                selectable={item.status !== "imported"}
+                needsAttention={reviewItemNeedsAttention(item)}
+                onToggleSelect={() => toggleSelected(item.id)}
+                onOpen={() => setActiveItemId(item.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
+
+      <ReviewItemDrawer
+        item={activeItem}
+        busy={busyId === activeItem?.id}
+        onClose={() => setActiveItemId(null)}
+        onApprove={(id) => runAction(id, () => api.approveDiscoveredBusiness(id))}
+        onReject={(id) => runAction(id, () => api.rejectDiscoveredBusiness(id))}
+        onArchive={(id) => runAction(id, () => api.archiveDiscoveredBusiness(id))}
+        onImport={(id) => runAction(id, () => api.importDiscoveredBusiness(id))}
+        onResearchAgain={(id) => runAction(id, () => api.runBusinessResearch(id))}
+      />
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, type WebsiteBrief, type WebsiteBriefUpdate } from "@/lib/api";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 type StrField = keyof Pick<
   WebsiteBrief,
@@ -124,33 +126,20 @@ export function WebsiteBriefView({
     <div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span
-            className={`rounded px-2 py-0.5 text-xs font-medium ${
-              brief.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-            }`}
-          >
+          <Badge tone={brief.status === "approved" ? "success" : "muted"}>
             {brief.status === "approved" ? "Approved" : "Draft — review before continuing"}
-          </span>
-          {brief.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-          )}
+          </Badge>
+          {brief.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
         </div>
         <div className="flex items-center gap-2">
           {!editing && (
-            <button
-              onClick={startEditing}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-            >
+            <button onClick={startEditing} className="btn btn-secondary">
               Edit
             </button>
           )}
           {editing && (
             <>
-              <button
-                onClick={() => setEditing(false)}
-                disabled={saving}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-              >
+              <button onClick={() => setEditing(false)} disabled={saving} className="btn btn-secondary">
                 Cancel
               </button>
               <button
@@ -201,7 +190,7 @@ export function WebsiteBriefView({
         section(
           label,
           editing ? (
-            <textarea
+            <Textarea
               value={draft[field] ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}
@@ -217,7 +206,7 @@ export function WebsiteBriefView({
         section(
           label,
           editing ? (
-            <textarea
+            <Textarea
               value={draft[field] ?? ""}
               onChange={(e) => setDraft((d) => ({ ...d, [field]: e.target.value }))}
               rows={3}

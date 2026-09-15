@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FocusEvent } from "react";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
+import { Textarea } from "@/components/ui/Textarea";
 
 /**
  * A plain-looking textarea that saves itself on blur and makes the save
@@ -53,7 +54,7 @@ export function AutoSaveTextarea({
 
   return (
     <div>
-      <textarea
+      <Textarea
         defaultValue={defaultValue}
         onChange={() => {
           if (revertTimeout.current) clearTimeout(revertTimeout.current);
@@ -63,7 +64,7 @@ export function AutoSaveTextarea({
         rows={rows}
         placeholder={placeholder}
         disabled={disabled || status === "saving"}
-        className={`w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm ${className}`}
+        className={`input ${className}`}
       />
       <SaveStatus status={status} dirtyText="Unsaved — click outside the field to save" className="mt-1" />
     </div>

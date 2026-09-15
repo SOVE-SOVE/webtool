@@ -1554,6 +1554,164 @@ correctly show the full step-by-step skeleton, but re-analysis of an
 already-completed item was not cycled through live end-to-end (a full
 audit run takes up to a minute); that path's correctness rests on the
 backend field-write-order verification recorded in [[05_DECISIONS]].
+## 2026-09-14 — Leads list + Lead Detail: priority visibility, sort, DetailField/Badge/`.input` adoption
+**Mode:** worktree (`worktree-leads-and-detail-redesign`) — the "Leads
+list" and "Lead detail" page-redesign assignments from
+`docs/11_UI_REDESIGN_PLAN.md` §7 (items 1 and 4).
+**Merge to main after:** yes
+**Scope touched:** `apps/web/src/app/dashboard/leads/page.tsx`,
+`apps/web/src/app/dashboard/leads/[id]/page.tsx`,
+`apps/web/src/components/LeadStatusBadge.tsx` (new `LeadPriorityBadge`,
+built on the shared `Badge`), `apps/web/src/components/LeadsBoard.tsx`
+(now renders `LeadPriorityBadge` instead of its own priority-pill style),
+`apps/web/src/lib/leads.ts` (new `sortLeads`/`LeadSort`/`LEAD_SORTS`/
+`LEAD_SORT_LABEL`, unit tested in `leads.test.ts`).
+**What happened:** Priority/score existed on the `Lead` type and the
+board view's cards but were invisible on the list/table view and Lead
+Detail's header — no way to spot a high-value lead without opening it.
+Added `LeadPriorityBadge` (quiet low/medium, danger-toned high), shown
+in the list table/mobile cards, the board, and the Lead Detail header +
+Status card. Added a Priority filter and a Sort control (Recently
+updated / Priority / Score / Follow-up soonest — pure `sortLeads`,
+tie-breaks on recency) since there was previously no user-facing sort,
+only a fixed archived-then-recency order. Added a 4-tile summary row
+(Active leads / High priority / Needs follow-up / No website) above the
+list, matching the Sales page's `Metric` row. Removed the redundant
+"Open lead →" text link from the desktop table's actions column (the
+business name is already the row's link). On Lead Detail, added a
+read-only Notes preview card (shown only when `lead.notes` is set) below
+the at-a-glance grid so notes are scannable without opening the
+"Business & lead details" disclosure. Preserved Lead Detail's existing
+structure otherwise — it already had good hierarchy (Who/Status/Next
+hero cards, then Planning/Project bridges, then progressively-disclosed
+detail sections) and, per the redesign plan's own §2.7 guidance, needed
+its Disclosure sections tightened rather than its overall flow
+restructured (not done this session — see Next up).
+
+Mid-session, `origin/main` gained two new commits from a parallel
+foundation effort this session hadn't been waiting on: Prompt 01 (audit,
+`docs/11_UI_REDESIGN_PLAN.md`) and Prompt 02 (`Badge` + status-pill
+tokens + `DetailField`/`DetailRow`, converting `LeadStatusBadge` to wrap
+`Badge`). Per that plan, "the five page-redesign agents are released
+only after all four [foundation] prompts land" — this session had
+already started against the older ad-hoc primitives before that
+condition was met. Merged `origin/main` in, resolved a real conflict in
+`LeadStatusBadge.tsx` (kept upstream's `Badge`-wrapped `LeadStatusBadge`,
+rebuilt `LeadPriorityBadge` on `Badge` too instead of its own hand-rolled
+tone map — same visual result, one fewer duplicated palette), and
+additionally adopted `DetailField`/`DetailRow` (Lead Detail's local
+`field()`/`summaryRow()` are now thin positional wrappers over them,
+touching 0 of their 25 call sites) and the `.input` component class
+(replaced raw `rounded-md border border-border-strong px-3 py-1.5
+text-sm`-style literals on every form field in both files — plan §2.5)
+— both explicitly named in the plan as this file's outstanding gaps.
+Left the List/Board view toggle as its own compact segmented control
+rather than converting it to `TabBar` (plan §2.2 flags this as optional,
+left to the page's own agent): `TabBar` is an underline section-switcher
+meant for whole-page views, not a small inline mode toggle next to a
+page title, and forcing it in here would add visual weight without a
+clear UX win — flagging the judgment call here rather than silently
+diverging from the plan.
+
+No backend changes, no API contract changes anywhere — all additions
+are client-side derivations over data the app already fetches.
+**Blockers/issues:** None functionally. Verification note: this worktree
+had no `node_modules` (git worktrees don't share it); a first attempt to
+symlink it from the main checkout broke Turbopack's build ("Symlink
+[project]/node_modules is invalid, it points out of the filesystem
+root") — replaced with a real `npm ci` in the worktree, and ran `npx next
+typegen` before `tsc --noEmit` since a fresh worktree has no
+`.next/types` (source of a `Cannot find name 'LayoutProps'` red herring,
+unrelated to this change — same one Prompt 02's session log entry
+independently hit and noted). Final verification (after the merge):
+`tsc --noEmit` clean, `eslint` clean on all 6 changed files (repo-wide
+lint has 1 pre-existing error + 2 warnings in untouched files —
+`dashboard/layout.tsx`, `calendar/page.tsx`, `projects/[id]/page.tsx` —
+confirmed unrelated via `git status`), `vitest run` 207/207 passing,
+`next build` succeeds.
+**Next up:** Lead Detail's `Disclosure` sections (Business & lead
+details / Sales prep & outreach / History) still read as dense
+sub-pages internally per plan §2.7 — tightening that density is the
+one piece of this assignment not done here, deliberately deferred over
+a riskier same-session rewrite of a 1375-line file already carrying a
+foundation-merge. Also worth noting for whoever runs the next redesign
+batch: PR #59 ("Redesign Today to match Sales' visual language") — a
+*different*, earlier redesign batch (#57-#61, merged 2026-09-13, before
+this plan document existed) — was already merged when the Today-page
+task was initially (and mistakenly) assigned to this same session; the
+fleet's task list and the repo's actual merged-PR state can drift —
+check `gh pr list` before starting on an assigned page. Separately: the
+call above to keep the List/Board toggle as a segmented control instead
+of `TabBar` turned out to match the plan author's own later conclusion
+in Prompt 04 (merged mid-session, see below) — Sales' activity-tab
+switcher hit the same "TabBar doesn't fit a compact inline slot" issue
+and was restyled onto that same segmented-control shape instead.
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 04: Sales page benchmark fixes + foundation complete
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — final entry in the same session as Prompts 01–03.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/sales/page.tsx, docs/11_UI_REDESIGN_PLAN.md (updated to match what was actually built).
+**What happened:** Applied the two fixes docs/11_UI_REDESIGN_PLAN.md §6 called out on the Sales benchmark page: the inline Won/Lost pill in the "Closed" activity tab now renders the shared `Badge` (`tone="success"`/`"muted"`) instead of a hand-typed emerald/surface-subtle span; `focus-visible` rings added to the two panel-header "→" links. The activity-tab switcher was *not* moved to `TabBar` as the plan originally proposed — implementing it revealed `TabBar`'s full-width underline style doesn't fit a `Panel` header's compact `right` slot. Recognized this is genuinely two different UI jobs (page-level section nav vs. compact inline toggle) and instead restyled the switcher onto the segmented-control shape Leads' List/Board toggle and Tasks' status tabs already independently used (`rounded-md border border-border-strong p-0.5` pill group), adding `role="tablist"`/`"tab"`/`aria-selected` and a focus ring — updated §4/§6 of the plan doc to document this revised decision so the five page-redesign agents (who read that doc, not this log) get the corrected guidance. Every existing Sales metric, list, tab, and link is unchanged — this was a visual/component substitution only. `next build` output identical (18 routes), 202/202 tests, lint clean (same 2 pre-existing unrelated warnings), `tsc --noEmit` clean.
+**Blockers/issues:** None. This closes out the shared foundation (Prompts 01–04, all pushed straight to `main`).
+**Next up:** Foundation is complete. The five page-redesign agents (Lead detail, Review queue, Dashboard/Today, Leads list, Clients+Projects, Follow-ups+Tasks — priority order in docs/11_UI_REDESIGN_PLAN.md §7) can now be released against `main` and docs/11_UI_REDESIGN_PLAN.md.
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 03: app shell polish (focus states, brand mark, lint fix)
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompts 01–02.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/dashboard/layout.tsx.
+**What happened:** Per docs/11_UI_REDESIGN_PLAN.md §5, kept `lib/nav.ts`'s existing six-section workflow grouping unchanged (it already satisfies "what am I doing here" over a raw feature list) and did a visual/interaction pass only: added `focus-visible` ring states (using the `--focus-ring` token) to every interactive shell element that lacked one — both `NavLink` variants, the sign-out button, the mobile hamburger button, the bottom-nav links, and the "More" button; added a small `bg-accent` square brand mark next to the "Web Design OS" wordmark in both the desktop sidebar header and the mobile top bar; added a thin top accent bar on the active bottom-nav item for a clearer mobile active state. Also fixed the one pre-existing lint error in this file (`react-hooks/set-state-in-effect` on the `api.me()` retry effect) while already touching it, using the same `eslint-disable`/`eslint-enable` convention the codebase already applies to other deliberate effect-body state resets (e.g. `leads/page.tsx`). No changes to `NAV_SECTIONS`, hrefs, `isNavLinkActive`, or `MOBILE_PRIMARY_HREFS` — every route/link is untouched.
+**Blockers/issues:** No live browser/backend smoke test was run for this pass — it's a markup/Tailwind-class-only change with zero routing-logic edits, `next build` produced the identical 18-route list before and after, and the 202-test vitest suite passed; standing up the full docker/Postgres/API stack purely to screenshot the sidebar felt disproportionate for a foundation-only styling pass ahead of the five page-redesign agents, who will be running a live stack throughout their own work anyway.
+**Next up:** Prompt 04 (Sales page: swap its inline Won/Lost pill for the new `Badge`, its raw-button activity tabs for `TabBar`), then release the five page-redesign agents against docs/11_UI_REDESIGN_PLAN.md.
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 02: design-system foundation (Badge + status tokens + DetailField)
+**Mode:** worktree (`.claude/worktrees/ui-redesign-foundation`), merged straight to main by the lead agent — same session as Prompt 01.
+**Merge to main after:** yes
+**Scope touched:** apps/web/src/app/globals.css, apps/web/src/components/ui/Badge.tsx (new), apps/web/src/components/ui/DetailField.tsx (new), apps/web/src/components/LeadStatusBadge.tsx, apps/web/src/components/ClientStatusBadge.tsx, apps/web/src/components/ProjectStatusBadge.tsx.
+**What happened:** Implemented the one real gap docs/11_UI_REDESIGN_PLAN.md's audit found: no shared status-pill primitive. Added five `--pill-*-bg`/`-fg` token pairs (info/success/warning/danger/highlight, light + dark + the `prefers-color-scheme` fallback block) to `globals.css`, exposed via `@theme inline` as `--color-pill-*`. Added `components/ui/Badge.tsx` (`<Badge tone="muted|info|success|warning|danger|highlight">`) built on those tokens. Converted `LeadStatusBadge`/`ClientStatusBadge`/`ProjectStatusBadge` to thin wrappers around `Badge` with a tone-mapping table each — same public API and identical rendered output (verified color values matched their prior hand-typed Tailwind literals exactly before converting), zero call-site changes needed anywhere else in the app. Also added `components/ui/DetailField.tsx` (`DetailField`/`DetailRow`) for the `field()`/`summaryRow()` label-value helper that was copy-pasted into 3+ page files per the audit — created as a ready primitive for the page-redesign agents; not wired into Lead/Client detail here, since those pages are out of scope for the foundation phase.
+**Blockers/issues:** None. Fresh worktree needed `npm install` (node_modules is gitignored, not carried by `git worktree add`) and one `next build` pass before `tsc --noEmit` would resolve Next 16's generated `LayoutProps` global type — both one-time, unrelated to this change.
+**Next up:** Prompt 03 (app shell re-skin on these tokens — also fixes the pre-existing `react-hooks/set-state-in-effect` lint error in `dashboard/layout.tsx` while that file is open), then Prompt 04 (Sales benchmark: swap its inline Won/Lost pill for `Badge`, its raw-button activity tabs for `TabBar`).
+
+---
+
+## 2026-09-14 — UI/UX redesign, Prompt 01: audit + implementation plan
+**Mode:** interactive session, direct to main (lead agent coordinating 5 parallel worktree agents on individual page redesigns; this session builds the shared foundation only).
+**Merge to main after:** yes
+**Scope touched:** docs/11_UI_REDESIGN_PLAN.md (new). No code changes.
+**What happened:** Inspected the whole `apps/web` dashboard app (all ~19
+routes, every shared `components/ui/*` primitive, `globals.css`'s token
+system, `lib/nav.ts`, and the three per-entity status badges) and wrote
+`docs/11_UI_REDESIGN_PLAN.md` — the audit + plan for the commercial-
+quality visual overhaul. Headline finding: the app already has a real
+token system and a decent `components/ui/` set (Sales and the
+recently-redesigned Settings page are both built almost entirely from
+it) — the actual work is consolidation, not a rebuild. The one clear
+gap: no shared `Badge`/status-pill primitive (three duplicated entity
+badges + ad-hoc inline pills in 7+ files + 6 independent urgency-tone
+color maps). Also found: three parallel tab-switcher implementations,
+three parallel "stat display" conventions, a `field()` label-value
+helper copy-pasted into 3+ files, and Lead detail (1375 lines) as by
+far the most overloaded page. Plan defines token/component strategy,
+app-shell strategy (keep `lib/nav.ts`'s existing workflow-based
+grouping — it already satisfies the brief), the Sales-page benchmark
+fixes for Prompts 02–04, page-by-page priorities for the five
+follow-on redesign agents, implementation order, and risks.
+**Blockers/issues:** None. A first background-fork investigation
+attempt returned a confused/incomplete report (claimed to still be
+"running in the background" while its own status showed completed) —
+resumed it with an explicit instruction not to sub-delegate further,
+and it then returned a complete, well-sourced report; cross-checked
+against direct reads of the same files.
+**Next up:** Prompt 02 (design system: `Badge` + status tokens +
+`DetailField`, convert the three entity badges), then Prompt 03 (app
+shell re-skin), then Prompt 04 (Sales benchmark fixes) — same session,
+each committed and pushed to main before the next starts. The five
+page-redesign agents are released only after all four land.
 
 ---
 

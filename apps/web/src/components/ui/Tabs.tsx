@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 export type TabItem = {
   id: string;
   label: string;
+  count?: number;
 };
 
 /**
@@ -18,11 +19,13 @@ export function TabBar({
   active,
   onChange,
   className = "",
+  ariaLabel,
 }: {
-  tabs: TabItem[];
+  tabs: readonly TabItem[];
   active: string;
   onChange: (id: string) => void;
   className?: string;
+  ariaLabel?: string;
 }) {
   const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
@@ -39,7 +42,11 @@ export function TabBar({
   }, [active, tabs.map((t) => t.label).join("|")]);
 
   return (
-    <div role="tablist" className={`relative flex gap-4 overflow-x-auto border-b border-border ${className}`}>
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={`relative flex gap-4 overflow-x-auto border-b border-border ${className}`}
+    >
       {tabs.map((tab) => {
         const isActive = tab.id === active;
         return (
@@ -58,6 +65,7 @@ export function TabBar({
             }`}
           >
             {tab.label}
+            {tab.count !== undefined && <span className="ml-1.5 text-xs text-fg-subtle">{tab.count}</span>}
           </button>
         );
       })}

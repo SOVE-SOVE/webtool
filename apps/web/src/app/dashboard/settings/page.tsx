@@ -18,7 +18,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TabBar } from "@/components/ui/Tabs";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
   { mode: "light", label: "Light" },
@@ -90,6 +93,10 @@ function SettingsPageInner() {
   const [role, setRole] = useState<Role>("member");
   const [savingUser, setSavingUser] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+
+  useEscapeToClose(() => {
+    if (showAddUser) setShowAddUser(false);
+  });
 
   const sectionParam = searchParams.get("section");
   // A calendar-connect redirect always lands back on this page with
@@ -284,7 +291,7 @@ function SettingsPageInner() {
                         Name
                       </label>
                       <div className="mt-1.5 flex gap-2">
-                        <input
+                        <Input
                           id="workspace-name"
                           value={workspaceName}
                           onChange={(e) => setWorkspaceName(e.target.value)}
@@ -405,15 +412,15 @@ function SettingsPageInner() {
                                 <td className="px-3 py-2 text-fg-muted">{user.email}</td>
                                 <td className="px-3 py-2">
                                   {isAdmin ? (
-                                    <select
+                                    <Select
                                       aria-label={`Role for ${user.name}`}
                                       value={user.role}
                                       onChange={(e) => handleRoleChange(user.id, e.target.value as Role)}
-                                      className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                                      className="input w-auto"
                                     >
                                       <option value="member">Member</option>
                                       <option value="admin">Admin</option>
-                                    </select>
+                                    </Select>
                                   ) : (
                                     <span className="capitalize text-fg-muted">{user.role}</span>
                                   )}
@@ -461,7 +468,7 @@ function SettingsPageInner() {
                   <label htmlFor="font-select" className="field-label">
                     Font
                   </label>
-                  <select
+                  <Select
                     id="font-select"
                     value={font}
                     onChange={(e) => setFont(e.target.value as FontChoice)}
@@ -472,7 +479,7 @@ function SettingsPageInner() {
                         {FONT_LABELS[f]}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </div>
             )}
@@ -572,7 +579,7 @@ function SettingsPageInner() {
                 <label htmlFor="new-user-name" className="field-label">
                   Name
                 </label>
-                <input
+                <Input
                   id="new-user-name"
                   required
                   autoFocus
@@ -585,7 +592,7 @@ function SettingsPageInner() {
                 <label htmlFor="new-user-email" className="field-label">
                   Email
                 </label>
-                <input
+                <Input
                   id="new-user-email"
                   required
                   type="email"
@@ -598,7 +605,7 @@ function SettingsPageInner() {
                 <label htmlFor="new-user-password" className="field-label">
                   Password
                 </label>
-                <input
+                <Input
                   id="new-user-password"
                   required
                   type="password"
@@ -613,7 +620,7 @@ function SettingsPageInner() {
                 <label htmlFor="new-user-role" className="field-label">
                   Role
                 </label>
-                <select
+                <Select
                   id="new-user-role"
                   value={role}
                   onChange={(e) => setRole(e.target.value as Role)}
@@ -621,7 +628,7 @@ function SettingsPageInner() {
                 >
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
-                </select>
+                </Select>
               </div>
               {userError && <p className="text-error sm:col-span-2">{userError}</p>}
               <div className="flex justify-end gap-2 sm:col-span-2">

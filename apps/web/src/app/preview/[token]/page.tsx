@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { PreviewApiError, previewApi, type PublicPreview } from "@/lib/previewApi";
 import { PreviewSiteRenderer } from "@/components/PreviewSiteRenderer";
 import { PreviewFeedbackForm } from "@/components/PreviewFeedbackForm";
+import { Select } from "@/components/ui/Select";
 
 // Fixed max-widths, not a live resize — this is a proxy for "how does
 // this look on a phone/tablet", not a real device emulator.
@@ -61,7 +62,7 @@ export default function PublicPreviewPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           {preview.pages.length > 1 && (
-            <select
+            <Select
               value={activePage?.slug ?? ""}
               onChange={(e) => setActivePageSlug(e.target.value)}
               className="rounded-md border border-border-strong px-2 py-1 text-sm"
@@ -71,11 +72,11 @@ export default function PublicPreviewPage() {
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
 
           {preview.versions.length > 1 && (
-            <select
+            <Select
               value={preview.website_id}
               onChange={(e) => load(e.target.value)}
               className="rounded-md border border-border-strong px-2 py-1 text-sm"
@@ -85,7 +86,7 @@ export default function PublicPreviewPage() {
                   {v.label}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
 
           <div className="flex rounded-md border border-border-strong p-0.5 text-xs">

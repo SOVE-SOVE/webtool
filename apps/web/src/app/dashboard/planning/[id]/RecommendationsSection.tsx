@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError, type Planning, type Recommendation, type RecommendationCategory } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const CATEGORY_LABEL: Record<RecommendationCategory, string> = { keep: "Keep", improve: "Improve", add: "Add" };
 const CATEGORY_HINT: Record<RecommendationCategory, string> = {
@@ -45,16 +48,16 @@ function RecommendationCard({
     <li className="rounded-md border border-border p-3">
       {editing ? (
         <div className="space-y-2">
-          <input
+          <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm font-medium"
+            className="input font-medium"
           />
-          <textarea
+          <Textarea
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
             rows={2}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <div className="flex gap-2">
             <button
@@ -82,9 +85,9 @@ function RecommendationCard({
         <>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <p className="text-sm font-medium text-fg">{rec.title}</p>
-            <span className="shrink-0 rounded bg-surface-subtle px-1.5 py-0.5 text-xs font-medium text-fg-muted">
+            <Badge tone="muted" className="shrink-0">
               {SOURCE_LABEL[rec.source_type]}
-            </span>
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-fg-muted">{rec.explanation}</p>
           {rec.source_evidence && <p className="mt-1 text-xs italic text-fg-subtle">&ldquo;{rec.source_evidence}&rdquo;</p>}
@@ -187,18 +190,18 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
             </div>
             {addingCategory === category && (
               <div className="mt-2 space-y-2 rounded-md border border-border p-3">
-                <input
+                <Input
                   placeholder="Title"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                  className="input"
                 />
-                <textarea
+                <Textarea
                   placeholder="Explanation"
                   value={newExplanation}
                   onChange={(e) => setNewExplanation(e.target.value)}
                   rows={2}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+                  className="input"
                 />
                 <button type="button" onClick={() => handleAdd(category)} className="btn btn-secondary btn-sm">
                   Add

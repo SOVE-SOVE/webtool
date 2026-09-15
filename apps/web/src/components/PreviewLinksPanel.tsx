@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, type PreviewAudience, type PreviewLink } from "@/lib/api";
+import { Select } from "@/components/ui/Select";
+import { Badge } from "@/components/ui/Badge";
 
 export function PreviewLinksPanel({ projectId }: { projectId: string }) {
   const [links, setLinks] = useState<PreviewLink[] | null>(null);
@@ -57,19 +59,15 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg">Client & internal previews</h2>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={audience}
             onChange={(e) => setAudience(e.target.value as PreviewAudience)}
             className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             <option value="client">Client link</option>
             <option value="internal">Internal link</option>
-          </select>
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
-          >
+          </Select>
+          <button onClick={handleCreate} disabled={creating} className="btn btn-secondary">
             {creating ? "Creating…" : "New link"}
           </button>
         </div>
@@ -112,18 +110,11 @@ export function PreviewLinksPanel({ projectId }: { projectId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded px-2 py-0.5 text-xs font-medium ${
-                  link.active ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-                }`}
-              >
+              <Badge tone={link.active ? "success" : "muted"}>
                 {link.revoked ? "Revoked" : link.expired ? "Expired" : "Active"}
-              </span>
+              </Badge>
               {link.active && (
-                <button
-                  onClick={() => handleRevoke(link.id)}
-                  className="rounded-md border border-border-strong px-2 py-1 text-xs hover:bg-surface-subtle"
-                >
+                <button onClick={() => handleRevoke(link.id)} className="btn btn-secondary btn-sm">
                   Revoke
                 </button>
               )}

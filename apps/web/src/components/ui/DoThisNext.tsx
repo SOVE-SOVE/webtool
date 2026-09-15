@@ -1,45 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { AttentionItem } from "@/lib/api";
 import { loadOverview, peekOverview } from "@/lib/overview";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Badge } from "@/components/ui/Badge";
 
 /**
- * The workspace-wide "what should I do next" queue, pinned to the bottom
- * of every dashboard page. The list is server-ranked (most urgent
- * first) by the API; this component just renders it in a fixed-height,
- * internally scrolling card so a long queue never stretches the page.
+ * "What should I do next" for the project currently being planned — the
+ * single most useful next action the server computed for it (one gate
+ * at a time: brief, creative direction, sitemap, build, deploy — see
+ * apps/api/app/modules/dashboard/service.py's `_next_project_action`),
+ * pinned to the bottom of the Planning page.
  *
- * Data source: GET /api/v1/dashboard/overview → `needs_attention`, via
- * the shared short-lived cache in lib/overview (so this and the Overview
- * page's metrics share one request instead of two, and navigating
- * between pages doesn't re-run the aggregate query every time).
+ * Data source: GET /api/v1/dashboard/overview → `needs_attention`,
+ * filtered down to the single `kind: "project"` item matching
+ * `projectId`, via the shared short-lived cache in lib/overview (so
+ * this and the Today page's own overview fetch share one request
+ * instead of two).
  */
 
-// One place for the attention-kind → badge colour mapping that the
-// Overview and Sales pages each used to define separately. Colour
-// reinforces the server ranking: something broken/hot is warm-coloured,
-// routine hygiene is neutral.
-const BADGE_CLASS: Record<AttentionItem["kind"], string> = {
-  project: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
-  stale_proposal: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
-  follow_up: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  meeting: "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300",
-  hot_lead: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300",
-  task: "bg-surface-subtle text-fg-muted",
-  stale_lead: "bg-surface-subtle text-fg-muted",
-  new_lead: "bg-surface-subtle text-fg-muted",
-};
-
-export function DoThisNext() {
-  const pathname = usePathname();
+/**
+ * Renders nothing when `projectId` is null — no project is in context
+ * yet (e.g. a Planning item that hasn't been transferred to a Project).
+ */
+export function DoThisNext({ projectId }: { projectId: string | null }) {
   const [items, setItems] = useState<AttentionItem[] | null>(peekOverview()?.needs_attention ?? null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    if (!projectId) return;
     let alive = true;
     loadOverview()
       .then((d) => {
@@ -53,13 +44,15 @@ export function DoThisNext() {
     return () => {
       alive = false;
     };
-  }, [pathname]);
+  }, [projectId]);
 
-  // A page-level error surface for this is more noise than signal on
-  // every screen — if the queue can't load, just don't take up space.
+  if (!projectId) return null;
+  // A page-level error surface for this is more noise than signal — if
+  // the queue can't load, just don't take up space.
   if (failed && items === null) return null;
 
-  const count = items?.length ?? 0;
+  const scoped = items?.filter((item) => item.kind === "project" && item.id === projectId) ?? null;
+  const count = scoped?.length ?? 0;
 
   return (
     <section className="border-t border-border bg-canvas px-4 py-5 sm:px-6">
@@ -67,12 +60,12 @@ export function DoThisNext() {
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="section-title">Do this next</h2>
           <span className="text-xs text-fg-muted">
-            {items === null ? "Loading…" : count === 0 ? "All clear" : `${count} open · most urgent first`}
+            {scoped === null ? "Loading…" : count === 0 ? "All clear" : `${count} open · most urgent first`}
           </span>
         </div>
 
         <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain rounded-md border border-border bg-surface sm:max-h-72">
-          {items === null ? (
+          {scoped === null ? (
             <div className="divide-y divide-border">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
@@ -82,12 +75,10 @@ export function DoThisNext() {
               ))}
             </div>
           ) : count === 0 ? (
-            <p className="px-4 py-6 text-sm text-fg-muted">
-              Nothing is waiting on you. Add leads, or push an active project forward.
-            </p>
+            <p className="px-4 py-6 text-sm text-fg-muted">Nothing is waiting on you for this project right now.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {items.map((item) => (
+              {scoped.map((item) => (
                 <li key={`${item.kind}-${item.id}`}>
                   <Link
                     href={item.href}
@@ -99,11 +90,9 @@ export function DoThisNext() {
                         {item.title} — {item.detail}
                       </span>
                     </span>
-                    <span
-                      className={`mt-0.5 shrink-0 rounded px-2 py-0.5 text-xs font-medium ${BADGE_CLASS[item.kind]}`}
-                    >
+                    <Badge tone="violet" className="mt-0.5 shrink-0">
                       {item.label}
-                    </span>
+                    </Badge>
                   </Link>
                 </li>
               ))}

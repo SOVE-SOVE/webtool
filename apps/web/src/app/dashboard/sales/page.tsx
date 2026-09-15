@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, type FollowUpBuckets, type SalesDashboard } from "@/lib/api";
+import { Badge } from "@/components/ui/Badge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
 import { EmptyRow, ItemRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { TabBar } from "@/components/ui/Tabs";
 import { formatAud, timeAgo } from "@/lib/format";
 
 function pct(value: number | null): string {
@@ -96,7 +98,14 @@ export default function SalesPage() {
             <Panel
               title="Hot leads"
               subtitle="High priority or a strongly fixable site — chase these first."
-              right={<Link href="/dashboard/leads" className="hover:text-fg">Open in Leads →</Link>}
+              right={
+                <Link
+                  href="/dashboard/leads"
+                  className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  Open in Leads →
+                </Link>
+              }
             >
               {data.hot_leads.length === 0 ? (
                 <EmptyRow>No hot leads right now.</EmptyRow>
@@ -127,7 +136,14 @@ export default function SalesPage() {
             <Panel
               title="Needs follow-up"
               subtitle="Overdue first, then due today, then coming up."
-              right={<Link href="/dashboard/follow-ups" className="hover:text-fg">All follow-ups →</Link>}
+              right={
+                <Link
+                  href="/dashboard/follow-ups"
+                  className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  All follow-ups →
+                </Link>
+              }
             >
               {!followUps ? (
                 <div className="divide-y divide-border">
@@ -188,19 +204,13 @@ export default function SalesPage() {
             }`}
             bodyClassName="max-h-72"
             right={
-              <div className="flex gap-1">
-                {ACTIVITY_TABS.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setActivityTab(t)}
-                    className={`rounded px-2 py-0.5 ${
-                      activityTab === t ? "bg-accent text-accent-fg" : "hover:text-fg"
-                    }`}
-                  >
-                    {ACTIVITY_TAB_LABEL[t]}
-                  </button>
-                ))}
-              </div>
+              <TabBar
+                className="border-b-0"
+                ariaLabel="Activity view"
+                tabs={ACTIVITY_TABS.map((t) => ({ id: t, label: ACTIVITY_TAB_LABEL[t] }))}
+                active={activityTab}
+                onChange={(id) => setActivityTab(id as ActivityTab)}
+              />
             }
           >
             {activityTab === "outreach" &&
@@ -265,15 +275,7 @@ export default function SalesPage() {
                             </span>
                           </span>
                           <span className="flex shrink-0 items-center gap-2 text-xs">
-                            <span
-                              className={`rounded px-1.5 py-0.5 font-medium ${
-                                d.won
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                                  : "bg-surface-subtle text-fg-muted"
-                              }`}
-                            >
-                              {d.won ? "Won" : "Lost"}
-                            </span>
+                            <Badge tone={d.won ? "success" : "muted"}>{d.won ? "Won" : "Lost"}</Badge>
                             <span className="text-fg-muted">{formatAud(d.proposed_price_cents)}</span>
                           </span>
                         </Link>

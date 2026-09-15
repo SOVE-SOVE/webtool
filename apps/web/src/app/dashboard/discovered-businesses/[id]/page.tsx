@@ -11,7 +11,6 @@ import {
   instagramCheckDisplayState,
   type BusinessResearchResult,
   type DiscoveredBusiness,
-  type OpportunityScoreCategory,
   type OpportunityScoreResult,
   type QualityFindingSeverity,
   type ReviewIntelligenceResult,
@@ -19,19 +18,14 @@ import {
 } from "@/lib/api";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 
-const SEVERITY_STYLE: Record<QualityFindingSeverity, string> = {
-  critical: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
-  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  low: "bg-surface-subtle text-fg-muted",
-};
-
-const CATEGORY_STYLE: Record<OpportunityScoreCategory, string> = {
-  hot: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  warm: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  cold: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  review: "bg-surface-hover text-fg-muted",
+const SEVERITY_TONE: Record<QualityFindingSeverity, BadgeTone> = {
+  critical: "danger",
+  high: "warning",
+  medium: "warning",
+  low: "muted",
 };
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
@@ -73,7 +67,7 @@ const ACTIVITY_LABEL: Record<string, string> = {
 function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) {
   if (result.data_status === "no_listing") {
     return (
-      <div className="mt-6 max-w-2xl border border-border p-4">
+      <div className="mt-6 max-w-2xl panel">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <p className="mt-2 text-sm text-fg-subtle">{result.data_limitations || "No Google listing on record."}</p>
       </div>
@@ -82,7 +76,7 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
 
   if (result.data_status === "unavailable") {
     return (
-      <div className="mt-6 max-w-2xl border border-border p-4">
+      <div className="mt-6 max-w-2xl panel">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <p className="mt-2 text-sm text-fg-subtle">
           {result.data_limitations || "Google Places is currently unavailable."}
@@ -92,7 +86,7 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
   }
 
   return (
-    <div className="mt-6 max-w-2xl border border-border p-4">
+    <div className="mt-6 max-w-2xl panel">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
         <span className="text-xs text-fg-subtle">
@@ -255,7 +249,7 @@ function InstagramCard({
 }) {
   const igState = instagramCheckDisplayState(business);
   return (
-    <div className="mt-6 max-w-2xl border border-border p-4">
+    <div className="mt-6 max-w-2xl panel">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {business.instagram_profile_image_url && (
@@ -287,7 +281,7 @@ function InstagramCard({
           <button
             onClick={onCheckWebsite}
             disabled={checking}
-            className="shrink-0 rounded-md border border-border-strong px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+            className="btn btn-secondary btn-sm shrink-0"
           >
             {checking ? "Checking…" : igState === "check_pending" ? "Check now" : "Check for website"}
           </button>
@@ -497,9 +491,7 @@ export default function DiscoveredBusinessDetailPage() {
             )}
           </div>
           <div className="text-right">
-            <span className="inline-block rounded-full bg-surface-subtle px-2.5 py-1 text-xs font-medium text-fg-muted">
-              {business.status}
-            </span>
+            <ReviewStatusBadge status={business.status} />
             <div className="mt-2 flex gap-2">
               <button
                 onClick={handleResearch}
@@ -512,7 +504,7 @@ export default function DiscoveredBusinessDetailPage() {
                 onClick={handleAudit}
                 disabled={auditing || !latest}
                 title={!latest ? "Run research first" : undefined}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {auditing ? "Auditing…" : "Audit quality"}
               </button>
@@ -520,25 +512,21 @@ export default function DiscoveredBusinessDetailPage() {
                 onClick={handleScore}
                 disabled={scoring || !latest}
                 title={!latest ? "Run research first" : undefined}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {scoring ? "Scoring…" : "Score opportunity"}
               </button>
               <button
                 onClick={handleReviewAnalysis}
                 disabled={analyzingReviews}
-                className="rounded-md border border-border-strong px-3 py-1.5 text-sm font-medium text-fg-muted hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary"
               >
                 {analyzingReviews ? "Analyzing…" : latestReviewIntel ? "Refresh reviews" : "Analyze Google reviews"}
               </button>
             </div>
             {latestScore && (
               <div className="mt-2">
-                <span
-                  className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
-                >
-                  {latestScore.category} · {latestScore.overall_score}
-                </span>
+                <ScoreCategoryBadge category={latestScore.category} score={latestScore.overall_score} />
               </div>
             )}
           </div>
@@ -566,7 +554,7 @@ export default function DiscoveredBusinessDetailPage() {
       )}
 
       {latest && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Website research</h2>
             <span className="text-xs text-fg-subtle">
@@ -597,7 +585,7 @@ export default function DiscoveredBusinessDetailPage() {
       )}
 
       {latestAudit && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Website quality audit</h2>
             <span className="text-xs text-fg-subtle">{new Date(latestAudit.audited_at).toLocaleString()}</span>
@@ -609,11 +597,7 @@ export default function DiscoveredBusinessDetailPage() {
               {latestAudit.findings.map((finding, i) => (
                 <li key={i} className="border border-border p-2.5 text-sm">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${SEVERITY_STYLE[finding.severity]}`}
-                    >
-                      {finding.severity}
-                    </span>
+                    <Badge tone={SEVERITY_TONE[finding.severity]}>{finding.severity}</Badge>
                     <span className="text-xs uppercase tracking-wide text-fg-subtle">{finding.category}</span>
                     <span className="ml-auto text-xs text-fg-subtle">
                       {Math.round(finding.confidence * 100)}% confidence
@@ -631,18 +615,14 @@ export default function DiscoveredBusinessDetailPage() {
       {latestReviewIntel && <GoogleReviewsSection result={latestReviewIntel} />}
 
       {latestScore && (
-        <div className="mt-6 max-w-2xl border border-border p-4">
+        <div className="mt-6 max-w-2xl panel">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
             <span className="text-xs text-fg-subtle">{new Date(latestScore.scored_at).toLocaleString()}</span>
           </div>
 
           <div className="mt-2 flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-sm font-semibold uppercase ${CATEGORY_STYLE[latestScore.category]}`}
-            >
-              {latestScore.category}
-            </span>
+            <ScoreCategoryBadge category={latestScore.category} />
             <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
             <span className="text-xs text-fg-muted">
               {Math.round(latestScore.confidence * 100)}% confidence

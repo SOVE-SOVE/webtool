@@ -7,7 +7,6 @@ import {
   api,
   ApiError,
   DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_CHECK_STATE_BADGE,
   INSTAGRAM_CHECK_STATE_LABEL,
   INSTAGRAM_WEBSITE_STATUS_LABEL,
   INSTAGRAM_WEBSITE_STATUSES,
@@ -15,8 +14,10 @@ import {
   instagramCheckDisplayState,
   type DiscoveredBusiness,
   type DiscoverySearch,
+  type InstagramCheckState,
   type InstagramImportResult,
 } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import {
   ACTIVE_RECENTLY_DAYS,
   filterDiscoveredBusinesses,
@@ -30,6 +31,9 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // Leaflet touches `window` on import — client-only, no SSR.
 const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
@@ -45,10 +49,21 @@ const NO_FILTERS: DiscoveredBusinessFilters = {
   showImported: false,
 };
 
-const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], string> = {
-  found: "bg-surface-subtle text-fg-muted",
-  none: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300",
-  unknown: "bg-surface-subtle text-fg-subtle",
+// "none" (no website) gets the standout tone — the strongest sales
+// opportunity, not a problem to flag.
+const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], BadgeTone> = {
+  found: "muted",
+  none: "highlight",
+  unknown: "muted",
+};
+
+// Shared badge tone for INSTAGRAM_CHECK_STATE_LABEL.
+const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, BadgeTone> = {
+  website_found: "success",
+  no_website_found: "highlight",
+  link_in_bio_only: "info",
+  check_pending: "warning",
+  needs_review: "muted",
 };
 
 // Discovered businesses the operator can still bring into the CRM. A
@@ -351,7 +366,6 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const total = activeResults?.length ?? 0;
   const mappedCount = visible.filter(hasCoordinates).length;
   const noWebsiteCount = visible.filter((b) => b.website_status === "none").length;
-  const inputCls = "rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
   return (
     <div className="p-6">
@@ -365,66 +379,80 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
         description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
       />
 
-      {/* Search controls — always visible: this is where discovery starts. */}
-      <form onSubmit={handleCreate} className="mt-4 flex flex-wrap items-end gap-2 border border-border p-4">
-        <select
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
-          className={inputCls}
-          aria-label="Discovery source"
-        >
-          <option value="">Web search (default)</option>
-          <option value="instagram_search">Instagram Search Discovery</option>
-        </select>
-        <input
-          placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
-          value={industry}
-          onChange={(e) => setIndustry(e.target.value)}
-          className={`${inputCls} w-44`}
-        />
-        <input
-          placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          className={`${inputCls} w-44`}
-        />
-        <input
-          placeholder="Business type"
-          value={businessType}
-          onChange={(e) => setBusinessType(e.target.value)}
-          className={`${inputCls} w-40`}
-        />
-        <input
-          placeholder="Keywords"
-          value={keywords}
-          onChange={(e) => setKeywords(e.target.value)}
-          className={`${inputCls} w-40`}
-        />
-        <select
-          value={hasWebsite}
-          onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-          className={inputCls}
-          aria-label="Website filter"
-        >
-          <option value="">Any website status</option>
-          <option value="true">Has a website</option>
-          <option value="false">No website</option>
-        </select>
-        <button type="submit" disabled={saving} className="btn btn-primary">
-          {saving ? "Searching…" : "Run search"}
-        </button>
+      {activeResults && activeResults.length > 0 && (
+        <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
+      )}
 
-        {isInstagramSearch && (
-          <p className="w-full text-xs text-fg-subtle">
-            For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).
+      {/* Search controls — always visible: this is where discovery starts.
+          One panel, one visual unit: the five criteria fields share a grid
+          so they read as a single search bar rather than loose floating
+          boxes, then a divider sets the website-status refinement + the
+          primary Run search action apart as their own row, then a second
+          divider sets the quiet helper copy apart from both. */}
+      <form onSubmit={handleCreate} className="panel mt-4 space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
+            className="input"
+            aria-label="Discovery source"
+          >
+            <option value="">Web search (default)</option>
+            <option value="instagram_search">Instagram Search Discovery</option>
+          </Select>
+          <Input
+            placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            className="input"
+          />
+          <Input
+            placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="input"
+          />
+          <Input
+            placeholder="Business type"
+            value={businessType}
+            onChange={(e) => setBusinessType(e.target.value)}
+            className="input"
+          />
+          <Input
+            placeholder="Keywords"
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            className="input"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <Select
+            value={hasWebsite}
+            onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
+            className="input w-auto"
+            aria-label="Website filter"
+          >
+            <option value="">Any website status</option>
+            <option value="true">Has a website</option>
+            <option value="false">No website</option>
+          </Select>
+          <button type="submit" disabled={saving} className="btn btn-primary">
+            {saving ? "Searching…" : "Run search"}
+          </button>
+        </div>
+
+        <div className="space-y-1 border-t border-border pt-3 text-xs text-fg-subtle">
+          {isInstagramSearch && (
+            <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
+          )}
+          <p>
+            {isInstagramSearch
+              ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
+              : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
           </p>
-        )}
-        <p className="w-full text-xs text-fg-muted">
-          {isInstagramSearch
-            ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
-            : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
-        </p>
-        {formError && <p className="w-full text-error">{formError}</p>}
+          {formError && <p className="text-error">{formError}</p>}
+        </div>
       </form>
 
       {/* Recent searches — switch which one this workspace is showing. */}
@@ -433,7 +461,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
           <label htmlFor="discovery-search-picker" className="text-fg-muted">
             Showing
           </label>
-          <select
+          <Select
             id="discovery-search-picker"
             value={activeId ?? ""}
             onChange={(e) => selectSearch(e.target.value || null)}
@@ -445,7 +473,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                 {new Date(s.created_at).toLocaleDateString()}
               </option>
             ))}
-          </select>
+          </Select>
           <Link href="/dashboard/review" className="text-fg-muted hover:text-fg hover:underline">
             Review queue →
           </Link>
@@ -533,14 +561,17 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
 
       {activeResults && activeResults.length > 0 && (
         <>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <input
+          {/* Subordinate to the search panel above: no card chrome, tighter
+              gap, and muted text — a refinement bar over the results, not
+              a second panel competing with the search itself. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+            <Input
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
               placeholder="Filter by name, category, address…"
-              className={inputCls}
+              className="input w-56"
             />
-            <select
+            <Select
               value={filters.website}
               onChange={(e) =>
                 setFilters((f) => ({
@@ -548,34 +579,32 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                   website: e.target.value as DiscoveredBusinessFilters["website"],
                 }))
               }
-              className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+              className="input w-auto"
               aria-label="Filter by website"
             >
               <option value="">Any website status</option>
               <option value="has">Has website</option>
               <option value="no">No website</option>
-            </select>
-            <select
+            </Select>
+            <Select
               value={sort}
               onChange={(e) => setSort(e.target.value as DiscoverySort)}
-              className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+              className="input w-auto"
               aria-label="Sort results"
             >
               <option value="discovered">Sort: relevance</option>
               <option value="no-website">Sort: no website first</option>
               <option value="score">Sort: best score first</option>
-            </select>
-            <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-              <input
-                type="checkbox"
+            </Select>
+            <label className="flex items-center gap-1.5">
+              <Checkbox
                 checked={filters.mappedOnly}
                 onChange={(e) => setFilters((f) => ({ ...f, mappedOnly: e.target.checked }))}
               />
               On map only
             </label>
-            <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-              <input
-                type="checkbox"
+            <label className="flex items-center gap-1.5">
+              <Checkbox
                 checked={filters.showImported}
                 onChange={(e) => setFilters((f) => ({ ...f, showImported: e.target.checked }))}
               />
@@ -588,8 +617,8 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               search doesn't clutter its filter row with controls that would
               never match anything. */}
           {activeResults.some((b) => b.instagram_handle) && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+              <Select
                 value={filters.instagramStatus}
                 onChange={(e) =>
                   setFilters((f) => ({
@@ -597,7 +626,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                     instagramStatus: e.target.value as DiscoveredBusinessFilters["instagramStatus"],
                   }))
                 }
-                className="rounded-md border border-border-strong px-2 py-1.5 text-sm"
+                className="input w-auto"
                 aria-label="Filter by Instagram website status"
               >
                 <option value="">Any Instagram status</option>
@@ -606,24 +635,22 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                     {INSTAGRAM_WEBSITE_STATUS_LABEL[status]}
                   </option>
                 ))}
-              </select>
-              <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
+              </Select>
+              <label className="flex items-center gap-1.5">
+                <Checkbox
                   checked={filters.contactableOnly}
                   onChange={(e) => setFilters((f) => ({ ...f, contactableOnly: e.target.checked }))}
                 />
                 Contactable only
               </label>
-              <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-1.5">
+                <Checkbox
                   checked={filters.activeRecentlyOnly}
                   onChange={(e) => setFilters((f) => ({ ...f, activeRecentlyOnly: e.target.checked }))}
                 />
                 Active in last {ACTIVE_RECENTLY_DAYS} days
               </label>
-              <input
+              <Input
                 type="number"
                 min={0}
                 value={filters.minFollowers ?? ""}
@@ -631,13 +658,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                   setFilters((f) => ({ ...f, minFollowers: e.target.value === "" ? null : Number(e.target.value) }))
                 }
                 placeholder="Min followers"
-                className={`${inputCls} w-32`}
+                className="input w-32"
                 aria-label="Minimum follower count"
               />
             </div>
           )}
-
-          <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
 
           {visible.length === 0 ? (
             <div className="mt-4 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
@@ -732,13 +757,9 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                              igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]
-                            }`}
-                          >
+                          <Badge tone={igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]}>
                             {igState ? INSTAGRAM_CHECK_STATE_LABEL[igState] : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
-                          </span>
+                          </Badge>
                           {business.website_status === "found" && business.website_url && (
                             <a
                               href={business.website_url}

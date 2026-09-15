@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function LoginPage() {
           <label htmlFor="email" className="text-sm font-medium text-fg-muted">
             Email
           </label>
-          <input
+          <Input
             id="email"
             type="email"
             required
@@ -54,7 +55,7 @@ export default function LoginPage() {
           <label htmlFor="password" className="text-sm font-medium text-fg-muted">
             Password
           </label>
-          <input
+          <Input
             id="password"
             type="password"
             required

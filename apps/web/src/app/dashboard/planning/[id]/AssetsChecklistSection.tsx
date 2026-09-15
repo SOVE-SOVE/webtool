@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError, ASSET_STATUSES, ASSET_STATUS_LABELS, type AssetStatus, type Planning, type PlanningAsset } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
 const STATUS_DOT: Record<AssetStatus, string> = {
   ready_to_use: "bg-emerald-500",
@@ -32,11 +34,11 @@ function AssetRow({ planningId, asset, onUpdated }: { planningId: string; asset:
         </p>
         {editingNote ? (
           <div className="mt-1 flex gap-2">
-            <input
+            <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Note"
-              className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+              className="input text-xs"
             />
             <button type="button" onClick={saveNote} className="shrink-0 text-xs font-medium text-fg-muted hover:underline">
               Save
@@ -48,17 +50,17 @@ function AssetRow({ planningId, asset, onUpdated }: { planningId: string; asset:
           </button>
         )}
       </div>
-      <select
+      <Select
         value={asset.status}
         onChange={(e) => setStatus(e.target.value as AssetStatus)}
-        className="shrink-0 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+        className="input w-auto shrink-0 text-xs"
       >
         {ASSET_STATUSES.map((s) => (
           <option key={s} value={s}>
             {ASSET_STATUS_LABELS[s]}
           </option>
         ))}
-      </select>
+      </Select>
     </li>
   );
 }
@@ -104,11 +106,11 @@ export function AssetsChecklistSection({ planning, onUpdated }: { planning: Plan
       {error && <p className="text-error">{error}</p>}
       {adding && (
         <div className="flex gap-2 rounded-md border border-border p-3">
-          <input
+          <Input
             placeholder="Asset label"
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
-            className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+            className="input"
           />
           <button type="button" onClick={handleAdd} className="btn btn-secondary btn-sm shrink-0">
             Add

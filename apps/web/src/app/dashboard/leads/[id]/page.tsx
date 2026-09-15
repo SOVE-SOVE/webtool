@@ -29,16 +29,22 @@ import {
 } from "@/lib/api";
 import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
-import { LeadStatusBadge } from "@/components/LeadStatusBadge";
+import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
+import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { DetailField, DetailRow } from "@/components/ui/DetailField";
+import { EmptyRow } from "@/components/ui/Panel";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LEAD_STATUS_LABEL, leadNextAction } from "@/lib/leads";
 import { formatAud } from "@/lib/format";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -69,25 +75,19 @@ const OUTREACH_STATUS_LABELS: Record<OutreachMessage["status"], string> = {
   closed: "Closed",
 };
 
+// Thin positional-argument wrappers over the shared DetailField/DetailRow
+// primitives (docs/11_UI_REDESIGN_PLAN.md §2.4/§4) — kept so the many
+// existing `field("Label", value)` / `summaryRow("Label", value)` call
+// sites below don't all need to become `<DetailField label=... value=... />`.
 function field(label: string, value: React.ReactNode) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className="mt-1">{value}</div>
-    </div>
-  );
+  return <DetailField label={label} value={value} />;
 }
 
 function summaryRow(label: string, value: React.ReactNode) {
-  return (
-    <div className="flex justify-between gap-3 text-sm">
-      <span className="text-fg-muted">{label}</span>
-      <span className="min-w-0 truncate text-right text-fg">{value}</span>
-    </div>
-  );
+  return <DetailRow label={label} value={value} />;
 }
 
-const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
+const inputClass = "input";
 
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();
@@ -503,20 +503,20 @@ export default function LeadDetailPage() {
   // action (docs/05_DECISIONS.md).
   const convertForm = showConvertForm && (
     <form onSubmit={handleConvert} className="mt-3 max-w-2xl space-y-3 border border-border p-4">
-      <input
+      <Input
         placeholder="Project name (defaults to “{business} Website”)"
         value={convertProjectName}
         onChange={(e) => setConvertProjectName(e.target.value)}
         className={inputClass}
       />
       <div className="flex gap-3">
-        <input
+        <Input
           placeholder="Package (e.g. Core, $899)"
           value={convertPackage}
           onChange={(e) => setConvertPackage(e.target.value)}
           className={inputClass}
         />
-        <input
+        <Input
           type="number"
           min="0"
           step="1"
@@ -529,28 +529,28 @@ export default function LeadDetailPage() {
       <div className="flex gap-3">
         <div className="flex-1">
           <label className="text-xs uppercase tracking-wide text-fg-muted">Agreed deadline</label>
-          <input
+          <Input
             type="date"
             value={convertDeadline}
             onChange={(e) => setConvertDeadline(e.target.value)}
             className={`${inputClass} mt-1`}
           />
         </div>
-        <input
+        <Input
           placeholder="Billing email (optional)"
           value={convertBillingEmail}
           onChange={(e) => setConvertBillingEmail(e.target.value)}
           className={`${inputClass} mt-5`}
         />
       </div>
-      <select value={convertAssignedUserId} onChange={(e) => setConvertAssignedUserId(e.target.value)} className={inputClass}>
+      <Select value={convertAssignedUserId} onChange={(e) => setConvertAssignedUserId(e.target.value)} className={inputClass}>
         <option value="">Unassigned</option>
         {users.map((user) => (
           <option key={user.id} value={user.id}>
             {user.name}
           </option>
         ))}
-      </select>
+      </Select>
       <button type="submit" disabled={converting} className="btn btn-primary">
         {converting ? "Converting…" : "Convert to client"}
       </button>
@@ -572,14 +572,12 @@ export default function LeadDetailPage() {
       </Link>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="page-title">{business.name}</h1>
           <LeadStatusBadge status={lead.status} />
+          <LeadPriorityBadge priority={lead.priority} score={lead.score} />
         </div>
-        <button
-          onClick={handleArchiveToggle}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-        >
+        <button onClick={handleArchiveToggle} className="btn btn-secondary">
           {lead.archived_at ? "Unarchive lead" : "Archive lead"}
         </button>
       </div>
@@ -614,8 +612,7 @@ export default function LeadDetailPage() {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Status</h2>
           <div className="mt-2 space-y-1.5">
             {summaryRow("Stage", LEAD_STATUS_LABEL[lead.status])}
-            {summaryRow("Priority", <span className="capitalize">{lead.priority}</span>)}
-            {summaryRow("Score", lead.score ?? "—")}
+            {summaryRow("Priority", <LeadPriorityBadge priority={lead.priority} score={lead.score} />)}
             {summaryRow("Assigned", lead.assigned_user_name ?? "Unassigned")}
             {summaryRow("Source", lead.source ?? "—")}
           </div>
@@ -639,6 +636,18 @@ export default function LeadDetailPage() {
           {followUpError && <p className="mt-2 text-error">{followUpError}</p>}
         </div>
       </div>
+
+      {/* Notes — read-only preview so "what do I already know about this
+          lead" is visible without opening the edit form below. Editing
+          still happens in the "Business & lead details" disclosure; this
+          is the one place that stays in sync with it automatically since
+          it just reads `lead.notes`. */}
+      {lead.notes && (
+        <div className="card mt-4 p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Notes</h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-fg">{lead.notes}</p>
+        </div>
+      )}
 
       {/* Google review intelligence — read-only projection from Lead
           Intelligence discovery; the full analysis lives on the
@@ -682,7 +691,7 @@ export default function LeadDetailPage() {
 
       {/* Planning — the only bridge from this lead to its Planning workspace */}
       {!lead.archived_at && (
-        <section className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface p-4">
+        <section className="panel mt-8 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="section-title">Planning</h2>
             <p className="mt-0.5 text-sm text-fg-muted">
@@ -810,7 +819,7 @@ export default function LeadDetailPage() {
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field(
                   "Name",
-                  <input
+                  <Input
                     defaultValue={business.name}
                     onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
                     className={inputClass}
@@ -818,7 +827,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Industry",
-                  <input
+                  <Input
                     defaultValue={business.industry ?? ""}
                     onBlur={(e) => saveBusiness({ industry: e.target.value })}
                     className={inputClass}
@@ -826,7 +835,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Website",
-                  <input
+                  <Input
                     defaultValue={business.website_url ?? ""}
                     onBlur={(e) => saveBusiness({ website_url: e.target.value })}
                     className={inputClass}
@@ -834,7 +843,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Phone",
-                  <input
+                  <Input
                     defaultValue={business.phone ?? ""}
                     onBlur={(e) => saveBusiness({ phone: e.target.value })}
                     className={inputClass}
@@ -842,7 +851,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Email",
-                  <input
+                  <Input
                     defaultValue={business.email ?? ""}
                     onBlur={(e) => saveBusiness({ email: e.target.value })}
                     className={inputClass}
@@ -851,13 +860,13 @@ export default function LeadDetailPage() {
                 {field(
                   "Location",
                   <div className="flex gap-2">
-                    <input
+                    <Input
                       placeholder="Suburb"
                       defaultValue={business.suburb ?? ""}
                       onBlur={(e) => saveBusiness({ suburb: e.target.value })}
                       className={inputClass}
                     />
-                    <input
+                    <Input
                       placeholder="State"
                       defaultValue={business.state ?? ""}
                       onBlur={(e) => saveBusiness({ state: e.target.value })}
@@ -867,7 +876,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Social links",
-                  <textarea
+                  <Textarea
                     defaultValue={business.social_links ?? ""}
                     onBlur={(e) => saveBusiness({ social_links: e.target.value })}
                     placeholder="One URL per line"
@@ -878,7 +887,7 @@ export default function LeadDetailPage() {
                 <div className="sm:col-span-2">
                   {field(
                     "Business notes",
-                    <textarea
+                    <Textarea
                       defaultValue={business.notes ?? ""}
                       onBlur={(e) => saveBusiness({ notes: e.target.value })}
                       rows={3}
@@ -894,7 +903,7 @@ export default function LeadDetailPage() {
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {field(
                   "Status",
-                  <select
+                  <Select
                     value={lead.status}
                     onChange={(e) => saveLead({ status: e.target.value as LeadStatus })}
                     className={inputClass}
@@ -904,11 +913,11 @@ export default function LeadDetailPage() {
                         {LEAD_STATUS_LABEL[s]}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field(
                   "Priority",
-                  <select
+                  <Select
                     value={lead.priority}
                     onChange={(e) => saveLead({ priority: e.target.value as LeadPriority })}
                     className={inputClass}
@@ -918,11 +927,11 @@ export default function LeadDetailPage() {
                         {p}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field(
                   "Score",
-                  <input
+                  <Input
                     type="number"
                     defaultValue={lead.score ?? ""}
                     onBlur={(e) => {
@@ -934,7 +943,7 @@ export default function LeadDetailPage() {
                 )}
                 {field(
                   "Assigned to",
-                  <select
+                  <Select
                     value={lead.assigned_user_id ?? ""}
                     onChange={(e) => saveLead({ assigned_user_id: e.target.value || null })}
                     className={inputClass}
@@ -945,7 +954,7 @@ export default function LeadDetailPage() {
                         {user.name}
                       </option>
                     ))}
-                  </select>,
+                  </Select>,
                 )}
                 {field("Source", <span className="text-sm text-fg-muted">{lead.source ?? "—"}</span>)}
                 {field(
@@ -957,7 +966,7 @@ export default function LeadDetailPage() {
                 <div className="sm:col-span-2">
                   {field(
                     "Lead notes",
-                    <textarea
+                    <Textarea
                       defaultValue={lead.notes ?? ""}
                       onBlur={(e) => saveLead({ notes: e.target.value })}
                       rows={3}
@@ -987,7 +996,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {opportunities && opportunities.length === 0 && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No proposal logged yet.</li>
+                  <li>
+                    <EmptyRow>No proposal logged yet.</EmptyRow>
+                  </li>
                 )}
                 {opportunities?.map((op) => (
                   <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
@@ -1014,13 +1025,13 @@ export default function LeadDetailPage() {
 
               {!opportunities?.some((o) => o.status === "open") && lead.status !== "won" && lead.status !== "lost" && (
                 <form onSubmit={handleLogProposal} className="mt-3 flex flex-wrap items-end gap-2">
-                  <input
+                  <Input
                     value={proposalTier}
                     onChange={(e) => setProposalTier(e.target.value)}
                     placeholder="Package (e.g. Core)"
                     className="input w-40"
                   />
-                  <input
+                  <Input
                     value={proposalPrice}
                     onChange={(e) => setProposalPrice(e.target.value)}
                     inputMode="decimal"
@@ -1030,7 +1041,7 @@ export default function LeadDetailPage() {
                   <button
                     type="submit"
                     disabled={loggingProposal}
-                    className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                    className="btn btn-secondary"
                   >
                     {loggingProposal ? "Logging…" : "Log proposal"}
                   </button>
@@ -1045,7 +1056,7 @@ export default function LeadDetailPage() {
                 <button
                   onClick={handleGenerateSalesAudit}
                   disabled={generatingAudit}
-                  className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary"
                 >
                   {generatingAudit ? "Generating…" : "Generate sales audit"}
                 </button>
@@ -1059,7 +1070,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {salesAudits && salesAudits.length === 0 && !generatingAudit && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No sales audits generated yet.</li>
+                  <li>
+                    <EmptyRow>No sales audits generated yet.</EmptyRow>
+                  </li>
                 )}
                 {salesAudits?.map((report) => {
                   const expanded = expandedAuditId === report.id;
@@ -1080,11 +1093,7 @@ export default function LeadDetailPage() {
                           Sales audit — {new Date(report.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-3">
-                          {report.flagged_for_review && (
-                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                              Flagged for review
-                            </span>
-                          )}
+                          {report.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
                           <Link
                             href={`/dashboard/leads/${leadId}/sales-audits/${report.id}`}
                             className="text-xs text-fg-muted hover:underline"
@@ -1113,7 +1122,7 @@ export default function LeadDetailPage() {
                       key={channel}
                       onClick={() => handleGenerateOutreach(channel)}
                       disabled={generatingChannel !== null}
-                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                      className="btn btn-secondary"
                     >
                       {generatingChannel === channel ? "Generating…" : OUTREACH_CHANNEL_LABELS[channel]}
                     </button>
@@ -1122,7 +1131,7 @@ export default function LeadDetailPage() {
                     <button
                       onClick={() => handleGenerateOutreach("follow_up")}
                       disabled={generatingChannel !== null}
-                      className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
+                      className="btn btn-secondary"
                       title="Drafts an actual follow-up message, grounded in the outreach already sent to this lead."
                     >
                       {generatingChannel === "follow_up" ? "Generating…" : OUTREACH_CHANNEL_LABELS.follow_up}
@@ -1134,7 +1143,9 @@ export default function LeadDetailPage() {
 
               <ul className="mt-3 divide-y divide-border border border-border">
                 {outreachMessages && outreachMessages.length === 0 && generatingChannel === null && (
-                  <li className="px-3 py-3 text-sm text-fg-muted">No outreach drafted yet.</li>
+                  <li>
+                    <EmptyRow>No outreach drafted yet.</EmptyRow>
+                  </li>
                 )}
                 {outreachMessages?.map((message) => {
                   const expanded = expandedOutreachId === message.id;
@@ -1158,12 +1169,8 @@ export default function LeadDetailPage() {
                           {new Date(message.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-2">
-                          {message.flagged_for_review && (
-                            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged</span>
-                          )}
-                          <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-fg-muted">
-                            {OUTREACH_STATUS_LABELS[message.status]}
-                          </span>
+                          {message.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
+                          <Badge tone="muted">{OUTREACH_STATUS_LABELS[message.status]}</Badge>
                         </div>
                       </div>
                       <AnimatedHeight open={expanded}>
@@ -1171,13 +1178,13 @@ export default function LeadDetailPage() {
                         <div className="mt-3">
                           {message.channel === "email" || message.channel === "follow_up" ? (
                             <div className="space-y-2">
-                              <input
+                              <Input
                                 value={editSubject}
                                 onChange={(e) => setEditSubject(e.target.value)}
                                 placeholder="Subject"
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editBody}
                                 onChange={(e) => setEditBody(e.target.value)}
                                 placeholder="Body"
@@ -1187,27 +1194,27 @@ export default function LeadDetailPage() {
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <input
+                              <Input
                                 value={editOpeningLine}
                                 onChange={(e) => setEditOpeningLine(e.target.value)}
                                 placeholder="Opening line"
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editKeyPoints}
                                 onChange={(e) => setEditKeyPoints(e.target.value)}
                                 placeholder="Key points — one per line"
                                 rows={4}
                                 className={inputClass}
                               />
-                              <textarea
+                              <Textarea
                                 value={editObjectionHandling}
                                 onChange={(e) => setEditObjectionHandling(e.target.value)}
                                 placeholder="Objection handling — one per line"
                                 rows={3}
                                 className={inputClass}
                               />
-                              <input
+                              <Input
                                 value={editSuggestedClose}
                                 onChange={(e) => setEditSuggestedClose(e.target.value)}
                                 placeholder="Suggested close"
@@ -1219,14 +1226,14 @@ export default function LeadDetailPage() {
                             <button
                               onClick={() => handleSaveOutreachEdit(message)}
                               disabled={savingOutreachEdit}
-                              className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                              className="btn btn-primary btn-sm"
                             >
                               {savingOutreachEdit ? "Saving…" : "Save"}
                             </button>
                             <button
                               onClick={cancelEditOutreach}
                               disabled={savingOutreachEdit}
-                              className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                              className="btn btn-secondary btn-sm"
                             >
                               Cancel
                             </button>
@@ -1239,7 +1246,7 @@ export default function LeadDetailPage() {
                             {(message.status === "drafted" || message.status === "approved") && (
                               <button
                                 onClick={() => startEditOutreach(message)}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Edit
                               </button>
@@ -1248,7 +1255,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "approve")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Approve
                               </button>
@@ -1257,7 +1264,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleSendEmail(message.id)}
                                 disabled={sendingEmailId === message.id}
-                                className="rounded-md border border-fg bg-accent px-2.5 py-1 text-xs text-accent-fg hover:opacity-90 disabled:opacity-50"
+                                className="btn btn-primary btn-sm"
                                 title="Dispatches this approved email through the configured provider and records the attempt."
                               >
                                 {sendingEmailId === message.id
@@ -1271,7 +1278,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "mark-sent")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                                 title={
                                   message.channel === "email"
                                     ? "Records that this went out by hand, without dispatching it from the app."
@@ -1285,7 +1292,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "mark-replied")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Mark replied
                               </button>
@@ -1294,7 +1301,7 @@ export default function LeadDetailPage() {
                               <button
                                 onClick={() => handleOutreachAction(message.id, "close")}
                                 disabled={busy}
-                                className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                                className="btn btn-secondary btn-sm"
                               >
                                 Close
                               </button>
@@ -1308,7 +1315,7 @@ export default function LeadDetailPage() {
                                     className={
                                       send.status === "sent"
                                         ? "font-medium text-emerald-800 dark:text-emerald-300"
-                                        : "font-medium text-error"
+                                        : "font-medium text-danger"
                                     }
                                   >
                                     {send.status === "sent" ? "Sent" : "Failed"}
@@ -1318,7 +1325,7 @@ export default function LeadDetailPage() {
                                     {send.sent_by_user_name ? ` · by ${send.sent_by_user_name}` : ""}
                                   </span>
                                   {send.error_message && (
-                                    <span className="w-full text-error">{send.error_message}</span>
+                                    <span className="w-full text-danger">{send.error_message}</span>
                                   )}
                                 </li>
                               ))}
@@ -1348,7 +1355,9 @@ export default function LeadDetailPage() {
             </div>
             <ul className="mt-3 divide-y divide-border border border-border">
               {meetings && meetings.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">No meetings scheduled yet.</li>
+                <li>
+                  <EmptyRow>No meetings scheduled yet.</EmptyRow>
+                </li>
               )}
               {meetings?.map((m) => (
                 <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
@@ -1374,9 +1383,11 @@ export default function LeadDetailPage() {
             </div>
             <ul className="mt-3 divide-y divide-border border border-border">
               {pipelineEvents && pipelineEvents.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">
-                  No stage changes yet — this lead has been {LEAD_STATUS_LABEL[lead.status].toLowerCase()} since it was
-                  created.
+                <li>
+                  <EmptyRow>
+                    No stage changes yet — this lead has been {LEAD_STATUS_LABEL[lead.status].toLowerCase()} since it
+                    was created.
+                  </EmptyRow>
                 </li>
               )}
               {pipelineEvents?.map((event) => (
@@ -1392,7 +1403,9 @@ export default function LeadDetailPage() {
             <h3 className="text-sm font-semibold text-fg">Activity history</h3>
             <ul className="mt-3 divide-y divide-border border border-border">
               {activity && activity.length === 0 && (
-                <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
+                <li>
+                  <EmptyRow>No activity yet.</EmptyRow>
+                </li>
               )}
               {activity?.map((item) => (
                 <li key={item.id} className="px-3 py-2 text-sm">

@@ -24,7 +24,10 @@ import { WebsiteView } from "@/components/WebsiteView";
 import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Badge } from "@/components/ui/Badge";
 import { buildChecklist, checklistProgress, type ChecklistItem } from "@/lib/websiteChecklist";
+import { Select } from "@/components/ui/Select";
+import { TabBar } from "@/components/ui/Tabs";
 
 const TABS = [
   { id: "content", label: "Pages & content" },
@@ -260,7 +263,7 @@ function ProjectWebsiteWorkspaceInner() {
       </Link>
 
       {/* 1. Overview */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="page-title">{project?.name ?? "Website"}</h1>
@@ -342,7 +345,7 @@ function ProjectWebsiteWorkspaceInner() {
         {versions.length > 1 && (
           <div className="mt-4 flex items-center gap-2 text-sm">
             <span className="text-fg-muted">Version</span>
-            <select
+            <Select
               value={website?.id ?? ""}
               onChange={(e) => handleSelectVersion(e.target.value)}
               className="rounded-md border border-border-strong bg-surface px-2 py-1"
@@ -353,13 +356,13 @@ function ProjectWebsiteWorkspaceInner() {
                   {v.anti_slop_score !== null ? ` — score ${v.anti_slop_score}` : ""}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
       </section>
 
       {/* 2. Build checklist */}
-      <section className="rounded-md border border-border bg-surface p-4">
+      <section className="panel">
         <h2 className="section-title">Build checklist</h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           Derived from the project&apos;s real approval, content, QA and deployment state — not a manual list.
@@ -392,19 +395,7 @@ function ProjectWebsiteWorkspaceInner() {
 
       {/* 3-6. Workspace tabs */}
       <div>
-        <div className="flex flex-wrap gap-1 border-b border-border">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
-                tab === t.id ? "border-fg font-medium text-fg" : "border-transparent text-fg-muted hover:text-fg"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} active={tab} onChange={(id) => setTab(id as Tab)} />
 
         <div className="mt-4">
           {tab === "content" &&
@@ -492,15 +483,9 @@ function ProjectWebsiteWorkspaceInner() {
                   <div className="mt-3">
                     <QaReportView report={qaReport} />
                     <div className="mt-3 flex items-center gap-3">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          qaReport.human_approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={qaReport.human_approved ? "success" : "muted"}>
                         {qaReport.human_approved ? `Signed off by ${qaReport.approved_by_user_name}` : "Not signed off"}
-                      </span>
+                      </Badge>
                       {!qaReport.human_approved && (
                         <button
                           onClick={handleApproveQa}
@@ -532,31 +517,19 @@ function ProjectWebsiteWorkspaceInner() {
                 <>
                   <div className="rounded-md border border-border p-4">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          website.approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={website.approved ? "success" : "muted"}>
                         {website.approved ? `Internally approved by ${website.approved_by_user_name}` : "Not internally approved"}
-                      </span>
+                      </Badge>
                       {!website.approved && (
                         <button onClick={handleApproveWebsite} disabled={approvingWebsite} className="btn btn-secondary btn-sm">
                           {approvingWebsite ? "Approving…" : "Approve website"}
                         </button>
                       )}
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          website.client_approved
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            : "bg-surface-subtle text-fg-muted"
-                        }`}
-                      >
+                      <Badge tone={website.client_approved ? "success" : "muted"}>
                         {website.client_approved
                           ? `Client approved (recorded by ${website.client_approved_by_user_name})`
                           : "Client approval not recorded"}
-                      </span>
+                      </Badge>
                       {website.approved && !website.client_approved && (
                         <button onClick={handleClientApprove} disabled={clientApproving} className="btn btn-secondary btn-sm">
                           {clientApproving ? "Recording…" : "Record client approval"}

@@ -17,6 +17,10 @@ import {
 } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -48,8 +52,6 @@ function monthGrid(year: number, month: number): Date[] {
     return d;
   });
 }
-
-const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 text-sm";
 
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);
@@ -300,38 +302,38 @@ export default function CalendarPage() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="mt-4 max-w-2xl space-y-3 border border-border p-4">
-          <input
+          <Input
             required
             placeholder="Meeting title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className={inputClass}
+            className="input"
           />
           <div className="flex gap-3">
-            <input
+            <Input
               required
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className={inputClass}
+              className="input"
             />
-            <input
+            <Input
               required
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className={inputClass}
+              className="input"
             />
-            <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass}>
+            <Select value={duration} onChange={(e) => setDuration(e.target.value)} className="input">
               <option value="15">15 min</option>
               <option value="30">30 min</option>
               <option value="45">45 min</option>
               <option value="60">60 min</option>
-            </select>
+            </Select>
           </div>
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5">
-              <input
+              <Input
                 type="radio"
                 checked={parentType === "lead"}
                 onChange={() => {
@@ -342,7 +344,7 @@ export default function CalendarPage() {
               Sales call (lead)
             </label>
             <label className="flex items-center gap-1.5">
-              <input
+              <Input
                 type="radio"
                 checked={parentType === "project"}
                 onChange={() => {
@@ -353,11 +355,11 @@ export default function CalendarPage() {
               Client check-in (project)
             </label>
           </div>
-          <select
+          <Select
             required
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
-            className={inputClass}
+            className="input"
           >
             <option value="">{parentType === "lead" ? "Select a lead…" : "Select a project…"}</option>
             {(parentType === "lead" ? leads : projects).map((item) => (
@@ -365,12 +367,12 @@ export default function CalendarPage() {
                 {parentType === "lead" ? (item as Lead).business_name : (item as Project).name}
               </option>
             ))}
-          </select>
+          </Select>
           <div className="flex gap-3">
-            <select
+            <Select
               value={meetingType}
               onChange={(e) => setMeetingType(e.target.value as MeetingType)}
-              className={inputClass}
+              className="input"
             >
               <option value="">Type: default for {parentType === "lead" ? "sales call" : "check-in"}</option>
               {MEETING_TYPES.map((t) => (
@@ -378,11 +380,11 @@ export default function CalendarPage() {
                   {MEETING_TYPE_LABELS[t]}
                 </option>
               ))}
-            </select>
-            <select
+            </Select>
+            <Select
               value={assignedUserId}
               onChange={(e) => setAssignedUserId(e.target.value)}
-              className={inputClass}
+              className="input"
             >
               <option value="">Assigned: same as {parentType}</option>
               {users.map((user) => (
@@ -390,14 +392,14 @@ export default function CalendarPage() {
                   {user.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <textarea
+          <Textarea
             placeholder="Notes (optional)"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className={inputClass}
+            className="input"
           />
           {formError && <p className="text-error">{formError}</p>}
           <button
@@ -419,14 +421,14 @@ export default function CalendarPage() {
       <div className="mt-6 flex items-center justify-between">
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
+          className="btn btn-secondary btn-sm"
         >
           ← Prev
         </button>
         <span className="text-sm font-medium text-fg">{monthLabel}</span>
         <button
           onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-sm hover:bg-surface-subtle"
+          className="btn btn-secondary btn-sm"
         >
           Next →
         </button>
@@ -504,9 +506,7 @@ export default function CalendarPage() {
             {new Date(selectedMeeting.scheduled_at).toLocaleString()} ({selectedMeeting.duration_minutes} min)
           </p>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-            <span className="rounded bg-surface-subtle px-2 py-0.5 text-fg-muted">
-              {MEETING_STATUS_LABELS[selectedMeeting.status]}
-            </span>
+            <Badge tone="muted">{MEETING_STATUS_LABELS[selectedMeeting.status]}</Badge>
             {selectedMeeting.assigned_user_name && <span>Assigned to {selectedMeeting.assigned_user_name}</span>}
             {selectedMeeting.synced_to_calendar && <span className="text-emerald-700 dark:text-emerald-400">Synced to calendar</span>}
           </p>
@@ -515,20 +515,20 @@ export default function CalendarPage() {
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field(
               "Notes",
-              <textarea
+              <Textarea
                 defaultValue={selectedMeeting.notes ?? ""}
                 onBlur={(e) => handleSaveNotes(e.target.value)}
                 rows={3}
-                className={inputClass}
+                className="input"
               />,
             )}
             {field(
               "Outcome",
-              <input
+              <Input
                 defaultValue={selectedMeeting.outcome ?? ""}
                 onBlur={(e) => handleSaveOutcome(e.target.value)}
                 placeholder="e.g. Proceeding to proposal"
-                className={inputClass}
+                className="input"
               />,
             )}
           </div>
@@ -539,21 +539,21 @@ export default function CalendarPage() {
                 <button
                   onClick={() => handleStatusChange("held")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
                   Mark held
                 </button>
                 <button
                   onClick={() => handleStatusChange("no_show")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
                   Mark no-show
                 </button>
                 <button
                   onClick={() => handleStatusChange("cancelled")}
                   disabled={meetingBusy}
-                  className="rounded-md border border-border-strong px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:bg-red-500/10 dark:text-red-300"
+                  className="btn btn-secondary btn-sm text-red-600 hover:bg-red-50 dark:bg-red-500/10 dark:text-red-300"
                 >
                   Cancel meeting
                 </button>
@@ -563,7 +563,7 @@ export default function CalendarPage() {
               <button
                 onClick={handleGenerateBrief}
                 disabled={meetingBusy}
-                className="ml-auto rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle disabled:opacity-50"
+                className="btn btn-secondary btn-sm ml-auto"
               >
                 {meetingBusy ? "Generating…" : selectedMeeting.brief ? "Regenerate brief" : "Generate brief"}
               </button>
@@ -633,24 +633,21 @@ function AttendeesPanel({
         }}
         className="mt-2 flex gap-2"
       >
-        <input
+        <Input
           type="email"
           required
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
-        <input
+        <Input
           placeholder="Name (optional)"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-        >
+        <button type="submit" className="btn btn-secondary btn-sm shrink-0">
           Add
         </button>
       </form>
@@ -707,23 +704,20 @@ function RemindersPanel({
         }}
         className="mt-2 flex gap-2"
       >
-        <input
+        <Input
           type="datetime-local"
           required
           value={remindAt}
           onChange={(e) => setRemindAt(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
-        <input
+        <Input
           placeholder="Note (optional)"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className={`${inputClass} flex-1`}
+          className="input flex-1"
         />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-border-strong px-2.5 py-1 text-xs hover:bg-surface-subtle"
-        >
+        <button type="submit" className="btn btn-secondary btn-sm shrink-0">
           Add
         </button>
       </form>
@@ -753,9 +747,7 @@ function MeetingBriefPanel({ brief }: { brief: NonNullable<Meeting["brief"]> }) 
     <div className="mt-5 border-t border-border pt-4">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-fg">Meeting brief</h3>
-        {brief.flagged_for_review && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-        )}
+        {brief.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
       </div>
       {brief.review_notes && <p className="mt-1 text-xs text-fg-muted">{brief.review_notes}</p>}
 

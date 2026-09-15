@@ -12,6 +12,8 @@
 
 import type { ReactNode } from "react";
 import type { PreviewSection } from "@/lib/previewApi";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 
 type CtaLink = { label: string; href: string; variant?: string };
 type Media = { src: string; alt: string };
@@ -362,9 +364,9 @@ function renderSection(section: PreviewSection): ReactNode {
               <div key={i}>
                 <label className="text-sm text-neutral-600">{f.label}</label>
                 {f.type === "textarea" ? (
-                  <textarea disabled className="mt-1 w-full rounded-md border border-neutral-300 p-2 text-sm" />
+                  <Textarea disabled className="mt-1 w-full rounded-md border border-neutral-300 p-2 text-sm" />
                 ) : (
-                  <input disabled className="mt-1 w-full rounded-md border border-neutral-300 p-2 text-sm" />
+                  <Input disabled className="mt-1 w-full rounded-md border border-neutral-300 p-2 text-sm" />
                 )}
               </div>
             ))}

@@ -7,9 +7,10 @@ import {
   leadMatchesTab,
   leadNextAction,
   leadTone,
+  sortLeads,
   statusesForTab,
 } from "./leads";
-import type { LeadStatus } from "./api";
+import type { Lead, LeadPriority, LeadStatus } from "./api";
 
 const ALL_STATUSES: LeadStatus[] = [
   "new", "researched", "qualified", "contacted", "replied",
@@ -155,5 +156,96 @@ describe("countLeadsByTab", () => {
     expect(c.interested).toBe(1);
     expect(c.won).toBe(1);
     expect(c.lost).toBe(0);
+  });
+});
+
+function fullLead(overrides: Partial<Lead> & { id: string }): Lead {
+  return {
+    business_id: overrides.id,
+    client_id: null,
+    planning_id: null,
+    prospect_project: null,
+    business_name: overrides.id,
+    industry: null,
+    suburb: null,
+    state: null,
+    website_url: null,
+    business_email: null,
+    business_phone: null,
+    status: "new",
+    priority: "medium" as LeadPriority,
+    score: null,
+    source: null,
+    notes: null,
+    archived_at: null,
+    assigned_user_id: null,
+    assigned_user_name: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    google_rating: null,
+    google_review_count: null,
+    review_health_score: null,
+    review_activity_level: null,
+    review_frequency_per_month: null,
+    review_sentiment_trend: null,
+    positive_review_themes: [],
+    negative_review_themes: [],
+    review_summary: null,
+    review_data_updated_at: null,
+    ...overrides,
+  };
+}
+
+describe("sortLeads", () => {
+  it("sinks archived leads to the bottom regardless of sort", () => {
+    const leads = [
+      fullLead({ id: "archived", archived_at: "2026-08-01T00:00:00Z", priority: "high" }),
+      fullLead({ id: "active", priority: "low" }),
+    ];
+    const sorted = sortLeads(leads, "priority");
+    expect(sorted.map((l) => l.id)).toEqual(["active", "archived"]);
+  });
+
+  it("orders by priority high -> medium -> low, then recency as a tiebreak", () => {
+    const leads = [
+      fullLead({ id: "low", priority: "low", updated_at: "2026-09-03T00:00:00Z" }),
+      fullLead({ id: "high-old", priority: "high", updated_at: "2026-09-01T00:00:00Z" }),
+      fullLead({ id: "high-new", priority: "high", updated_at: "2026-09-02T00:00:00Z" }),
+      fullLead({ id: "medium", priority: "medium", updated_at: "2026-09-04T00:00:00Z" }),
+    ];
+    const sorted = sortLeads(leads, "priority");
+    expect(sorted.map((l) => l.id)).toEqual(["high-new", "high-old", "medium", "low"]);
+  });
+
+  it("orders by score descending, with unscored leads sinking below scored ones", () => {
+    const leads = [
+      fullLead({ id: "unscored", score: null }),
+      fullLead({ id: "low-score", score: 20 }),
+      fullLead({ id: "high-score", score: 90 }),
+    ];
+    const sorted = sortLeads(leads, "score");
+    expect(sorted.map((l) => l.id)).toEqual(["high-score", "low-score", "unscored"]);
+  });
+
+  it("orders by nearest follow-up due date, with no-follow-up leads last", () => {
+    const leads = [
+      fullLead({ id: "none" }),
+      fullLead({ id: "later" }),
+      fullLead({ id: "soonest" }),
+    ];
+    const followUps = new Map([
+      ["later", "2026-09-20"],
+      ["soonest", "2026-09-10"],
+    ]);
+    const sorted = sortLeads(leads, "follow_up", followUps);
+    expect(sorted.map((l) => l.id)).toEqual(["soonest", "later", "none"]);
+  });
+
+  it("defaults to most-recently-updated first", () => {
+    const leads = [
+      fullLead({ id: "older", updated_at: "2026-09-01T00:00:00Z" }),
+      fullLead({ id: "newer", updated_at: "2026-09-05T00:00:00Z" }),
+    ];
+    expect(sortLeads(leads, "updated").map((l) => l.id)).toEqual(["newer", "older"]);
   });
 });

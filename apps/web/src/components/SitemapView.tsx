@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Badge } from "@/components/ui/Badge";
 import {
   api,
   NAV_PLACEMENTS,
@@ -116,7 +120,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Title</span>
-          <input
+          <Input
             value={value.title}
             onChange={(e) => {
               const title = e.target.value;
@@ -127,7 +131,7 @@ function PageForm({
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Slug</span>
-          <input
+          <Input
             value={value.slug}
             onChange={(e) => onChange({ ...value, slug: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -137,7 +141,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Page type</span>
-          <select
+          <Select
             value={value.page_type}
             onChange={(e) => onChange({ ...value, page_type: e.target.value as PageType })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -147,11 +151,11 @@ function PageForm({
                 {PAGE_TYPE_LABELS[t]}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Navigation</span>
-          <select
+          <Select
             value={value.nav_placement}
             onChange={(e) => onChange({ ...value, nav_placement: e.target.value as NavPlacement })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -161,12 +165,12 @@ function PageForm({
                 {NAV_PLACEMENT_LABELS[p]}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       <label className="block text-sm">
         <span className="text-fg-muted">Purpose</span>
-        <textarea
+        <Textarea
           value={value.purpose}
           onChange={(e) => onChange({ ...value, purpose: e.target.value })}
           rows={2}
@@ -176,7 +180,7 @@ function PageForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block text-sm">
           <span className="text-fg-muted">Primary CTA</span>
-          <input
+          <Input
             value={value.primary_cta}
             onChange={(e) => onChange({ ...value, primary_cta: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -184,7 +188,7 @@ function PageForm({
         </label>
         <label className="block text-sm">
           <span className="text-fg-muted">Secondary CTA</span>
-          <input
+          <Input
             value={value.secondary_cta}
             onChange={(e) => onChange({ ...value, secondary_cta: e.target.value })}
             className="mt-1 w-full rounded-md border border-border-strong px-2 py-1.5 text-sm"
@@ -193,7 +197,7 @@ function PageForm({
       </div>
       <label className="block text-sm">
         <span className="text-fg-muted">Key sections (one per line)</span>
-        <textarea
+        <Textarea
           value={value.key_sections}
           onChange={(e) => onChange({ ...value, key_sections: e.target.value })}
           rows={2}
@@ -202,7 +206,7 @@ function PageForm({
       </label>
       <label className="block text-sm">
         <span className="text-fg-muted">Required content (one per line)</span>
-        <textarea
+        <Textarea
           value={value.required_content}
           onChange={(e) => onChange({ ...value, required_content: e.target.value })}
           rows={2}
@@ -211,7 +215,7 @@ function PageForm({
       </label>
       <label className="block text-sm">
         <span className="text-fg-muted">Required functionality (one per line)</span>
-        <textarea
+        <Textarea
           value={value.required_functionality}
           onChange={(e) => onChange({ ...value, required_functionality: e.target.value })}
           rows={2}
@@ -219,11 +223,7 @@ function PageForm({
         />
       </label>
       <div className="flex justify-end gap-2 pt-1">
-        <button
-          onClick={onCancel}
-          disabled={saving}
-          className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-hover disabled:opacity-50"
-        >
+        <button onClick={onCancel} disabled={saving} className="btn btn-secondary">
           Cancel
         </button>
         <button
@@ -377,15 +377,9 @@ function PageRow({
             <span className="text-sm font-medium text-fg">
               {expanded ? "▾" : "▸"} {page.title}
             </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              /{page.slug}
-            </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              {PAGE_TYPE_LABELS[page.page_type]}
-            </span>
-            <span className="rounded bg-surface-subtle px-1.5 py-0.5 text-xs text-fg-muted">
-              {NAV_PLACEMENT_LABELS[page.nav_placement]}
-            </span>
+            <Badge tone="muted">/{page.slug}</Badge>
+            <Badge tone="muted">{PAGE_TYPE_LABELS[page.page_type]}</Badge>
+            <Badge tone="muted">{NAV_PLACEMENT_LABELS[page.nav_placement]}</Badge>
           </div>
         </button>
         {!approved && (
@@ -564,23 +558,14 @@ export function SitemapView({ sitemap, onChange }: { sitemap: Sitemap; onChange:
     <div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span
-            className={`rounded px-2 py-0.5 text-xs font-medium ${
-              approved ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-subtle text-fg-muted"
-            }`}
-          >
+          <Badge tone={approved ? "success" : "muted"}>
             {approved ? "Approved — structural source of truth" : "Draft — review before continuing"}
-          </span>
-          {sitemap.flagged_for_review && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Flagged for review</span>
-          )}
+          </Badge>
+          {sitemap.flagged_for_review && <Badge tone="warning">Flagged for review</Badge>}
         </div>
         <div className="flex items-center gap-2">
           {!approved && (
-            <button
-              onClick={() => setAddingTop((v) => !v)}
-              className="rounded-md border border-border-strong px-3 py-1.5 text-sm hover:bg-surface-subtle"
-            >
+            <button onClick={() => setAddingTop((v) => !v)} className="btn btn-secondary">
               {addingTop ? "Cancel" : "Add page"}
             </button>
           )}

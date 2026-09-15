@@ -61,7 +61,7 @@ export function EvidencePanel({
   const src = displayView === "desktop" ? planning.screenshot_desktop_base64 : planning.screenshot_mobile_base64;
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface">
+    <div className="card overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <p className="text-xs font-medium text-fg-subtle">Website preview</p>
         {hasDesktop && hasMobile && (
@@ -119,7 +119,7 @@ export function EvidencePanel({
  */
 export function AnalysingPreviewPanel() {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface">
+    <div className="card overflow-hidden">
       <div className="border-b border-border px-3 py-2">
         <p className="text-xs font-medium text-fg-subtle">Website preview</p>
       </div>

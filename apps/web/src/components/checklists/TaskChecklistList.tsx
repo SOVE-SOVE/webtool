@@ -5,6 +5,10 @@ import { ApiError, type ActivityItem, type ChecklistItem, type StageChecklistIte
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { AssigneeAvatar } from "./AssigneeAvatar";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
+import { Checkbox } from "@/components/ui/Checkbox";
 
 // ChecklistItem and StageChecklistItem are structurally identical (same
 // ownership/blocked/required/review-version/notes fields) — this
@@ -126,18 +130,18 @@ function AddTaskRow({ users, onAdd }: { users: User[]; onAdd: (title: string, as
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <input
+        <Input
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           placeholder="Task title"
-          className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+          className="input min-w-0 flex-1"
         />
-        <select
+        <Select
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
-          className="rounded-md border border-border-strong bg-surface px-2 py-1 text-sm"
+          className="input w-auto"
         >
           <option value="">Unassigned</option>
           {users.map((u) => (
@@ -145,7 +149,7 @@ function AddTaskRow({ users, onAdd }: { users: User[]; onAdd: (title: string, as
               {u.name}
             </option>
           ))}
-        </select>
+        </Select>
         <button type="button" onClick={handleAdd} disabled={saving} className="btn btn-secondary btn-sm">
           {saving ? "Adding…" : "Add"}
         </button>
@@ -419,8 +423,7 @@ function TaskRow<T extends TaskItem, R>({
               {isNotRequired ? "–" : isBlocked ? "!" : isComplete ? "✓" : "○"}
             </span>
           ) : (
-            <input
-              type="checkbox"
+            <Checkbox
               checked={isComplete || needsReview}
               disabled={busy || isNotRequired || isBlocked}
               onChange={() => setStatus(isComplete || needsReview ? "pending" : "complete")}
@@ -488,12 +491,12 @@ function TaskRow<T extends TaskItem, R>({
             <label className="text-xs text-fg-muted" htmlFor={`assignee-${item.id}`}>
               Assigned to
             </label>
-            <select
+            <Select
               id={`assignee-${item.id}`}
               value={item.assigned_user_id ?? ""}
               onChange={(e) => reassign(e.target.value)}
               disabled={busy}
-              className="rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+              className="input w-auto"
             >
               <option value="">Unassigned</option>
               {users.map((u) => (
@@ -501,7 +504,7 @@ function TaskRow<T extends TaskItem, R>({
                   {u.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           {isBlocked ? (
@@ -516,12 +519,12 @@ function TaskRow<T extends TaskItem, R>({
             !isNotRequired &&
             (blocking ? (
               <div className="space-y-1.5">
-                <textarea
+                <Textarea
                   value={blockReason}
                   onChange={(e) => setBlockReason(e.target.value)}
                   placeholder="Why is this blocked? e.g. Waiting for approved business photos."
                   rows={2}
-                  className="w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                  className="input"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -580,13 +583,13 @@ function TaskRow<T extends TaskItem, R>({
               Add a note
             </label>
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 id={`note-${item.id}`}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitNote()}
                 placeholder="Optional note"
-                className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface px-2 py-1 text-xs"
+                className="input min-w-0 flex-1"
               />
               <button type="button" onClick={submitNote} disabled={busy || !note.trim()} className="btn btn-secondary btn-sm">
                 Save

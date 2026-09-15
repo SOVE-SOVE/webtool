@@ -5,7 +5,8 @@ import { useState } from "react";
 import { api, PLANNING_STATUS_LABELS, type PlanningChecklistSummary, type PlanningListItem } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import type { Density } from "@/lib/useDensity";
-import { PLANNING_MODE_LABEL, STATUS_BADGE_CLASS, planningCardAction, planningListItemMode } from "@/app/dashboard/planning/lib";
+import { Badge } from "@/components/ui/Badge";
+import { PLANNING_MODE_LABEL, STATUS_BADGE_TONE, planningCardAction, planningListItemMode } from "@/app/dashboard/planning/lib";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -164,9 +165,7 @@ export function PlanningCard({
         {locationParts.length > 0 && <p className="truncate text-xs text-fg-muted">{locationParts.join(" · ")}</p>}
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
-            {PLANNING_STATUS_LABELS[item.status]}
-          </span>
+          <Badge tone={STATUS_BADGE_TONE[item.status]}>{PLANNING_STATUS_LABELS[item.status]}</Badge>
           {item.status === "analysing" && (
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />
           )}

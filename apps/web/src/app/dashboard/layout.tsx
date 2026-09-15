@@ -15,7 +15,6 @@ import { ActivityIndicatorButton } from "@/components/activity/ActivityIndicator
 import { CommandMenuButton, CommandMenuProvider } from "@/components/ui/CommandMenuProvider";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
 import { CountBadge } from "@/components/ui/CountBadge";
-import { DoThisNext } from "@/components/ui/DoThisNext";
 import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -37,7 +36,7 @@ function NavLink({
         href={link.href}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        className={`flex items-center gap-2 rounded-md py-1.5 pl-[2.375rem] pr-3 text-[13px] transition-colors ${
+        className={`flex items-center gap-2 rounded-md py-1.5 pl-[2.375rem] pr-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
           active ? "font-medium text-fg" : "text-fg-subtle hover:text-fg"
         }`}
       >
@@ -52,7 +51,7 @@ function NavLink({
       href={link.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+      className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
         active
           ? "bg-accent font-medium text-accent-fg"
           : "text-fg-muted hover:bg-surface-hover hover:text-fg"
@@ -88,7 +87,10 @@ function SidebarContent({
   return (
     <>
       <div className="border-b border-border px-4 py-4">
-        <span className="text-sm font-semibold text-fg">Web Design OS</span>
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-sm bg-accent" />
+          <span className="text-sm font-semibold text-fg">Web Design OS</span>
+        </div>
         <p className="mt-0.5 truncate text-xs text-fg-muted">{me.workspace_name}</p>
       </div>
 
@@ -120,7 +122,10 @@ function SidebarContent({
         </p>
         <div className="mt-2 flex items-center justify-between gap-2">
           <ThemeToggle />
-          <button onClick={handleLogout} className="shrink-0 text-xs text-fg-muted hover:text-fg">
+          <button
+            onClick={handleLogout}
+            className="shrink-0 rounded text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
             Sign out
           </button>
         </div>
@@ -153,10 +158,11 @@ function BottomNav({
             key={link.href}
             href={link.href}
             aria-current={active ? "page" : undefined}
-            className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] ${
+            className={`relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
               active ? "text-fg" : "text-fg-muted"
             }`}
           >
+            {active && <span aria-hidden="true" className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-accent" />}
             <NavIcon name={link.icon} className="h-5 w-5" />
             <span className="truncate">{link.label === "Map Discovery" ? "Discover" : link.label}</span>
           </Link>
@@ -165,7 +171,7 @@ function BottomNav({
       <button
         type="button"
         onClick={onOpenMore}
-        className="flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] text-fg-muted"
+        className="flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
       >
         <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
           <path d="M4.5 10a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm7 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm5.5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
@@ -199,6 +205,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     setMobileNavOpen(false);
   }
 
+  // setChecking/setLoadError reset the previous attempt's result before a
+  // fresh `api.me()` call (initial mount, or a "Try again" retry) — a
+  // deliberate synchronous reset, not a derived-state anti-pattern.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setChecking(true);
     setLoadError(null);
@@ -221,12 +231,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       })
       .finally(() => setChecking(false));
   }, [router, retryCount]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // The sidebar's two badge counts — fetched once per short window
-  // (lib/navCounts.ts), shared across every page the same way
-  // lib/overview.ts backs <DoThisNext>. Refetches on navigation so
-  // acting on an item (e.g. approving a review item) is reflected soon
-  // after returning to a list page, without polling constantly.
+  // (lib/navCounts.ts), shared across every page. Refetches on
+  // navigation so acting on an item (e.g. approving a review item) is
+  // reflected soon after returning to a list page, without polling
+  // constantly.
   useEffect(() => {
     let alive = true;
     loadNavCounts()
@@ -271,7 +282,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setMobileNavOpen(true)}
             aria-label="Open navigation"
-            className="rounded-md p-2 text-fg-muted hover:bg-surface-hover"
+            className="rounded-md p-2 text-fg-muted hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
               <path
@@ -281,7 +292,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-fg">Web Design OS</span>
+          <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-sm bg-accent" />
+            Web Design OS
+          </span>
           <span className="w-9" />
         </div>
 
@@ -326,14 +340,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             any descendant — sticky binds to the *nearest* scrolling
             ancestor, so a sticky child here resolved against <main>'s
             own (permanently 0) scrollTop instead of the window's, and
-            never visibly stuck. DoThisNext sits after the page content —
-            pinned to the bottom of the scroll area, its own list capped
-            and internally scrollable so it never stretches the page.
-            Extra bottom padding on mobile keeps content clear of the
-            fixed bottom nav. Skipped on Today itself: Today's own
-            "Today's priorities" section renders this exact same
-            needs_attention queue as its hero content, so repeating it in
-            the tray below would just be the same list twice on one page. */}
+            never visibly stuck. Extra bottom padding on mobile keeps
+            content clear of the fixed bottom nav. */}
         <main className="flex min-w-0 flex-1 flex-col pb-14 pt-12 lg:pb-0 lg:pt-0">
           {/* Desktop-only header strip — pinned so the activity/search
               entry points stay reachable while scrolling a long page.
@@ -343,7 +351,6 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             <ActivityIndicatorButton />
           </div>
           <div className="min-w-0 flex-1">{children}</div>
-          {pathname !== "/dashboard" && <DoThisNext />}
         </main>
 
         <BottomNav pathname={pathname} search={searchParams} onOpenMore={() => setMobileNavOpen(true)} />

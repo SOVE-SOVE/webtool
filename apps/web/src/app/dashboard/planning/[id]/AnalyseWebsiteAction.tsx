@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type Planning } from "@/lib/api";
+import { Input } from "@/components/ui/Input";
 
 /**
  * The one primary "Analyse Website" action — used both as the focused
@@ -42,12 +43,12 @@ export function AnalyseWebsiteAction({
       className={`flex flex-wrap items-center gap-2 ${variant === "empty" ? "justify-center" : ""}`}
     >
       {!planning.website_url && (
-        <input
+        <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…"
           required
-          className="w-full max-w-sm rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm sm:w-auto"
+          className="input max-w-sm sm:w-auto"
         />
       )}
       <button type="submit" disabled={analysing || !url.trim()} className="btn btn-primary btn-sm">

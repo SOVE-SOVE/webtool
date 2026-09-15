@@ -5,12 +5,13 @@ import { api, ApiError, CONTENT_PAGE_STATUS_LABELS, type ContentPage, type Plann
 import { Disclosure } from "@/components/ui/Disclosure";
 import { AutoSaveInput } from "@/components/ui/AutoSaveInput";
 import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { ContentSectionEditor } from "./ContentSectionEditor";
 
-const STATUS_BADGE: Record<ContentPage["status"], string> = {
-  draft: "bg-surface-subtle text-fg-muted",
-  edited: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  approved: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300",
+const STATUS_TONE: Record<ContentPage["status"], BadgeTone> = {
+  draft: "muted",
+  edited: "info",
+  approved: "success",
 };
 
 /** One card per sitemap page that has generated content. Approving is
@@ -52,14 +53,8 @@ export function ContentDraftPageCard({
       hint={`${page.sections.length} section${page.sections.length === 1 ? "" : "s"}`}
       badge={
         <span className="flex items-center gap-1.5">
-          {page.stale && (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-              Needs review — source changed
-            </span>
-          )}
-          <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_BADGE[page.status]}`}>
-            {CONTENT_PAGE_STATUS_LABELS[page.status]}
-          </span>
+          {page.stale && <Badge tone="warning">Needs review — source changed</Badge>}
+          <Badge tone={STATUS_TONE[page.status]}>{CONTENT_PAGE_STATUS_LABELS[page.status]}</Badge>
         </span>
       }
     >
