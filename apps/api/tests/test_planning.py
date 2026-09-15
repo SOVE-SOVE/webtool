@@ -422,14 +422,33 @@ def test_get_planning_for_lead_returns_404_for_missing_lead(authed_client):
 
 
 def test_workspace_wide_planning_list(authed_client, monkeypatch):
-    lead = _create_lead(authed_client)
+    lead = _create_lead(authed_client, suburb="Byron Bay", state="NSW")
     _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
 
     items = authed_client.get("/api/v1/planning").json()
     assert len(items) == 1
-    assert items[0]["lead_business_name"] == "Coastal Cafe"
-    assert "screenshot_desktop_base64" not in items[0]
-    assert items[0]["project_id"] is None
+    item = items[0]
+    assert item["lead_business_name"] == "Coastal Cafe"
+    assert "screenshot_desktop_base64" not in item
+    assert item["project_id"] is None
+    # Enriched list fields (docs/07_SESSION_LOG.md — Planning landing page
+    # redesign): presence-only screenshot flag, derived mode signal, and
+    # the lead's location, all without pulling the actual base64 payload.
+    assert item["website_audit_id"] is not None
+    assert item["has_screenshot"] is True
+    assert item["lead_suburb"] == "Byron Bay"
+    assert item["lead_state"] == "NSW"
+    assert "updated_at" in item
+
+
+def test_workspace_wide_planning_list_has_screenshot_false_without_an_audit_screenshot(authed_client):
+    lead = _create_lead(authed_client)
+    _start_planning(authed_client, lead)
+
+    items = authed_client.get("/api/v1/planning").json()
+    assert len(items) == 1
+    assert items[0]["website_audit_id"] is None
+    assert items[0]["has_screenshot"] is False
 
 
 def test_planning_list_excludes_transferred_items_by_default(authed_client, monkeypatch):
@@ -447,6 +466,68 @@ def test_planning_list_excludes_transferred_items_by_default(authed_client, monk
 
     single = authed_client.get(f"/api/v1/planning/{result['id']}").json()
     assert single["project_id"] == project["id"]
+
+
+# --- Checklist summaries (bulk, workspace-wide) ---------------------------------
+
+
+def test_checklist_summaries_reflects_progress_and_next_item(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    summaries = authed_client.get("/api/v1/planning/checklist-summaries").json()
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["planning_id"] == planning["id"]
+    assert summary["total"] == 6  # len(DEFAULT_PLANNING_TASKS), all required
+    assert summary["completed"] == 0
+    assert summary["pct"] == 0
+    assert summary["next_item_title"] == "Review website audit or new-website research"
+
+    checklist = authed_client.get(f"/api/v1/planning/{planning['id']}/checklist").json()
+    first_item_id = checklist["items"][0]["id"]
+    authed_client.patch(f"/api/v1/stage-checklist-items/{first_item_id}", json={"status": "complete"})
+
+    summaries = authed_client.get("/api/v1/planning/checklist-summaries").json()
+    assert summaries[0]["completed"] == 1
+    assert summaries[0]["next_item_title"] == "Review Google Review Insights, where available"
+
+
+def test_checklist_summaries_is_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    assert authed_client.get("/api/v1/planning/checklist-summaries").json() != []
+    assert other_authed_client.get("/api/v1/planning/checklist-summaries").json() == []
+
+
+# --- Screenshot thumbnail route --------------------------------------------------
+
+
+def test_screenshot_route_returns_the_decoded_desktop_screenshot(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    res = authed_client.get(f"/api/v1/planning/{planning['id']}/screenshot")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+    assert res.content == b"desktop-png"  # base64 "ZGVza3RvcC1wbmc=" decoded
+
+
+def test_screenshot_route_404s_when_no_screenshot_exists(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.get(f"/api/v1/planning/{planning['id']}/screenshot")
+    assert res.status_code == 404
+
+
+def test_screenshot_route_is_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    planning = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+
+    res = other_authed_client.get(f"/api/v1/planning/{planning['id']}/screenshot")
+    assert res.status_code == 404
 
 
 # --- Editing --------------------------------------------------------------------

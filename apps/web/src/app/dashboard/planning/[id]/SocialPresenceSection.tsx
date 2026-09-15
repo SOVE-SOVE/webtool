@@ -1,8 +1,8 @@
 "use client";
 
 import { api, type Planning, type SocialFieldSource, type UpdateSocialProfileRequest } from "@/lib/api";
-import { AutoSaveInput } from "./AutoSaveInput";
-import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { AutoSaveInput } from "@/components/ui/AutoSaveInput";
+import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
 
 const SOURCE_BADGE_CLASS: Record<SocialFieldSource, string> = {
   discovered_business: "bg-surface-subtle text-fg-muted",

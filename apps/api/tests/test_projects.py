@@ -161,3 +161,55 @@ def test_prospect_project_is_reachable_through_every_normal_workspace_scoped_end
     approve = authed_client.post(f"/api/v1/projects/{project_id}/brief/approve")
     assert approve.status_code == 200
     assert authed_client.get(f"/api/v1/projects/{project_id}").json()["stage"] == "brief"
+
+
+# --- Checklist summaries (bulk, workspace-wide) ---------------------------------
+
+
+def test_project_checklist_summaries_reflects_progress_and_next_item(authed_client):
+    client_id = _create_client(authed_client)
+    project = authed_client.post("/api/v1/projects", json={"client_id": client_id, "name": "New website"}).json()
+
+    summaries = authed_client.get("/api/v1/projects/checklist-summaries").json()
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["project_id"] == project["id"]
+    assert summary["total"] == 6  # len(DEFAULT_PROJECT_STAGE_TASKS), all required
+    assert summary["completed"] == 0
+    assert summary["pct"] == 0
+    assert summary["next_item_title"] == "Review build inputs"
+    assert summary["blocked_reason"] is None
+
+    checklist = authed_client.get(f"/api/v1/projects/{project['id']}/checklist").json()
+    first_item_id = checklist["items"][0]["id"]
+    authed_client.patch(f"/api/v1/stage-checklist-items/{first_item_id}", json={"status": "complete"})
+
+    summaries = authed_client.get("/api/v1/projects/checklist-summaries").json()
+    assert summaries[0]["completed"] == 1
+
+
+def test_project_checklist_summaries_surfaces_a_blocked_reason(authed_client):
+    """next_action only reports "blocked" once every remaining required
+    task is actually blocked (see checklists/shared.py::select_next_action)
+    — blocking just the first item still leaves later ones actionable,
+    so this blocks every required item to reach that state."""
+    client_id = _create_client(authed_client)
+    project = authed_client.post("/api/v1/projects", json={"client_id": client_id, "name": "New website"}).json()
+    checklist = authed_client.get(f"/api/v1/projects/{project['id']}/checklist").json()
+
+    for item in checklist["items"]:
+        authed_client.patch(
+            f"/api/v1/stage-checklist-items/{item['id']}",
+            json={"status": "blocked", "blocked_reason": "Waiting on the client for photos"},
+        )
+
+    summaries = authed_client.get("/api/v1/projects/checklist-summaries").json()
+    assert summaries[0]["blocked_reason"] == "Waiting on the client for photos"
+
+
+def test_project_checklist_summaries_is_workspace_scoped(authed_client, other_authed_client):
+    client_id = _create_client(authed_client)
+    authed_client.post("/api/v1/projects", json={"client_id": client_id, "name": "New website"})
+
+    assert authed_client.get("/api/v1/projects/checklist-summaries").json() != []
+    assert other_authed_client.get("/api/v1/projects/checklist-summaries").json() == []

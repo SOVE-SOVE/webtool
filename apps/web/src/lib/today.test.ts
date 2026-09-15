@@ -61,7 +61,7 @@ describe("computeNextActions", () => {
     const actions = computeNextActions({ leads: [], planning, projects: [] });
     const action = actions.find((a) => a.id === "planning-needs-review")!;
     expect(action.count).toBe(2);
-    expect(action.href).toBe("/dashboard/planning");
+    expect(action.href).toBe("/dashboard/build/planning");
   });
 
   it("counts projects still at intake as ready to build", () => {
@@ -69,7 +69,7 @@ describe("computeNextActions", () => {
     const actions = computeNextActions({ leads: [], planning: [], projects });
     const action = actions.find((a) => a.id === "projects-ready-to-build")!;
     expect(action.count).toBe(2);
-    expect(action.href).toBe("/dashboard/projects?stage=intake");
+    expect(action.href).toBe("/dashboard/build/projects?stage=intake");
   });
 
   it("omits an action entirely when its count is zero, rather than showing a zero", () => {
@@ -105,8 +105,13 @@ describe("computePipelineStages", () => {
     expect(stages.find((s) => s.id === "planning")!.empty).toBeUndefined();
     expect(stages.find((s) => s.id === "projects")!.empty).toEqual({
       label: "Open Planning",
-      href: "/dashboard/planning",
+      href: "/dashboard/build/planning",
     });
+  });
+
+  it("the Live stage links into the Clients workspace's Websites tab", () => {
+    const stages = computePipelineStages({ reviewQueueCount: 0, leadsCount: 0, planningCount: 0, projects: [] });
+    expect(stages.find((s) => s.id === "live")!.href).toBe("/dashboard/clients?tab=websites");
   });
 });
 
@@ -123,6 +128,18 @@ describe("activityHref", () => {
 
   it("falls back to Today for an unrecognised entity type", () => {
     expect(activityHref({ entity_type: "something_new", entity_id: "abc" } as ActivityItem)).toBe("/dashboard");
+  });
+
+  it("links billing entity types into the Clients workspace's Revenue tab", () => {
+    expect(activityHref({ entity_type: "payment", entity_id: "abc" } as ActivityItem)).toBe(
+      "/dashboard/clients?tab=revenue",
+    );
+    expect(activityHref({ entity_type: "website_agreement", entity_id: "abc" } as ActivityItem)).toBe(
+      "/dashboard/clients?tab=revenue",
+    );
+    expect(activityHref({ entity_type: "hosting_plan", entity_id: "abc" } as ActivityItem)).toBe(
+      "/dashboard/clients?tab=revenue&revenueTab=hosting",
+    );
   });
 });
 

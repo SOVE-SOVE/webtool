@@ -8,6 +8,196 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-14 — Desktop UX overhaul: `<main>`'s `overflow-x-auto` broke `position: sticky`
+
+**Decision:** Removed `overflow-x-auto` from `dashboard/layout.tsx`'s
+`<main>` entirely, rather than keeping it. It was there to catch wide
+tables/boards, but every wide-content component already wraps itself in
+its own horizontal-scroll container (`.table-shell`, `LeadsBoard`,
+`DiscoveryWorkspace`'s map/table, `TabBar`'s own `overflow-x-auto`) —
+confirmed by grep and by live-testing the Leads Board view and Discovery
+workspace at desktop width with `<main>`'s copy removed (no page-wide
+horizontal scrollbar appeared in either). `<main>`'s own copy was
+redundant defensively-added styling, not load-bearing anywhere found.
+
+**Why:** Implementing the new sticky desktop header strip
+(`dashboard/layout.tsx`) and the sticky Planning workspace header
+(`planning/[id]/page.tsx`) surfaced a real, previously-latent bug:
+setting `overflow-x: auto` on an element while leaving `overflow-y` at
+its default `visible` doesn't actually keep `overflow-y: visible` — per
+the CSS Overflow spec's "asymmetric overflow" rule, the browser is
+required to compute the *other* axis as `auto` too once one axis isn't
+`visible`. That silently turned `<main>` into its own scroll container
+for `position: sticky` purposes, even though `<main>` never actually
+scrolled internally (its content just grows to fit; the *window*
+scrolls it and everything else). A sticky descendant's positioning
+binds to its *nearest* scrolling ancestor — so both new sticky elements
+were resolving against `<main>`'s own permanently-`0` internal
+scrollTop instead of the window's, and never visibly stuck (confirmed
+via `getBoundingClientRect()` showing the header scrolling to
+`top: -388` instead of clamping at `top: 44`). Live-verified the fix by
+setting `overflow: visible` on `<main>` in the browser first (sticky
+immediately worked, `top` correctly clamped) before deciding how to
+apply it in source.
+
+**Alternatives considered:** `overflow-y-clip` instead of removing
+`overflow-x-auto` — rejected once live-tested, because `overflow:
+hidden`/`clip` establish a scroll container for sticky-positioning
+purposes exactly like `auto` does; only a genuine `visible` avoids it,
+and CSS doesn't allow `visible` paired with a non-visible sibling axis.
+Making `<main>` a real, height-bounded, internally-scrolling pane
+(sidebar fixed, content scrolling in its own box) was also considered —
+the "textbook" fix for this exact symptom in a dashboard shell — but
+rejected because it would change the app's fundamental scroll model
+(window-based) to a component-based one, breaking this same session's
+new `useScrollRestoration` hook (which reads/writes `window.scrollY`)
+and affecting every page in the app, not just Planning — too large a
+blast radius for what the 7 requested features actually needed.
+
+## 2026-09-14 — Desktop UX overhaul: quick preview, remembered position, activity, resizable panels, Cmd+K, density, sticky header
+
+**Decision:** Added seven desktop-only UX features on top of existing
+data/endpoints — no new backend surface except one additive schema
+change (see below). Key architectural choices:
+
+- **Lead quick preview** is a same-page overlay driven by `?preview=<id>`
+  on the Leads list URL (`leads/page.tsx` + new
+  `components/leads/LeadPreviewPanel.tsx`), opened/closed via
+  `router.push`/`router.push` (not a real navigation), so "closing
+  returns to the same list position/filters/selection" holds by
+  construction — nothing unmounts. Renders instantly from the
+  already-loaded `Lead` object (its `listLeads()` response already
+  carries business details, status, `planning_id`, `prospect_project`,
+  `client_id` — confirmed nothing there needed widening); one extra
+  `getBusiness()` fetch on open, only for `social_links`.
+- **Filters/scroll/return-state** (`lib/url.ts`, `lib/useDebouncedUrlSync.ts`,
+  `lib/useScrollRestoration.ts`): existing one-way `useSearchParams →
+  useState` filter-read effects on Leads/Projects were left untouched;
+  filter `onChange` handlers additively also write the same value to
+  the URL via `router.replace` — safe from the loop the read-effect
+  could otherwise cause, since state and URL are always set from the
+  same value in the same call site (the re-fired effect just re-sets
+  state to what it already holds; React bails via `Object.is`). Planning's
+  tab (`?tab=`) instead has **no local state at all** — it's derived
+  fresh from `searchParams` every render (matching the one existing
+  precedent, `settings/page.tsx`'s `?section=`), which is loop-proof by
+  construction since there's no effect reading the URL back into state.
+  Free-text search fields are seeded once via a lazy `useState`
+  initializer and then debounce-write one-directionally, deliberately
+  *not* wired into the read-effect, so a slow/out-of-order `replace`
+  can never "correct" the field mid-keystroke. Scroll position is
+  `sessionStorage`-keyed by the exact URL (pathname+querystring) — the
+  app's first `sessionStorage` usage, chosen over `localStorage`
+  because it's ephemeral per-tab state, not a persistent preference.
+  Each list page also writes its current URL to a `wdos-list-return:*`
+  sessionStorage key so the matching detail page's back-link can return
+  to the exact prior state instead of a bare path.
+- **Background activity panel**: `PlanningListItem` (API + `api.ts`)
+  gained `comparable_research_status`/`content_draft_status`/
+  `content_draft_progress_label` — additive fields off the same
+  already-loaded `LeadPlanning` row `list_planning_workspace` already
+  queries, zero new queries. `navCounts.ts` (the one existing shared
+  cached-fetch module, already calling `listPlanning()` for the sidebar
+  badge) now also caches the raw array via `peekPlanningItems()`, so
+  the new `ActivityIndicatorButton`/`ActivityPanel` reuse that one
+  fetch instead of polling independently — the panel only adds its own
+  10s interval while actually open, mirroring the existing per-item
+  4s-while-running precedent's shape. The panel is read-only/
+  navigational — no Retry button of its own; failed items link to the
+  Planning workspace where the existing retry actions already live.
+- **Resizable Planning panels** (`components/ui/ResizableSplit.tsx`):
+  desktop-only activation via `matchMedia("(min-width: 1024px)")`
+  (starting `false` to match SSR/first paint); below that breakpoint it
+  renders the original `lg:grid lg:grid-cols-[minmax(0,1fr)_320px]
+  lg:gap-6` markup verbatim, so mobile/tablet get zero behaviour
+  change. Wired into both `OverviewTab.tsx` and its `AnalysingOverview.tsx`
+  skeleton twin under the *same* `localStorage` key, so the ratio
+  doesn't jump when a real analysis completes. Deliberately **not**
+  wired into `AuditTab.tsx` (no two-column layout exists there — full-width
+  `Screenshots` disclosure at the bottom) or the New-Website-Plan
+  overview variant (no screenshot, nothing to resize against).
+- **Cmd+K** (`components/ui/CommandMenuProvider.tsx`): the app's first
+  global `keydown` listener. Fans out to the four existing unfiltered
+  list endpoints on open (matching how every list page in the app
+  already works — full array, client-side filter, no pagination
+  anywhere), cached ~30s. Businesses have no standalone page of their
+  own in this app — a Business match resolves to whichever of its
+  owning Lead or Project exists (skipped, not linked wrong, if neither
+  does).
+- **List density** (`lib/useDensity.ts`, `components/ui/DensityToggle.tsx`):
+  one `localStorage` key shared by Leads/Planning/Projects, spacing-only
+  changes (`.table--compact`, tighter card padding) — no font-size
+  changes.
+- **Sticky Planning header**: see the entry above this one for the
+  `overflow-x-auto`/`position: sticky` fix this depended on.
+
+**Why:** The pipeline (Leads → Planning → Projects) is worked across
+many businesses at once; today's desktop experience loses context on
+every list→detail→back trip and gives no at-a-glance visibility into
+background audits/research/content-draft jobs. Reusing existing
+data/components throughout (rather than new backend surface or new
+polling loops) keeps the blast radius small and matches the existing
+codebase's own conventions (full-array client-side filtering, `wdos-`
+prefixed storage keys, `Suspense`-wrapped `useSearchParams` pages).
+
+**Alternatives considered:** A generic list-state-persistence library
+or a client-side router state manager was not introduced — every
+mechanism here (URL params, sessionStorage, localStorage) already had
+at least a partial precedent somewhere in the app; extending those
+directly kept the surface area smaller than adopting a new abstraction
+for seven independent features.
+
+## 2026-09-14 — UI motion: arbitrary-value duration tokens, not a Tailwind theme namespace
+
+**Decision:** Added a small shared motion vocabulary in `globals.css` —
+`--ease-standard` (in `@theme inline`, so it generates a real
+`ease-standard` Tailwind utility, the same mechanism as Tailwind's own
+`ease-in`/`ease-out`/`ease-in-out`) plus `--duration-fast` (150ms) and
+`--duration-base` (200ms), defined as plain `:root` custom properties
+and referenced from class names via Tailwind's arbitrary-value syntax —
+`duration-[var(--duration-fast)]` / `duration-[var(--duration-base)]` —
+rather than as named `duration-fast`/`duration-base` utility classes.
+Also added: a new shared `AnimatedHeight` component (CSS grid-rows
+technique) used everywhere something expands/collapses (`Disclosure`,
+`TaskChecklistList`'s row detail, `AuditTab`'s evidence toggle, and the
+Lead/Project pages' hand-rolled accordions); a new shared `SaveStatus`
+component consolidating three previously-inconsistent Saving/Saved/error
+indicators (and fixing a real bug in `AutoSaveInput`/`AutoSaveTextarea`:
+a failed save had no `catch`, so the field stayed disabled on "Saving…"
+forever); a real sliding active-tab indicator in `TabBar` (JS-measured
+`offsetLeft`/`offsetWidth`, positioned `<span>`); and a pure
+`diffNewIds` helper (`lib/discovery-diff.ts`) so Discovery's results
+list can fade in only genuinely-new rows, never on a poll/filter/sort.
+
+**Why:** Tailwind v4 has a real `--ease-*` theme namespace (verified
+against `node_modules/tailwindcss/theme.css`, which defines
+`ease-in`/`ease-out`/`ease-in-out` from it) but no equivalent
+`--duration-*` namespace — duration utilities are purely "functional"
+(`duration-150`, `duration-500`, ...), so a `--duration-fast: 150ms`
+declared in `@theme inline` does not make `duration-fast` a valid class
+(confirmed by a build failure: "Cannot apply unknown utility class
+`duration-fast`"). The arbitrary-value form keeps one real source of
+truth (the CSS variable) without inventing a Tailwind plugin just for
+two named durations.
+
+Two React patterns were deliberately chosen to avoid a newer, stricter
+lint rule (`react-hooks/set-state-in-effect` / `react-hooks/refs`) that
+flags calling `setState` synchronously in a `useEffect` body, or reading/
+writing a ref's `.current` during render: (1) "adjust state when a
+value changes" is done by comparing against a `useState`-tracked
+previous value during render (`if (x !== prevX) { setPrevX(x); ... }`)
+instead of a `useEffect([x])` — used in `AnimatedHeight` (open→mounted)
+and `TaskChecklistList`'s checkmark-pop suppression-on-mount; (2) a
+value that must reset "whenever a different parent entity is loaded"
+(Discovery's per-search "known result ids") is reset inside the same
+callback that already receives that entity's id, rather than in a
+separate `useEffect` keyed on the id.
+
+**Alternatives considered:** A small animation library (framer-motion,
+auto-animate) was ruled out per the task's own instruction to avoid a
+new dependency — the CSS-only approach already covers every requested
+transition at the specified 150–250ms scale.
+
 ## 2026-09-14 — Checklist ownership/blocked/next-action: shared logic and UI, not a merged table
 
 **Decision:** Extended both checklist systems (`checklists/` — Client

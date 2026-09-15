@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api, ApiError, type Planning, type ReviewTheme } from "@/lib/api";
 import { REVIEW_TREND_LABEL } from "../lib";
-import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
 
 function ThemeList({ title, themes }: { title: string; themes: ReviewTheme[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);

@@ -474,13 +474,56 @@ class PlanningListItem(BaseModel):
     lead_business_name: str
     website_url: str | None
     status: Literal["ready_to_analyse", "analysing", "completed", "needs_review", "failed"]
+    # The two other background-job-like statuses on this row — carried
+    # here (in addition to `status`) so a workspace-wide view (the
+    # background activity panel) can see every running/failed job
+    # without an extra per-item fetch; already loaded by the same query,
+    # just not previously projected onto this response shape.
+    comparable_research_status: Literal["ready_for_review", "analysing", "completed", "needs_review", "failed"] | None
+    content_draft_status: Literal["generating", "completed", "needs_review", "failed"] | None
+    content_draft_progress_label: str | None
     # Set once this Planning item's approved Build Brief has produced a
     # Project (LeadPlanningApprovedBrief.project_id) — "transferred to
     # Project." Computed, not a stored status: see
     # planning/service.py::create_project_from_planning.
     project_id: uuid.UUID | None
     created_at: datetime
+    updated_at: datetime
     analysed_at: datetime | None
+    # Set only when an audit is actually attached — the same signal the
+    # detail page's own `planningMode()` reads (website_audit_id !==
+    # null → "existing website" mode), exposed here without pulling in
+    # the audit's own (large) screenshot payloads.
+    website_audit_id: uuid.UUID | None
+    # Presence only — never the screenshot itself. The card grid fetches
+    # the actual image, if any, from the dedicated thumbnail route
+    # (GET /api/v1/planning/{id}/screenshot) so this list response never
+    # carries a base64 payload.
+    has_screenshot: bool
+    lead_industry: str | None
+    lead_suburb: str | None
+    lead_state: str | None
+    # New Website Plan mode's own "has a plan been generated yet" signal
+    # (mirrors detail page's OverviewTab: a website_url present but no
+    # plan yet still resolves to "Analyse Website", not "Generate Website
+    # Plan") — needed so the list can pick the same primary action label
+    # without a second per-item fetch.
+    website_plan_generated_at: datetime | None
+
+
+class PlanningChecklistSummary(BaseModel):
+    """One planning item's checklist progress — the workspace-wide,
+    counts-only sibling of the per-item StageChecklistRead, mirroring
+    Clients' own list_checklist_summaries so the Planning grid can show
+    progress without an N+1 fetch. `next_item_title` is the same
+    "what's actionable next" the per-item checklist already computes
+    (_next_action), just the title string rather than the whole item."""
+
+    planning_id: uuid.UUID
+    completed: int
+    total: int
+    pct: int | None
+    next_item_title: str | None
 
 
 class AnalysePlanningRequest(BaseModel):

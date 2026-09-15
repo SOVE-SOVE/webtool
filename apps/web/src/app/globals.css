@@ -114,6 +114,24 @@ html[data-font="mono"] {
 
   --font-sans: var(--font-app, var(--font-geist-sans));
   --font-mono: var(--font-geist-mono);
+
+  /* Tailwind v4 generates a real `ease-standard` utility from this (the
+     `--ease-*` namespace, like its own built-in ease-in/out/in-out) —
+     but has no equivalent namespace for named durations, so
+     --duration-fast/--duration-base (below, in :root) are referenced via
+     Tailwind's arbitrary-value syntax instead: duration-[var(--duration-fast)]. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  /* Shared motion vocabulary. Most UI transitions should use one of
+     these two durations (with ease-standard above) rather than picking
+     their own — see docs/05_DECISIONS.md for the rationale.
+     ProgressBar's existing duration-500 is intentionally left outside
+     this scale (a slower fill reads correctly for a progress bar
+     specifically). */
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
 }
 
 html {
@@ -171,7 +189,7 @@ body {
   /* Buttons. `.btn` carries shape/sizing; combine with a color modifier,
      e.g. className="btn btn-primary". */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-[var(--duration-fast)] ease-standard active:scale-[0.97] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
     @apply bg-accent text-accent-fg hover:opacity-90;
@@ -222,7 +240,7 @@ body {
     @apply divide-y divide-border;
   }
   .table tbody tr {
-    @apply bg-surface;
+    @apply bg-surface transition-colors duration-[var(--duration-fast)] hover:bg-surface-hover;
   }
 
   /* Text hierarchy */
@@ -245,6 +263,30 @@ body {
   }
   .modal-panel {
     @apply w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-xl;
+  }
+
+  /* Right-side slide-in panel (Lead quick preview, background
+     activity) — same backdrop convention as .modal-overlay, but
+     right-anchored instead of centered. */
+  .side-panel-overlay {
+    @apply fixed inset-0 z-50 flex justify-end bg-overlay;
+  }
+  .side-panel {
+    @apply flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-xl;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .side-panel-overlay {
+      animation: fade-in var(--duration-fast) var(--ease-standard);
+    }
+    .side-panel {
+      animation: slide-in-right var(--duration-base) var(--ease-standard);
+    }
+  }
+
+  /* Compact list density — spacing only, text size untouched. */
+  .table--compact td,
+  .table--compact th {
+    @apply px-2 py-1;
   }
 
   /* Loading */
@@ -273,6 +315,34 @@ body {
       animation: scan-sweep 2.6s ease-in-out infinite;
     }
   }
+
+  /* Content that just mounted (a tab's body, a first-load page, a
+     newly-inserted list row) eases in instead of popping in. */
+  .animate-fade-in {
+    @apply motion-reduce:animate-none;
+    animation: fade-in var(--duration-base) var(--ease-standard);
+  }
+
+  /* Applied to a completion glyph (checkbox tick, status icon) on the
+     frame it newly matches/mounts — a brief acknowledgement, not a
+     decorative loop. */
+  .animate-checkbox-pop {
+    @apply motion-reduce:animate-none;
+    animation: checkbox-pop var(--duration-fast) var(--ease-standard);
+  }
+
+  /* Same acknowledgement, but for a native checkbox: replays whenever
+     it transitions to :checked (browsers don't replay a CSS animation
+     on a rule that already matched, so this doesn't fire on every
+     unrelated re-render — only on an actual check). */
+  .checkbox-pop-on-check:checked {
+    animation: checkbox-pop var(--duration-fast) var(--ease-standard);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .checkbox-pop-on-check:checked {
+      animation: none;
+    }
+  }
 }
 
 @keyframes scan-sweep {
@@ -289,6 +359,38 @@ body {
   100% {
     top: 100%;
     opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes checkbox-pop {
+  0% {
+    transform: scale(0.85);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 

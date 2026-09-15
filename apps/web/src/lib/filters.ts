@@ -14,8 +14,8 @@ export const FINISHED_STAGES: ProjectStage[] = ["maintenance", "complete"];
 
 // Everything from "deployed" onward — a site that's actually live on the
 // internet, whether still under active maintenance or fully wrapped up.
-// Backs the "Live Websites" nav destination (Projects filtered to
-// ?view=live), a view over this same list rather than a new page.
+// Backs the Clients workspace's Websites tab (Projects filtered via
+// `onlyLive` below), a view over this same list rather than a new page.
 export const LIVE_STAGES: ProjectStage[] = ["deployed", "maintenance", "complete"];
 
 function matchesSearch(fields: (string | null | undefined)[], query: string): boolean {
@@ -35,8 +35,10 @@ export type ProjectFilters = {
   stage: ProjectStage | "";
   assignee: string;
   showFinished: boolean;
-  /** The "Live Websites" view: only LIVE_STAGES, regardless of stage/showFinished. */
+  /** The Clients workspace's Websites tab: only LIVE_STAGES, regardless of stage/showFinished. */
   onlyLive?: boolean;
+  /** "prospect" = client_id is null (Lead-owned, no Client yet); "client" = client_id is set. Omitted/"" = either. */
+  ownerType?: "" | "prospect" | "client";
 };
 
 export function filterProjects(projects: Project[], filters: ProjectFilters): Project[] {
@@ -50,6 +52,8 @@ export function filterProjects(projects: Project[], filters: ProjectFilters): Pr
     } else if (!filters.showFinished && FINISHED_STAGES.includes(project.stage)) {
       return false;
     }
+    if (filters.ownerType === "prospect" && project.client_id !== null) return false;
+    if (filters.ownerType === "client" && project.client_id === null) return false;
     if (!matchesAssignee(project.assigned_user_id, filters.assignee)) return false;
     return matchesSearch([project.name, project.client_business_name, project.package], filters.search);
   });

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Planning, PlanningKeyPoint } from "@/lib/api";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { AREA_LABELS, SEVERITY_CLASS, SEVERITY_LABEL, groupByArea } from "../lib";
 import { EvidencePanel } from "./SidePanels";
@@ -28,11 +29,20 @@ function FindingItem({ point }: { point: PlanningKeyPoint }) {
       <button
         type="button"
         onClick={() => setShowEvidence((v) => !v)}
-        className="mt-1.5 text-xs text-fg-muted hover:text-fg hover:underline"
+        aria-expanded={showEvidence}
+        className="mt-1.5 flex items-center gap-1 text-xs text-fg-muted hover:text-fg hover:underline"
       >
+        <span
+          aria-hidden="true"
+          className={`inline-block transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${showEvidence ? "rotate-90" : ""}`}
+        >
+          ▸
+        </span>
         {showEvidence ? "Hide evidence" : "Show evidence"}
       </button>
-      {showEvidence && <p className="mt-1 text-xs text-fg-subtle">{point.evidence}</p>}
+      <AnimatedHeight open={showEvidence}>
+        <p className="mt-1 text-xs text-fg-subtle">{point.evidence}</p>
+      </AnimatedHeight>
     </li>
   );
 }

@@ -69,7 +69,7 @@ export function computeNextActions(input: {
       id: "planning-needs-review",
       count: planningNeedsReviewCount,
       label: `${planningNeedsReviewCount} Planning audit${planningNeedsReviewCount === 1 ? "" : "s"} needing review`,
-      href: "/dashboard/planning",
+      href: "/dashboard/build/planning",
     });
   }
   if (readyToBuildCount > 0) {
@@ -77,7 +77,7 @@ export function computeNextActions(input: {
       id: "projects-ready-to-build",
       count: readyToBuildCount,
       label: `${readyToBuildCount} project${readyToBuildCount === 1 ? "" : "s"} ready to build`,
-      href: "/dashboard/projects?stage=intake",
+      href: "/dashboard/build/projects?stage=intake",
     });
   }
   return actions;
@@ -116,17 +116,17 @@ export function computePipelineStages(input: {
       id: "planning",
       label: "Planning",
       count: input.planningCount,
-      href: "/dashboard/planning",
+      href: "/dashboard/build/planning",
       empty: input.planningCount === 0 ? { label: "Review Leads", href: "/dashboard/leads" } : undefined,
     },
     {
       id: "projects",
       label: "Projects",
       count: projectsInBuildCount,
-      href: "/dashboard/projects",
-      empty: projectsInBuildCount === 0 ? { label: "Open Planning", href: "/dashboard/planning" } : undefined,
+      href: "/dashboard/build/projects",
+      empty: projectsInBuildCount === 0 ? { label: "Open Planning", href: "/dashboard/build/planning" } : undefined,
     },
-    { id: "live", label: "Live", count: liveCount, href: "/dashboard/projects?view=live" },
+    { id: "live", label: "Live", count: liveCount, href: "/dashboard/clients?tab=websites" },
   ];
 }
 
@@ -138,6 +138,17 @@ const ENTITY_HREF: Record<string, (id: string) => string> = {
   meeting: () => "/dashboard/calendar",
   discovered_business: (id) => `/dashboard/discovered-businesses/${id}`,
   discovery_search: (id) => `/dashboard/discovery/${id}`,
+  // No dedicated detail page per payment/plan/agreement row — same
+  // fallback shape as `task`/`meeting` above, linking to the section
+  // that lists them rather than a row the app can't route to directly.
+  // The activity item itself carries no client_id, so this can't route
+  // to that specific Client's Billing record (only the Today revenue
+  // summary's own upcoming-payment rows can, since those already carry
+  // a client_id) — this is the same fallback quality the old
+  // `/dashboard/revenue` link had, just at its new location.
+  payment: () => "/dashboard/clients?tab=revenue",
+  hosting_plan: () => "/dashboard/clients?tab=revenue&revenueTab=hosting",
+  website_agreement: () => "/dashboard/clients?tab=revenue",
 };
 
 /** Where a Recent Activity row should link to, from its entity_type/entity_id — falls back to Today itself for an entity_type this map hasn't been taught yet. */

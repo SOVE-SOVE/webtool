@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Lead, type Planning } from "@/lib/api";
+import { ResizableSplit } from "@/components/ui/ResizableSplit";
 import {
   ROW_STATE_DOT,
   ROW_STATE_LABEL,
@@ -14,7 +15,7 @@ import {
 } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
 import { AnalysingOverview } from "./AnalysingOverview";
-import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
 import { GenerateWebsitePlanAction } from "./GenerateWebsitePlanAction";
 import { EvidencePanel, NotesPreview } from "./SidePanels";
 
@@ -73,7 +74,16 @@ export function OverviewTab({
     setSelected({ label: `${row.label} — evidence`, text: row.points[0].evidence });
   }
 
-  if (planning.status === "analysing") {
+  // hasAudit implies mode === "existing" (planningMode reads the same
+  // field) — a re-analysis of an already-completed item, not a
+  // first-ever run, so there's real previous content worth keeping on
+  // screen instead of hiding it behind the full skeleton (verified
+  // against apps/api/.../planning/service.py::run_analysis_job, which
+  // only overwrites website_summary/key_points/website_audit_id at the
+  // very end, on success — the previous run's values sit untouched on
+  // `planning` for the whole duration of a re-run).
+  const hasAudit = planning.website_audit_id !== null;
+  if (planning.status === "analysing" && !hasAudit) {
     return <AnalysingOverview planning={planning} />;
   }
 
@@ -173,20 +183,32 @@ export function OverviewTab({
   );
 
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
-      <div className="flex min-w-0 flex-col gap-6">
-        <div className="order-1 lg:order-2">{summarySection}</div>
-        <div className="order-2 lg:order-1">{opportunitiesSection}</div>
-        <div className="order-3 lg:hidden">
-          <EvidencePanel planning={planning} evidence={selected} />
+    <div className="animate-fade-in">
+      {planning.status === "analysing" && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-surface-subtle px-3 py-2 text-xs text-fg-muted">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />
+          Re-analysing — the results below are from the previous run.
         </div>
-        <div className="order-4 lg:order-3">{statusSection}</div>
-      </div>
-
-      <aside className="mt-6 hidden space-y-4 lg:mt-0 lg:block lg:self-start">
-        <EvidencePanel planning={planning} evidence={selected} />
-        <NotesPreview notes={planning.operator_notes} onOpenNotes={onOpenNotesTab} />
-      </aside>
+      )}
+      <ResizableSplit
+        storageKey="wdos-split-overview"
+        primary={
+          <div className="flex min-w-0 flex-col gap-6">
+            <div className="order-1 lg:order-2">{summarySection}</div>
+            <div className="order-2 lg:order-1">{opportunitiesSection}</div>
+            <div className="order-3 lg:hidden">
+              <EvidencePanel planning={planning} evidence={selected} />
+            </div>
+            <div className="order-4 lg:order-3">{statusSection}</div>
+          </div>
+        }
+        secondary={
+          <aside className="mt-6 hidden space-y-4 lg:mt-0 lg:block lg:self-start">
+            <EvidencePanel planning={planning} evidence={selected} />
+            <NotesPreview notes={planning.operator_notes} onOpenNotes={onOpenNotesTab} />
+          </aside>
+        }
+      />
     </div>
   );
 }

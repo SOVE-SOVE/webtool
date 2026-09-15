@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { api, ApiError, PLANNING_STATUS_LABELS, type Lead, type Planning, type PlanningStatus } from "@/lib/api";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { TabBar } from "@/components/ui/Tabs";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
+import { withParam } from "@/lib/url";
 import { STATUS_BADGE_CLASS, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
 import { AuditTab } from "./AuditTab";
@@ -25,17 +26,44 @@ import { WebsitePlanTab } from "./WebsitePlanTab";
 // stuck watching a spinner forever.
 const STALE_ANALYSING_MS = 60_000;
 
-export default function PlanningDetailPage() {
+const PLANNING_TABS = ["overview", "audit", "reviews", "build-brief", "content-draft", "notes"] as const;
+function isValidTab(value: string | null): value is (typeof PLANNING_TABS)[number] {
+  return (PLANNING_TABS as readonly string[]).includes(value ?? "");
+}
+
+// useSearchParams() needs a Suspense-boundary ancestor for Next's static
+// generation (see dashboard/settings/page.tsx for the same pattern) —
+// it also carries the business name across the Lead→Planning
+// navigation for continuity while this page's own fetch is in flight.
+function PlanningDetailPageInner() {
   const params = useParams<{ id: string }>();
   const planningId = params.id;
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const continuityName = searchParams.get("name");
   const confirm = useConfirm();
   const showToast = useToast();
+
+  // Shareable/back-button-safe, like settings/page.tsx's `?section=` —
+  // no local state to keep in sync, so there's nothing to loop.
+  const tabParam = searchParams.get("tab");
+  const activeTab = isValidTab(tabParam) ? tabParam : "overview";
+  function setTab(id: string) {
+    router.replace(`${pathname}?${withParam(searchParams, "tab", id === "overview" ? null : id)}`, { scroll: false });
+  }
+
+  // Restores the exact filters/scroll the operator left the Planning
+  // list in, instead of always resetting to the bare list URL.
+  const [planningReturnUrl] = useState(
+    () =>
+      (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:planning")) ||
+      "/dashboard/build/planning",
+  );
 
   const [planning, setPlanning] = useState<Planning | null>(null);
   const [lead, setLead] = useState<Lead | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("overview");
   const [creatingProject, setCreatingProject] = useState(false);
   const [createProjectError, setCreateProjectError] = useState<string | null>(null);
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
@@ -93,9 +121,10 @@ export default function PlanningDetailPage() {
   useEffect(() => {
     if (!planning) return;
     if (prevStatusRef.current === "analysing" && planning.status === "completed") {
-      setActiveTab("overview");
+      setTab("overview");
     }
     prevStatusRef.current = planning.status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planning]);
 
   async function handleCreateProject() {
@@ -169,7 +198,21 @@ export default function PlanningDetailPage() {
       </div>
     );
   }
-  if (!planning) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (!planning) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+        {continuityName && (
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-fg sm:text-3xl">{continuityName}</h1>
+        )}
+        <div className="space-y-3">
+          <div className="skeleton h-4 w-48" />
+          <div className="skeleton h-24 w-full" />
+          <div className="skeleton h-4 w-full" />
+          <div className="skeleton h-4 w-2/3" />
+        </div>
+      </div>
+    );
+  }
 
   const isStale = isAnalysing && now - new Date(planning.updated_at).getTime() > STALE_ANALYSING_MS;
   const isContentDraftStale =
@@ -185,11 +228,16 @@ export default function PlanningDetailPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="animate-fade-in mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href={`/dashboard/leads/${planning.lead_id}`} className="text-sm text-fg-muted hover:underline">
-          ← Back to lead
-        </Link>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <Link href={planningReturnUrl} className="text-fg-muted hover:underline">
+            ← All Planning
+          </Link>
+          <Link href={`/dashboard/leads/${planning.lead_id}`} className="text-fg-muted hover:underline">
+            ← Back to lead
+          </Link>
+        </div>
         <button
           type="button"
           onClick={handleRemove}
@@ -201,8 +249,15 @@ export default function PlanningDetailPage() {
       </div>
       {removeError && <p className="text-error">{removeError}</p>}
 
-      {/* Header — business name, website, audit status, last updated, and the one restrained handoff action. */}
-      <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
+      {/* Header — business name, website, audit status, last updated, and the one restrained handoff action.
+          Sticky so it stays visible while scrolling: top-12 clears the
+          existing mobile fixed top bar (h-12), lg:top-11 clears the
+          new desktop header strip (h-11) added in dashboard/layout.tsx.
+          Negative-margin-then-repad bleeds the opaque background full-
+          width past the page's own max-w-5xl padding; the inner div
+          keeps content aligned to that same column. */}
+      <header className="sticky top-12 z-20 -mx-4 border-b border-border bg-surface px-4 py-4 sm:-mx-6 sm:px-6 lg:top-11">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
             {planning.lead_business_name}
@@ -241,6 +296,7 @@ export default function PlanningDetailPage() {
             )}
           </div>
         )}
+      </div>
       </header>
       {createProjectError && <p className="text-error">{createProjectError}</p>}
 
@@ -298,17 +354,17 @@ export default function PlanningDetailPage() {
           { id: "notes", label: "Notes" },
         ]}
         active={activeTab}
-        onChange={setActiveTab}
+        onChange={setTab}
       />
 
-      <div>
+      <div key={activeTab} className="animate-fade-in">
         {activeTab === "overview" && (
           <OverviewTab
             planning={planning}
             lead={lead}
             onUpdated={setPlanning}
-            onOpenAuditTab={() => setActiveTab("audit")}
-            onOpenNotesTab={() => setActiveTab("notes")}
+            onOpenAuditTab={() => setTab("audit")}
+            onOpenNotesTab={() => setTab("notes")}
           />
         )}
         {activeTab === "audit" &&
@@ -323,5 +379,13 @@ export default function PlanningDetailPage() {
         {activeTab === "notes" && <NotesTab planning={planning} onUpdated={setPlanning} />}
       </div>
     </div>
+  );
+}
+
+export default function PlanningDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+      <PlanningDetailPageInner />
+    </Suspense>
   );
 }

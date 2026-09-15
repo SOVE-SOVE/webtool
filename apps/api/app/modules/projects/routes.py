@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.modules.projects import service
-from app.modules.projects.schemas import DeliveryStatusRead, ProjectCreate, ProjectRead, ProjectUpdate
+from app.modules.projects.schemas import (
+    DeliveryStatusRead,
+    ProjectChecklistSummary,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
@@ -24,6 +30,17 @@ def create_project(
     data: ProjectCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> ProjectRead:
     return service.create_project(db, current_user.workspace_id, current_user.id, data)
+
+
+# Registered ahead of the /{project_id} routes below — a fixed path
+# segment like "checklist-summaries" would otherwise be matched as a
+# (invalid) project_id by that route first, per FastAPI's in-order
+# route matching (same convention as planning/routes.py).
+@router.get("/checklist-summaries", response_model=list[ProjectChecklistSummary])
+def list_project_checklist_summaries(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[ProjectChecklistSummary]:
+    return service.list_project_checklist_summaries(db, current_user.workspace_id)
 
 
 @router.get("/{project_id}", response_model=ProjectRead)

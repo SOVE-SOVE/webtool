@@ -11,20 +11,14 @@ import {
   type NavLink as NavLinkType,
 } from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
+import { ActivityIndicatorButton } from "@/components/activity/ActivityIndicatorButton";
+import { CommandMenuButton, CommandMenuProvider } from "@/components/ui/CommandMenuProvider";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
+import { CountBadge } from "@/components/ui/CountBadge";
 import { DoThisNext } from "@/components/ui/DoThisNext";
 import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-
-function CountBadge({ count }: { count: number | undefined }) {
-  if (!count) return null;
-  return (
-    <span className="ml-auto shrink-0 rounded-full bg-surface-subtle px-1.5 py-0 text-[11px] font-medium text-fg-muted">
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}
 
 function NavLink({
   link,
@@ -143,15 +137,17 @@ const MOBILE_LINKS: NavLinkType[] = MOBILE_PRIMARY_HREFS.map(
 
 function BottomNav({
   pathname,
+  search,
   onOpenMore,
 }: {
   pathname: string;
+  search: URLSearchParams;
   onOpenMore: () => void;
 }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-stretch border-t border-border bg-surface lg:hidden">
       {MOBILE_LINKS.map((link) => {
-        const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+        const active = isNavLinkActive(pathname, search, link);
         return (
           <Link
             key={link.href}
@@ -268,6 +264,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <ConfirmProvider>
     <ToastProvider>
+    <CommandMenuProvider>
       <div className="flex min-h-screen bg-canvas">
         {/* Mobile / tablet top bar */}
         <div className="fixed inset-x-0 top-0 z-30 flex h-12 items-center justify-between border-b border-border bg-surface px-3 lg:hidden">
@@ -316,22 +313,42 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <SidebarContent me={me} pathname={pathname} search={searchParams} counts={counts} />
         </aside>
 
-        {/* `overflow-x-auto` keeps wide tables/boards scrolling inside the
-            content area rather than the whole page. DoThisNext sits after
-            the page content — pinned to the bottom of the scroll area, its
-            own list capped and internally scrollable so it never stretches
-            the page. Extra bottom padding on mobile keeps content clear of
-            the fixed bottom nav. Skipped on Today itself: Today's own
+        {/* No overflow-x-auto here (removed) — it used to catch wide
+            tables/boards, but every one of those already wraps itself in
+            its own overflow-x-auto (.table-shell, LeadsBoard,
+            DiscoveryWorkspace's map/table), so it was redundant — and it
+            had a real cost: setting overflow-x alone forces the browser
+            to also compute overflow-y as non-visible (CSS's "asymmetric
+            overflow" rule), which silently turned <main> into its own
+            scroll container even though it never actually scrolled
+            internally (content just grows to fit; the window scrolls).
+            That phantom scroll container broke `position: sticky` for
+            any descendant — sticky binds to the *nearest* scrolling
+            ancestor, so a sticky child here resolved against <main>'s
+            own (permanently 0) scrollTop instead of the window's, and
+            never visibly stuck. DoThisNext sits after the page content —
+            pinned to the bottom of the scroll area, its own list capped
+            and internally scrollable so it never stretches the page.
+            Extra bottom padding on mobile keeps content clear of the
+            fixed bottom nav. Skipped on Today itself: Today's own
             "Today's priorities" section renders this exact same
             needs_attention queue as its hero content, so repeating it in
             the tray below would just be the same list twice on one page. */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-x-auto pb-14 pt-12 lg:pb-0 lg:pt-0">
+        <main className="flex min-w-0 flex-1 flex-col pb-14 pt-12 lg:pb-0 lg:pt-0">
+          {/* Desktop-only header strip — pinned so the activity/search
+              entry points stay reachable while scrolling a long page.
+              No breadcrumbs/title: kept minimal on purpose. */}
+          <div className="sticky top-0 z-30 hidden h-11 shrink-0 items-center justify-end gap-2 border-b border-border bg-surface px-4 lg:flex">
+            <CommandMenuButton />
+            <ActivityIndicatorButton />
+          </div>
           <div className="min-w-0 flex-1">{children}</div>
           {pathname !== "/dashboard" && <DoThisNext />}
         </main>
 
-        <BottomNav pathname={pathname} onOpenMore={() => setMobileNavOpen(true)} />
+        <BottomNav pathname={pathname} search={searchParams} onOpenMore={() => setMobileNavOpen(true)} />
       </div>
+    </CommandMenuProvider>
     </ToastProvider>
     </ConfirmProvider>
   );

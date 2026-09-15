@@ -46,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased, joinedload
 
+from app.modules.billing import service as billing_service
 from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
@@ -97,6 +98,7 @@ ATTENTION_LIMIT = 30
 # rather than scattered across the builders below.
 _BROKEN_DEPLOYMENT = 0
 _OVERDUE_FOLLOW_UP = 1
+_OVERDUE_PAYMENT = 1
 _IMMINENT_MEETING = 2
 _PROJECT_BLOCKED = 3
 _FOLLOW_UP_DUE_TODAY = 5
@@ -346,6 +348,26 @@ def get_overview(db: Session, workspace_id: uuid.UUID) -> DashboardOverview:
                     detail=f"No movement in {(now - lead.updated_at).days} days — still at {lead.status.value}",
                     action=_stale_lead_action(lead.status),
                     href=f"/dashboard/leads/{lead.id}",
+                ),
+            )
+        )
+
+    for row in billing_service.get_overdue_charges(db, workspace_id=workspace_id):
+        days_late = (today - row.due_date).days if row.due_date else 0
+        scored.append(
+            (
+                _OVERDUE_PAYMENT,
+                AttentionItem(
+                    kind="overdue_payment",
+                    label="Overdue payment",
+                    id=row.id,
+                    title=row.label,
+                    detail=(
+                        f"${row.outstanding_cents / 100:,.2f} outstanding — "
+                        f"{days_late} day{'s' if days_late != 1 else ''} overdue"
+                    ),
+                    action="Record the payment or follow up with the client",
+                    href=f"/dashboard/projects/{row.project_id}",
                 ),
             )
         )

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -15,6 +15,7 @@ from app.modules.planning.schemas import (
     CreateAssetRequest,
     CreateRecommendationRequest,
     CreateSitemapPageRequest,
+    PlanningChecklistSummary,
     PlanningListItem,
     PlanningRead,
     RegenerateContentSectionResponse,
@@ -532,6 +533,34 @@ def list_planning(
     db: Session = Depends(get_db),
 ) -> list[PlanningListItem]:
     return service.list_planning_workspace(db, current_user.workspace_id, include_transferred=include_transferred)
+
+
+# Registered ahead of the /{planning_id} routes below — a fixed path
+# segment like "checklist-summaries" would otherwise be matched as a
+# (invalid) planning_id by that route first, per FastAPI's in-order
+# route matching.
+@router.get("/api/v1/planning/checklist-summaries", response_model=list[PlanningChecklistSummary])
+def list_planning_checklist_summaries(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[PlanningChecklistSummary]:
+    return service.list_planning_checklist_summaries(db, current_user.workspace_id)
+
+
+@router.get("/api/v1/planning/{planning_id}/screenshot")
+def get_planning_screenshot(
+    planning_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Lightweight thumbnail route for the Planning card grid — decodes
+    and streams the stored desktop screenshot as raw PNG bytes so the
+    frontend can use a plain <img loading="lazy"> per card instead of
+    embedding base64 payloads in the list JSON."""
+    image_bytes = service.get_planning_screenshot(db, current_user.workspace_id, planning_id)
+    if image_bytes is None:
+        raise HTTPException(status_code=404, detail="No screenshot available")
+    return Response(content=image_bytes, media_type="image/png")
 
 
 @router.get("/api/v1/planning/{planning_id}", response_model=PlanningRead)

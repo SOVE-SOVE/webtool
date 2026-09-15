@@ -10,13 +10,13 @@
  * still first-class routes, surfaced as `secondary` links under the
  * primary concept they belong to.
  *
- * Live Websites reuses Projects (filtered to its finished/live stages)
- * rather than a new page — see the `isActive` predicate below, which is
- * how two sidebar links can point at the same base route without both
- * lighting up together. Clients is its own real route/page backed by the
- * Client API (`/dashboard/clients`) — it used to be a view over Leads'
- * "Won" tab, but a client is a distinct entity from a lead (see
- * docs/05_DECISIONS.md), so it gets its own destination.
+ * Manage has a single entry, Clients (`/dashboard/clients`) — the old
+ * separate Live Websites and Revenue destinations were folded into it as
+ * tabs (Overview/Websites/Revenue), so navigating client relationships,
+ * live websites, hosting, and payments all happens in one workspace
+ * rather than three sidebar entries pointing at overlapping data (see
+ * docs/07_SESSION_LOG.md). The old routes still work — each redirects
+ * into the corresponding Clients tab, preserving query params.
  */
 
 export type IconName =
@@ -32,7 +32,6 @@ export type IconName =
   | "planning"
   | "projects"
   | "clients"
-  | "live"
   | "settings";
 
 export type NavLink = {
@@ -44,11 +43,12 @@ export type NavLink = {
   /** Extra path prefixes that should also mark this link active (a real route this link's destination redirects from, or a detail page under it). */
   activePrefixes?: string[];
   /**
-   * Custom active-state check for a link that shares a base pathname with
-   * a sibling link, distinguished only by a query string (Leads vs
-   * Clients, Projects vs Live Websites). When present, this is checked in
-   * addition to activePrefixes — the default path-prefix match on `href`
-   * is skipped in favour of this predicate.
+   * Custom active-state check for a link whose own route can also be
+   * reached in a state that shouldn't light it up (Leads staying
+   * inactive on its own `?tab=won` view, since that's conceptually
+   * "Clients", not "Leads"). When present, this is checked in addition
+   * to activePrefixes — the default path-prefix match on `href` is
+   * skipped in favour of this predicate.
    */
   isActive?: (pathname: string, search: URLSearchParams) => boolean;
   /** Small workspace count badge — e.g. items waiting for review. Omitted (undefined) shows nothing; 0 is shown as "0" only when explicitly passed. */
@@ -62,7 +62,6 @@ export type NavSection = {
 };
 
 const onLeads = (pathname: string) => pathname === "/dashboard/leads" || pathname.startsWith("/dashboard/leads/");
-const onProjects = (pathname: string) => pathname === "/dashboard/projects" || pathname.startsWith("/dashboard/projects/");
 
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -108,29 +107,25 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "build",
     label: "Build",
     links: [
-      // Planning before Projects: this is the order the work actually
-      // happens in (understand the site, then build the new one).
-      { href: "/dashboard/planning", label: "Planning", icon: "planning", countKey: "planningNeedsReview" },
+      // One destination — the Build workspace itself picks Planning vs.
+      // Projects (remembers the last view; each keeps its own stable
+      // /dashboard/build/planning and /dashboard/build/projects URL).
+      // Detail pages stay at their original /dashboard/planning/{id} and
+      // /dashboard/projects/{id} routes, so both are listed here too —
+      // this one link stays highlighted from either.
       {
-        href: "/dashboard/projects",
-        label: "Projects",
+        href: "/dashboard/build",
+        label: "Build",
         icon: "projects",
-        isActive: (pathname, search) => onProjects(pathname) && search.get("view") !== "live",
+        activePrefixes: ["/dashboard/build", "/dashboard/planning", "/dashboard/projects"],
+        countKey: "planningNeedsReview",
       },
     ],
   },
   {
     id: "manage",
     label: "Manage",
-    links: [
-      { href: "/dashboard/clients", label: "Clients", icon: "clients" },
-      {
-        href: "/dashboard/projects?view=live",
-        label: "Live Websites",
-        icon: "live",
-        isActive: (pathname, search) => pathname === "/dashboard/projects" && search.get("view") === "live",
-      },
-    ],
+    links: [{ href: "/dashboard/clients", label: "Clients", icon: "clients" }],
   },
   {
     id: "system",
@@ -143,17 +138,16 @@ export const NAV_SECTIONS: NavSection[] = [
 export const ALL_NAV_HREFS: string[] = NAV_SECTIONS.flatMap((s) => s.links.map((l) => l.href));
 
 /**
- * The five primary destinations for the mobile bottom nav — the
- * workflow's main line (Today, Discover, Leads, Planning, Projects).
- * Everything else (Clients, Live Websites, Sales, Follow-ups, Tasks,
- * Calendar, Settings, Review queue) lives behind "More".
+ * The four primary destinations for the mobile bottom nav — the
+ * workflow's main line (Today, Discover, Leads, Build). Everything else
+ * (Clients, Sales, Follow-ups, Tasks, Calendar, Settings, Review queue)
+ * lives behind "More".
  */
 export const MOBILE_PRIMARY_HREFS = [
   "/dashboard",
   "/dashboard/discovery",
   "/dashboard/leads",
-  "/dashboard/planning",
-  "/dashboard/projects",
+  "/dashboard/build",
 ] as const;
 
 export function isNavLinkActive(pathname: string, search: URLSearchParams, link: NavLink): boolean {

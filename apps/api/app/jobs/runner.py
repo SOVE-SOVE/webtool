@@ -13,13 +13,16 @@ to run unattended.
 import time
 from collections.abc import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import logger
 from app.db import all_models  # noqa: F401 — registers every model before mappers configure
 from app.db.session import SessionLocal
 from app.modules.jobs import service as jobs_service
-from app.modules.jobs.models import Job
+from app.modules.jobs.job_types import JOB_HOSTING_BILLING_SWEEP
+from app.modules.jobs.models import Job, JobStatus
+from app.modules.workspaces.models import Workspace
 
 POLL_INTERVAL_SECONDS = 5.0
 JobHandler = Callable[[Session, Job], dict | None]
@@ -53,8 +56,37 @@ def run_once(handlers: dict[str, JobHandler]) -> bool:
         db.close()
 
 
+def ensure_hosting_billing_sweep_enqueued() -> None:
+    """
+    Guarantees every workspace has a pending/running hosting-billing
+    sweep job, without a scheduler process or startup hook on the API
+    itself — this is the job-queue subsystem's own concern. Runs once
+    each time the poller process starts; idempotent by construction
+    (checks before enqueuing), so it's safe on every restart and never
+    creates a second concurrent sweep per workspace.
+    """
+    db = SessionLocal()
+    try:
+        for workspace_id in db.scalars(select(Workspace.id)):
+            existing = db.scalar(
+                select(Job).where(
+                    Job.workspace_id == workspace_id,
+                    Job.job_type == JOB_HOSTING_BILLING_SWEEP,
+                    Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
+                )
+            )
+            if existing is None:
+                jobs_service.enqueue(
+                    db, workspace_id=workspace_id, job_type=JOB_HOSTING_BILLING_SWEEP, payload={"recurring": True}
+                )
+                logger.info("Enqueued initial hosting_billing_sweep for workspace %s", workspace_id)
+    finally:
+        db.close()
+
+
 def poll_forever(handlers: dict[str, JobHandler], interval_seconds: float = POLL_INTERVAL_SECONDS) -> None:
     logger.info("Job poller started, handlers=%s", list(handlers))
+    ensure_hosting_billing_sweep_enqueued()
     while True:
         claimed = run_once(handlers)
         if not claimed:

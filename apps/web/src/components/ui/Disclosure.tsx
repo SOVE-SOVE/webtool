@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { AnimatedHeight } from "./AnimatedHeight";
 
 /**
  * A collapsible section. Children are only mounted while open, so a page
@@ -31,8 +32,11 @@ export function Disclosure({
       >
         <span className="min-w-0">
           <span className="flex items-center gap-2 text-sm font-medium text-fg">
-            <span aria-hidden="true" className="text-fg-subtle">
-              {open ? "▾" : "▸"}
+            <span
+              aria-hidden="true"
+              className={`inline-block text-fg-subtle transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            >
+              ▸
             </span>
             {title}
           </span>
@@ -40,7 +44,9 @@ export function Disclosure({
         </span>
         {badge && <span className="shrink-0">{badge}</span>}
       </button>
-      {open && <div className="border-t border-border p-4">{children}</div>}
+      <AnimatedHeight open={open}>
+        <div className="border-t border-border p-4">{children}</div>
+      </AnimatedHeight>
     </div>
   );
 }

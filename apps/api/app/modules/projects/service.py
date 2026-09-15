@@ -15,10 +15,12 @@ from app.modules.projects.models import Project, ProjectStage
 from app.modules.projects.schemas import (
     DeliveryChecklistItemRead,
     DeliveryStatusRead,
+    ProjectChecklistSummary,
     ProjectCreate,
     ProjectRead,
     ProjectUpdate,
 )
+from app.modules.stage_checklists import service as stage_checklists_service
 from app.modules.tasks.models import Task
 from app.modules.users.service import require_user_in_workspace
 from app.modules.websites.models import Website
@@ -145,6 +147,41 @@ def list_projects(db: Session, workspace_id: uuid.UUID) -> list[ProjectRead]:
 def get_project(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> ProjectRead | None:
     project = db.scalar(_base_query(workspace_id).where(Project.id == project_id))
     return _to_read(project) if project else None
+
+
+def list_project_checklist_summaries(db: Session, workspace_id: uuid.UUID) -> list[ProjectChecklistSummary]:
+    """
+    One summary per Project, for the Projects grid's compact progress
+    display and "blocked task" attention line — mirrors Clients' and
+    Planning's own list_checklist_summaries: loop the existing per-item
+    read (get_project_stage_checklist, which also seeds default tasks
+    the first time) server-side, in one call, rather than an N+1 fetch
+    per card. Counts REQUIRED tasks only, same "compact glance metric
+    shouldn't be diluted by optional improvements" convention.
+    """
+    project_ids = db.scalars(select(Project.id).where(Project.workspace_id == workspace_id)).all()
+
+    out: list[ProjectChecklistSummary] = []
+    for project_id in project_ids:
+        checklist = stage_checklists_service.get_project_stage_checklist(db, workspace_id, project_id)
+        if checklist is None:
+            continue
+        progress = checklist.progress.required
+        blocked_reason = None
+        if checklist.next_action.kind == "blocked" and checklist.next_action.items:
+            first_blocked = checklist.next_action.items[0]
+            blocked_reason = first_blocked.blocked_reason or first_blocked.title
+        out.append(
+            ProjectChecklistSummary(
+                project_id=project_id,
+                completed=progress.completed,
+                total=progress.total,
+                pct=progress.pct,
+                next_item_title=checklist.next_item.title if checklist.next_item else None,
+                blocked_reason=blocked_reason,
+            )
+        )
+    return out
 
 
 def _get_client_in_workspace(db: Session, workspace_id: uuid.UUID, client_id: uuid.UUID) -> Client | None:

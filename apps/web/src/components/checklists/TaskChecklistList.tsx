@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, type ActivityItem, type ChecklistItem, type StageChecklistItem, type User } from "@/lib/api";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { AssigneeAvatar } from "./AssigneeAvatar";
 
@@ -275,11 +276,32 @@ function TaskRow<T extends TaskItem, R>({
   const [blockReason, setBlockReason] = useState("");
   const [note, setNote] = useState("");
 
+  // Optimistic status: shown immediately on toggle, cleared once the
+  // server confirms (via the fresh `item` the parent then passes down)
+  // or on failure — where clearing it just falls back to the real,
+  // unchanged `item.status`, i.e. a rollback.
+  const [optimisticStatus, setOptimisticStatus] = useState<TaskItem["status"] | null>(null);
+  const [justCompleted, setJustCompleted] = useState(false);
+  const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (completionTimeout.current) clearTimeout(completionTimeout.current);
+    };
+  }, []);
+
+  const effectiveStatus = optimisticStatus ?? item.status;
+  // The completion-icon pop should only play on an actual status
+  // change, not on first mount/page load — tracked by comparing against
+  // the previous render's status (React's documented way to react to a
+  // changed value during render) rather than a mount-detecting effect.
+  const [prevEffectiveStatus, setPrevEffectiveStatus] = useState(effectiveStatus);
+  const justChangedStatus = effectiveStatus !== prevEffectiveStatus;
+  if (justChangedStatus) setPrevEffectiveStatus(effectiveStatus);
   const isAutomatic = item.completion_mode === "automatic";
-  const isNotRequired = item.status === "not_required";
-  const isComplete = item.status === "complete";
-  const isBlocked = item.status === "blocked";
-  const needsReview = item.status === "needs_review";
+  const isNotRequired = effectiveStatus === "not_required";
+  const isComplete = effectiveStatus === "complete";
+  const isBlocked = effectiveStatus === "blocked";
+  const needsReview = effectiveStatus === "needs_review";
 
   async function loadHistory() {
     try {
@@ -296,12 +318,21 @@ function TaskRow<T extends TaskItem, R>({
   }
 
   async function setStatus(status: "pending" | "complete" | "not_required") {
+    setOptimisticStatus(status);
+    if (status === "complete") {
+      setJustCompleted(true);
+      if (completionTimeout.current) clearTimeout(completionTimeout.current);
+      completionTimeout.current = setTimeout(() => setJustCompleted(false), 700);
+    }
     setBusy(true);
     setError(null);
     try {
       onUpdated(await updateItem(item.id, { status }));
+      setOptimisticStatus(null);
       if (expanded) void loadHistory();
     } catch (err) {
+      setOptimisticStatus(null);
+      setJustCompleted(false);
       setError(err instanceof ApiError ? err.message : "Couldn't update that task.");
     } finally {
       setBusy(false);
@@ -365,16 +396,19 @@ function TaskRow<T extends TaskItem, R>({
 
   return (
     <li
-      className={`rounded-md border ${
-        isBlocked ? "border-error/40" : needsReview ? "border-amber-300 dark:border-amber-500/40" : "border-border"
-      }`}
+      className={`rounded-md border transition-colors duration-[var(--duration-base)] ease-standard ${
+        justCompleted ? "bg-emerald-50 dark:bg-emerald-500/10" : ""
+      } ${isBlocked ? "border-error/40" : needsReview ? "border-amber-300 dark:border-amber-500/40" : "border-border"}`}
     >
       <div className="flex flex-col gap-1.5 p-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
           {isAutomatic ? (
             <span
+              key={effectiveStatus}
               aria-hidden="true"
               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                justChangedStatus ? "animate-checkbox-pop" : ""
+              } ${
                 isNotRequired || isBlocked
                   ? "bg-surface-subtle text-fg-subtle"
                   : isComplete
@@ -391,7 +425,7 @@ function TaskRow<T extends TaskItem, R>({
               disabled={busy || isNotRequired || isBlocked}
               onChange={() => setStatus(isComplete || needsReview ? "pending" : "complete")}
               aria-label={item.title}
-              className="mt-0.5 h-4 w-4 shrink-0"
+              className="checkbox-pop-on-check mt-0.5 h-4 w-4 shrink-0"
             />
           )}
           <div className="min-w-0 flex-1">
@@ -436,14 +470,19 @@ function TaskRow<T extends TaskItem, R>({
             onClick={toggleExpanded}
             aria-expanded={expanded}
             aria-label={expanded ? `Collapse "${item.title}"` : `Expand "${item.title}"`}
-            className="rounded px-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+            className="rounded px-1 text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-surface-hover hover:text-fg"
           >
-            {expanded ? "▾" : "▸"}
+            <span
+              aria-hidden="true"
+              className={`inline-block transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+            >
+              ▸
+            </span>
           </button>
         </div>
       </div>
 
-      {expanded && (
+      <AnimatedHeight open={expanded}>
         <div className="space-y-3 border-t border-border p-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-xs text-fg-muted" htmlFor={`assignee-${item.id}`}>
@@ -575,7 +614,7 @@ function TaskRow<T extends TaskItem, R>({
             )}
           </div>
         </div>
-      )}
+      </AnimatedHeight>
     </li>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   ApiError,
@@ -25,6 +25,7 @@ import {
   type WebsiteSummary,
 } from "@/lib/api";
 import { ApprovalPipelineView } from "@/components/ApprovalPipelineView";
+import { ProjectPaymentSummarySection } from "@/components/billing/ProjectPaymentSummarySection";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { CreativeDirectionView } from "@/components/CreativeDirectionView";
 import { DeliveryPanel } from "@/components/DeliveryPanel";
@@ -32,14 +33,13 @@ import { DeploymentPanel } from "@/components/DeploymentPanel";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { SitemapView } from "@/components/SitemapView";
 import { WebsiteBriefView } from "@/components/WebsiteBriefView";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 import { checkpointProgress, deadlineStatus, nextOpenTask, stageProgress } from "@/lib/projects";
-
-function money(cents: number | null): string {
-  return cents === null ? "—" : `$${(cents / 100).toLocaleString()}`;
-}
+import { formatMoney } from "@/lib/format";
 
 function StatusChip({ status }: { status: "approved" | "draft" | undefined }) {
   if (status === "approved") {
@@ -86,9 +86,17 @@ function DetailField({
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  // Restores the exact filters/scroll the operator left the Projects
+  // list in, instead of always resetting to the bare list URL.
+  const [projectsReturnUrl] = useState(
+    () =>
+      (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:projects")) ||
+      "/dashboard/build/projects",
+  );
   const projectId = params.id;
 
   const [project, setProject] = useState<Project | null>(null);
+  const [workspaceCurrency, setWorkspaceCurrency] = useState("AUD");
   const [business, setBusiness] = useState<Business | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [showCreatedBanner, setShowCreatedBanner] = useState(false);
@@ -108,8 +116,12 @@ export default function ProjectDetailPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const [directionDraft, setDirectionDraft] = useState("");
-  const [savingDirection, setSavingDirection] = useState(false);
-  const [directionSaved, setDirectionSaved] = useState(false);
+  const [directionStatus, setDirectionStatus] = useState<SaveStatusValue>("idle");
+  const directionRevertTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (directionRevertTimeout.current) clearTimeout(directionRevertTimeout.current);
+  }, []);
 
   const [briefs, setBriefs] = useState<CreativeDirectionBrief[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -186,6 +198,7 @@ export default function ProjectDetailPage() {
       .then((b) => setBusiness(b))
       .catch(() => setError("Couldn't load this project."));
     api.getBrief(projectId).then(setBrief).catch(() => {});
+    api.getWorkspace().then((w) => setWorkspaceCurrency(w.currency)).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
     api.listActivity({ entity_type: "project", entity_id: projectId }).then(setActivity).catch(() => {});
     loadCreativeDirections();
@@ -256,14 +269,15 @@ export default function ProjectDetailPage() {
 
   async function handleSaveDirection() {
     if (!project) return;
-    setSavingDirection(true);
+    if (directionRevertTimeout.current) clearTimeout(directionRevertTimeout.current);
+    setDirectionStatus("saving");
     try {
       const updated = await api.updateProject(project.id, { build_direction: directionDraft || null });
       setProject(updated);
-      setDirectionSaved(true);
-      setTimeout(() => setDirectionSaved(false), 2000);
-    } finally {
-      setSavingDirection(false);
+      setDirectionStatus("saved");
+      directionRevertTimeout.current = setTimeout(() => setDirectionStatus("idle"), 2000);
+    } catch {
+      setDirectionStatus("error");
     }
   }
 
@@ -407,7 +421,7 @@ export default function ProjectDetailPage() {
     <div className="space-y-6 p-4 sm:p-6">
       {/* 1. Project header */}
       <div>
-        <Link href="/dashboard/projects" className="text-sm text-fg-muted hover:underline">
+        <Link href={projectsReturnUrl} className="text-sm text-fg-muted hover:underline">
           ← All projects
         </Link>
 
@@ -438,7 +452,7 @@ export default function ProjectDetailPage() {
                 </>
               )}
               {" · "}
-              {[project.package, money(project.price_cents)].filter((v) => v && v !== "—").join(" · ") || "No package set"}
+              {[project.package, formatMoney(project.price_cents, workspaceCurrency)].filter((v) => v && v !== "—").join(" · ") || "No package set"}
               {" · "}
               {project.deadline ? (
                 <span
@@ -499,6 +513,9 @@ export default function ProjectDetailPage() {
           </button>
         </div>
       )}
+
+      {/* 1.5. Payment summary — agreed price, paid, balance, status */}
+      <ProjectPaymentSummarySection projectId={projectId} currency={workspaceCurrency} />
 
       {/* 2. Business details — carried over from the lead, editable */}
       <section className="rounded-md border border-border bg-surface p-4">
@@ -640,7 +657,7 @@ export default function ProjectDetailPage() {
           value={directionDraft}
           onChange={(e) => {
             setDirectionDraft(e.target.value);
-            setDirectionSaved(false);
+            if (directionStatus === "saved" || directionStatus === "error") setDirectionStatus("idle");
           }}
           rows={10}
           placeholder="Paste your build direction, prompts, or instructions here…"
@@ -649,12 +666,12 @@ export default function ProjectDetailPage() {
         <div className="mt-2 flex items-center gap-3">
           <button
             onClick={handleSaveDirection}
-            disabled={savingDirection || directionDraft === (project.build_direction ?? "")}
+            disabled={directionStatus === "saving" || directionDraft === (project.build_direction ?? "")}
             className="btn btn-secondary btn-sm"
           >
-            {savingDirection ? "Saving…" : "Save direction"}
+            {directionStatus === "saving" ? "Saving…" : "Save direction"}
           </button>
-          {directionSaved && <span className="text-xs text-emerald-700 dark:text-emerald-400">Saved</span>}
+          <SaveStatus status={directionStatus === "saving" || directionStatus === "saved" || directionStatus === "error" ? directionStatus : "idle"} />
         </div>
       </section>
 
@@ -719,8 +736,18 @@ export default function ProjectDetailPage() {
               return (
                 <li key={cd.id} className="px-3 py-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <button onClick={() => setExpandedId(expanded ? null : cd.id)} className="text-left text-fg hover:underline">
-                      {expanded ? "▾" : "▸"} {new Date(cd.generated_at).toLocaleString()}
+                    <button
+                      onClick={() => setExpandedId(expanded ? null : cd.id)}
+                      aria-expanded={expanded}
+                      className="flex items-center gap-1.5 text-left text-fg hover:underline"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`inline-block text-fg-subtle transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+                      >
+                        ▸
+                      </span>
+                      {new Date(cd.generated_at).toLocaleString()}
                     </button>
                     <div className="flex items-center gap-2">
                       <StatusChip status={cd.status} />
@@ -731,11 +758,11 @@ export default function ProjectDetailPage() {
                       )}
                     </div>
                   </div>
-                  {expanded && (
+                  <AnimatedHeight open={expanded}>
                     <div className="mt-3">
                       <CreativeDirectionView brief={cd} onChange={handleCreativeDirectionUpdated} />
                     </div>
-                  )}
+                  </AnimatedHeight>
                 </li>
               );
             })}

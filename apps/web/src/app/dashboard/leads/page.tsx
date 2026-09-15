@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -22,6 +22,12 @@ import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
+import { LeadPreviewPanel } from "@/components/leads/LeadPreviewPanel";
+import { DensityToggle } from "@/components/ui/DensityToggle";
+import { withParam, withoutParam } from "@/lib/url";
+import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
+import { useDensity } from "@/lib/useDensity";
+import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import {
   isLeadTab,
   LEAD_TABS,
@@ -93,8 +99,11 @@ function ChecklistProgressCell({
 // cannot do.
 function LeadsPageInner() {
   const confirm = useConfirm();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const showToast = useToast();
+  const [density, setDensity] = useDensity();
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -105,9 +114,15 @@ function LeadsPageInner() {
 
   const [tab, setTab] = useState<LeadTab>("all");
   const [view, setView] = useState<ViewMode>("table");
-  const [search, setSearch] = useState("");
+  // Seeded once from the URL (safe here — this page is client-only
+  // behind its own Suspense boundary) then only ever written back to
+  // the URL one-directionally via useDebouncedUrlSync below, never
+  // read back — avoids the URL "correcting" the field mid-keystroke.
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("");
   const [showArchived, setShowArchived] = useState(false);
+
+  useDebouncedUrlSync("search", search);
 
   // Manual entry — the secondary path. Discovery → approve is how leads
   // normally arrive; these forms stay available but tucked away.
@@ -153,10 +168,21 @@ function LeadsPageInner() {
   useEffect(() => {
     setShowAdd(searchParams.has("new"));
     setView(searchParams.get("view") === "board" ? "board" : "table");
+    const w = searchParams.get("website");
+    setWebsiteFilter(w === "has" || w === "none" ? w : "");
+    setShowArchived(searchParams.has("archived"));
     const t = searchParams.get("tab");
     setTab(isLeadTab(t) ? t : "all");
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Lets the detail page's back-link return to this exact list state
+  // (filters/tab/search/scroll) instead of a bare URL.
+  useEffect(() => {
+    sessionStorage.setItem("wdos-list-return:leads", `${pathname}?${searchParams.toString()}`);
+  }, [pathname, searchParams]);
+
+  useScrollRestoration(leads !== null);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -288,16 +314,43 @@ function LeadsPageInner() {
     return counts;
   }, [leads]);
 
+  // Looked up in the full `leads` array (not the filtered/visible one) so
+  // a deep-linked or restored preview still opens even if the current
+  // tab/search would otherwise hide that row.
+  const previewId = searchParams.get("preview");
+  const previewLead = previewId ? (leads?.find((l) => l.id === previewId) ?? null) : null;
+
+  function openPreview(leadId: string) {
+    router.push(`${pathname}?${withParam(searchParams, "preview", leadId)}`);
+  }
+  function closePreview() {
+    router.push(`${pathname}?${withoutParam(searchParams, "preview")}`);
+  }
+
+  // Writes the same value into both local state and the URL from one
+  // call site, so the existing searchParams->state read-effect above
+  // (which re-fires on our own `replace`) only ever re-sets state to a
+  // value it already holds — no update-loop risk.
+  function updateParam(key: string, value: string | null) {
+    router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
+  }
+
   const viewToggle = (
     <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
       <button
-        onClick={() => setView("table")}
+        onClick={() => {
+          setView("table");
+          updateParam("view", null);
+        }}
         className={`rounded px-2 py-1 ${view === "table" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         List
       </button>
       <button
-        onClick={() => setView("board")}
+        onClick={() => {
+          setView("board");
+          updateParam("view", "board");
+        }}
         className={`rounded px-2 py-1 ${view === "board" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Board
@@ -310,7 +363,12 @@ function LeadsPageInner() {
       <PageHeader
         title="Leads"
         description="The businesses you're pursuing — where each one is, and what to do next. New leads arrive automatically when you approve a business in Discovery."
-        actions={viewToggle}
+        actions={
+          <div className="flex items-center gap-2">
+            {viewToggle}
+            <DensityToggle density={density} onChange={setDensity} />
+          </div>
+        }
       />
 
       {/* Controls: search + status + website + archived (list view only) */}
@@ -324,7 +382,11 @@ function LeadsPageInner() {
           />
           <select
             value={tab}
-            onChange={(e) => setTab(e.target.value as LeadTab)}
+            onChange={(e) => {
+              const next = e.target.value as LeadTab;
+              setTab(next);
+              updateParam("tab", next === "all" ? null : next);
+            }}
             className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
             aria-label="Filter by status"
           >
@@ -336,7 +398,11 @@ function LeadsPageInner() {
           </select>
           <select
             value={websiteFilter}
-            onChange={(e) => setWebsiteFilter(e.target.value as WebsiteFilter)}
+            onChange={(e) => {
+              const next = e.target.value as WebsiteFilter;
+              setWebsiteFilter(next);
+              updateParam("website", next || null);
+            }}
             className="rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm"
             aria-label="Filter by website"
           >
@@ -345,7 +411,14 @@ function LeadsPageInner() {
             <option value="none">No website</option>
           </select>
           <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => {
+                setShowArchived(e.target.checked);
+                updateParam("archived", e.target.checked ? "1" : null);
+              }}
+            />
             Show archived
           </label>
         </div>
@@ -481,7 +554,7 @@ function LeadsPageInner() {
 
           {/* Desktop table */}
           <div className="table-shell mt-4 hidden md:block">
-            <table className="table">
+            <table className={`table ${density === "compact" ? "table--compact" : ""}`}>
               <thead>
                 <tr>
                   <th className="px-3 py-2">Business</th>
@@ -525,6 +598,18 @@ function LeadsPageInner() {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openPreview(lead.id)}
+                        title="Quick preview"
+                        className="mr-2 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg hover:underline"
+                      >
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                          <path d="M2 10s2.8-5.5 8-5.5S18 10 18 10s-2.8 5.5-8 5.5S2 10 2 10Z" />
+                          <circle cx="10" cy="10" r="2.25" />
+                        </svg>
+                        Preview
+                      </button>
                       <Link
                         href={`/dashboard/leads/${lead.id}`}
                         className="text-sm font-medium text-fg hover:underline"
@@ -611,6 +696,20 @@ function LeadsPageInner() {
           </div>
         )}
       </div>
+
+      {previewId &&
+        (previewLead ? (
+          <LeadPreviewPanel lead={previewLead} onClose={closePreview} />
+        ) : leads === null ? null : (
+          <div className="side-panel-overlay" onClick={closePreview}>
+            <div className="side-panel items-center justify-center p-6 text-center" onClick={(e) => e.stopPropagation()}>
+              <p className="text-sm text-fg-muted">This lead is no longer available.</p>
+              <button type="button" onClick={closePreview} className="btn btn-secondary btn-sm mt-3">
+                Close
+              </button>
+            </div>
+          </div>
+        ))}
     </div>
   );
 }

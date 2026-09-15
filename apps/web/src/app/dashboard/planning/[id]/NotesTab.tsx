@@ -1,7 +1,7 @@
 "use client";
 
 import { api, type Planning } from "@/lib/api";
-import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
 
 /**
  * Operator Notes — simple and prominent by design: one field, no

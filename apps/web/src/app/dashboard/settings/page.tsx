@@ -12,6 +12,7 @@ import {
   type Me,
   type Role,
   type User,
+  type Workspace,
 } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TabBar } from "@/components/ui/Tabs";
@@ -76,6 +77,12 @@ function SettingsPageInner() {
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [currency, setCurrency] = useState("AUD");
+  const [timezone, setTimezone] = useState("Australia/Brisbane");
+  const [savingLocale, setSavingLocale] = useState(false);
+  const [localeError, setLocaleError] = useState<string | null>(null);
+
   const [showAddUser, setShowAddUser] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -97,6 +104,14 @@ function SettingsPageInner() {
       .then((m) => {
         setMe(m);
         setWorkspaceName(m.workspace_name);
+      })
+      .catch(() => {});
+    api
+      .getWorkspace()
+      .then((w) => {
+        setWorkspace(w);
+        setCurrency(w.currency);
+        setTimezone(w.timezone);
       })
       .catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
@@ -138,13 +153,28 @@ function SettingsPageInner() {
     setSavingWorkspace(true);
     setWorkspaceError(null);
     try {
-      await api.updateWorkspace(workspaceName);
+      await api.updateWorkspace({ name: workspaceName });
       showToast("Workspace renamed.");
       load();
     } catch (err) {
       setWorkspaceError(err instanceof ApiError ? err.message : "Couldn't rename workspace.");
     } finally {
       setSavingWorkspace(false);
+    }
+  }
+
+  async function handleSaveLocale(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingLocale(true);
+    setLocaleError(null);
+    try {
+      await api.updateWorkspace({ currency, timezone });
+      showToast("Currency and timezone updated.");
+      load();
+    } catch (err) {
+      setLocaleError(err instanceof ApiError ? err.message : "Couldn't update currency/timezone.");
+    } finally {
+      setSavingLocale(false);
     }
   }
 
@@ -273,6 +303,71 @@ function SettingsPageInner() {
                     Everyone in this workspace shares the same leads, clients, projects, and tasks — see
                     docs/01_REQUIREMENTS.md &quot;Multi-user &amp; workspace&quot;.
                   </p>
+                </div>
+
+                <div className="card p-4">
+                  <h3 className="section-title">Currency &amp; timezone</h3>
+                  <p className="mt-1 text-xs text-fg-muted">
+                    Used for all money display and for computing &quot;today&quot; when deciding whether a
+                    hosting charge is overdue.
+                  </p>
+                  {isAdmin ? (
+                    <form onSubmit={handleSaveLocale} className="mt-3 flex flex-wrap items-end gap-2">
+                      <div>
+                        <label htmlFor="workspace-currency" className="field-label">
+                          Currency
+                        </label>
+                        <select
+                          id="workspace-currency"
+                          value={currency}
+                          onChange={(e) => setCurrency(e.target.value)}
+                          className="input mt-1.5"
+                        >
+                          {["AUD", "USD", "NZD", "GBP", "EUR"].map((code) => (
+                            <option key={code} value={code}>
+                              {code}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="workspace-timezone" className="field-label">
+                          Timezone
+                        </label>
+                        <select
+                          id="workspace-timezone"
+                          value={timezone}
+                          onChange={(e) => setTimezone(e.target.value)}
+                          className="input mt-1.5"
+                        >
+                          {[
+                            "Australia/Brisbane",
+                            "Australia/Sydney",
+                            "Australia/Melbourne",
+                            "Australia/Perth",
+                            "Australia/Adelaide",
+                            "Pacific/Auckland",
+                            "America/New_York",
+                            "America/Los_Angeles",
+                            "Europe/London",
+                            "UTC",
+                          ].map((tz) => (
+                            <option key={tz} value={tz}>
+                              {tz}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <button type="submit" disabled={savingLocale} className="btn btn-primary">
+                        {savingLocale ? "Saving…" : "Save"}
+                      </button>
+                      {localeError && <p className="text-error w-full">{localeError}</p>}
+                    </form>
+                  ) : (
+                    <p className="mt-2 text-sm text-fg">
+                      {workspace ? `${workspace.currency} · ${workspace.timezone}` : "—"}
+                    </p>
+                  )}
                 </div>
 
                 <div className="card p-4">

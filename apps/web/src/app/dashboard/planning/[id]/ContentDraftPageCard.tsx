@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { api, ApiError, CONTENT_PAGE_STATUS_LABELS, type ContentPage, type Planning, type SitemapPageProposal } from "@/lib/api";
 import { Disclosure } from "@/components/ui/Disclosure";
-import { AutoSaveInput } from "./AutoSaveInput";
-import { AutoSaveTextarea } from "./AutoSaveTextarea";
+import { AutoSaveInput } from "@/components/ui/AutoSaveInput";
+import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
 import { ContentSectionEditor } from "./ContentSectionEditor";
 
 const STATUS_BADGE: Record<ContentPage["status"], string> = {

@@ -3,6 +3,7 @@ import type {
   Lead,
   Planning,
   PlanningKeyPoint,
+  PlanningListItem,
   PlanningSocialProfile,
   PlanningStatus,
   ReviewIntelligenceResult,
@@ -53,6 +54,46 @@ export const STATUS_BADGE_CLASS: Record<PlanningStatus, string> = {
   needs_review: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
   failed: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
 };
+
+export const PLANNING_MODE_LABEL: Record<PlanningMode, string> = {
+  existing: "Website redesign",
+  new: "New website",
+};
+
+export type PlanningListItemMode = Pick<PlanningListItem, "website_audit_id">;
+
+/** Same website_audit_id !== null check as planningMode(), just for the
+ * lighter list-item shape (which doesn't carry the rest of Planning's
+ * fields) — the Planning grid's mode filter/badge reads this instead of
+ * duplicating the derivation. */
+export function planningListItemMode(item: PlanningListItemMode): PlanningMode {
+  return item.website_audit_id !== null ? "existing" : "new";
+}
+
+export type PlanningCardActionKind = "analyse" | "generate" | "progress" | "open";
+
+/**
+ * The Planning grid's one primary action per card — reuses exactly the
+ * same state → action mapping the detail page's own OverviewTab already
+ * applies (website_audit_id for mode, website_plan_generated_at for
+ * "has a plan been generated", status for "is a run in progress"), so
+ * the label a card shows always matches what the destination page will
+ * actually present. Every kind links to the same Planning workspace —
+ * this only decides the label, never triggers a job itself.
+ */
+export function planningCardAction(
+  item: Pick<PlanningListItem, "status" | "website_audit_id" | "website_url" | "website_plan_generated_at">,
+): { kind: PlanningCardActionKind; label: string } {
+  if (item.status === "analysing") {
+    return { kind: "progress", label: "View Progress" };
+  }
+  if (item.website_audit_id === null && item.website_plan_generated_at === null) {
+    return item.website_url
+      ? { kind: "analyse", label: "Analyse Website" }
+      : { kind: "generate", label: "Generate Website Plan" };
+  }
+  return { kind: "open", label: "Open Planning" };
+}
 
 export const REVIEW_TREND_LABEL: Record<string, string> = {
   increasing: "Increasing",

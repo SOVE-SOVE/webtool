@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Planning } from "@/lib/api";
 
 /**
@@ -21,6 +21,34 @@ export function EvidencePanel({
   const hasDesktop = Boolean(planning.screenshot_desktop_base64);
   const hasMobile = Boolean(planning.screenshot_mobile_base64);
   const [view, setView] = useState<"desktop" | "mobile">(hasDesktop ? "desktop" : "mobile");
+  // Lags one beat behind `view` so the outgoing screenshot can fade out
+  // before the incoming one swaps in and fades in — the two screenshots
+  // have different aspect ratios, so crossfading them simultaneously
+  // (rather than sequentially) would overlap mismatched images.
+  const [displayView, setDisplayView] = useState(view);
+  const [fading, setFading] = useState(false);
+  const fadeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
+  }, []);
+
+  function handleSetView(next: "desktop" | "mobile") {
+    if (next === view) return;
+    setView(next);
+    const prefersReduced =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) {
+      setDisplayView(next);
+      return;
+    }
+    setFading(true);
+    if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
+    fadeTimeout.current = setTimeout(() => {
+      setDisplayView(next);
+      setFading(false);
+    }, 100);
+  }
 
   if (!hasDesktop && !hasMobile) {
     return (
@@ -30,7 +58,7 @@ export function EvidencePanel({
     );
   }
 
-  const src = view === "desktop" ? planning.screenshot_desktop_base64 : planning.screenshot_mobile_base64;
+  const src = displayView === "desktop" ? planning.screenshot_desktop_base64 : planning.screenshot_mobile_base64;
 
   return (
     <div className="overflow-hidden rounded-md border border-border bg-surface">
@@ -40,8 +68,8 @@ export function EvidencePanel({
           <div className="flex gap-1">
             <button
               type="button"
-              onClick={() => setView("desktop")}
-              className={`rounded px-2 py-0.5 text-xs font-medium ${
+              onClick={() => handleSetView("desktop")}
+              className={`rounded px-2 py-0.5 text-xs font-medium transition-colors duration-[var(--duration-fast)] ${
                 view === "desktop" ? "bg-surface-subtle text-fg" : "text-fg-muted hover:text-fg"
               }`}
             >
@@ -49,8 +77,8 @@ export function EvidencePanel({
             </button>
             <button
               type="button"
-              onClick={() => setView("mobile")}
-              className={`rounded px-2 py-0.5 text-xs font-medium ${
+              onClick={() => handleSetView("mobile")}
+              className={`rounded px-2 py-0.5 text-xs font-medium transition-colors duration-[var(--duration-fast)] ${
                 view === "mobile" ? "bg-surface-subtle text-fg" : "text-fg-muted hover:text-fg"
               }`}
             >
@@ -64,12 +92,10 @@ export function EvidencePanel({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`data:image/png;base64,${src}`}
-            alt={`${view === "desktop" ? "Desktop" : "Mobile"} screenshot of the business's website`}
-            className={
-              view === "mobile"
-                ? "mx-auto max-w-[240px] rounded border border-border"
-                : "w-full rounded border border-border"
-            }
+            alt={`${displayView === "desktop" ? "Desktop" : "Mobile"} screenshot of the business's website`}
+            className={`transition-opacity duration-[var(--duration-base)] ease-standard motion-reduce:transition-none ${
+              fading ? "opacity-0" : "opacity-100"
+            } ${displayView === "mobile" ? "mx-auto max-w-[240px] rounded border border-border" : "w-full rounded border border-border"}`}
           />
         )}
       </div>

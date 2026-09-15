@@ -31,11 +31,14 @@ import { SalesAuditReportView } from "@/components/SalesAuditReportView";
 import { OutreachMessageView } from "@/components/OutreachMessageView";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/ToastProvider";
 import { LEAD_STATUS_LABEL, leadNextAction } from "@/lib/leads";
+import { formatAud } from "@/lib/format";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -89,6 +92,11 @@ const inputClass = "w-full rounded-md border border-border-strong px-3 py-1.5 te
 export default function LeadDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  // Restores the exact filters/tab/search/scroll the operator left the
+  // Leads list in, instead of always resetting to the bare list URL.
+  const [leadsReturnUrl] = useState(
+    () => (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:leads")) || "/dashboard/leads",
+  );
   const confirm = useConfirm();
   const showToast = useToast();
   const leadId = params.id;
@@ -149,6 +157,7 @@ export default function LeadDetailPage() {
 
   const [startingPlanning, setStartingPlanning] = useState(false);
   const [startPlanningError, setStartPlanningError] = useState<string | null>(null);
+  const [openingPlanning, setOpeningPlanning] = useState(false);
 
   function load() {
     api
@@ -241,11 +250,12 @@ export default function LeadDetailPage() {
   }
 
   async function handleStartPlanning() {
+    if (!business) return;
     setStartingPlanning(true);
     setStartPlanningError(null);
     try {
       const planning = await api.startPlanning(leadId);
-      router.push(`/dashboard/planning/${planning.id}`);
+      router.push(`/dashboard/planning/${planning.id}?name=${encodeURIComponent(business.name)}`);
     } catch (err) {
       setStartPlanningError(err instanceof ApiError ? err.message : "Couldn't open Planning for this lead.");
       setStartingPlanning(false);
@@ -557,7 +567,7 @@ export default function LeadDetailPage() {
 
   return (
     <div className="p-6">
-      <Link href="/dashboard/leads" className="text-sm text-fg-muted hover:underline">
+      <Link href={leadsReturnUrl} className="text-sm text-fg-muted hover:underline">
         ← All leads
       </Link>
 
@@ -682,11 +692,24 @@ export default function LeadDetailPage() {
             {startPlanningError && <p className="mt-2 text-error">{startPlanningError}</p>}
           </div>
           {lead.planning_id ? (
-            <Link href={`/dashboard/planning/${lead.planning_id}`} className="btn btn-primary shrink-0">
-              Open Planning →
+            <Link
+              href={`/dashboard/planning/${lead.planning_id}?name=${encodeURIComponent(business.name)}`}
+              aria-disabled={openingPlanning}
+              onClick={(e) => {
+                if (openingPlanning) {
+                  e.preventDefault();
+                  return;
+                }
+                setOpeningPlanning(true);
+              }}
+              className={`btn btn-primary shrink-0 ${openingPlanning ? "pointer-events-none opacity-70" : ""}`}
+            >
+              {openingPlanning && <Spinner className="h-3.5 w-3.5" />}
+              {openingPlanning ? "Opening…" : "Open Planning →"}
             </Link>
           ) : (
             <button onClick={handleStartPlanning} disabled={startingPlanning} className="btn btn-primary shrink-0">
+              {startingPlanning && <Spinner className="h-3.5 w-3.5" />}
               {startingPlanning ? "Opening…" : "Start Planning →"}
             </button>
           )}
@@ -969,9 +992,7 @@ export default function LeadDetailPage() {
                 {opportunities?.map((op) => (
                   <li key={op.id} className="flex items-center justify-between px-3 py-3 text-sm">
                     <span className="text-fg">
-                      {op.proposed_price_cents != null
-                        ? `$${(op.proposed_price_cents / 100).toLocaleString()}`
-                        : "No price recorded"}
+                      {op.proposed_price_cents != null ? formatAud(op.proposed_price_cents) : "No price recorded"}
                       {op.tier ? ` · ${op.tier}` : ""}
                       <span className="ml-2 text-xs text-fg-muted">
                         {op.status === "open" ? "Open" : op.status === "won" ? "Won" : "Lost"} ·{" "}
@@ -1047,9 +1068,16 @@ export default function LeadDetailPage() {
                       <div className="flex items-center justify-between">
                         <button
                           onClick={() => setExpandedAuditId(expanded ? null : report.id)}
-                          className="text-left text-fg hover:underline"
+                          aria-expanded={expanded}
+                          className="flex items-center gap-1.5 text-left text-fg hover:underline"
                         >
-                          {expanded ? "▾" : "▸"} Sales audit — {new Date(report.generated_at).toLocaleString()}
+                          <span
+                            aria-hidden="true"
+                            className={`inline-block text-fg-subtle transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+                          >
+                            ▸
+                          </span>
+                          Sales audit — {new Date(report.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-3">
                           {report.flagged_for_review && (
@@ -1065,11 +1093,11 @@ export default function LeadDetailPage() {
                           </Link>
                         </div>
                       </div>
-                      {expanded && (
+                      <AnimatedHeight open={expanded}>
                         <div className="mt-3">
                           <SalesAuditReportView report={report} />
                         </div>
-                      )}
+                      </AnimatedHeight>
                     </li>
                   );
                 })}
@@ -1117,9 +1145,16 @@ export default function LeadDetailPage() {
                       <div className="flex items-center justify-between">
                         <button
                           onClick={() => setExpandedOutreachId(expanded ? null : message.id)}
-                          className="text-left text-fg hover:underline"
+                          aria-expanded={expanded}
+                          className="flex items-center gap-1.5 text-left text-fg hover:underline"
                         >
-                          {expanded ? "▾" : "▸"} {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
+                          <span
+                            aria-hidden="true"
+                            className={`inline-block text-fg-subtle transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+                          >
+                            ▸
+                          </span>
+                          {OUTREACH_CHANNEL_LABELS[message.channel].replace("Draft ", "")} —{" "}
                           {new Date(message.generated_at).toLocaleString()}
                         </button>
                         <div className="flex items-center gap-2">
@@ -1131,7 +1166,8 @@ export default function LeadDetailPage() {
                           </span>
                         </div>
                       </div>
-                      {expanded && editingOutreachId === message.id && (
+                      <AnimatedHeight open={expanded}>
+                      {editingOutreachId === message.id ? (
                         <div className="mt-3">
                           {message.channel === "email" || message.channel === "follow_up" ? (
                             <div className="space-y-2">
@@ -1196,8 +1232,7 @@ export default function LeadDetailPage() {
                             </button>
                           </div>
                         </div>
-                      )}
-                      {expanded && editingOutreachId !== message.id && (
+                      ) : (
                         <div className="mt-3">
                           <OutreachMessageView message={message} />
                           <div className="mt-3 flex gap-2">
@@ -1291,6 +1326,7 @@ export default function LeadDetailPage() {
                           )}
                         </div>
                       )}
+                      </AnimatedHeight>
                     </li>
                   );
                 })}

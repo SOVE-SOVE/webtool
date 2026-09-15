@@ -11,6 +11,7 @@ from app.modules.ai_health.routes import router as ai_health_router
 from app.modules.ai_usage.routes import router as ai_usage_router
 from app.modules.approvals.routes import router as approvals_router
 from app.modules.auth.routes import router as auth_router
+from app.modules.billing.routes import router as billing_router
 from app.modules.business_research.routes import router as business_research_router
 from app.modules.businesses.routes import router as businesses_router
 from app.modules.calendar.routes import router as calendar_router
@@ -111,6 +112,7 @@ app.include_router(checklists_router)
 app.include_router(stage_checklists_router)
 app.include_router(clients_router)
 app.include_router(projects_router)
+app.include_router(billing_router)
 app.include_router(tasks_router)
 app.include_router(dashboard_router)
 app.include_router(users_router)

@@ -7,11 +7,17 @@
  *
  * Both counts are derived client-side from existing list endpoints
  * (no new backend routes) — real workspace data, not invented metrics.
+ *
+ * The raw `listPlanning()` array behind `planningNeedsReview` is also
+ * cached here (via `peekPlanningItems`) so the background activity
+ * panel can reuse this same fetch instead of issuing its own — one
+ * network call site serving the sidebar badge, the Today dashboard,
+ * and the activity panel.
  */
 
 // Relative import so this stays runnable under vitest (no path-alias
 // config there) — same as lib/overview.ts.
-import { api } from "./api";
+import { api, type PlanningListItem } from "./api";
 
 export type NavCounts = {
   reviewQueue: number;
@@ -25,10 +31,12 @@ const DECIDED_STATUSES = new Set(["imported", "rejected", "archived"]);
 const FRESH_MS = 30_000;
 
 let cache: { at: number; data: NavCounts } | null = null;
+let planningItemsCache: PlanningListItem[] | null = null;
 let inflight: Promise<NavCounts> | null = null;
 
 async function fetchNavCounts(): Promise<NavCounts> {
   const [reviewItems, planningItems] = await Promise.all([api.listReviewItems(), api.listPlanning()]);
+  planningItemsCache = planningItems;
   return {
     reviewQueue: reviewItems.filter((item) => !DECIDED_STATUSES.has(item.status)).length,
     planningNeedsReview: planningItems.filter((item) => item.status === "needs_review").length,
@@ -54,6 +62,11 @@ export function loadNavCounts(opts?: { force?: boolean }): Promise<NavCounts> {
 /** The last cached result, if any — for a no-flash initial render. */
 export function peekNavCounts(): NavCounts | null {
   return cache?.data ?? null;
+}
+
+/** The raw planning-items array behind the cached counts, if any. */
+export function peekPlanningItems(): PlanningListItem[] | null {
+  return planningItemsCache;
 }
 
 /** Drop the cache so the next `loadNavCounts()` refetches. */

@@ -21,9 +21,16 @@ JOB_CHECK_INSTAGRAM_WEBSITE = "check_instagram_website"
 JOB_PLANNING_ANALYSIS = "planning_analysis"
 JOB_PLANNING_COMPARABLE_ANALYSIS = "planning_comparable_analysis"
 JOB_CONTENT_DRAFT_GENERATE = "content_draft_generate"
+JOB_HOSTING_BILLING_SWEEP = "hosting_billing_sweep"
 
 # Default cadence for a recurring discovery search that doesn't specify
 # its own interval — daily, per docs/04_ROADMAP.md M7's "scheduled/
 # recurring discovery runs" gap. An operator can pick something else at
 # schedule time; this is only the fallback.
 DEFAULT_DISCOVERY_INTERVAL_HOURS = 24
+
+# Cadence for the hosting-billing sweep's self-reschedule (see
+# handle_hosting_billing_sweep) — daily is frequent enough that a due
+# charge never sits ungenerated for more than a day, without polling
+# needlessly often for a monthly-granularity concern.
+HOSTING_BILLING_SWEEP_INTERVAL_HOURS = 24

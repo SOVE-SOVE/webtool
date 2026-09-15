@@ -25,6 +25,7 @@ import {
   type DiscoveredBusinessFilters,
   type DiscoverySort,
 } from "@/lib/filters";
+import { diffNewIds } from "@/lib/discovery-diff";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
@@ -93,6 +94,35 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const [showImportModal, setShowImportModal] = useState(false);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
+  // Tracks which result ids have already been shown, so a poll/filter/
+  // sort/re-render never replays the "new result" fade-in — only rows
+  // that genuinely weren't there before get it, and only briefly. Reset
+  // whenever results land for a different search than last time, so a
+  // freshly-switched-to search's first population reads as "new" too.
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const knownForSearchRef = useRef<string | null>(null);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const newIdsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyResults = useCallback((rows: DiscoveredBusiness[], searchId: string) => {
+    if (knownForSearchRef.current !== searchId) {
+      knownForSearchRef.current = searchId;
+      knownIdsRef.current = new Set();
+    }
+    const fresh = diffNewIds(knownIdsRef.current, rows);
+    knownIdsRef.current = new Set(rows.map((r) => r.id));
+    setResults(rows);
+    if (fresh.size > 0) {
+      setNewIds(fresh);
+      if (newIdsTimeout.current) clearTimeout(newIdsTimeout.current);
+      newIdsTimeout.current = setTimeout(() => setNewIds(new Set()), 900);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (newIdsTimeout.current) clearTimeout(newIdsTimeout.current);
+  }, []);
+
   // Search form — identical fields/layout for every provider (see
   // docs/05_DECISIONS.md: an earlier version swapped the Location field
   // for a dedicated suburbs textarea when Instagram Search was picked,
@@ -145,11 +175,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     api
       .listDiscoveredBusinesses(id)
       .then((rows) => {
-        setResults(rows);
+        applyResults(rows, id);
         setLoadedId(id);
       })
       .catch(() => setError("Couldn't load discovered businesses."));
-  }, []);
+  }, [applyResults]);
 
   function selectSearch(id: string | null) {
     setActiveId(id);
@@ -240,11 +270,11 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
       }
       api
         .listDiscoveredBusinesses(activeId)
-        .then((rows) => setResults(rows))
+        .then((rows) => applyResults(rows, activeId))
         .catch(() => {});
     }, 4000);
     return () => clearInterval(timer);
-  }, [activeId, pendingWebsiteChecks]);
+  }, [activeId, pendingWebsiteChecks, applyResults]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -289,7 +319,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     try {
       const updated = await api.loadMoreDiscoverySearch(activeId);
       setSearch(updated);
-      setResults(await api.listDiscoveredBusinesses(activeId));
+      applyResults(await api.listDiscoveredBusinesses(activeId), activeId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't load more results.");
     } finally {
@@ -627,7 +657,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {visible.map((business) => {
+                  {visible.map((business, index) => {
                     const onMap = hasCoordinates(business);
                     const selected = business.id === activeSelectionId;
                     const location =
@@ -635,6 +665,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                       [business.suburb, business.state].filter(Boolean).join(", ") ||
                       "—";
                     const igState = instagramCheckDisplayState(business);
+                    const isNew = newIds.has(business.id);
                     return (
                       <tr
                         key={business.id}
@@ -643,7 +674,12 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                           else rowRefs.current.delete(business.id);
                         }}
                         onClick={onMap ? () => setSelectedId(selected ? null : business.id) : undefined}
-                        className={(selected ? "bg-surface-subtle " : "") + (onMap ? "cursor-pointer" : "")}
+                        className={
+                          (selected ? "bg-surface-subtle " : "") +
+                          (onMap ? "cursor-pointer " : "") +
+                          (isNew ? "animate-fade-in" : "")
+                        }
+                        style={isNew ? { animationDelay: `${Math.min(index * 20, 200)}ms`, animationFillMode: "backwards" } : undefined}
                       >
                         <td className="px-3 py-2">
                           <span className="flex items-center gap-1.5">

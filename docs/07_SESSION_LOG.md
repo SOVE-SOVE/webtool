@@ -11,6 +11,1552 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-15 (attention cards) — Restyled "Needs attention" cards to match Build
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, presentation only. Edited: `dashboard/
+clients/AttentionCards.tsx`. Nothing else — `lib/clients.ts` (grouping,
+`buildAttentionCards`, financial calculation, sort order) and
+`ClientsOverviewTab.tsx` (how the section is invoked, the client table
+below it) were **not touched**, confirmed by re-running `lib/
+clients.test.ts` (unaffected) and by not editing either file at all.
+
+**Build components/styling reused directly:** `ThumbnailPlaceholder`
+(the exact shared component, not a re-implementation) for the card
+preview; the exact card shell classes from `PlanningCard.tsx`/
+`ProjectCard.tsx` (`flex flex-col overflow-hidden rounded-md border
+border-border bg-surface transition-colors hover:border-border-strong`,
+`aspect-[16/10]` preview, `p-3` content padding, `gap-1.5` vertical
+rhythm, `mt-auto pt-2` footer); the exact `CardMenu` structure (fixed
+overlay + `absolute right-0 ... shadow-lg` dropdown, `⋯` trigger,
+`hover:bg-surface-hover` items); the exact neutral-badge classes
+(`rounded bg-surface-subtle px-1.5 py-0.5 text-[11px] font-medium
+text-fg-muted`); the exact "concise attention summary" treatment from
+`ProjectCard`'s own `projectAttentionReason` line (`text-xs font-medium
+text-red-700 dark:text-red-400` — coloured text, not a filled badge);
+and the exact skeleton shape from `PlanningCardSkeleton`/
+`ProjectCardSkeleton` (preview bar + content bars + footer bars).
+
+**What happened:** The "Needs attention" cards were a plain bordered
+box with no preview, no badges, and internal `border-t` dividers
+between sections — visually unrelated to the newly-redesigned Build
+cards, even though both now sit one click apart in the same app.
+Restyled to match, per the request's explicit "use Build's actual
+implementation as the reference":
+
+- **Preview**: added — didn't exist before. Same reasoning as Build's
+  own cards (no screenshot/thumbnail capability exists anywhere in this
+  codebase for a generated website, confirmed again) — always the
+  shared `ThumbnailPlaceholder`, with a label reflecting one real
+  signal only (whether any of this client's own projects has actually
+  reached a `LIVE_STAGES` stage), never a fabricated image.
+- **Heading + menu**: business name is now the card's one prominent
+  heading (unchanged content-wise — it already was — just restyled to
+  match Build's exact heading treatment), paired with a new `CardMenu`
+  (Open Client / View Billing / View Tasks) in the same header-row
+  position Build's own menu occupies — every one of those three links
+  already existed elsewhere on the card (the heading itself, and the
+  existing `billingHref`/`tasksHref` already used by the payment and
+  required-tasks lines); the menu doesn't add new reachability, it adds
+  the same *structural* pattern Build uses for secondary shortcuts.
+- **Badges**: one neutral "N projects" (or the single project's name)
+  badge, reusing the exact Build badge classes, added to satisfy
+  "clearly identify related Projects or websites" — no new "Overdue"
+  badge was added, deliberately: Build's own restrained-accent
+  language is a coloured *text* line for attention/urgency (not a
+  filled badge), and duplicating that as a second red badge would have
+  been exactly the "filling the card with warning colours" and
+  "competing badges" the request explicitly warned against.
+- **Footer**: now a single, consistently-positioned action —
+  "Open Client →", matching Build's own convention that the footer
+  button always opens the record itself, regardless of card state
+  (Build never puts a state-specific action there either; the
+  state-specific links — View Billing, View Tasks, individual payment
+  rows — live inline or in the menu, same split this card now has). The
+  footer's left slot shows an issue count (new — Build's own left slot
+  is `timeAgo`, which has no equivalent for an aggregate card; an issue
+  count fills the same "small neutral meta" role).
+- **Equal card heights** (a real, if minor, layout bug this restyle
+  surfaced and fixed): the cards sit in a horizontal `flex` row, whose
+  direct children (the `role="listitem"` wrappers) already stretch to
+  the row's height by the flexbox default — but the actual card `<div>`
+  inside each wrapper had no `h-full`, so it never filled that stretched
+  space, leaving footers at different vertical positions depending on
+  each card's own content length. Added `h-full` to the card root — now
+  every card in a row matches the tallest one and every footer aligns
+  to the same bottom edge, mirroring how Build's own CSS Grid rows
+  already stretch its cards for free. Verified live: a card with 3
+  payments + a task line now sits exactly as tall as its 1-issue
+  neighbours, footers flush.
+- **Dropped the internal `border-t border-border pt-2` divider lines**
+  between the summary/payments/tasks/expand sections, replacing them
+  with the same gap-based vertical rhythm Build's own cards use (no
+  internal dividers anywhere in `PlanningCard`/`ProjectCard`) — spacing
+  alone separates each block.
+- **Preserved exactly, unchanged**: the horizontal scroll row and its
+  prev/next controls (per the request's explicit "preserve the
+  horizontal row" instruction — Build's own grid layout was *not*
+  applied here); the `w-80`/`w-[85vw] max-w-80` card width (kept, not
+  forced to match Build's grid-responsive width, since the two sections
+  use fundamentally different layout mechanisms — a fixed width is
+  what "dimensions and proportions where appropriate" means in a
+  horizontal-scroll context); `DEFAULT_VISIBLE_PAYMENTS = 2` and the
+  lazy-fetch-on-expand behaviour (unchanged function bodies, just
+  restyled JSX around them); the reddish `hover:bg-red-100/60` tint on
+  individual payment/task rows (an intentionally *more* restrained
+  accent than a filled badge — a light hover tint on one clickable row,
+  not a card-wide fill — so it stayed, matching "restrained warning
+  accents" rather than removing all colour); every existing href
+  (`billingHref`, `tasksHref`, per-payment/task/feedback links) and the
+  `card.clientId === null` (prospect project) disabled-link treatment,
+  copied verbatim rather than re-derived.
+
+**Verification:** `tsc --noEmit` clean, `eslint` clean, 266/266 vitest
+(unchanged count — `lib/clients.test.ts`'s `buildAttentionCards`
+coverage untouched since that file wasn't edited; no new tests were
+needed since this component itself has no pre-existing unit tests and
+the restyle changed no testable logic, only JSX/classes), production
+build succeeded (dev server stopped/rebuilt/restarted). **Browser-
+verified live** (Chrome, this workspace's real 17-client "needs
+attention" dataset, both dev servers running): visually compared side
+by side with a Build Planning card at 1440px (screenshots sent) —
+matching border/radius/padding/preview-aspect/badge style/footer
+placement; a client with one issue (task-only, no expand needed), a
+client with several different issues (3 payments + tasks, expand tested
+live — the 3rd hidden payment and individual required-task titles with
+assignee/blocked-reason detail appeared correctly, matching the
+unchanged fetch-on-expand logic), a long business name (truncated
+cleanly with a working title-tooltip), a client with multiple Projects
+(badge correctly read "2 projects", both showed on the client detail
+page), a client with no thumbnail (all of them — the placeholder
+rendered every time, as expected), and horizontal scrolling through all
+17 cards via both the prev/next buttons and native scroll; the CardMenu
+opened and "View Billing" correctly landed on the client's own Billing
+tab; the footer "Open Client →" correctly opened the full client
+workspace; equal-height rows confirmed visually after the `h-full` fix;
+keyboard tab order through one card confirmed sensible (heading → menu
+→ payment links → task link → expand button → footer action → next
+card) via a DOM query of the row's own focusable elements; mobile at
+480px showed no horizontal page overflow (`scrollWidth === clientWidth`)
+with the horizontal card scroll still working; the client table below
+the section was confirmed still fully present and unaffected.
+
+**Not verified live:** `prefers-reduced-motion` on the row's own
+`scroll-smooth`/prev-next-button behaviour was not toggled and watched
+live in this pass (unchanged from the pre-existing implementation,
+which already guards it via `motion-reduce:scroll-auto` and a JS
+`matchMedia` check in `scrollByCards` — read, not re-tested, since
+neither line was touched). Focus-visible outlines were confirmed to
+exist via DOM inspection (every interactive element is a native `<a>`/
+`<button>` with no `outline-none` anywhere in the new code) but a
+literal Tab-key-by-key walkthrough watching the rendered focus ring
+was not performed.
+
+## 2026-09-15 (build workspace) — Combined Planning + Projects into one Build workspace
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, no backend changes. New: `dashboard/
+build/{BuildSwitch.tsx,lastView.ts,page.tsx,planning/page.tsx,planning/
+PlanningCard.tsx,projects/page.tsx,projects/lib.ts,projects/lib.test.ts,
+projects/ProjectCard.tsx}`. Rewrote (now thin redirects): `dashboard/
+planning/page.tsx`, `dashboard/projects/page.tsx`. Removed (moved, not
+deleted — see above): `dashboard/planning/PlanningCard.tsx`, `dashboard/
+projects/{lib.ts,lib.test.ts,ProjectCard.tsx}`. Edited: `lib/nav.ts`
+(Build section + `MOBILE_PRIMARY_HREFS`), `lib/today.ts` (5 hrefs),
+`dashboard/layout.tsx` (`BottomNav` now uses `isNavLinkActive` instead
+of its own simpler prefix check), `dashboard/planning/[id]/page.tsx`
+and `dashboard/projects/[id]/page.tsx` (one-line return-URL fallback
+each). Tests updated: `lib/nav.test.ts`, `lib/today.test.ts`. Individual
+Planning workspaces (`dashboard/planning/[id]/*`) and Project workspaces
+(`dashboard/projects/[id]/*`) — their own tabs, generation logic,
+approvals, QA, deployment, billing — were **not touched** beyond that
+one fallback-string line each; `dashboard/planning/lib.ts`/`lib.test.ts`
+stayed in place (confirmed via grep that 7 detail-page tab files import
+`../lib` from that exact location — moving it would have broken all of
+them for no benefit, since only `PlanningCard.tsx` — which did move —
+was the list-only consumer).
+
+**What happened:** Planning and Projects were two separate sidebar
+entries and two separate landing pages with near-identical card-grid
+designs (from the two immediately preceding sessions). Consolidated
+into one "Build" workspace per the request's spec:
+
+- **Routing**: `/dashboard/build/planning` and `/dashboard/build/
+  projects` are the two real views — separate Next.js routes (not one
+  page toggling internal state), each still using its exact same list
+  component, filters, and data fetches as before, just relocated.
+  Choosing separate routes (rather than one shared component with a
+  view param) was the key architectural decision: it gets several
+  requirements *for free* that a shared-state design would have needed
+  manual guarding for — switching away always fully unmounts the
+  previous view (so "a slow response from the previous view" can never
+  land on the wrong screen), browser Back/Forward works natively, and
+  each view's own querystring never collides with the other's
+  (`?search=`/`?sort=`/`?show=` mean different things to each, and
+  they're now on genuinely different URLs).
+- **The switch**: `BuildSwitch.tsx` (new, shared by both views) reuses
+  the exact `DensityToggle` pill styling/position — two real `<Link>`s
+  (native keyboard/focus semantics, no custom handler), not a display
+  toggle. Each link targets that view's *own* last-known URL, read from
+  the same `wdos-list-return:<view>` sessionStorage key each view
+  already wrote on every render (for the existing "return from a detail
+  page" feature) — reusing that instead of inventing a second state
+  store. Verified live: applying a search filter on Projects, switching
+  to Planning and back via the control, restored the exact filtered
+  Projects URL — not a reset to blank.
+- **Density**: `DensityToggle`/`useDensity` removed from both views;
+  replaced with a fixed `const DENSITY = "comfortable"` each still
+  passes to its card component. Verified live that no "Comfortable"/
+  "Compact" text renders anywhere on either Build view, while Leads'
+  own (unrelated) DensityToggle was independently confirmed still fully
+  present and working.
+- **Remembering the last view**: `lastView.ts` (new) wraps one
+  `localStorage` key. `/dashboard/build` (bare — the sidebar's own
+  link) is a client-side redirect: reads the last view, then the same
+  `wdos-list-return:<view>` value the switch itself reads, falling back
+  to that view's bare route if nothing's saved yet (a fresh session).
+  Each view's own page writes "I was the last view" on mount. An
+  explicit link to `/dashboard/build/planning` or `/dashboard/build/
+  projects` always opens exactly that view — the remembered-view logic
+  only ever runs on the bare `/dashboard/build` path.
+- **Old-route redirects**: `dashboard/planning/page.tsx` and `dashboard/
+  projects/page.tsx` now mirror the exact pattern this codebase already
+  established for the same situation (`dashboard/revenue/page.tsx`,
+  from an earlier session's Clients-tabs consolidation) — a client
+  redirect forwarding every existing query param unchanged to the new
+  path. Projects' redirect also still carries its older `?view=live`
+  translation (now a two-hop redirect through the new location to
+  Clients' Websites tab — an acceptable cost for an already-legacy
+  link, not worth a special case). Individual detail routes
+  (`/dashboard/planning/{id}`, `/dashboard/projects/{id}`) were never
+  touched — they're separate Next.js routes from the bare list path,
+  confirmed unaffected by grep and by opening one live.
+- **Sidebar**: the Build section (already existed, already labelled
+  "Build" — see `lib/nav.ts`'s own docstring) now holds exactly one
+  link instead of two, labelled "Build" itself to match the shared page
+  title (so clicking it and landing on a page titled "Build" is a
+  direct, predictable match — a compound label like "Planning &
+  Projects" would have described the *contents* but mismatched the
+  *destination's own title*). `activePrefixes` covers `/dashboard/
+  build`, `/dashboard/planning`, and `/dashboard/projects` so the one
+  link stays lit from either view or either kind of detail page. Mobile
+  bottom nav dropped from 5 to 4 primary destinations (Today/Discover/
+  Leads/Build) — no 5th was invented to fill the freed slot, since
+  nothing else was asked for. Fixed, in passing, a real (if minor)
+  pre-existing inconsistency this surfaced: `BottomNav`'s own active-
+  state check was a simpler hand-rolled prefix match that didn't know
+  about `activePrefixes` at all, so Build wouldn't have stayed lit on a
+  detail page on mobile even though the desktop sidebar would — now
+  both call the same `isNavLinkActive`, verified live on a Planning
+  detail page at 480px.
+- **Links from Leads, Clients, Today**: grepped the whole frontend for
+  every literal reference to the bare `/dashboard/planning` and `/
+  dashboard/projects` paths. Every *detail*-page link (Lead's "Open
+  Planning →", the global command-menu's Planning/Project search
+  results, `activityHref`'s project case, billing panels' "View
+  project" links, `PlanningCard`'s own card links, and more — a couple
+  dozen call sites) was confirmed to already build a `/{id}` URL and
+  needed no change. Only 7 *bare*-list references existed workspace-
+  wide, all in `lib/today.ts` (4 quick-action/pipeline hrefs, one
+  nested "empty" nudge) and `lib/nav.ts` (2, now 1) — all updated,
+  verified live via Today's own "16 projects ready to build" quick
+  action and its Pipeline funnel's Planning card, both landing on the
+  new location with the right filter applied.
+
+**Verification:** `tsc --noEmit` clean, `eslint` clean on every changed/
+new file (one pre-existing, unrelated `layout.tsx` lint error was
+confirmed via `git stash` to already exist on `main` before this
+session touched anything — not introduced here, not fixed here,
+correctly left alone), 266/266 vitest (same total as before the move,
+confirming the relocated `projects/lib.test.ts` — whose relative import
+depth needed a one-level fix after the move — still runs all 25 of its
+own tests plus everything else), production build succeeded (dev server
+stopped/rebuilt/restarted) with the route table showing exactly the
+intended shape: `/dashboard/build`, `/dashboard/build/planning`,
+`/dashboard/build/projects` as new static routes; `/dashboard/planning`
+and `/dashboard/projects` still present (now redirects); `/dashboard/
+planning/[id]`, `/dashboard/projects/[id]`, `/dashboard/projects/[id]/
+website` unchanged. **Browser-verified live** (Chrome, this workspace's
+real data, both dev servers running): the switch replaces Comfortable/
+Compact in the identical position on both views; switching shows the
+correct records/filters/counts/actions for each (6 Planning items, 19
+Projects, correct toolbars); a search filter applied on Projects
+survived a Planning round-trip via the switch; browser Back and Forward
+both replayed the same URL history correctly, including the filtered
+one; a bare `/dashboard/planning?status=needs_review` and `/dashboard/
+projects?stage=intake` both redirected to the new location with the
+filter intact and applied; opening a Project detail page and returning
+via "← All projects" restored the exact prior filtered view; a Lead's
+"Open Planning →" opened the correct individual Planning workspace,
+and Planning's own "← All Planning" then correctly restored the Build/
+Planning view's prior filter state; Today's "16 projects ready to
+build" and its Pipeline "Planning" card both landed on the new Build
+routes with the right state; mobile at 480px showed no horizontal
+overflow on either view or the redirect target, and correctly stacked
+the toolbar; the mobile bottom nav's "Build" entry stayed highlighted
+on a Planning detail page after the `isNavLinkActive` fix.
+
+**Remaining limitations (not browser-verified):** The Planning → Create
+Project handoff was verified by reading the code (untouched, still
+inside `planning/[id]/page.tsx`) rather than by actually completing a
+build-brief-approval flow live, since the one Planning item available
+for testing didn't have an approved brief and forcing one through just
+for this check felt like the wrong tradeoff against the size of this
+diff already. Keyboard Tab-into-the-switch and Enter-to-activate were
+not stepped through key-by-key in the browser (the control is a plain
+`<Link>`, the same element type every other keyboard-accessible nav
+link in this app already uses, so this is inferred from that, not
+independently confirmed). `prefers-reduced-motion` on the switch's own
+`transition-colors` was verified by reading the applied
+`motion-reduce:transition-none` class, not by toggling the OS setting
+and watching it live.
+
+## 2026-09-15 (projects grid) — Projects landing page redesign, matching Planning
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Backend + frontend. Backend edited: `modules/projects/
+schemas.py` (new `ProjectChecklistSummary`), `modules/projects/service.py`
+(new `list_project_checklist_summaries`), `modules/projects/routes.py`
+(new `GET /checklist-summaries` route). Backend tests added to
+`tests/test_projects.py`. Frontend: rewrote `dashboard/projects/
+page.tsx`; new `dashboard/projects/{ProjectCard,lib,lib.test}.tsx/.ts`;
+extended `lib/api.ts` (new `ProjectChecklistSummary` type + `api.
+listProjectChecklistSummaries`); extended `lib/filters.ts` (`ProjectFilters.
+ownerType`) with a new test in `lib/filters.test.ts`. Individual Project
+workspaces (`dashboard/projects/[id]/*`), generation logic, approvals,
+QA, deployment, and billing were **not touched** — confirmed unchanged.
+
+**Planning components/patterns reused directly** (per the request's
+explicit "inspect the actual Planning card implementation" instruction):
+the same `aspect-[16/10]` preview proportions, card border/padding/
+typography classes, the `⋯` `CardMenu` pattern (fixed-overlay + absolute
+dropdown), the `animate-fade-in`-once grid entrance, the `grid-cols-
+[repeat(auto-fill,minmax(240px,1fr))]` responsive column strategy, the
+toolbar layout (search + selects + "Clear filters" + "N of N" count +
+density top-right), the `?show=N` + "Load more" bounded-loading pattern,
+and the bulk `checklist-summaries` endpoint shape (`ProjectChecklistSummary`
+mirrors `PlanningChecklistSummary` field-for-field). Also reused, from
+elsewhere in this codebase (not from Planning): `ThumbnailPlaceholder`
+(the app's own existing "no screenshot capability" placeholder, already
+built for Projects specifically), `liveNonMockDeployment` and the mock-
+deployment guard (from `WebsiteCard.tsx`), `ProjectStatusBadge`,
+`LIVE_STAGES`/`FINISHED_STAGES`, `nextOpenTask`, `deadlineStatus`.
+
+**What happened:** The Projects list already used a card grid (not a
+table, unlike Planning's starting point), but with no toolbar beyond a
+bare search/stage/assignee row, no owner-type filter, no checklist
+progress, and a visual style that didn't match Planning's newly
+redesigned cards. Rebuilt to match, per the request's 8-part spec:
+
+- **No screenshot capability exists for a generated website anywhere in
+  this codebase** (confirmed again, specifically for Projects this
+  time — same finding as an earlier, unmerged plan for a Client detail
+  redesign) — every card uses the shared `ThumbnailPlaceholder`, never
+  a fabricated image. To still satisfy "identify draft vs. live" (spec
+  item 3) without a real screenshot, the placeholder's *label* varies
+  by real signal only: "Live website — no preview image" (a genuine
+  non-mock successful deployment exists), "Deployed — no preview image"
+  (stage says live but no real deployment was found), "Draft — no
+  preview image yet" (design/development/qa/client_review/revisions/
+  ready_to_deploy), or "Not started yet" (intake/research/brief). The
+  Planning list's own audit-screenshot capability was deliberately NOT
+  reused here — showing a Lead's *existing* pre-redesign website as if
+  it were the new build would violate the spec's explicit "do not
+  present an old audit screenshot as the newly generated site."
+- **One primary action per card, reusing existing workflow rules**:
+  `projectCardAction()` (new, in `lib.ts`) maps `project.stage` to
+  "View Build Progress" (design/development, same destination as Open
+  Project — no separate progress view exists), "Open Preview" (qa/
+  client_review/revisions/ready_to_deploy, linking to the already-
+  existing `/dashboard/projects/{id}/website` workspace), or "Open
+  Project" otherwise — overridden by "Visit Website" (external link)
+  whenever a real, non-mock live deployment exists, using the exact
+  same `liveNonMockDeployment` guard `WebsiteCard.tsx` already applies
+  elsewhere in this app. No new trigger of any kind — every action is
+  either a link to an existing route or an external link to an already-
+  deployed URL.
+- **Bounded per-card deployment fetch, not a new bulk endpoint**: a
+  Deployment can't exist before a project reaches `ready_to_deploy`
+  (enforced by `modules/deployments/service.py`), so `ProjectCard` only
+  calls `api.listDeployments(project.id)` for cards in `ready_to_deploy`
+  or a `LIVE_STAGES` stage — reusing `WebsiteCard`'s own established
+  per-project fetch pattern (already shipped in `ClientsWebsitesTab`)
+  rather than adding a new workspace-wide deployments endpoint purely
+  for this card grid, which would have been a larger, not-clearly-
+  justified backend addition for a page explicitly scoped to stay
+  read-only ("do not introduce new build or deployment triggers merely
+  for the card interface"). Verified live (network tab): out of 19
+  projects, exactly 2 (the only `deployed`-stage ones) triggered a
+  deployments fetch — the rest never did.
+- **Checklist progress + a "blocked" attention reason, one bulk fetch**:
+  `list_project_checklist_summaries` (new, mirrors Planning's own
+  bulk-summary function) loops the existing `get_project_stage_checklist`
+  per project server-side, returning `ProjectChecklistSummary` with a
+  `blocked_reason` (the first blocked required item's reason, only set
+  when `next_action.kind == "blocked"` — i.e. *every* remaining
+  required task is blocked, not just one; a test initially assumed
+  blocking one item was enough and had to be corrected once
+  `checklists/shared.py::select_next_action`'s actual priority order
+  was re-read). Progress is always shown as raw "N/M tasks" counts,
+  never phrased as "% approved" or "QA passed" — the spec's explicit
+  "do not imply a completed checklist means QA passed or launch
+  approved."
+- **"Needs attention" — one line, real signals only, strict priority
+  order**: `projectAttentionReason()` (new) checks, in order: a real
+  failed deployment (only known for the bounded subset of cards that
+  fetch deployments at all) > a blocked checklist task (with its real
+  reason) > the `client_review`/`revisions` stages (both already
+  distinct, real `ProjectStage` values — not inferred) > an overdue
+  deadline (`deadlineStatus`, already used elsewhere in this app).
+  Never stacked with the status badge's own text; never fabricated
+  when nothing applies (returns `null`, and the card simply omits the
+  line).
+- **No "active work" pulsing indicator, deliberately** — Planning's
+  pulsing dot ties to a real, server-tracked `status === "analysing"`
+  background job. Nothing equivalent is persisted for Project website
+  generation (confirmed: no `PROJECT_*` job type exists in `modules/
+  jobs/job_types.py`; the detail page's own "Generating…" states are
+  local React state inside whichever tab happens to be open, not
+  observable from the list). Reusing the pulsing-dot treatment here
+  would have implied the list can see generation activity it actually
+  can't — so it doesn't.
+- **Prospect/Client filtering and labelling**: `projectOwnerType()`
+  (new) reads the same `client_id !== null` check the rest of the app
+  already uses; `filterProjects` gained an `ownerType` filter option.
+  Every card shows a restrained "Prospect"/"Client" badge, and the
+  secondary menu links to the source Lead (prospect) or Client
+  (client-owned) — the project name itself always links to the Project
+  workspace, matching Planning's "business name + primary action are
+  the two navigation targets" convention (moved off the old card's
+  "business name links to the parent" pattern). Confirmed live: this
+  workspace's current 19 projects are all Client-owned (verified via a
+  direct API check, not just the UI) — the `?owner=prospect` filter
+  correctly returns zero, and `?owner=client` returns all 19; the
+  underlying filter logic itself has full unit coverage either way.
+- **Name/business-name dedup**: the card only shows the business-name
+  line when it differs (case-insensitively) from the project name —
+  otherwise just the one prominent line, per the spec's explicit
+  "avoiding repetition when identical."
+- **Preserved verbatim**: the existing "New project" creation form and
+  its exact fields/validation/redirect-on-create behaviour, the `?new=1`/
+  `?stage=<x>` Today-dashboard deep-link seeding effects, the old `?
+  view=live` → Clients Websites-tab redirect, `useDensity`/
+  `DensityToggle` (card padding), `useScrollRestoration`, the assignee
+  filter, and `nextOpenTask` (the existing Task-system "next actionable
+  task," kept distinct from — and not replaced by — the new checklist
+  progress, since they're genuinely different things: ad hoc assigned
+  to-dos vs. a fixed per-project workflow template).
+
+**Verification:** Backend: 13/13 `test_projects.py` (3 new, covering
+checklist-summary progress/next-item, a genuinely-blocked reason, and
+workspace scoping), 1348/1348 full backend suite. Frontend: `tsc
+--noEmit` clean, `eslint` clean, 266/266 vitest (25 new in `projects/
+lib.test.ts` covering every stage's card-action mapping and every
+attention-reason branch; 2 new in `filters.test.ts` for the owner
+filter), production build succeeded (dev server stopped/rebuilt/
+restarted). **Browser-verified live** (Chrome, this workspace's real
+19-project dataset, both dev servers running — distinct from the mocked
+unit-test results above): the card grid rendered correctly at 1440px
+(4 columns) and 480px (1 column, no horizontal overflow — confirmed via
+`scrollWidth === clientWidth`); search, the Prospect/Client filter (the
+"0 of 19" result for `?owner=prospect` was independently cross-checked
+against a raw API dump, not just trusted from the UI), stage filter,
+Show finished, and Clear filters all worked with URL sync; long business
+names truncated cleanly; two businesses with multiple projects each
+were clearly distinguishable by project name; the checklist progress
+bar and "Next: …" task text rendered from real data; the card menu's
+Open Project/Open Client/Open Preview all worked, including a live
+navigation into the real (unmodified) `/dashboard/projects/{id}/website`
+workspace and back with the search filter still applied; the "New
+project" form opened with its original fields intact (not submitted,
+to avoid creating unwanted data); network-request inspection confirmed
+exactly one checklist-summaries call (bulk, not per-card) and deployment
+fetches bounded to only the 2 `deployed`-stage projects out of 19.
+
+**Remaining limitations (not browser-verified, unit-tested only):** No
+project in this workspace currently has a real, non-mock live
+deployment, a failed deployment, or sits in `client_review`/`revisions`
+— so "Visit Website," the "Deployment failed" attention line, and the
+"Awaiting client review"/"Revisions requested" attention lines were
+never actually seen rendered against live data; their logic is fully
+covered by `projectCardAction`/`projectAttentionReason`'s unit tests
+(mirroring the exact conditions from `checklists/shared.py` and
+`WebsiteCard.tsx`'s own guard) but not independently confirmed in the
+browser. The `?show=N` "Load more" bounded-loading control never
+appeared live either, since this workspace's 19 projects sit under the
+24-item page size — same disclosed gap as Planning's own redesign (no
+true backend pagination exists anywhere in this app). No screenshot/
+thumbnail capability exists for a generated website anywhere in this
+codebase — this is a real, standing backend gap (not something this
+change could or should fabricate around), so every card's preview is a
+labelled placeholder rather than an image, for the entire lifetime of
+this workspace's current data.
+
+## 2026-09-15 (planning grid) — Planning landing page redesign
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Backend + frontend. Backend edited:
+`modules/planning/schemas.py` (enriched `PlanningListItem`, new
+`PlanningChecklistSummary`), `modules/planning/service.py` (enriched
+`_to_list_item`/`list_planning_workspace`'s query, new
+`list_planning_checklist_summaries`, new `get_planning_screenshot`),
+`modules/planning/routes.py` (two new GET routes). Backend tests added
+to `tests/test_planning.py`. Frontend: rewrote `dashboard/planning/
+page.tsx`; new `dashboard/planning/PlanningCard.tsx`; added exports to
+`dashboard/planning/lib.ts` and tests to `lib.test.ts`; extended
+`lib/api.ts` (`PlanningListItem`, new `PlanningChecklistSummary` type,
+two new `api.*` functions). Individual Planning detail pages
+(`dashboard/planning/[id]/*`), their tabs, audit presentation, and
+generation workflows were **not touched** — confirmed unchanged by
+grep/diff before finishing.
+
+**What happened:** The standalone Planning list page was a bare table
+(desktop) + `<ul>` (mobile) with no search, filters, or sort — just a
+"Show transferred" checkbox. Replaced with a responsive card grid per
+the request's 8-part spec:
+
+- **Backend enrichment, no large payloads added to the list response**:
+  `PlanningListItem` gained `updated_at`, `website_audit_id` (mode
+  signal), `has_screenshot` (a SQL-level `IS NOT NULL` check via an
+  outer join to `WebsiteAudit` — never loads the actual base64
+  column), `lead_industry`/`lead_suburb`/`lead_state` (from `Business`,
+  not `Lead` — an early draft wrongly assumed these lived on `Lead`,
+  caught by the existing test suite), and `website_plan_generated_at`
+  (needed to reproduce the detail page's own New-Website-Plan-mode
+  empty-state logic). Two new endpoints: `GET /api/v1/planning/
+  checklist-summaries` (loops the existing `get_planning_checklist`
+  per item server-side, one round trip — mirrors Clients' own
+  `list_checklist_summaries`; registered ahead of `/api/v1/planning/
+  {planning_id}` so the fixed path isn't swallowed by the wildcard
+  route) and `GET /api/v1/planning/{id}/screenshot` (decodes the
+  stored base64 and streams raw PNG bytes, so the frontend uses a
+  plain `<img loading="lazy">` per card instead of embedding
+  screenshots in list JSON).
+- **One primary action per card, reusing existing workflow rules**:
+  `planningCardAction()` (new, in `lib.ts`) reproduces exactly the
+  same state → action mapping the detail page's own `OverviewTab`
+  already applies (mode from `website_audit_id`, "has a plan been
+  generated" from `website_plan_generated_at`, "is a run in progress"
+  from `status`) — every card link still lands on the same Planning
+  workspace; this only picks the label, never triggers a job from the
+  card itself.
+- **Preview treatment**: real screenshot (lazy `<img>` from the new
+  thumbnail route) when `has_screenshot`; the existing `.scan-surface`
+  "inspection" sweep (already used by the detail page's own
+  `AnalysingPreviewPanel`) when a first-ever analysis is running and no
+  screenshot exists yet; a calm business-initials placeholder
+  otherwise. A re-analysis of an item that already has a screenshot
+  keeps showing it rather than switching to the sweep, matching the
+  detail page's own "keep previous content during a re-run" behaviour.
+- **Toolbar**: business-name search, status filter, a mode filter
+  (Website redesign / New website, derived the same way `planningMode()`
+  already does), a sort control (Recently updated / Recently created /
+  Business name), and the existing "Show transferred" checkbox
+  relocated into the toolbar row — all URL-synced (`withParam`/
+  `useDebouncedUrlSync`, matching the Clients Overview precedent), so
+  filters/sort/search survive opening a plan and returning via the
+  existing `wdos-list-return:planning` key.
+- **Progress**: checklist bar/count only rendered when the summary's
+  `total > 0` (never a fabricated 0%); "Next actionable task" is the
+  checklist's own `next_item_title` — the same `_next_item`
+  computation the per-item checklist already does, not reinvented.
+  Verified live: Stairwell Coffee's card showed "2/12 tasks", and its
+  detail page's own Stage Checklist panel independently showed
+  "Required: 2 of 12 complete" — same underlying record.
+- **Status polling**: only polls (`load()` every 4s) while at least one
+  visible item has `status === "analysing"`, same convention as the
+  detail page's own polling effect — a routine refresh updates cards in
+  place (stable `key={item.id}`) without remounting the grid or
+  replaying its one-time `animate-fade-in` entrance.
+- **Pagination**: no true backend pagination exists anywhere in this
+  app (confirmed again for Planning specifically) — used bounded,
+  URL-synced client-side rendering instead (`?show=N` + a "Load more"
+  button, default 24), disclosed here rather than implied as real
+  pagination.
+- **Preserved verbatim**: the `handleRemove` confirm-dialog copy and
+  toast messages, `deletePlanning`, `useConfirm`/`useToast`,
+  `useDensity`/`DensityToggle` (now controls card padding instead of
+  table row height), `useScrollRestoration`. The card menu also adds
+  "Open Lead" (the business name link now goes to Planning instead of
+  the Lead, per the request's explicit "business name and Open
+  Planning action as clear navigation targets" — Lead access was moved
+  into the menu, not dropped).
+
+**Verification:** Backend: 104/104 `test_planning.py` (new tests cover
+the enriched list fields, both new endpoints, and workspace scoping),
+1345/1345 full backend suite. Frontend: `tsc --noEmit` clean, `eslint`
+clean (one expected `no-img-element` warning for the dynamic thumbnail
+— a `next/image` loader doesn't fit a raw-bytes API route), 239/239
+vitest (30 in `planning/lib.test.ts`, including 8 new for
+`planningCardAction`/`planningListItemMode`), production build
+succeeded (dev server stopped/rebuilt/restarted). Live browser QA
+(Chrome, real workspace data, both dev servers running): search,
+status/mode filters (verified via both UI and a direct DOM
+value+dispatchEvent check), sort, "Show transferred" (revealed a
+7th, previously-hidden transferred item with its own "Transferred"
+badge and an "Open Project" menu entry), the no-match empty state with
+"Clear filters", the card secondary-actions menu, the Remove confirm
+dialog (opened, verified copy, cancelled — did not delete real data),
+navigation to a Planning detail page and back with filters preserved,
+and responsive columns from 4-wide at 1440px down to a single column
+at 480px. Screenshots for 5 of 7 real audited businesses loaded and
+rendered correctly from the new thumbnail route; the no-website/no-
+screenshot business showed the initials placeholder.
+
+**Remaining limitations:** No live item was in `status === "analysing"`
+in this workspace's current data, so the scan-surface/pulsing-dot
+"running" treatment and the "Analyse Website"/"Generate Website Plan"
+primary-action labels were verified via unit tests and code review, not
+a live screenshot — triggering a real analysis job just to capture one
+felt like the wrong tradeoff (real LLM/browser-fetch cost) versus the
+unit coverage already in place. The pre-existing scroll-restoration bug
+documented in an earlier session (post-navigation `window.scrollY`
+already reset to 0 before the hook's cleanup effect captures it) was
+reproduced again here (filters/search restored correctly on return;
+scroll position did not) — this is the same known, cross-page issue,
+not a regression introduced by this change, and remains out of scope
+per the request's "Planning landing page only" framing. "Load more"
+pagination logic was exercised via type-checking and code review only —
+this workspace's current data (7 Planning items) never exceeds the
+24-item page size, so the control never renders in the live workspace
+right now.
+
+## 2026-09-15 (latest of all) — "Needs attention" as grouped client cards
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, no backend changes. New: `dashboard/
+clients/AttentionCards.tsx`. Edited: `lib/clients.ts` (replaced
+`buildOverviewAttentionItems`/`OverviewAttentionItem` with
+`buildAttentionCards`/`AttentionCard`/`AttentionCardPayment`),
+`lib/clients.test.ts` (tests rewritten for the new shape),
+`dashboard/clients/ClientsOverviewTab.tsx` (swapped the flat list for
+the new card row + a loading skeleton).
+
+**What changed:** The old "Needs attention" section was a flat list —
+one row per client per issue *type* (an overdue-payment row and a
+separate required-tasks row for the same client), capped with a
+section-level "Show N more" toggle. Replaced with one card per client,
+horizontally scrollable, grouping every issue that client has:
+
+- **Grouping**: `buildAttentionCards` (in `lib/clients.ts`) now
+  collects *every* overdue obligation for a client (not just the
+  earliest) plus their required-tasks-outstanding count into a single
+  card, keyed by client id (a clientless/prospect project's own
+  overdue charge still gets its own card, keyed by project instead, so
+  it's never silently dropped). Cards are ordered by earliest overdue
+  due date, task-only cards last.
+- **Card content, built from data already in memory** (no new fetch
+  for the collapsed view): business name (linked), contact
+  (`billing_email`), a one-line "why" summary, up to 2 payment lines
+  (amount, project, due date, overdue duration — all reused straight
+  from the same `NextPaymentObligation` records the rest of Revenue
+  already uses), and a required-tasks-outstanding count linking to
+  Tasks.
+- **"Show all items" — lazy, per-card, on explicit click only**: the
+  spec asked for task-level detail (title, assignee, blocked reason)
+  and feedback-awaiting-review detail (project, status) that the
+  existing workspace-wide endpoints don't expose (`listChecklistSummaries`
+  is counts-only; feedback has no workspace-wide endpoint at all, only
+  per-project). Fetching that for every card up front would be the
+  exact slow per-row request pattern this app avoids elsewhere — so it's
+  fetched only when a specific card's "Show all items" is clicked
+  (`api.getClientChecklist` + `api.listWebsiteFeedback` per that
+  client's own projects), cached in that card's own local state so
+  toggling it again doesn't refetch. This is a deliberate, bounded
+  exception to the no-N+1 rule: one interactive click, one client's own
+  data, not N fetches for N rows on initial render.
+- **Layout**: a horizontally-scrollable, `snap-x` track (`overflow-x-auto`
+  contained to the section, confirmed it never causes page-level
+  overflow at any width tested) with labelled prev/next buttons
+  (hidden when 2 or fewer cards fit), a "N clients" count, and a
+  `w-[85vw] max-w-80 sm:w-80` card width so mobile naturally shows
+  ~one card with the next peeking in. No auto-scroll, no rotation.
+- **A real bug found and fixed during live QA**: two projects sharing
+  the same default checklist template produce items with identical
+  titles ("Confirm website scope" appearing twice, once per project) —
+  an expanded card showed these with no way to tell them apart, which
+  the spec explicitly required ("Clearly label the related project or
+  website"). Fixed by tagging each required item with its own project's
+  name (`checklist.projects[i].project_name`, already present on the
+  API response) and showing it inline — "Confirm website scope · Main
+  Site" vs. "· Second Storefront".
+
+**Verification:** `tsc --noEmit`, `eslint`, `vitest` (231 tests, +5 net
+— the old 4 tests for the flat-list shape replaced with 5 for the new
+grouped-card shape), and `next build` all clean. Live-verified myself:
+the card row renders correctly with 4 real attention-worthy clients
+visible at 1440px (payments and task counts both showing, "17 clients"
+count, prev/next buttons present), the "Show all items" lazy expand
+genuinely fetches and renders real task titles/assignees (confirmed via
+DOM text before and after the project-name fix), no page-level
+horizontal overflow at ~500px mobile width (cards sized down to a
+readable single-card-plus-peek layout, prev/next controls and metrics
+both still usable).
+
+**Remaining limitations:** the browser automation tooling itself
+repeatedly hung on screenshot capture mid-session (confirmed via
+`javascript_tool` that the page itself stayed fully responsive
+throughout — a CDP/screenshot-specific tool issue, not an app bug;
+resolved each time by opening a fresh tab). One screenshot was
+successfully captured and saved (mobile width, `screenshot-
+1789466475571-25.jpg`); the rest of the visual verification for this
+session came from direct DOM/text inspection via `javascript_tool`
+rather than a saved image, which is disclosed here rather than implied
+otherwise. The truly-empty "no clients need attention" state and
+keyboard-only access to the prev/next scroll buttons were reasoned
+about from the code (a plain early-`return null` for the empty case;
+the buttons are native `<button>` elements, keyboard-focusable and
+`aria-label`led by construction) but not independently exercised live
+this session.
+
+---
+
+## 2026-09-15 (newest) — Clients Overview tab: columns, quick preview, attention indicators
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, no backend changes. New: `apps/web/
+src/lib/useClientColumns.ts`, `dashboard/clients/{ClientRowFields,
+ClientPreviewPanel}.tsx`. Edited: `dashboard/clients/
+ClientsOverviewTab.tsx` (the bulk of the work), `lib/
+useScrollRestoration.ts` (additive `keyOverride` param, backward
+compatible — every other caller unaffected).
+
+**What already existed vs. what's new:** Density (Comfortable/Compact,
+`useDensity`) and the row-level "⋯" menu already existed from the prior
+Overview redesign — refined rather than duplicated (density's `<th>`
+padding was actually broken, see below; the "⋯" menu now sits next to
+a new, separate preview trigger instead of being the only row action).
+Genuinely new: the Columns menu + per-operator persistence, the
+quick-preview side panel, per-row attention-indicator dots, the sticky
+Client column, and title-tooltips on truncated text.
+
+**What happened:**
+- **Adjustable columns** — a "Columns" button (`ColumnsMenu`) toggles
+  Websites/Hosting/Next payment/Next task independently; Client and the
+  actions column are never toggleable. Persisted per-operator via a new
+  `useClientColumns` hook (`lib/useClientColumns.ts`), same
+  localStorage-in-a-mount-effect pattern as the existing `useDensity`,
+  storing a partial object merged over defaults so a future new column
+  doesn't need a migration. "Reset to default" restores all four.
+- **Sticky business-name column** — `sticky left-0` on the Client
+  `<td>`/`<th>`, with an explicit background (`bg-surface
+  group-hover:bg-surface-hover`, or the preview-open tint) since a
+  sticky cell sits outside the row's normal paint order and needs its
+  own background to avoid scrolled content showing through. Verified
+  live by narrowing the viewport to 800px (forces real horizontal
+  overflow) and scrolling the table programmatically — Client column
+  stayed pinned, other columns scrolled underneath cleanly, no overlap
+  with the far-right "⋯"/preview menus (kept at a lower z-index than
+  their own popups).
+- **Client quick preview** — a new eye-icon button per row (table and
+  mobile card both) opens `ClientPreviewPanel`, a URL-param-driven
+  (`?preview=<id>`) side panel reusing the same dismissable-overlay/
+  `.side-panel` pattern as Leads' and Revenue's own preview panels.
+  Built entirely from the row data already in memory (contact, every
+  linked project with its status badge, hosting, next payment, next
+  task, Billing/Open Client links) — no extra fetch. The open row gets
+  a persistent tint (`bg-accent/5`) distinct from `:hover`. Verified
+  keyboard access directly (focus the button, Enter opens the panel,
+  focus lands on the Close button per `useDismissableOverlay`; Escape
+  closes it and removes only the `preview` param).
+- **Per-row attention indicators** — a small red dot next to the
+  business name, shown only for a real overdue payment or outstanding
+  required tasks (never a full-row background), linking to that
+  client's Billing or Tasks tab. Reuses the exact same signals as the
+  existing aggregate "Needs attention" box — the two are complementary
+  (workspace-wide scan vs. in-place flag while browsing), not a
+  duplicate of each other. "Blocked tasks" is implemented as "required
+  tasks outstanding" (the same honest proxy the aggregate box already
+  used) since the workspace-wide checklist endpoint only exposes
+  required-item counts, not per-item `blocked` status — getting that
+  distinction would mean a per-client fetch, exactly the slow per-row
+  request pattern this task said to avoid.
+- **Mobile adaptation** — the Columns/Density controls (table-only
+  concepts) are now hidden below `sm:`; the preview trigger was added
+  to the mobile card too, and needed no extra responsive work since the
+  shared `.side-panel` CSS already goes full-width under its `max-w-md`
+  breakpoint.
+- A QA pass caught two real bugs, both fixed: (1) the table header's
+  `<th>` padding was hardcoded regardless of density while `<td>`
+  correctly shrank in Compact, visibly misaligning header and rows —
+  fixed with one shared `rowPadY(density)` helper both now use. (2) the
+  scroll-restoration key included the full querystring, so opening the
+  preview panel (`&preview=...`) fragmented scroll memory into a bucket
+  the pre-preview scroll position was never saved to — fixed by adding
+  `useScrollRestoration`'s optional `keyOverride` param and passing a
+  preview-stripped key from this page.
+
+**Verification:** `tsc --noEmit`, `eslint`, `vitest` (230 tests,
+unchanged — no new pure logic worth a component-rendering test, and
+this codebase has no component-test infra to add one to), and `next
+build` all clean. Live-verified myself at 1440px, 800px (sticky column
+during real horizontal overflow), and 500px (mobile controls hidden,
+preview trigger present and full-width): Columns menu toggle +
+localStorage persistence + reset, keyboard-driven preview open/close
+with correct focus handling, and the persistent preview-open row tint.
+A QA fork independently verified preview-panel content accuracy
+against the same client's table row, multi-filter combinations, the
+empty/no-match state, Compact-vs-Comfortable header/row alignment
+(after the fix above), long-name/long-task tooltip text, and confirmed
+switching a filter while a preview is open intentionally does NOT
+force-close it (the panel looks up the client from the unfiltered row
+set, not the filtered list — correct, not a bug).
+
+**Remaining limitations — a real bug found, correctly left unfixed as
+out of scope:** the QA fork reproduced a *pre-existing*
+`useScrollRestoration` bug independent of anything built this session
+(triggers with plain business-name-click-then-back, zero preview
+involvement): scroll position is lost on return from a Client's detail
+page. Diagnosed, not fixed — the hook's unmount-cleanup effect calls
+`sessionStorage.setItem(key, window.scrollY)`, and `window.scrollY` is
+almost certainly already reset to 0 by the browser mid-navigation by
+the time that cleanup runs, clobbering the correct value the periodic
+`onScroll` listener already saved. This hook is shared by at least 6
+pages (Leads' own list page has the identical `?preview=` +
+`useScrollRestoration` shape and is likely affected too) — fixing the
+core mechanism has a blast radius well beyond "this tab's own new
+features," so it needs its own explicitly-scoped task rather than a
+side-fix here.
+
+---
+
+## 2026-09-15 (very latest) — Revenue tab visual polish
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, presentation-only — no calculations,
+records, permissions, or routing changed. Edited: `dashboard/clients/
+{ClientsRevenueTab,PaymentsTab,HostingPlansTab,UpcomingOverdueTab}.tsx`,
+`components/billing/PaymentDetailPanel.tsx`, `lib/format.ts` (+
+`formatDate`), `lib/format.test.ts` (+2 tests).
+
+**What happened:** A live-browser inspection at 1440px surfaced a real,
+pre-existing bug, not just taste: `PaymentsTab.tsx`/`HostingPlansTab.tsx`'s
+`<td>`/`<th>` elements had *zero* padding classes (the shared `.table`
+CSS class deliberately has none — every other table in the app, e.g.
+Settings' user table, adds `px-3 py-2` per cell, which these two tables
+never did), so Date/Client/Project columns visually ran together, and
+neither column had a `max-width`/`truncate`, so a long client name
+overflowed into the next column instead of breaking cleanly. Fixed both
+with the codebase's own established per-cell padding convention plus
+`max-w-[Nrem] truncate`. Added `formatDate()` to `lib/format.ts`
+("15 Sept 2026" from a "YYYY-MM-DD" business date, parsed via the local
+`Date(y, m-1, d)` constructor rather than `new Date("YYYY-MM-DD")` to
+avoid the classic UTC-midnight off-by-one-day bug) and applied it to
+every raw ISO date previously shown verbatim (Payments' Date column,
+Hosting Plans' Next payment column, the Upcoming & Overdue due-date
+line, and — caught by a QA pass, not by me — `PaymentDetailPanel`'s own
+received-date). Collapsed Hosting Plans' 4-button-per-row cluster
+(Change fee/Pause/Resume/Cancel) into a single "⋯" menu, same pattern
+already established on the Clients → Overview tab's own row menu.
+Toned the Upcoming & Overdue "Overdue" section down from a full
+red-background/red-border box to a thin `border-l-2 border-l-red-500`
+accent on an otherwise plain bordered box — the amounts/labels inside
+stay red, but it no longer reads as a large warning panel. Replaced the
+Revenue tab's own Payments/Upcoming & Overdue/Hosting Plans sub-nav —
+previously the same shared `<TabBar>` underline component the outer
+Clients workspace uses for Overview/Websites/Revenue, so the two levels
+had identical visual weight — with a small local segmented-pill control
+(the same `rounded-md border border-border-strong p-0.5` pattern
+`CorrectPaymentModal`'s own refund/void toggle already uses), so the
+sub-views read as "a view toggle within Revenue" rather than a second
+row of primary navigation. Rebuilt the toolbar into one row (period
+selector, currency, Record Payment) and cut the 3-line intro paragraph
+down to one line, dropping the tax/accounting disclaimer sentence
+entirely as redundant copy — the period-vs-current-balance distinction
+it was making is still stated once, concisely, and is separately
+reinforced by each metric's own hint text (unchanged).
+
+**Verification:** `tsc --noEmit`, `eslint`, `vitest` (230 tests, up
+from 228), and `next build` all clean. Live browser inspection at
+1440px, 1280px (both confirmed via `window.innerWidth`, not screenshot
+pixel dimensions — DPI scaling makes those unreliable, a lesson from
+earlier in this session), and ~500px (this session's `resize_window`
+tool floor — never got to exactly 390px despite retrying with a fresh
+tab, same known limitation as two earlier sessions today) — no
+horizontal overflow at any width, toolbar/filters/sub-tabs all wrap
+sensibly at the narrow width. A QA fork independently verified the
+payment detail panel (open/close, Escape, correct row-click vs.
+Client/Project-link isolation), refunded/reversed row rendering, the
+Record Payment Client→Project picker, the Hosting Plans "⋯" menu and
+its Change Fee modal, empty states (no matching transactions, no
+hosting plans for a filter), filter-state persistence through a
+client-link-and-back round trip, and found the one PaymentDetailPanel
+date-formatting gap noted above.
+
+**Remaining limitations:** true 390px mobile width wasn't reachable
+this session (tool floor ~500px, confirmed no overflow there). Long
+`reference`/`method` truncation was code-reviewed only — no long value
+existed in the dev dataset and none was fabricated to test it, though
+it reuses the identical `max-w-[8rem] truncate` pattern already
+confirmed working on the Client/Project columns. `PaymentsTab` has no
+error state local to itself — a revenue-report fetch failure at the
+`ClientsRevenueTab` level hides the metrics/chart/all three sub-tabs
+behind one error banner (since the sub-tabs only render inside
+`{report && (...)}`) — this is pre-existing fetch/render architecture,
+unchanged by this presentation-only pass, and restructuring it would
+mean splitting the report fetch from the sub-tab data fetches, out of
+scope here.
+
+---
+
+## 2026-09-15 (latest) — Clients workspace Overview tab redesign
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, no backend changes. Rewritten:
+`apps/web/src/app/dashboard/clients/ClientsOverviewTab.tsx`,
+`dashboard/clients/page.tsx` (dropped the redundant description line).
+Extended: `lib/clients.ts` (+`activeProjectCount`,
+`clientRowMatchesFilters`/`OverviewFilters`/`NO_OVERVIEW_FILTERS`,
+`buildOverviewAttentionItems`/`OverviewAttentionItem`), `lib/
+clients.test.ts` (+27 tests for the above). Reused unchanged: the
+Websites and Revenue tabs, `useDensity`/`DensityToggle`,
+`HOSTING_STATUS_CLASS`, `ClientStatusBadge`/`ProjectStatusBadge`,
+`listAllHostingPlans`/`getWorkspaceObligations`/
+`getTodayBillingSnapshot` (all built earlier this session), and the
+newly-discovered `listChecklistSummaries()` (a workspace-wide,
+required-tasks-only endpoint that already existed for exactly this kind
+of compact glance — not previously used on this page).
+
+**What happened:** Redesigned the Overview tab per a detailed UI/UX
+spec. Removed a genuine duplicate-header bug (the tab rendered its own
+"Clients" sub-heading directly under the shell's "Clients" title).
+Summary strip changed from 3 revenue-only figures to 4 (Active clients,
+Live websites, Expected monthly hosting revenue, Overdue balance),
+each now a working link (Active clients re-filters the same list via
+`?clientStatus=active` rather than navigating away). Added a "Needs
+attention" box combining overdue payments and clients behind on
+required checklist tasks, each client appearing at most once per issue
+*type* (`buildOverviewAttentionItems` dedupes overdue charges down to
+the earliest per client). Deliberately did NOT add "client feedback
+awaiting review" from the spec's examples — feedback has no
+workspace-wide listing endpoint, only a per-project one, and fetching
+it per client across the whole list would be exactly the slow N+1
+pattern the spec's own scope section explicitly said to avoid; flagged
+as a gap rather than faked or made slow. Replaced the card grid with a
+real desktop `<table>` (Client/Websites/Hosting/Next payment/Next
+task/⋯ menu columns, Comfortable/Compact density shared with Projects/
+Leads/Planning) plus a genuinely different mobile card list (name/
+status/next-task up front, a `<details>` disclosure for the rest) —
+not just a horizontally-scrolled copy of the table. Business name is
+now the only row element that navigates to the Client detail page (no
+more whole-card click handler), with website/payment/task/menu links
+each working independently. Added three new list filters (active
+hosting, overdue payment, required-tasks-outstanding) alongside the
+existing status/assignee ones, all URL-synced, with a "Clear filters"
+action shown only when a filter is active and an "N of M clients"
+result count. A row's "⋯" menu offers Open Client/Billing/Edit
+details — no Archive, confirmed (again, as in the earlier navigation-
+consolidation session) that Client has no archive concept anywhere in
+this codebase's backend; the spec's "active or archived clients" filter
+and "Keep Archive... in the existing menu" instructions don't match
+reality, so neither was fabricated. Client-level pagination doesn't
+exist either (`listClients()` has no query params) — "preserve...
+pagination" had nothing to preserve.
+
+**Verification:** `tsc --noEmit`, `eslint`, `vitest` (228 tests, up
+from 217), and `next build` all clean. Live browser QA found no real
+bugs: summary-strip links, the Needs-attention dedup logic (verified
+live against a client with both an overdue charge and 10 outstanding
+required tasks — two separate rows, not merged), single-vs-multiple
+website/hosting disclosures, overdue-red vs. normal payment coloring,
+"No payment scheduled"/"No contact on file"/"No hosting" fallbacks
+(never a bare $0), all 7 filter combinations (including one narrowing
+17→2 clients and one producing a correct empty state), row-level link
+isolation (no whole-row click handler), the "← Clients" round-trip
+preserving search/filters, and the Websites/Revenue tabs still working
+unchanged after this pass.
+
+**Remaining limitations:** True narrow-mobile width (~390-420px)
+couldn't be forced via the browser tool this session (`resize_window`
+didn't actually move `window.innerWidth` below 1440px even on a fresh
+tab) — the `sm:hidden`/`hidden sm:block` split and the mobile `<details>`
+disclosure are present and correct in the rendered DOM, but weren't
+visually confirmed at a true phone width. Scroll-position restoration
+after "← Clients" wasn't demonstrated either way — the filtered result
+set in this dev database was too short to actually require scrolling.
+
+---
+
+## 2026-09-15 (later) — Clients/Live Websites/Revenue navigation consolidation
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Frontend only, no backend changes. New: `apps/web/src/
+app/dashboard/clients/{useClientsTab,ClientsOverviewTab,
+ClientsWebsitesTab,ClientsRevenueTab}.tsx`, `components/websites/
+WebsiteCard.tsx`. Moved (unchanged internals) from `dashboard/revenue/`
+into `dashboard/clients/`: `PaymentsTab.tsx`, `UpcomingOverdueTab.tsx`,
+`HostingPlansTab.tsx`, `ReceiptsTrendChart.tsx`,
+`useRevenueTab.ts`→`useRevenueSubTab.ts` (param renamed `tab`→
+`revenueTab`). Rewritten: `dashboard/clients/page.tsx` (tabbed shell),
+`dashboard/revenue/page.tsx` (now a param-translating redirect to
+`?tab=revenue`), `dashboard/projects/page.tsx` (dropped the `onlyLive`/
+`?view=live` branch, added a redirect to `?tab=websites`),
+`dashboard/clients/[id]/ProjectsWebsitesTab.tsx` (now thin, uses the new
+shared `WebsiteCard`). Edited: `lib/nav.ts` (Manage now has only
+Clients; dropped the `live`/`revenue` icon keys), `components/ui/
+Icons.tsx` (dropped their now-orphaned SVGs), `lib/today.ts`
+(`ENTITY_HREF` and the Pipeline "Live" stage card point at the new
+routes), `lib/filters.ts` (comment accuracy only), `lib/clients.ts`
+(+`liveWebsiteCount`), `dashboard/page.tsx` (Today's Revenue section
+links updated). Tests: `lib/{nav,today,clients,filters}.test.ts` updated/
+extended for the new routes and the new pure helper.
+
+**What happened:** Merged three separate sidebar destinations (Clients,
+Live Websites — actually `/dashboard/projects?view=live`, never a real
+page — and Revenue) into one Clients workspace with three URL-synced
+tabs: `?tab=overview|websites|revenue` (default overview). Overview
+reuses the old Clients list foundation, enriched per row with live
+website count, hosting status/fee, and next payment date/type — all
+derived client-side from data already fetched for the Revenue feature
+(`listAllHostingPlans`, `getWorkspaceObligations`, both built in an
+earlier session this same day) rather than new backend work, grouped by
+`client_id`; multiple websites/plans use a small click-to-open
+disclosure (matching ClientHeader's existing `ProjectPickerMenu`
+pattern) instead of crowding the row. Above the list: a payment-alerts
+block (top 5 overdue obligations) and a compact 3-metric revenue summary
+reusing the exact same `getTodayBillingSnapshot()` figures Today's own
+Revenue section shows. Websites moved the old Live Websites view
+(Projects filtered to `LIVE_STAGES` via `filterProjects`'s `onlyLive` —
+kept fully intact and reused, not rewritten) and enriched it with each
+project's deployment/hosting status via a new shared `WebsiteCard`
+(extracted verbatim from the Client detail page's own
+ProjectsWebsitesTab, which now imports it back rather than keeping a
+duplicate copy) — a clientless (prospect) live project is never hidden,
+shown as "No client (prospect)" with a link to its source Lead instead.
+Revenue is the full old Revenue page moved as-is, with one deliberate
+naming change: its own Payments/Upcoming & Overdue/Hosting Plans
+sub-tabs now live under a `revenueTab` param instead of `tab`, since
+`tab` now belongs to the outer Clients workspace — the two levels can't
+collide in the URL. Old routes redirect client-side, translating params:
+`/dashboard/revenue?tab=X&...` → `/dashboard/clients?tab=revenue&
+revenueTab=X&...` (every other param passed through unchanged);
+`/dashboard/projects?view=live&search=Y` → `/dashboard/clients?
+tab=websites&search=Y`. The Clients workspace shell writes
+`wdos-list-return:clients` on every tab/filter change (same
+sessionStorage key the Client detail page's "← Clients" link already
+read), so back-navigation lands on the exact tab/filters/scroll position
+regardless of which of the three tabs was active. One naming collision
+was caught and avoided before it shipped: the old Clients list's own
+`status` filter (client tone: onboarding/active/complete) would have
+silently collided with Revenue's Payments/Hosting tabs' own `status`
+param (payment status / hosting plan status) once both lived under the
+same page — renamed the Overview tab's own param to `clientStatus`.
+
+**Verification:** Frontend — `tsc --noEmit`, `eslint`, `vitest` (217
+tests, up from 212), and `next build` all clean. No backend changes, so
+backend's existing 64/64 billing+dashboard tests re-run as a sanity
+check only (unchanged, all green). Live browser QA (two passes — the
+first a general sweep, confirmed via a second direct check after) found
+no real bugs: all three Clients tabs render and their tab-specific
+primary actions work (Add Client / — / Record Payment); a Client's own
+detail page still has all five tabs, and "← Clients" round-trips to the
+exact prior tab+search filter (verified via sessionStorage and by
+clicking it); all three tested old-URL redirects preserve every param
+correctly (`/dashboard/revenue?period=custom&start=...&kind=hosting`,
+`/dashboard/revenue?tab=hosting`, `/dashboard/projects?view=live&
+search=foo`); Today's Revenue section links land on the new routes and
+its figures match the Clients → Revenue tab exactly for the same data;
+the command menu no longer offers "Live Websites"/"Revenue" as separate
+destinations; the sidebar highlights "Clients" correctly across all
+three tabs; no horizontal overflow at 1440px or ~500-614px width.
+
+**Remaining limitations:** Two checklist items were code-reviewed but
+not live-clicked, because the dev database currently has zero projects
+at a live stage and zero clientless (prospect) projects to exercise
+them against: (1) `WebsiteCard`'s live-deployment/hosting rendering with
+real data, and (2) a clientless project actually appearing in the
+Websites tab. Both render through unmodified or verbatim-copied logic
+(not new code written this session), and a live-stage prospect project
+couldn't be manufactured for testing without approving a full Build
+Brief (a multi-step business process out of scope to fabricate for a
+QA check) — flagged to the user rather than claimed as verified. A
+harmless leftover test Lead ("QA Prospect Nav Co") was created attempting
+this and left in place, unconverted.
+
+---
+
+## 2026-09-15 — Client header fix + Next Payment Due feature
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** Backend — `apps/api/app/modules/billing/{schemas,
+service,routes}.py` (new `NextPaymentSummary`/`NextPaymentObligation`
+schemas, `get_next_payment_summary` calculation, `PATCH
+/hosting-charges/{id}/due-date`, `GET /clients/{id}/next-payment`),
+`apps/api/tests/test_billing.py` (16 new tests). Frontend —
+`apps/web/src/app/dashboard/clients/[id]/ClientHeader.tsx` (header
+layout fix), `apps/web/src/lib/{api,billing}.ts` (new types +
+`describeNextPayment`), `apps/web/src/components/billing/
+{NextPaymentPanel,RecordPaymentModal,ClientBillingSection}.tsx` (new
+panel, pre-fillable payment modal, cross-component refresh wiring),
+`apps/web/src/app/dashboard/clients/[id]/{BillingTab,OverviewTab}.tsx`.
+
+**What happened:** Two independent problems from the same request.
+
+*Header bug* — reproduced live, two compounding root causes: (1) the
+business-name `<h1 className="truncate">` sat in a `flex flex-wrap`
+row with no `min-w-0` anywhere, so `truncate`'s `overflow:hidden` never
+activated — the badge wrapped to a new line instead of the name ever
+shrinking; fixed by dropping `flex-wrap`, adding `min-w-0` to the row
+and the `h1`, `shrink-0` on the badge. (2) The header copied Planning's
+negative-margin-bleed + inner `max-w-5xl` recenter pattern, but this
+page's ambient padding/max-width preconditions don't match Planning's —
+confirmed via `getBoundingClientRect()` that the header overflowed the
+viewport by 24–48px on each side and sat in a different content column
+(x:331/width:1024) than the tab content below it (x:248/width:1191).
+Fixed by removing the bleed and inner wrapper entirely, using plain
+`px-4 sm:px-6` matching the tab content's own padding.
+
+*Next Payment Due* — added `get_next_payment_summary` implementing
+every rule from the spec: earliest unpaid obligation across a client's
+projects and hosting plans; website deposit vs. balance split (deposit
+obligation's amount is the remaining *deposit*, not the whole project
+balance — caught live during QA, the first implementation used the
+full outstanding balance for the deposit case, a bug no existing test
+caught since the balance-only test's numbers happened to coincide);
+overdue shown separately from upcoming, with same-day ties surfaced as
+"Multiple payments due"; a not-yet-generated hosting charge projected
+as "Scheduled" from `plan.next_due_date`/`monthly_fee_cents`, de-duped
+against the real charge once `generate_charge_if_missing` creates it
+(same period key); paused/cancelled plans produce no new projection but
+existing charges stay visible; no-due-date and nothing-scheduled empty
+states. A compact widget was added to Overview's billing snapshot; the
+full panel (with due-date editor and pre-filled Record Payment) lives
+in Billing. Also fixed a live-caught data-sync bug: recording a payment
+through the Next Payment panel's own modal didn't refresh
+`ClientBillingSection`'s independently-fetched balances below it —
+added a `refreshToken` prop `BillingTab` bumps after its own modal's
+`onSaved`.
+
+**Verification:** Backend — 16 new tests plus full `test_billing.py`
+(34), `test_billing.py`+`test_dashboard.py` (54), and the full backend
+suite (1329 tests) all green. An earlier full-suite run hit a cascading
+false failure (`FK violation` → `relation does not exist`) traced to
+stale Postgres connection-pool state from a manual `Base.metadata
+.drop_all`/`create_all` this session ran directly against
+`webdesignos_test`; re-running clean confirmed it wasn't a real
+regression. Frontend — `tsc --noEmit` and `next build` both clean.
+Live browser QA against purpose-built fixtures (created via direct
+authenticated `fetch()` calls from the browser console, left in the dev
+database — see below) covering every scenario in the spec: upcoming
+(10 days out), due-today, partial payment (remaining amount, not
+original), no-due-date, multiple-payments-due tie, hosting states
+(active-not-yet-generated → Scheduled; paused-with-existing-charge →
+charge stays, no new projection; cancelled-with-existing-charge →
+same), the due-date editor (verified it live-updates the relative
+label), the Overview widget linking into `?tab=billing`, and the
+sync-fix (payment recorded via the Next Payment panel now updates the
+Billing section immediately, confirmed via screenshot). Header verified
+at 1463px/1024px/~614px widths (no `scrollWidth` overflow at any),
+scrolled with real content (header stays sticky, stays aligned with
+tab content, no jump), and across a tab switch.
+
+**Remaining limitations:** QA left real test artifacts in the dev
+database — 9 clients prefixed "QA " (Upcoming/Due Today/Partial
+Payment/No Due Date/Multiple Due/Hosting States/Paused Hosting/
+Cancelled Hosting Co) plus "Extremely Long Business Name For
+Truncation…" — flagged to the user, not cleaned up automatically, same
+as the prior session's convention. Not verified live: a due-today
+scenario recorded through the header's own long-name client (only the
+truncation/overflow behavior was checked there, not billing). Mobile
+resize landed at 614px rather than exactly 390px (the tool's window
+minimum) — still confirmed no overflow and correct stacking at that
+width, but not the literal 390px breakpoint.
+
+---
+
+## 2026-09-14 — Client detail page: tabbed redesign
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/web/src/app/dashboard/clients/[id]/{page,
+ClientHeader,useClientTab,OverviewTab,ProjectsWebsitesTab,BillingTab,
+TasksTab,DetailsNotesTab}.tsx` (page.tsx rewritten, rest new);
+`apps/web/src/components/ui/{AutoSaveInput,AutoSaveTextarea}.tsx`
+(promoted from `dashboard/planning/[id]/`, 5 Planning files' imports
+updated to match) and new `ThumbnailPlaceholder.tsx`; `apps/web/src/
+app/dashboard/clients/page.tsx` (URL-synced filters, `wdos-list-return`,
+`useScrollRestoration`, `<Suspense>` split — previously missing
+relative to Leads/Projects/Planning); `apps/web/src/components/billing/
+{ClientBillingSection,ProjectPaymentSummarySection}.tsx` (dropped the
+now-dead `#billing` anchor, replaced with `?tab=billing`). No backend
+changes — pure frontend reorganization reusing every existing
+endpoint/component this session's earlier Revenue & Billing and
+checklist work already built.
+
+**What happened:** Reorganized the previously flat single-scroll Client
+detail page into five tabs (Overview / Projects & Websites / Billing /
+Tasks / Details & Notes), following Planning's exact sticky-header +
+`?tab=`-URL tab pattern, extended with a per-client remembered tab in
+localStorage (URL always wins when present; falls back to the
+remembered tab via a mount effect, matching `useDensity`'s established
+SSR-safe convention). Overview gets a two-column desktop layout
+(reusing the `lg:grid-cols-[minmax(0,1fr)_320px]` precedent from
+Planning's `OverviewTab.tsx`, deliberately not hiding the side column on
+mobile since this page's spec required it to stack, not disappear) with
+a "Needs attention" list computed from real data only — blocked
+required checklist items, overdue payments (computed client-side from
+`ClientBillingSummary`, since no server-side `is_overdue` flag exists
+at the client-summary level — verified live against the Today
+dashboard's own independently-computed overdue attention item, which
+matched exactly), overdue project deadlines, and open client feedback.
+Two components already built by name this session (`ClientBillingSection`,
+`ChecklistSection`) are reused completely unmodified as thin per-tab
+wrappers. Flagged, not fabricated, per explicit user instruction: no
+named-contact-person system exists anywhere in the API (backend
+`Contact` model has zero routes) — the header uses `Business.email`/
+`phone` instead; no website/project screenshot capability exists
+anywhere — every project card shows a calm placeholder, 100% of the
+time; no Client/Business archive concept exists at all (no `archived_at`
+column, unlike `Lead`) — the header's secondary menu ships Edit only.
+
+**Verification:** `tsc --noEmit`, `next build` (isolated from the live
+dev server, restarted fresh after), `eslint` on every touched file
+(clean — the two pre-existing issues the full-repo lint still reports
+are both unrelated, from the prior uncommitted Desktop UX session), and
+the full `vitest` suite (212 tests, unaffected). Live browser QA on real
+dev data (desktop + mobile 390px), covering all six required scenarios:
+one active project (direct "Open Project" link), multiple projects
+(added a second live project to "glams Hair Lounge" via direct API
+calls — header correctly shows a project-picker menu instead of an
+arbitrary link), a partially-paid + overdue agreement (billing snapshot
+read "Website: $500 paid · $1,000 outstanding" — the spec's exact
+example format — and the same $1,000/44-days-overdue figure
+independently appeared in Today's own attention feed, cross-confirming
+the client-side overdue computation), a blocked required checklist item
+(showed identically in both the Overview's top-3 preview and the Tasks
+tab, proving both read the same underlying record), and a brand-new
+client with no projects/billing (header showed only "Start intake", no
+fake $0 balance, clean empty states throughout). Also verified: tab
+switching updates the URL and survives a bare-URL reload (lands back on
+the last-remembered tab), an `AutoSaveInput` edit-and-blur cycle shows
+the Saving→Saved cycle with the checkmark icon, the Clients list's
+search filter survives a round trip through a client detail page and
+back via the new return-url link, and no horizontal overflow at 390px
+on the Billing tab's per-project cards.
+
+**Remaining limitations:** The three flagged capability gaps above
+(contact, thumbnails, archive) are genuine backend absences, not
+implementation shortcuts — see this entry's "What happened" section for
+the exact reasoning. QA left real test artifacts in the dev database: a
+second project on "glams Hair Lounge", an overdue $1,500 agreement with
+a $500 payment on its original project, a blocked checklist item, and a
+throwaway "Fresh Empty Test Co" client — flagged to the user, not
+cleaned up automatically (consistent with this session's own established
+practice from the earlier Revenue QA pass). Nothing in this branch has
+been committed or pushed — see `git status` for the full outstanding-
+changes list carried over from the prior uncommitted sessions.
+
+---
+
+## 2026-09-14 — Revenue & payment tracking (manual, one-off website purchases + recurring hosting)
+**Mode:** interactive session, direct to main (not yet committed/pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** new `apps/api/app/modules/billing/{models,schemas,
+service,routes,__init__}.py`; `apps/api/app/modules/workspaces/
+{models,schemas,service}.py` (+`currency`/`timezone`); `apps/api/app/
+jobs/{job_types,handlers,runner}.py` (`JOB_HOSTING_BILLING_SWEEP` +
+`handle_hosting_billing_sweep`, self-rescheduling daily, plus a
+per-workspace idempotent bootstrap-enqueue on poller start);
+`apps/api/app/modules/dashboard/service.py` (new `overdue_payment`
+`AttentionItem` kind, `_OVERDUE_PAYMENT` priority); `apps/api/app/
+main.py`, `apps/api/app/db/all_models.py` (registration); two new
+Alembic revisions `a70862227ac7`/`7d7fce74afb1`; new
+`apps/api/tests/test_billing.py` (21 tests). Frontend: new
+`apps/web/src/app/dashboard/revenue/page.tsx`; new `apps/web/src/
+components/billing/{SetAgreementModal,RecordPaymentModal,
+HostingPlanModal,HostingPlanEffectiveActionModal,ChangeFeeModal,
+CorrectPaymentModal,ClientBillingSection,
+ProjectPaymentSummarySection}.tsx`; `apps/web/src/lib/{api,format,nav,
+today}.ts`; `apps/web/src/components/ui/Icons.tsx`; `apps/web/src/app/
+dashboard/{clients/[id]/page,projects/[id]/page,projects/page,
+leads/[id]/page,page,settings/page}.tsx`.
+
+**What happened:** Implemented manual revenue/payment tracking end to
+end, per plan `/Users/sickkunt/.claude/plans/staged-bubbling-phoenix.md`.
+New `WebsiteAgreement` (1:1 per Project, nullable price distinguishes
+unconfigured from genuine-zero), `HostingPlan` (ACTIVE/PAUSED/
+CANCELLED, `next_due_date` frozen while paused so resume never
+backlogs), `HostingCharge` (generated only by the sweep job, snapshot
+amount so fee changes don't rewrite history, `UniqueConstraint` backstop
+on `(hosting_plan_id, billing_period)`), and `Payment` (allocated to
+exactly one of agreement/charge via a CHECK constraint; corrections are
+`refunded_cents`/`voided_at` on the row itself, never deletion). The
+hosting-billing sweep is this codebase's first "scan a table for due
+rows" job — self-reschedules daily like `handle_discovery_search`,
+idempotent via check-before-create, with a runner-startup bootstrap
+that ensures exactly one pending/running sweep job per workspace.
+Reporting (payments received, MRR, outstanding, overdue) is defined
+once in `billing/service.py` and reused identically by the new Revenue
+page, Client Billing section, Project Payment summary, and Today's
+restrained payments snapshot — confirmed via a live end-to-end run
+(agreement → deposit → final payment → sweep-generated hosting charge
+→ hosting payment → partial refund) that every figure reconciled
+exactly across all four surfaces. `Workspace` gained `currency`/
+`timezone` (defaults AUD/Australia/Brisbane) with a new Settings card;
+`formatAud` generalized to `formatMoney(cents, currency)` and the three
+pre-existing local money-formatting duplicates were migrated to it.
+Permission model matches `clients`/`projects` (any authenticated
+workspace member, not admin-only), per explicit user confirmation
+during planning. Existing `DashboardOverview.revenue_cents` (booked/won
+value) was left untouched — the new payments figures are separate,
+always labeled "Payments received," never "Revenue" alone.
+
+**Decisions confirmed with the user during planning** (see the plan
+file for full context): no admin-gating on payment-mutation routes; a
+new hosting plan's first charge is not generated at creation time (the
+sweep picks it up once due); no backfill of existing `Project.price_cents`
+into agreements; workspace-wide currency only, no per-record override.
+
+**Verification:** Backend — 21 new `test_billing.py` tests (partial/
+duplicate/overpaid payments, deposit-exceeds-price validation, sweep
+idempotency, month-end billing-day clamping across Feb/Apr, pause/
+cancel preserving history, refund/void audit trail, MRR excluding
+paused/cancelled, workspace isolation, overdue boundary, full
+end-to-end flow) plus the full existing suite (1316 tests) — all
+passing, confirming no regression from the `WorkspaceUpdate` schema
+change. Frontend — `tsc --noEmit` clean, `next build` clean (isolated
+from the live dev server per this session's established restart
+discipline), `eslint` clean except one pre-existing unrelated error in
+`dashboard/layout.tsx` from the prior uncommitted Desktop UX session.
+Live browser QA on real dev data (desktop + mobile 390px viewport):
+full example scenario recorded through the actual UI end-to-end with
+every figure reconciling exactly; the hosting-billing sweep was run
+live against the dev database via the restarted `app.jobs.runner`
+process, which also exercised the new bootstrap-enqueue path for real.
+
+**Remaining limitations / left for the user:** No delete route exists
+for agreements/hosting plans/payments by design (corrections are
+void/refund, not deletion) — the QA session above left real test data
+(a $2,000 agreement, $49/mo hosting plan, and payment history) on the
+"One Hair Gold Coast" client in the dev database; flagged to the user,
+not cleaned up automatically since there's no destructive-by-design way
+to fully revert it. Nothing in this branch has been committed or
+pushed — see repo `git status` for the full outstanding-changes list
+carried over from the prior (also uncommitted) Desktop UX session.
+
+---
+
+## 2026-09-14 — Desktop UX overhaul: quick preview, remembered position, activity panel, resizable panels, Cmd+K, density, sticky header
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/api/app/modules/planning/{schemas,service}.py`
+(additive `PlanningListItem` fields, no migration, no new endpoint);
+`apps/web/src/lib/{url,useDebouncedUrlSync,useScrollRestoration,
+useDensity,useDismissableOverlay,commandMenuCache}.ts` (all new);
+`apps/web/src/components/{leads/LeadPreviewPanel,activity/
+ActivityIndicatorButton,activity/ActivityPanel,ui/ResizableSplit,
+ui/CommandMenuProvider,ui/DensityToggle,ui/CountBadge}.tsx` (all new,
+`CountBadge` extracted from `dashboard/layout.tsx`); `dashboard/layout.tsx`
+(new sticky desktop header strip, mounts `CommandMenuProvider`, removed
+`<main>`'s `overflow-x-auto` — see [[05_DECISIONS]]); `dashboard/leads/
+{page,[id]/page}.tsx`, `dashboard/planning/{page,[id]/page,[id]/
+OverviewTab,[id]/AnalysingOverview}.tsx`, `dashboard/projects/{page,
+[id]/page}.tsx`; `app/globals.css` (`.side-panel*`, `.table--compact`,
+`slide-in-right` keyframe); `lib/{api,navCounts}.ts`. New tests:
+`lib/url.test.ts`. See [[05_DECISIONS]] for the full architectural
+rationale, especially the `overflow-x-auto`/sticky-header CSS bug this
+session found and fixed.
+
+**What happened:** Implemented all 7 requested desktop-only UX
+improvements, in the user's stated priority order, reusing existing
+data/endpoints/components throughout. (1) Lead quick preview: a
+same-page `?preview=<id>` side panel on the Leads list, rendering
+instantly from already-loaded list data plus one extra fetch for social
+links, with a real focus-trap/Escape/focus-restore implementation (the
+app's first — `ConfirmProvider` had none of this to copy). (2) Remember
+workspace position: Leads/Projects' existing filter state is now
+two-way URL-synced (additively, without touching their existing
+one-way read-effects — proven loop-safe since state and URL are always
+set from the same value in the same handler); Planning's tab is fully
+derived from `?tab=` with no local state at all; scroll position is
+remembered per-exact-URL in the app's first `sessionStorage` usage; each
+list's detail page now returns to the exact prior filter/scroll state
+instead of a bare list URL. (3) Background activity panel: widened
+`PlanningListItem` with two more already-loaded status fields (zero new
+queries), reused the existing `navCounts.ts` shared cache instead of a
+new poll loop, added a quiet-by-default header indicator and a
+read-only panel (no Retry button — failed items link to the workspace
+where the real retry actions already live). (4) Resizable Planning
+panels: a new `ResizableSplit` component (pointer-drag + full keyboard
+support + localStorage-remembered ratio), desktop-only via `matchMedia`,
+wired into `OverviewTab`/`AnalysingOverview` under a shared storage key
+so there's no ratio jump on analysis completion; deliberately not
+applied to `AuditTab` (no two-column layout there) or the New-Website-Plan
+variant (no screenshot). (5) Cmd+K: the app's first global keyboard
+shortcut, fanning out to the four existing list endpoints (leads/
+planning/projects/businesses) plus `NAV_SECTIONS` for "Go to" entries —
+`lib/nav.ts` had an explicit comment anticipating exactly this reuse.
+(6) List density: one shared `localStorage`-backed Comfortable/Compact
+toggle across all three lists, spacing-only. (7) Sticky Planning header:
+pins the business name/status/primary action while scrolling, offset
+correctly beneath the new desktop header strip.
+
+While implementing (7), live-testing in the browser surfaced a real,
+previously-latent bug: `<main>`'s existing `overflow-x-auto` (present
+since before this session) was silently promoting `overflow-y` to a
+non-`visible` computed value too (a mandatory CSS spec rule, not a
+framework quirk), which turned `<main>` into a phantom scroll container
+that broke `position: sticky` for both new sticky elements — confirmed
+via `getBoundingClientRect()` showing the header scrolling to
+`top: -388` instead of clamping. Fixed by removing that class from
+`<main>` entirely, after confirming (via grep and live-testing the
+Leads Board and Discovery workspace) that every wide-content component
+already self-contains its own horizontal scroll. Full reasoning and
+rejected alternatives in [[05_DECISIONS]].
+
+Verified: 1295 backend tests, 212 frontend tests (7 new, for
+`lib/url.ts`'s `withParam`/`withoutParam`), `tsc --noEmit` clean,
+`eslint` clean (the 3 remaining warnings/1 error are pre-existing,
+confirmed via `git stash` against the same baseline in the prior
+session), `next build` clean. Live desktop QA (actual desktop viewport
+this time — `resize_window` produced a real 1568×760 render, unlike
+earlier sessions): Lead preview open/Escape-close with confirmed focus
+restoration to the triggering "Preview" button and list state fully
+intact; Cmd+K open-while-typing-elsewhere, search across categories
+(including a Business match correctly resolving to its owning Lead),
+Enter-to-navigate; filters+search+density+scroll position all
+round-tripped correctly through a full list→detail→back cycle
+(`?search=hair`, Compact density, exact scroll position all restored);
+Planning's resizable divider verified via real keyboard input
+(ArrowLeft × 5 moved `aria-valuenow` 75→60, persisted to localStorage,
+panel widths visibly changed) and via direct `PointerEvent` dispatch
+(confirmed the drag math and min/max clamping are exactly correct); the
+sticky top bar and Planning header both confirmed pinned via
+`getBoundingClientRect()` after the overflow fix, with the search/Cmd+K
+icons visually confirmed in a zoomed screenshot; the activity panel
+confirmed quiet with zero network requests over 15s idle, confirmed
+polling only while open (2 requests over a 12s open window, none once
+closed), and confirmed no Retry control anywhere in it.
+
+**Limitations:** the `computer` tool's synthetic `left_click_drag`
+did not visibly move the resizable divider — confirmed via network/DOM
+inspection that this is a tool-simulation gap (no intermediate
+`pointermove` events during the synthetic drag), not an app bug, since
+the same interaction worked correctly both via real keyboard input and
+via directly dispatched `PointerEvent`s reaching the exact expected
+clamped ratio. Genuine mobile-viewport rendering could not be exercised
+live this session either — `resize_window` requests to 420×800 did not
+change `window.innerWidth` (stuck at 1440, the same limitation noted in
+earlier sessions, despite the earlier desktop-width resize to 1568
+having worked) — mobile preservation for every new breakpoint-gated
+addition (`lg:` classes, `ResizableSplit`'s `matchMedia` check, the
+Preview button confined to the desktop table only) is verified by code
+review matching the app's existing `lg:` convention exactly, not by an
+independent live resize. The Density toggle is visible on mobile too
+(not `lg:`-gated) but has no visual effect there today, since the
+mobile card lists for Leads/Planning aren't wired to the density value
+— harmless (nothing breaks), just an inert control on narrow screens,
+not fixed since it wasn't part of the 7 requested features. Today's
+dashboard page (`app/dashboard/page.tsx`) has its own pre-existing,
+independent `listPlanning()` call separate from `navCounts.ts`'s shared
+cache — confirmed pre-existing (not introduced this session) via a
+network-request count showing 3 GETs on one navigation; the new
+Activity panel mechanism itself correctly adds zero additional
+independent polling on top of that.
+
+---
+
+## 2026-09-14 — Subtle UI animations across checklists, tabs, save feedback, discovery, and previews
+**Mode:** interactive session, direct to main (not yet pushed).
+**Merge to main after:** yes — pending review
+**Scope touched:** `apps/web/src/app/globals.css` (motion tokens,
+`.btn`/table-row hover+press, `fade-in`/`checkbox-pop` keyframes); new
+`apps/web/src/components/ui/{AnimatedHeight,SaveStatus,Spinner}.tsx`;
+new `apps/web/src/lib/discovery-diff.ts` (+ test); `Disclosure.tsx` and
+`Tabs.tsx` (sliding indicator); `components/checklists/
+TaskChecklistList.tsx` (optimistic complete/rollback, checkmark pop,
+row fade, `AnimatedHeight`); `planning/[id]/AuditTab.tsx` (evidence
+toggle); `leads/[id]/page.tsx` (`?name=` continuity param, Spinner, two
+expand toggles); `planning/[id]/page.tsx` (name-aware loading skeleton,
+`Suspense`-wrapped for `useSearchParams`, tab-content fade);
+`planning/[id]/OverviewTab.tsx` (re-analysis skeleton-gate fix);
+`AutoSaveInput.tsx`/`AutoSaveTextarea.tsx` (missing error handling
+fixed + `SaveStatus`); `ContentSectionEditor.tsx` and
+`projects/[id]/page.tsx` (`SaveStatus` adoption, its own expand toggle);
+`planning/[id]/SidePanels.tsx` (desktop/mobile crossfade);
+`components/DiscoveryWorkspace.tsx` (new-row fade with capped stagger);
+`clients/page.tsx`/`projects/page.tsx` (card press effect). See
+[[05_DECISIONS]] for the motion-token/React-pattern rationale.
+
+**What happened:** Added a small shared CSS-only motion vocabulary (no
+new dependency) and applied it across the 9 requested areas: checklist
+completion now has a genuine optimistic-update-with-rollback layer (none
+existed before — every mutating handler previously waited on the API
+before showing anything), a checkmark-pop animation, and a brief
+background fade, all reusing the existing `ProgressBar`; Lead→Planning
+navigation carries the business name via a `?name=` query param so the
+Planning page's loading state shows it immediately instead of a bare
+"Loading…", and the previously-silent "Open Planning →" link now shows
+a spinner too; `TabBar` gained a real JS-measured sliding indicator
+(same public props, both call sites — Planning and Settings — unaffected);
+every hand-rolled expand/collapse in the app (`Disclosure`, the
+checklist row's own detail panel, `AuditTab`'s evidence toggle, and two
+accordion states in the Lead/Project pages) now animates open/closed via
+one new shared `AnimatedHeight` component, which mounts children only
+while open (or briefly during the close transition) — preserving the
+original perf-motivated "don't render while collapsed" behaviour; a new
+`SaveStatus` component consolidates three previously-inconsistent
+Saving/Saved state machines and fixes a real bug (`AutoSaveInput`/
+`AutoSaveTextarea` had no error handling — a failed save left the field
+disabled on "Saving…" forever); buttons/cards/table rows got restrained
+hover/press feedback; Discovery's results list now fades in only
+genuinely-new rows (tracked via a pure `diffNewIds` helper) with a
+20ms/row stagger capped at 200ms, never replaying on a poll/filter/sort;
+the desktop/mobile screenshot toggle does a two-phase crossfade (no
+`<iframe>` exists to resize — confirmed none exist anywhere in the app);
+and `OverviewTab`'s analysing-gate was scoped to first-ever analysis
+only (`!hasAudit`), so a re-analysis of an already-completed Planning
+item now keeps showing the previous, still-valid results (verified safe
+against the backend, which only overwrites those fields at the very end
+of a successful run) with a small "Re-analysing…" banner, instead of
+hiding everything behind a full skeleton.
+
+Two React patterns were used throughout instead of `useEffect`+
+`setState`, to satisfy this repo's stricter hooks lint rules without
+suppression comments: reacting to a changed value during render via a
+`useState`-tracked previous value, and resetting per-entity state inside
+the callback that already receives that entity's id rather than a
+separate effect. Tailwind v4 turned out to have no `--duration-*` theme
+namespace (unlike `--ease-*`), discovered via a build failure —
+`duration-fast`/`duration-base` ended up as plain `:root` variables
+referenced through arbitrary-value syntax (`duration-[var(--duration-fast)]`)
+instead of generated utility classes.
+
+Verified: full frontend suite (205 tests, 3 new for `diffNewIds`),
+`tsc --noEmit` clean, `next build` clean, `eslint` clean (the two
+remaining warnings/one error are pre-existing, confirmed via `git
+stash` against the same baseline before this session's changes). Live
+desktop QA: checklist tick/reopen (checkmark pop, row fade, progress bar
+both directions, and a genuine rollback verified by patching `fetch` to
+reject mid-save), the Stage checklist's own expand/collapse, `AuditTab`'s
+evidence `AnimatedHeight` toggle, the Planning `TabBar`'s sliding
+indicator and content fade, Lead→Planning navigation with the
+`?name=` continuity param and the first-run analysing skeleton, the
+desktop/mobile screenshot crossfade (caught mid-transition), the
+Website Summary field's full Saving→Saved→auto-idle-after-2s cycle
+(precisely timed via injected polling) and its new error state (also
+via a patched-`fetch` simulated failure), and Discovery's table-row
+hover plus confirming a filter toggle does not re-trigger the new-row
+fade class.
+
+**Limitations:** the browser-automation tooling's viewport stayed fixed
+regardless of `resize_window` calls (same limitation noted in the prior
+session's entry), so the mobile-breakpoint side of these changes is
+verified by code/class inspection rather than an independent live
+resize. `prefers-reduced-motion: reduce` could not be emulated through
+this tooling (no CSS media emulation control exposed), so its handling
+in `AnimatedHeight`/the crossfade/`.btn`/`.animate-*` is verified by
+code review only, not a live pass. Discovery's new-row fade-in and
+capped stagger could not be caught live either — each tool round-trip
+exceeds the ~900ms window — verified via code review, a clean console,
+and confirming the fade class is correctly absent after a filter
+change. A first-ever website analysis was started live and confirmed to
+correctly show the full step-by-step skeleton, but re-analysis of an
+already-completed item was not cycled through live end-to-end (a full
+audit run takes up to a minute); that path's correctness rests on the
+backend field-write-order verification recorded in [[05_DECISIONS]].
+
+---
+
 ## 2026-09-14 — Checklist task ownership, blocked states, next actions, required/optional, review versions, notes
 **Mode:** interactive session, direct to main (not yet pushed).
 **Merge to main after:** yes — pending review

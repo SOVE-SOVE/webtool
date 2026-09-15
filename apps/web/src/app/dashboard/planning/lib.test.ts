@@ -4,17 +4,44 @@ import {
   computeBusinessInputRows,
   computeContentDraftReadiness,
   computeInformationToConfirm,
+  planningCardAction,
+  planningListItemMode,
   planningMode,
 } from "./lib";
 import type {
   ComparableResearchStatus,
   Lead,
   Planning,
+  PlanningListItem,
   PlanningSocialProfile,
   Recommendation,
   ReviewIntelligenceResult,
   SitemapPageProposal,
 } from "../../../lib/api";
+
+function listItem(overrides: Partial<PlanningListItem> = {}): PlanningListItem {
+  return {
+    id: "p1",
+    lead_id: "l1",
+    project_id: null,
+    lead_business_name: "Coastal Cafe",
+    website_url: null,
+    status: "ready_to_analyse",
+    comparable_research_status: null,
+    content_draft_status: null,
+    content_draft_progress_label: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    analysed_at: null,
+    website_audit_id: null,
+    has_screenshot: false,
+    lead_industry: null,
+    lead_suburb: null,
+    lead_state: null,
+    website_plan_generated_at: null,
+    ...overrides,
+  };
+}
 
 function planning(overrides: Partial<Planning> = {}): Planning {
   return {
@@ -338,5 +365,57 @@ describe("computeContentDraftReadiness", () => {
     );
     expect(readiness.items.find((i) => i.label.includes("Accepted Keep/Improve/Add"))?.available).toBe(true);
     expect(readiness.items.find((i) => i.label === "Selected visual direction")?.available).toBe(true);
+  });
+});
+
+describe("planningListItemMode", () => {
+  it("is 'existing' whenever an audit is attached", () => {
+    expect(planningListItemMode(listItem({ website_audit_id: "a1" }))).toBe("existing");
+  });
+
+  it("is 'new' with no audit attached", () => {
+    expect(planningListItemMode(listItem({ website_audit_id: null }))).toBe("new");
+  });
+});
+
+describe("planningCardAction — the Planning grid's one primary action per state", () => {
+  it("shows View Progress whenever a run is in progress, regardless of mode", () => {
+    expect(planningCardAction(listItem({ status: "analysing", website_audit_id: null })).kind).toBe("progress");
+    expect(planningCardAction(listItem({ status: "analysing", website_audit_id: "a1" })).kind).toBe("progress");
+  });
+
+  it("shows Analyse Website for a website_url on record that hasn't been analysed yet", () => {
+    const action = planningCardAction(
+      listItem({ status: "ready_to_analyse", website_audit_id: null, website_url: "https://example.com" }),
+    );
+    expect(action).toEqual({ kind: "analyse", label: "Analyse Website" });
+  });
+
+  it("shows Generate Website Plan for a lead with no website at all", () => {
+    const action = planningCardAction(
+      listItem({ status: "ready_to_analyse", website_audit_id: null, website_url: null }),
+    );
+    expect(action).toEqual({ kind: "generate", label: "Generate Website Plan" });
+  });
+
+  it("shows Open Planning once a New Website Plan has been generated", () => {
+    const action = planningCardAction(
+      listItem({
+        status: "ready_to_analyse",
+        website_audit_id: null,
+        website_url: null,
+        website_plan_generated_at: "2026-01-02T00:00:00Z",
+      }),
+    );
+    expect(action).toEqual({ kind: "open", label: "Open Planning" });
+  });
+
+  it("shows Open Planning once an audit is attached and nothing is running", () => {
+    const action = planningCardAction(listItem({ status: "completed", website_audit_id: "a1" }));
+    expect(action).toEqual({ kind: "open", label: "Open Planning" });
+  });
+
+  it("shows Open Planning for a failed run — never re-offers Analyse/Generate from the card", () => {
+    expect(planningCardAction(listItem({ status: "failed", website_audit_id: "a1" })).kind).toBe("open");
   });
 });

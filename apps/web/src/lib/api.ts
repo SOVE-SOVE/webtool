@@ -61,7 +61,7 @@ export type Me = {
   workspace_name: string;
 };
 
-export type Workspace = { id: string; name: string; created_at: string };
+export type Workspace = { id: string; name: string; currency: string; timezone: string; created_at: string };
 
 export type User = {
   id: string;
@@ -454,6 +454,15 @@ export type Project = {
   updated_at: string;
 };
 
+export type ProjectChecklistSummary = {
+  project_id: string;
+  completed: number;
+  total: number;
+  pct: number | null;
+  next_item_title: string | null;
+  blocked_reason: string | null;
+};
+
 export type DeliveryChecklistItem = {
   task_id: string;
   title: string;
@@ -489,6 +498,198 @@ export type ProjectUpdate = {
   price_cents?: number | null;
   deadline?: string | null;
   build_direction?: string | null;
+};
+
+// ---- Billing (manual revenue/payment tracking) ----
+// Money is never charged, invoiced, or reminded here — this is
+// record-keeping of agreements/payments the operator enters by hand.
+// See apps/api/app/modules/billing for the backend definitions these
+// types mirror.
+
+export type WebsiteAgreement = {
+  id: string;
+  project_id: string;
+  price_cents: number | null;
+  deposit_required_cents: number | null;
+  due_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WebsiteAgreementUpsert = {
+  price_cents?: number | null;
+  deposit_required_cents?: number | null;
+  due_date?: string | null;
+  notes?: string | null;
+};
+
+export const HOSTING_PLAN_STATUSES = ["active", "paused", "cancelled"] as const;
+export type HostingPlanStatus = (typeof HOSTING_PLAN_STATUSES)[number];
+
+export type HostingPlan = {
+  id: string;
+  project_id: string;
+  status: HostingPlanStatus;
+  monthly_fee_cents: number;
+  start_date: string;
+  billing_day: number;
+  next_due_date: string;
+  paused_effective_date: string | null;
+  cancelled_effective_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HostingCharge = {
+  id: string;
+  hosting_plan_id: string;
+  billing_period: string;
+  due_date: string;
+  amount_cents: number;
+  paid_cents: number;
+  outstanding_cents: number;
+  is_overdue: boolean;
+};
+
+export type HostingPlanCreate = { monthly_fee_cents: number; start_date: string; billing_day: number };
+export type HostingPlanEffectiveDate = { effective_date: string; reason?: string | null };
+export type HostingPlanFeeChange = { new_monthly_fee_cents: number; effective_date: string };
+
+export type PaymentAllocation = { type: "agreement" | "hosting_charge"; id: string };
+
+export type PaymentCreate = {
+  project_id: string;
+  allocation: PaymentAllocation;
+  amount_cents: number;
+  received_date: string;
+  method?: string | null;
+  reference?: string | null;
+  notes?: string | null;
+};
+
+export type PaymentVoid = { reason: string };
+export type PaymentRefund = { refund_amount_cents: number; reason: string };
+
+export type Payment = {
+  id: string;
+  project_id: string;
+  client_id: string | null;
+  website_agreement_id: string | null;
+  hosting_charge_id: string | null;
+  amount_cents: number;
+  received_date: string;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  refunded_cents: number;
+  voided_at: string | null;
+  voided_reason: string | null;
+  net_cents: number;
+  created_at: string;
+};
+
+export type ClientBillingProject = {
+  project_id: string;
+  project_name: string;
+  agreement: WebsiteAgreement | null;
+  agreement_paid_cents: number;
+  agreement_outstanding_cents: number;
+  hosting_plans: HostingPlan[];
+};
+
+export type ClientBillingSummary = {
+  client_id: string;
+  projects: ClientBillingProject[];
+  payments: Payment[];
+};
+
+export type ProjectPaymentStatus = "unconfigured" | "unpaid" | "partially_paid" | "paid" | "overpaid";
+
+export type ProjectPaymentSummary = {
+  project_id: string;
+  client_id: string | null;
+  agreement: WebsiteAgreement | null;
+  price_cents: number | null;
+  paid_cents: number;
+  outstanding_cents: number;
+  status: ProjectPaymentStatus;
+  hosting_plans: HostingPlan[];
+  payments: Payment[];
+};
+
+export type NextPaymentKind = "website_deposit" | "website_balance" | "hosting_charge" | "hosting_scheduled";
+
+export type NextPaymentObligation = {
+  kind: NextPaymentKind;
+  project_id: string;
+  project_name: string;
+  client_id: string | null;
+  client_business_name: string | null;
+  amount_cents: number;
+  due_date: string | null;
+  is_overdue: boolean;
+  days_relative: number | null;
+  website_agreement_id: string | null;
+  hosting_charge_id: string | null;
+  hosting_plan_id: string | null;
+  scheduled: boolean;
+};
+
+export type NextPaymentSummary = {
+  overdue: NextPaymentObligation[];
+  upcoming: NextPaymentObligation[];
+  no_due_date_cents: number;
+  no_due_date_count: number;
+};
+
+export type HostingChargeDueDateUpdate = { due_date: string };
+
+export type RevenueTransaction = {
+  payment_id: string;
+  project_id: string;
+  project_name: string;
+  client_id: string | null;
+  client_business_name: string | null;
+  kind: "website" | "hosting";
+  amount_cents: number;
+  net_cents: number;
+  received_date: string;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  refunded_cents: number;
+  voided: boolean;
+  voided_reason: string | null;
+};
+
+export type RevenueReport = {
+  start_date: string;
+  end_date: string;
+  website_payments_received_cents: number;
+  hosting_payments_received_cents: number;
+  total_payments_received_cents: number;
+  refunds_cents: number;
+  expected_mrr_cents: number;
+  outstanding_balance_cents: number;
+  overdue_cents: number;
+  overdue_count: number;
+  transactions: RevenueTransaction[];
+};
+
+export type RevenueHostingPlan = HostingPlan & {
+  client_id: string | null;
+  client_business_name: string | null;
+  project_name: string;
+  outstanding_cents: number;
+};
+
+export type TodayBillingSnapshot = {
+  payments_received_this_month_cents: number;
+  expected_mrr_cents: number;
+  overdue_cents: number;
+  overdue_client_count: number;
+  upcoming_payments: NextPaymentObligation[];
 };
 
 export const BRIEF_STATUSES = ["draft", "approved"] as const;
@@ -1261,8 +1462,34 @@ export type PlanningListItem = {
   lead_business_name: string;
   website_url: string | null;
   status: PlanningStatus;
+  // The two other background-job-like statuses on this workspace —
+  // powers the background activity panel without a per-item fetch.
+  comparable_research_status: ComparableResearchStatus | null;
+  content_draft_status: ContentDraftStatus | null;
+  content_draft_progress_label: string | null;
   created_at: string;
+  updated_at: string;
   analysed_at: string | null;
+  // Set only when an audit is actually attached — the same signal
+  // planningMode() reads on the full Planning object (website_audit_id
+  // !== null -> "existing website" mode), exposed here without pulling
+  // in the audit's own (large) screenshot payloads.
+  website_audit_id: string | null;
+  // Presence only — never the screenshot itself. Fetch the actual image,
+  // if any, from GET /api/v1/planning/{id}/screenshot.
+  has_screenshot: boolean;
+  lead_industry: string | null;
+  lead_suburb: string | null;
+  lead_state: string | null;
+  website_plan_generated_at: string | null;
+};
+
+export type PlanningChecklistSummary = {
+  planning_id: string;
+  completed: number;
+  total: number;
+  pct: number | null;
+  next_item_title: string | null;
 };
 
 export type AnalysePlanningRequest = {
@@ -2606,6 +2833,76 @@ export const api = {
     request<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(data) }),
   updateProject: (id: string, data: ProjectUpdate) =>
     request<Project>(`/api/v1/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Bulk, workspace-wide checklist progress for the Projects card grid —
+  // one round-trip instead of a per-card fetch (mirrors Clients' and
+  // Planning's own checklist-summaries endpoints).
+  listProjectChecklistSummaries: () =>
+    request<ProjectChecklistSummary[]>("/api/v1/projects/checklist-summaries"),
+
+  getAgreement: (projectId: string) =>
+    request<WebsiteAgreement | null>(`/api/v1/billing/projects/${projectId}/agreement`),
+  upsertAgreement: (projectId: string, data: WebsiteAgreementUpsert) =>
+    request<WebsiteAgreement>(`/api/v1/billing/projects/${projectId}/agreement`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  listHostingPlans: (projectId: string) =>
+    request<HostingPlan[]>(`/api/v1/billing/projects/${projectId}/hosting-plans`),
+  listAllHostingPlans: () => request<RevenueHostingPlan[]>("/api/v1/billing/hosting-plans"),
+  createHostingPlan: (projectId: string, data: HostingPlanCreate) =>
+    request<HostingPlan>(`/api/v1/billing/projects/${projectId}/hosting-plans`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  listHostingCharges: (planId: string) =>
+    request<HostingCharge[]>(`/api/v1/billing/hosting-plans/${planId}/charges`),
+  updateHostingChargeDueDate: (chargeId: string, data: HostingChargeDueDateUpdate) =>
+    request<HostingCharge>(`/api/v1/billing/hosting-charges/${chargeId}/due-date`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  pauseHostingPlan: (planId: string, data: HostingPlanEffectiveDate) =>
+    request<HostingPlan>(`/api/v1/billing/hosting-plans/${planId}/pause`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  resumeHostingPlan: (planId: string, data: HostingPlanEffectiveDate) =>
+    request<HostingPlan>(`/api/v1/billing/hosting-plans/${planId}/resume`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  cancelHostingPlan: (planId: string, data: HostingPlanEffectiveDate) =>
+    request<HostingPlan>(`/api/v1/billing/hosting-plans/${planId}/cancel`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  changeHostingFee: (planId: string, data: HostingPlanFeeChange) =>
+    request<HostingPlan>(`/api/v1/billing/hosting-plans/${planId}/fee`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  recordPayment: (data: PaymentCreate) =>
+    request<Payment>("/api/v1/billing/payments", { method: "POST", body: JSON.stringify(data) }),
+  voidPayment: (paymentId: string, data: PaymentVoid) =>
+    request<Payment>(`/api/v1/billing/payments/${paymentId}/void`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  refundPayment: (paymentId: string, data: PaymentRefund) =>
+    request<Payment>(`/api/v1/billing/payments/${paymentId}/refund`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  getClientBillingSummary: (clientId: string) =>
+    request<ClientBillingSummary>(`/api/v1/billing/clients/${clientId}/summary`),
+  getNextPaymentSummary: (clientId: string) =>
+    request<NextPaymentSummary>(`/api/v1/billing/clients/${clientId}/next-payment`),
+  getProjectPaymentSummary: (projectId: string) =>
+    request<ProjectPaymentSummary>(`/api/v1/billing/projects/${projectId}/summary`),
+  getRevenueReport: (start: string, end: string) =>
+    request<RevenueReport>(`/api/v1/billing/reports/revenue?start=${start}&end=${end}`),
+  getWorkspaceObligations: () => request<NextPaymentObligation[]>("/api/v1/billing/reports/obligations"),
+  getTodayBillingSnapshot: () => request<TodayBillingSnapshot>("/api/v1/billing/reports/today"),
 
   startIntake: (clientId: string, data: BriefIntakeStart) =>
     request<Brief>(`/api/v1/clients/${clientId}/intake`, { method: "POST", body: JSON.stringify(data) }),
@@ -2680,6 +2977,15 @@ export const api = {
       `/api/v1/planning${opts?.includeTransferred ? "?include_transferred=true" : ""}`,
     ),
   getPlanningItem: (id: string) => request<Planning>(`/api/v1/planning/${id}`),
+  // Bulk, workspace-wide checklist progress for the Planning card grid —
+  // one round-trip instead of a per-card fetch (mirrors Clients' own
+  // checklist-summaries endpoint).
+  listPlanningChecklistSummaries: () =>
+    request<PlanningChecklistSummary[]>("/api/v1/planning/checklist-summaries"),
+  // Not a fetch — a plain <img src> URL for the lightweight thumbnail
+  // route, so the browser's native lazy-loading handles the "don't load
+  // full screenshots for every card" requirement with no extra JS.
+  planningScreenshotUrl: (id: string) => `${API_URL}/api/v1/planning/${id}/screenshot`,
   // "Analyse Website" — the explicit trigger that enqueues the real
   // background audit pipeline.
   analysePlanning: (id: string, data?: AnalysePlanningRequest) =>
@@ -2971,8 +3277,8 @@ export const api = {
     request<User>(`/api/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   getWorkspace: () => request<Workspace>("/api/v1/workspace"),
-  updateWorkspace: (name: string) =>
-    request<Workspace>("/api/v1/workspace", { method: "PATCH", body: JSON.stringify({ name }) }),
+  updateWorkspace: (data: { name?: string; currency?: string; timezone?: string }) =>
+    request<Workspace>("/api/v1/workspace", { method: "PATCH", body: JSON.stringify(data) }),
 
   listActivity: (filter?: { entity_type: string; entity_id: string }) =>
     request<ActivityItem[]>(

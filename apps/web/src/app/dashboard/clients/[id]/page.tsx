@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import {
   api,
   type ActivityItem,
@@ -14,52 +13,59 @@ import {
 } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { ClientStatusBadge } from "@/components/ClientStatusBadge";
-import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
-import {
-  clientNextAction,
-  clientTone,
-  currentProject,
-  mostRecentActivity,
-} from "@/lib/clients";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { TabBar } from "@/components/ui/Tabs";
+import { clientTone, currentProject } from "@/lib/clients";
 import { nextOpenTask } from "@/lib/projects";
-import { timeAgo } from "@/lib/format";
-import { ChecklistSection } from "./ChecklistSection";
+import { FINISHED_STAGES } from "@/lib/filters";
+import { ClientHeader } from "./ClientHeader";
+import { CLIENT_TABS, useClientTab, type ClientTabId } from "./useClientTab";
+import { OverviewTab } from "./OverviewTab";
+import { ProjectsWebsitesTab } from "./ProjectsWebsitesTab";
+import { BillingTab } from "./BillingTab";
+import { TasksTab } from "./TasksTab";
+import { DetailsNotesTab } from "./DetailsNotesTab";
 
-function field(label: string, value: React.ReactNode) {
+function HeaderSkeleton() {
   return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className="mt-1">{value}</div>
+    <div className="p-4 sm:p-6">
+      <Skeleton className="h-3 w-16" />
+      <div className="mt-3 flex items-center gap-2">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-5 w-16" />
+      </div>
+      <Skeleton className="mt-2 h-4 w-64" />
+      <div className="mt-6 flex gap-4 border-b border-border pb-2">
+        {CLIENT_TABS.map((t) => (
+          <Skeleton key={t.id} className="h-4 w-20" />
+        ))}
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
     </div>
   );
 }
 
-const inputClass = "input";
-
-// Client.contract_signed_at is a full timestamp; <input type="date"> needs
-// just the date portion, and round-trips back out as UTC midnight.
-function toDateInputValue(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : "";
-}
-
-export default function ClientDetailPage() {
+function ClientDetailPageInner() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const confirm = useConfirm();
   const clientId = params.id;
 
+  const [clientsReturnUrl] = useState(
+    () => (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:clients")) || "/dashboard/clients",
+  );
+  const { activeTab, setTab } = useClientTab(clientId);
+
   const [clientRecord, setClientRecord] = useState<Client | null>(null);
+  const [workspaceCurrency, setWorkspaceCurrency] = useState("AUD");
   const [business, setBusiness] = useState<Business | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
-  // Unfiltered, workspace-wide — only used to find the most recent event
-  // across this client *and* its project(s) for the Overview's "Last
-  // activity" line. The "Activity history" section below stays scoped to
-  // just this client's own log, unchanged from before.
-  const [allActivity, setAllActivity] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [startingIntake, setStartingIntake] = useState(false);
 
@@ -75,6 +81,7 @@ export default function ClientDetailPage() {
         setBusiness(b);
       })
       .catch(() => setError("Couldn't load this client."));
+    api.getWorkspace().then((w) => setWorkspaceCurrency(w.currency)).catch(() => {});
     api.listUsers().then(setUsers).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
     api.listTasks().then(setTasks).catch(() => {});
@@ -82,7 +89,6 @@ export default function ClientDetailPage() {
       .listActivity({ entity_type: "client", entity_id: clientId })
       .then(setActivity)
       .catch(() => {});
-    api.listActivity().then(setAllActivity).catch(() => {});
   }
 
   useEffect(load, [clientId]);
@@ -126,6 +132,15 @@ export default function ClientDetailPage() {
     }
   }
 
+  async function handleStartAnotherProject(activeProject: Project) {
+    const ok = await confirm({
+      title: "Start an additional project?",
+      description: `${activeProject.name} is still in progress. This starts a separate, additional project for this client.`,
+      confirmLabel: "Start project",
+    });
+    if (ok) handleStartIntake(true);
+  }
+
   if (error) {
     return (
       <div className="p-6">
@@ -133,253 +148,76 @@ export default function ClientDetailPage() {
       </div>
     );
   }
-  if (!clientRecord || !business) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (!clientRecord || !business) return <HeaderSkeleton />;
 
   const clientProjects = projects.filter((p) => p.client_id === clientId);
-  const activeProject = clientProjects.find(
-    (p) => p.stage !== "maintenance" && p.stage !== "complete",
-  );
+  const activeProject = clientProjects.find((p) => !FINISHED_STAGES.includes(p.stage));
   const tone = clientTone(clientProjects);
   const overviewProject = currentProject(clientProjects);
   const nextTask = overviewProject ? nextOpenTask(tasks, overviewProject.id) : null;
-  const lastActivity = mostRecentActivity(allActivity, clientRecord, clientProjects);
+
+  function onOpenTab(tab: ClientTabId) {
+    setTab(tab);
+  }
 
   return (
-    <div className="p-6">
-      <Link href="/dashboard/clients" className="text-sm text-fg-muted hover:underline">
-        ← Clients
-      </Link>
+    <div>
+      <ClientHeader
+        business={business}
+        clientRecord={clientRecord}
+        clientProjects={clientProjects}
+        tone={tone}
+        clientsReturnUrl={clientsReturnUrl}
+        startingIntake={startingIntake}
+        onStartIntake={() => handleStartIntake()}
+        onEditClick={() => setTab("details")}
+      />
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
-        <ClientStatusBadge tone={tone} />
-      </div>
+      <div className="p-4 sm:p-6">
+        <TabBar tabs={CLIENT_TABS} active={activeTab} onChange={(id) => setTab(id as ClientTabId)} />
 
-      <section className="mt-6 card grid grid-cols-1 gap-6 p-4 sm:grid-cols-3">
-        {field(
-          "Current project",
-          overviewProject ? (
-            <div className="flex items-center gap-2">
-              <span className="text-fg">{overviewProject.name}</span>
-              <ProjectStatusBadge project={overviewProject} />
-            </div>
-          ) : (
-            <span className="text-fg-muted">No project yet</span>
-          ),
-        )}
-        {field(
-          "Next action",
-          <span className="text-fg">{clientNextAction(overviewProject, nextTask?.title ?? null)}</span>,
-        )}
-        {field(
-          "Last activity",
-          <span className="text-fg-muted">{lastActivity ? timeAgo(lastActivity.created_at) : "No activity yet"}</span>,
-        )}
-      </section>
-
-      <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-8">
-        <section>
-          <h2 className="text-sm font-semibold text-fg">Business</h2>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field(
-              "Name",
-              <input
-                defaultValue={business.name}
-                onBlur={(e) => e.target.value !== business.name && saveBusiness({ name: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Industry",
-              <input
-                defaultValue={business.industry ?? ""}
-                onBlur={(e) => saveBusiness({ industry: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Website",
-              <input
-                defaultValue={business.website_url ?? ""}
-                onBlur={(e) => saveBusiness({ website_url: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Phone",
-              <input
-                defaultValue={business.phone ?? ""}
-                onBlur={(e) => saveBusiness({ phone: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Email",
-              <input
-                defaultValue={business.email ?? ""}
-                onBlur={(e) => saveBusiness({ email: e.target.value })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Location",
-              <div className="flex gap-2">
-                <input
-                  placeholder="Suburb"
-                  defaultValue={business.suburb ?? ""}
-                  onBlur={(e) => saveBusiness({ suburb: e.target.value })}
-                  className={inputClass}
-                />
-                <input
-                  placeholder="State"
-                  defaultValue={business.state ?? ""}
-                  onBlur={(e) => saveBusiness({ state: e.target.value })}
-                  className={inputClass}
-                />
-              </div>,
-            )}
-            <div className="sm:col-span-2">
-              {field(
-                "Business notes",
-                <textarea
-                  defaultValue={business.notes ?? ""}
-                  onBlur={(e) => saveBusiness({ notes: e.target.value })}
-                  rows={3}
-                  className={inputClass}
-                />,
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-semibold text-fg">Client</h2>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field(
-              "Billing email",
-              <input
-                defaultValue={clientRecord.billing_email ?? ""}
-                onBlur={(e) => saveClient({ billing_email: e.target.value || null })}
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Contract signed",
-              <input
-                type="date"
-                defaultValue={toDateInputValue(clientRecord.contract_signed_at)}
-                onBlur={(e) =>
-                  saveClient({
-                    contract_signed_at: e.target.value
-                      ? new Date(e.target.value).toISOString()
-                      : null,
-                  })
-                }
-                className={inputClass}
-              />,
-            )}
-            {field(
-              "Assigned to",
-              <select
-                value={clientRecord.assigned_user_id ?? ""}
-                onChange={(e) => saveClient({ assigned_user_id: e.target.value || null })}
-                className={inputClass}
-              >
-                <option value="">Unassigned</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field(
-              "Client since",
-              <span className="text-sm text-fg-muted">
-                {new Date(clientRecord.created_at).toLocaleDateString()}
-              </span>,
-            )}
-          </div>
-        </section>
-      </div>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-fg">Projects</h2>
-          <div className="flex items-center gap-3">
-            {activeProject && (
-              <button
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: "Start an additional project?",
-                    description: `${activeProject.name} is still in progress. This starts a separate, additional project for this client.`,
-                    confirmLabel: "Start project",
-                  });
-                  if (ok) handleStartIntake(true);
-                }}
-                disabled={startingIntake}
-                className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-              >
-                Start another project
-              </button>
-            )}
-            <button
-              onClick={() => handleStartIntake()}
-              disabled={startingIntake}
-              className="btn btn-primary"
-            >
-              {startingIntake ? "Starting…" : activeProject ? "Open intake" : "Start intake"}
-            </button>
-          </div>
+        <div key={activeTab} className="animate-fade-in mt-6">
+          {activeTab === "overview" && (
+            <OverviewTab
+              clientId={clientId}
+              business={business}
+              clientProjects={clientProjects}
+              nextTask={nextTask}
+              activity={activity ?? []}
+              workspaceCurrency={workspaceCurrency}
+              onOpenTab={onOpenTab}
+            />
+          )}
+          {activeTab === "projects" && (
+            <ProjectsWebsitesTab
+              clientProjects={clientProjects}
+              currency={workspaceCurrency}
+              hasActiveProject={!!activeProject}
+              startingIntake={startingIntake}
+              onStartAnotherProject={() => activeProject && handleStartAnotherProject(activeProject)}
+            />
+          )}
+          {activeTab === "billing" && <BillingTab clientId={clientId} currency={workspaceCurrency} />}
+          {activeTab === "tasks" && <TasksTab clientId={clientId} />}
+          {activeTab === "details" && (
+            <DetailsNotesTab
+              clientRecord={clientRecord}
+              business={business}
+              users={users}
+              saveClient={saveClient}
+              saveBusiness={saveBusiness}
+            />
+          )}
         </div>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {clientProjects.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">
-              No projects yet. Start intake creates one and opens its client intake form.
-            </li>
-          )}
-          {clientProjects.map((project) => (
-            <li key={project.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <div>
-                <Link href={`/dashboard/projects/${project.id}`} className="text-fg hover:underline">
-                  {project.name}
-                </Link>
-                {project.source_lead_id && (
-                  <Link
-                    href={`/dashboard/leads/${project.source_lead_id}`}
-                    className="ml-2 text-xs text-fg-muted hover:underline"
-                  >
-                    from lead
-                  </Link>
-                )}
-              </div>
-              <span className="flex items-center gap-3 text-xs text-fg-muted">
-                <ProjectStatusBadge project={project} />
-                {project.assigned_user_name && <span>· {project.assigned_user_name}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <ChecklistSection clientId={clientId} />
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-fg">Activity history</h2>
-        <ul className="mt-3 divide-y divide-border border border-border">
-          {activity && activity.length === 0 && (
-            <li className="px-3 py-3 text-sm text-fg-muted">No activity yet.</li>
-          )}
-          {activity?.map((item) => (
-            <li key={item.id} className="px-3 py-2 text-sm">
-              <span className="text-fg">{item.summary ?? item.action}</span>
-              <span className="ml-2 text-xs text-fg-muted">
-                {item.user_name ?? "System"} · {new Date(item.created_at).toLocaleString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      </div>
     </div>
+  );
+}
+
+export default function ClientDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+      <ClientDetailPageInner />
+    </Suspense>
   );
 }

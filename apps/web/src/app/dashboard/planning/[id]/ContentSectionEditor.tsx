@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
+import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 
 const SECTION_TYPE_LABEL: Record<string, string> = {
   hero: "Homepage headline",
@@ -317,10 +318,13 @@ export function ContentSectionEditor({
         <button type="button" onClick={handleSave} disabled={!dirty || status === "saving"} className="btn btn-secondary btn-sm">
           {status === "saving" ? "Saving…" : "Save"}
         </button>
-        <p className="text-xs text-fg-subtle">
-          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : dirty ? "Unsaved changes" : ""}
-          {pageApproved && !dirty && " · Approved"}
-        </p>
+        <div className="flex items-center gap-1">
+          <SaveStatus
+            status={(status === "saving" ? "saving" : status === "saved" ? "saved" : dirty ? "dirty" : "idle") satisfies SaveStatusValue}
+            dirtyText="Unsaved changes"
+          />
+          {pageApproved && !dirty && <span className="text-xs text-fg-subtle">· Approved</span>}
+        </div>
       </div>
     </div>
   );

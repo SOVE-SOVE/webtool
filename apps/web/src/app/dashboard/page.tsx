@@ -10,14 +10,16 @@ import {
   type Lead,
   type PlanningListItem,
   type Project,
+  type TodayBillingSnapshot,
 } from "@/lib/api";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Metric } from "@/components/ui/Metric";
+import { Metric, MetricGrid } from "@/components/ui/Metric";
 import { EmptyRow, ItemRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { dateKey, formatLongDate, formatTime, timeAgo } from "@/lib/format";
+import { dateKey, formatLongDate, formatMoney, formatTime, timeAgo } from "@/lib/format";
+import { NEXT_PAYMENT_KIND_LABEL, relativeObligationLabel } from "@/lib/billing";
 import { loadOverview } from "@/lib/overview";
 import {
   activityHref,
@@ -59,6 +61,9 @@ export default function TodayPage() {
   const [data, setData] = useState<TodayData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
+  const [billingSnapshot, setBillingSnapshot] = useState<TodayBillingSnapshot | null>(null);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("AUD");
 
   function load() {
     Promise.all([
@@ -86,6 +91,14 @@ export default function TodayPage() {
 
     const today = dateKey();
     api.listCalendarEvents(today, today).then(setEvents).catch(() => {});
+    api
+      .getTodayBillingSnapshot()
+      .then((s) => {
+        setBillingError(null);
+        setBillingSnapshot(s);
+      })
+      .catch(() => setBillingError("Couldn't load the revenue summary."));
+    api.getWorkspace().then((w) => setCurrency(w.currency)).catch(() => {});
   }
 
   useEffect(load, []);
@@ -238,6 +251,88 @@ export default function TodayPage() {
               />
             ))}
           </div>
+        )}
+      </section>
+
+      {/* 4.5. Revenue — a restrained snapshot, not a full report; see
+          the Clients workspace's Revenue tab for the breakdown,
+          transaction list, and full upcoming/overdue detail. Overdue
+          *items* the operator should act on already surface in "Today's
+          priorities" above (kind: overdue_payment) — this section is
+          the aggregate figures that list doesn't show (total received,
+          expected MRR, total overdue exposure) plus a short upcoming
+          preview, not a second copy of that per-item list. */}
+      <section>
+        <div className="flex items-center justify-between">
+          <h2 className="section-title">Revenue</h2>
+          <Link href="/dashboard/clients?tab=revenue" className="text-sm text-fg-muted hover:underline">
+            View Revenue →
+          </Link>
+        </div>
+        {billingError ? (
+          <div className="mt-2">
+            <ErrorState message={billingError} onRetry={load} compact />
+          </div>
+        ) : !billingSnapshot ? (
+          <MetricGrid className="mt-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="mt-2 h-6 w-16" />
+              </div>
+            ))}
+          </MetricGrid>
+        ) : (
+          <>
+            <MetricGrid className="mt-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
+              <Metric
+                label="Payments received this month"
+                value={formatMoney(billingSnapshot.payments_received_this_month_cents, currency)}
+                href="/dashboard/clients?tab=revenue"
+              />
+              <Metric
+                label="Expected monthly hosting revenue"
+                value={formatMoney(billingSnapshot.expected_mrr_cents, currency)}
+                hint="From active plans — not money received"
+                href="/dashboard/clients?tab=revenue&revenueTab=hosting"
+              />
+              <Metric
+                label="Overdue"
+                value={formatMoney(billingSnapshot.overdue_cents, currency)}
+                hint={
+                  billingSnapshot.overdue_client_count > 0
+                    ? `${billingSnapshot.overdue_client_count} client${billingSnapshot.overdue_client_count === 1 ? "" : "s"}`
+                    : "No clients overdue"
+                }
+                href="/dashboard/clients?tab=revenue&revenueTab=upcoming"
+              />
+            </MetricGrid>
+
+            <div className="mt-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">Next upcoming payments</p>
+              {billingSnapshot.upcoming_payments.length === 0 ? (
+                <div className="mt-1.5 rounded-md border border-border">
+                  <EmptyRow>No upcoming payments scheduled.</EmptyRow>
+                </div>
+              ) : (
+                <ul className="mt-1.5 divide-y divide-border rounded-md border border-border">
+                  {billingSnapshot.upcoming_payments.map((o) => (
+                    <li key={`${o.website_agreement_id ?? ""}${o.hosting_charge_id ?? ""}${o.hosting_plan_id ?? ""}${o.scheduled}`}>
+                      <ItemRow
+                        href={
+                          o.client_id
+                            ? `/dashboard/clients/${o.client_id}?tab=billing`
+                            : "/dashboard/clients?tab=revenue&revenueTab=upcoming"
+                        }
+                        primary={`${o.client_business_name ?? "No client (prospect)"} — ${formatMoney(o.amount_cents, currency)}`}
+                        secondary={`${NEXT_PAYMENT_KIND_LABEL[o.kind]} · ${relativeObligationLabel(o)}`}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
         )}
       </section>
 

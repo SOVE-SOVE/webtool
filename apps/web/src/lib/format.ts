@@ -5,15 +5,29 @@
  * them consistent and unit-testable.
  */
 
-const AUD = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  maximumFractionDigits: 0,
-});
+const formattersByCurrency = new Map<string, Intl.NumberFormat>();
 
-/** Cents → "$1,234". `null`/`undefined` renders as an em dash. */
+function formatterFor(currency: string): Intl.NumberFormat {
+  let formatter = formattersByCurrency.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-AU", { style: "currency", currency, maximumFractionDigits: 0 });
+    formattersByCurrency.set(currency, formatter);
+  }
+  return formatter;
+}
+
+/**
+ * Cents → "$1,234" in the given ISO-4217 currency code (defaults to
+ * AUD for call sites that don't yet have the workspace's configured
+ * currency to hand). `null`/`undefined` renders as an em dash.
+ */
+export function formatMoney(cents: number | null | undefined, currency: string = "AUD"): string {
+  return cents === null || cents === undefined ? "—" : formatterFor(currency).format(cents / 100);
+}
+
+/** @deprecated Use formatMoney(cents, workspaceCurrency) where the workspace currency is known. */
 export function formatAud(cents: number | null | undefined): string {
-  return cents === null || cents === undefined ? "—" : AUD.format(cents / 100);
+  return formatMoney(cents, "AUD");
 }
 
 /** Compact relative time: "just now", "5m ago", "3h ago", "2d ago". */
@@ -40,4 +54,19 @@ export function formatTime(iso: string): string {
 /** "2026-09-13" — the calendar API's date-key format (local calendar day, not UTC). */
 export function dateKey(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * "15 Sep 2026" from a "YYYY-MM-DD" business date (a payment's
+ * received_date, a charge's due_date — a calendar day, not an instant).
+ * Parses the Y/M/D components directly into the local-timezone `Date`
+ * constructor rather than `new Date("YYYY-MM-DD")`, which JS parses as
+ * UTC midnight and can therefore render as the *previous* day once
+ * `toLocaleDateString` converts it back to a negative-UTC-offset
+ * viewer's local time — exactly the kind of off-by-one financial date
+ * bug this table formatting must not introduce.
+ */
+export function formatDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }

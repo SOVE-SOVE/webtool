@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import json
 import re
@@ -83,6 +84,7 @@ from app.modules.planning.schemas import (
     CreateAssetRequest,
     CreateRecommendationRequest,
     CreateSitemapPageRequest,
+    PlanningChecklistSummary,
     PlanningListItem,
     PlanningRead,
     PlanningSocialProfileRead,
@@ -100,6 +102,7 @@ from app.modules.planning.schemas import (
 from app.modules.projects.models import Project
 from app.modules.review_intelligence import service as review_intelligence_service
 from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
+from app.modules.stage_checklists import service as stage_checklists_service
 from app.modules.website_audits import service as website_audits_service
 from app.modules.website_audits.models import WebsiteAudit
 
@@ -282,16 +285,26 @@ def _to_read(db: Session, planning: LeadPlanning, lead: Lead | None = None) -> P
     return data
 
 
-def _to_list_item(planning: LeadPlanning, business_name: str) -> PlanningListItem:
+def _to_list_item(planning: LeadPlanning, business: Business, has_screenshot: bool) -> PlanningListItem:
     return PlanningListItem(
         id=planning.id,
         lead_id=planning.lead_id,
-        lead_business_name=business_name,
+        lead_business_name=business.name,
         website_url=planning.website_url,
         status=planning.status.value,
+        comparable_research_status=planning.comparable_research_status.value if planning.comparable_research_status else None,
+        content_draft_status=planning.content_draft_status.value if planning.content_draft_status else None,
+        content_draft_progress_label=planning.content_draft_progress_label,
         project_id=planning.approved_brief.project_id if planning.approved_brief else None,
         created_at=planning.created_at,
+        updated_at=planning.updated_at,
         analysed_at=planning.analysed_at,
+        website_audit_id=planning.website_audit_id,
+        has_screenshot=has_screenshot,
+        lead_industry=business.industry,
+        lead_suburb=business.suburb,
+        lead_state=business.state,
+        website_plan_generated_at=planning.website_plan_generated_at,
     )
 
 
@@ -426,18 +439,77 @@ def list_planning_workspace(
     handed off, keep reachable via history" convention as Discovery's
     imported rows. `include_transferred=True` is the history filter.
     """
+    # The screenshot-presence check is a plain SQL boolean expression
+    # (WebsiteAudit.screenshot_desktop_base64.isnot(None)) — Postgres
+    # evaluates NULL-ness without detoasting the column, so this never
+    # pulls the actual (large) base64 payload across the wire for every
+    # row, unlike loading the WebsiteAudit relationship itself would.
     rows = db.execute(
-        select(LeadPlanning, Business.name)
+        select(LeadPlanning, Business, WebsiteAudit.screenshot_desktop_base64.isnot(None))
         .join(Lead, LeadPlanning.lead_id == Lead.id)
         .join(Business, Lead.business_id == Business.id)
+        .outerjoin(WebsiteAudit, LeadPlanning.website_audit_id == WebsiteAudit.id)
         .where(Business.workspace_id == workspace_id)
         .options(joinedload(LeadPlanning.approved_brief))
         .order_by(LeadPlanning.created_at.desc())
     ).all()
-    items = [_to_list_item(p, name) for p, name in rows]
+    items = [_to_list_item(p, business, has_screenshot) for p, business, has_screenshot in rows]
     if not include_transferred:
         items = [i for i in items if i.project_id is None]
     return items
+
+
+def list_planning_checklist_summaries(db: Session, workspace_id: uuid.UUID) -> list[PlanningChecklistSummary]:
+    """
+    One summary per Planning item, for the Planning grid's compact
+    progress display — mirrors Clients' own list_checklist_summaries
+    (checklists/service.py): loop the existing per-item read
+    (get_planning_checklist, which also seeds default tasks the first
+    time) server-side, in one call, rather than the frontend issuing an
+    N+1 fetch per card. Counts REQUIRED tasks only, same "compact glance
+    metric shouldn't be diluted by optional improvements" convention.
+    """
+    planning_ids = db.scalars(
+        select(LeadPlanning.id)
+        .join(Lead, LeadPlanning.lead_id == Lead.id)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id)
+    ).all()
+
+    out: list[PlanningChecklistSummary] = []
+    for planning_id in planning_ids:
+        checklist = stage_checklists_service.get_planning_checklist(db, workspace_id, planning_id)
+        if checklist is None:
+            continue
+        progress = checklist.progress.required
+        out.append(
+            PlanningChecklistSummary(
+                planning_id=planning_id,
+                completed=progress.completed,
+                total=progress.total,
+                pct=progress.pct,
+                next_item_title=checklist.next_item.title if checklist.next_item else None,
+            )
+        )
+    return out
+
+
+def get_planning_screenshot(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) -> bytes | None:
+    """Decodes and returns the stored desktop screenshot's raw PNG bytes
+    for the dedicated thumbnail route (GET /api/v1/planning/{id}/screenshot).
+    A narrow, workspace-scoped query against just the one column needed —
+    not _get_planning's full eager-loaded graph, which would pull in
+    every other large relationship just to read one column."""
+    encoded = db.scalar(
+        select(WebsiteAudit.screenshot_desktop_base64)
+        .join(LeadPlanning, LeadPlanning.website_audit_id == WebsiteAudit.id)
+        .join(Lead, LeadPlanning.lead_id == Lead.id)
+        .join(Business, Lead.business_id == Business.id)
+        .where(Business.workspace_id == workspace_id, LeadPlanning.id == planning_id)
+    )
+    if not encoded:
+        return None
+    return base64.b64decode(encoded)
 
 
 def get_planning(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) -> PlanningRead | None:

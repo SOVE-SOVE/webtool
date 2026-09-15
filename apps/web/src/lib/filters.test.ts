@@ -111,7 +111,7 @@ describe("filterProjects", () => {
     expect(result.map((p) => p.id)).toEqual(["care"]);
   });
 
-  it("onlyLive (the Live Websites view) shows deployed/maintenance/complete and nothing still in build", () => {
+  it("onlyLive (the Clients workspace's Websites tab) shows deployed/maintenance/complete and nothing still in build", () => {
     const rows = [
       project({ id: "in-build", stage: "design" }),
       project({ id: "deployed", stage: "deployed" }),
@@ -186,6 +186,26 @@ describe("filterProjects", () => {
   it("returns everything when nothing is filtered", () => {
     const rows = [project({ id: "a" }), project({ id: "b" })];
     expect(filterProjects(rows, NO_PROJECT_FILTERS)).toHaveLength(2);
+  });
+
+  it("ownerType 'prospect' keeps only Lead-owned projects (client_id null)", () => {
+    const rows = [
+      project({ id: "prospect", client_id: null, source_lead_id: "l1" }),
+      project({ id: "client", client_id: "c1" }),
+    ];
+
+    const result = filterProjects(rows, { ...NO_PROJECT_FILTERS, ownerType: "prospect" });
+    expect(result.map((p) => p.id)).toEqual(["prospect"]);
+  });
+
+  it("ownerType 'client' keeps only Client-owned projects (client_id set)", () => {
+    const rows = [
+      project({ id: "prospect", client_id: null, source_lead_id: "l1" }),
+      project({ id: "client", client_id: "c1" }),
+    ];
+
+    const result = filterProjects(rows, { ...NO_PROJECT_FILTERS, ownerType: "client" });
+    expect(result.map((p) => p.id)).toEqual(["client"]);
   });
 });
 

@@ -30,11 +30,13 @@ from app.modules.discovery.schemas import DiscoverySearchCreate
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import (
     DEFAULT_DISCOVERY_INTERVAL_HOURS,
+    HOSTING_BILLING_SWEEP_INTERVAL_HOURS,
     JOB_BUSINESS_RESEARCH,
     JOB_CHECK_INSTAGRAM_WEBSITE,
     JOB_CONTENT_DRAFT_GENERATE,
     JOB_DISCOVERY_SEARCH,
     JOB_FOLLOW_UP_DRAFT,
+    JOB_HOSTING_BILLING_SWEEP,
     JOB_OPPORTUNITY_SCORE,
     JOB_OUTREACH_DRAFT,
     JOB_PLANNING_ANALYSIS,
@@ -294,6 +296,43 @@ def handle_content_draft_generate(db: Session, job: Job) -> dict:
     return planning_service.run_content_draft_job(db, planning_id)
 
 
+def handle_hosting_billing_sweep(db: Session, job: Job) -> dict:
+    """
+    Generates due monthly hosting charges across the job's workspace and
+    advances each plan's `next_due_date` — the first "sweep a table for
+    due rows" job in this codebase (every other job type here runs once
+    per upstream trigger). Self-reschedules in a `finally` block, same
+    shape as `handle_discovery_search`, so it survives a failed run and
+    never needs a separate cron/scheduler process.
+
+    Idempotency: `billing_service.generate_charge_if_missing` checks for
+    an existing (plan, billing_period) row before inserting — the DB's
+    `uq_hosting_charge_plan_period` constraint is a backstop only, never
+    relied on in the normal path (see that function's docstring).
+    """
+    from app.modules.billing import service as billing_service
+
+    today = billing_service.today_in_workspace(db, job.workspace_id)
+    plans = billing_service.list_active_plans_due(db, workspace_id=job.workspace_id, as_of=today)
+    generated = 0
+    try:
+        for plan in plans:
+            while plan.next_due_date <= today:
+                billing_service.generate_charge_if_missing(db, plan=plan)
+                plan.next_due_date = billing_service.advance_one_month(plan.next_due_date, plan.billing_day)
+                generated += 1
+        db.commit()
+        return {"generated": generated}
+    finally:
+        jobs_service.enqueue(
+            db,
+            workspace_id=job.workspace_id,
+            job_type=JOB_HOSTING_BILLING_SWEEP,
+            payload={"recurring": True},
+            run_after=datetime.now(timezone.utc) + timedelta(hours=HOSTING_BILLING_SWEEP_INTERVAL_HOURS),
+        )
+
+
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
@@ -308,4 +347,5 @@ HANDLERS = {
     JOB_PLANNING_ANALYSIS: handle_planning_analysis,
     JOB_PLANNING_COMPARABLE_ANALYSIS: handle_planning_comparable_analysis,
     JOB_CONTENT_DRAFT_GENERATE: handle_content_draft_generate,
+    JOB_HOSTING_BILLING_SWEEP: handle_hosting_billing_sweep,
 }

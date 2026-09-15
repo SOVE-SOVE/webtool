@@ -32,9 +32,17 @@ describe("nav config", () => {
     }
   });
 
-  it("puts Planning before Projects under Build", () => {
+  it("folds Planning and Projects into a single Build entry — no separate landing-page links, and no redundant second 'Build' link alongside it", () => {
     const build = NAV_SECTIONS.find((s) => s.id === "build")!;
-    expect(build.links.map((l) => l.label)).toEqual(["Planning", "Projects"]);
+    expect(build.links.map((l) => l.label)).toEqual(["Build"]);
+    expect(build.links[0].href).toBe("/dashboard/build");
+  });
+
+  it("Manage has a single entry, Clients — Live Websites and Revenue folded into its tabs", () => {
+    const manage = NAV_SECTIONS.find((s) => s.id === "manage")!;
+    expect(manage.links.map((l) => l.label)).toEqual(["Clients"]);
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/revenue");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/projects?view=live");
   });
 
   it("folds Pipeline into Leads (its route redirects, so it's not a separate nav item)", () => {
@@ -46,9 +54,9 @@ describe("nav config", () => {
     for (const href of ALL_NAV_HREFS) expect(href.split("?")[0].startsWith("/dashboard")).toBe(true);
   });
 
-  it("the mobile bottom nav's five primary hrefs all resolve to a real nav link", () => {
+  it("the mobile bottom nav's four primary hrefs all resolve to a real nav link", () => {
     for (const href of MOBILE_PRIMARY_HREFS) expect(ALL_NAV_HREFS).toContain(href);
-    expect(MOBILE_PRIMARY_HREFS).toHaveLength(5);
+    expect(MOBILE_PRIMARY_HREFS).toHaveLength(4);
   });
 });
 
@@ -59,9 +67,20 @@ describe("isNavLinkActive", () => {
   });
 
   it("matches a section link on its own subtree", () => {
-    expect(isNavLinkActive("/dashboard/planning", q(), link("/dashboard/planning"))).toBe(true);
-    expect(isNavLinkActive("/dashboard/planning/abc123", q(), link("/dashboard/planning"))).toBe(true);
-    expect(isNavLinkActive("/dashboard/planning-archive", q(), link("/dashboard/planning"))).toBe(false);
+    const clients = link("/dashboard/clients");
+    expect(isNavLinkActive("/dashboard/clients", q(), clients)).toBe(true);
+    expect(isNavLinkActive("/dashboard/clients/abc123", q(), clients)).toBe(true);
+    expect(isNavLinkActive("/dashboard/clients-archive", q(), clients)).toBe(false);
+  });
+
+  it("Build lights up on either view, either's own detail pages, and the bare redirect route — never on an unrelated path", () => {
+    const build = link("/dashboard/build");
+    expect(isNavLinkActive("/dashboard/build", q(), build)).toBe(true);
+    expect(isNavLinkActive("/dashboard/build/planning", q(), build)).toBe(true);
+    expect(isNavLinkActive("/dashboard/build/projects", q(), build)).toBe(true);
+    expect(isNavLinkActive("/dashboard/planning/abc123", q(), build)).toBe(true);
+    expect(isNavLinkActive("/dashboard/projects/abc123", q(), build)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads", q(), build)).toBe(false);
   });
 
   it("honours activePrefixes (Review lights up on a discovered-business page)", () => {
@@ -88,21 +107,11 @@ describe("isNavLinkActive", () => {
     expect(isNavLinkActive("/dashboard/leads", q(), clients)).toBe(false);
   });
 
-  describe("Projects vs Live Websites (same base route, disambiguated by ?view=live)", () => {
-    const projects = link("/dashboard/projects");
-    const live = link("/dashboard/projects?view=live");
-
-    it("Projects is active on the projects list and a project detail page, but not the live view", () => {
-      expect(isNavLinkActive("/dashboard/projects", q(), projects)).toBe(true);
-      expect(isNavLinkActive("/dashboard/projects/abc123", q(), projects)).toBe(true);
-      expect(isNavLinkActive("/dashboard/projects", q("view=live"), projects)).toBe(false);
-    });
-
-    it("Live Websites is active only on the live view of the projects list", () => {
-      expect(isNavLinkActive("/dashboard/projects", q("view=live"), live)).toBe(true);
-      expect(isNavLinkActive("/dashboard/projects", q(), live)).toBe(false);
-      expect(isNavLinkActive("/dashboard/projects/abc123", q("view=live"), live)).toBe(false);
-    });
+  it("Clients stays active across all three of its own tabs (Overview/Websites/Revenue)", () => {
+    const clients = link("/dashboard/clients");
+    for (const tab of ["", "overview", "websites", "revenue"]) {
+      expect(isNavLinkActive("/dashboard/clients", q(tab ? `tab=${tab}` : ""), clients)).toBe(true);
+    }
   });
 
   it("Settings is a standalone link", () => {

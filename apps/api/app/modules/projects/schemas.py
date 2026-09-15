@@ -91,3 +91,21 @@ class DeliveryStatusRead(BaseModel):
     latest_deployment_url: str | None
     checklist: list[DeliveryChecklistItemRead]
     missing: list[str]
+
+
+class ProjectChecklistSummary(BaseModel):
+    """One project's stage-checklist progress — the workspace-wide,
+    counts-only sibling of the per-project StageChecklistRead, mirroring
+    Clients' and Planning's own list_checklist_summaries so the Projects
+    grid can show progress and a blocked-task reason without an N+1
+    fetch. `next_item_title` mirrors the checklist's own next-actionable
+    task; `blocked_reason` is set only when the next action is actually
+    blocked (StageChecklistNextAction.kind == "blocked"), taken from the
+    first blocked item — never fabricated when nothing is blocked."""
+
+    project_id: uuid.UUID
+    completed: int
+    total: int
+    pct: int | None
+    next_item_title: str | None
+    blocked_reason: str | None
