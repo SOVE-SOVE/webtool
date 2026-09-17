@@ -69,11 +69,19 @@ specific to this one.)
 4. Starts the API (`uvicorn app.main:app --reload --port 8000`) and
    waits for `GET /health` to return `{"status": "ok"}`.
 5. Starts the background job runner (`python -m app.jobs.runner`, macOS
-   only for now) — the poller that actually processes queued work. It
-   has no `--reload`, so the launcher restarts it whenever the commit
-   has changed since it was last started; a `git pull` that adds a job
-   handler otherwise leaves it on stale code, failing jobs with "No
-   handler registered". It also collapses a double-runner back to one.
+   only for now) — the poller that actually processes queued work. It's
+   supervised by a per-user `launchd` LaunchAgent (not a plain
+   backgrounded process), so if the poller process crashes mid-session,
+   launchd restarts it automatically rather than leaving background
+   automation silently dead until the next `start-mac.sh` run. The
+   LaunchAgent's label is derived from this checkout's path, so a
+   separate clone or worktree of the repo gets its own supervised runner
+   instead of taking over this one's.
+
+   It has no `--reload`, so the launcher restarts it (via
+   `launchctl kickstart -k`) whenever the commit has changed since it
+   was last started; a `git pull` that adds a job handler otherwise
+   leaves it on stale code, failing jobs with "No handler registered".
 6. Starts the web app (`next dev --port 3000`) and waits until it
    actually answers on `http://localhost:3000`. If the commit has
    changed since the last web start (a `git pull`, a branch switch),
@@ -99,22 +107,33 @@ browser tab that won't work.
 
 They stop whatever is actually listening on ports 8000 and 3000 (after
 checking it looks like this app's process, not some unrelated program
-that happens to be using that port), then stop the Postgres container
-with `docker compose stop postgres`. Your database data isn't deleted
-— `docker compose stop` (not `down`) leaves the container and its data
+that happens to be using that port), stop the job runner's LaunchAgent
+with `launchctl bootout` (a plain `kill` wouldn't work — launchd would
+just restart it), then stop the Postgres container with
+`docker compose stop postgres`. Your database data isn't deleted —
+`docker compose stop` (not `down`) leaves the container and its data
 volume in place, so the next start picks up right where you left off.
 
 ### Logs and process state
 
-Each start writes logs to `scripts/.logs/api.log` and
-`scripts/.logs/web.log` — check these first if something's behaving
-oddly, or if a start attempt failed partway through. `scripts/.run/`
-holds the process ids the launcher is tracking, plus `web-head` and
-`jobs-head` (the commit the web server and the job runner were each
-last started against — used to decide whether to clear the Next.js
-cache and whether to restart the runner). Both directories are
-git-ignored; delete either at any time, they're just runtime
-scratch state, not configuration.
+Each start writes logs to `scripts/.logs/api.log`,
+`scripts/.logs/web.log`, and `scripts/.logs/jobs.log` — check these
+first if something's behaving oddly, or if a start attempt failed
+partway through. `scripts/.run/` holds the process ids the launcher is
+tracking for the API and web app, plus `web-head` and `jobs-head` (the
+commit the web server and the job runner were each last started
+against — used to decide whether to clear the Next.js cache and
+whether to restart the runner). Both directories are git-ignored;
+delete either at any time, they're just runtime scratch state, not
+configuration.
+
+The job runner itself isn't tracked by a pid file — it's supervised by
+a `launchd` LaunchAgent at
+`~/Library/LaunchAgents/com.webdesignos.jobrunner.<hash>.plist` (the
+hash is derived from this checkout's absolute path). Check its status
+directly with `launchctl print gui/$(id -u)/com.webdesignos.jobrunner.<hash>`
+if you need to; `stop-mac.sh` unloads it, and `start-mac.sh` regenerates
+the plist and reloads it on every run.
 
 ## Making the scripts double-clickable
 

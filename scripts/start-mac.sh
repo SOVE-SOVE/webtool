@@ -141,44 +141,88 @@ fi
 # process is alive; the API enqueues jobs either way, but nothing claims
 # them without it. No health endpoint (it's not a server).
 #
-# Unlike the API, the poller has no --reload: a `git pull` that adds or
-# changes a job handler leaves a still-running poller on stale code — the
-# symptom is jobs failing with "No handler registered" while whatever
-# queued them sits forever in its in-progress state. So restart it when
-# HEAD has moved since it was last started.
+# Supervised by launchd (a per-user LaunchAgent) rather than a plain
+# nohup'd process, so a poller crash mid-session gets restarted
+# automatically instead of silently sitting dead until the next
+# start-mac.sh run — see docs/02_ARCHITECTURE.md and scripts/README.md.
 #
-# Liveness is read straight from the process table (`pgrep`), not the pid
-# file — a recycled pid otherwise reads as "still up", and a partially
-# stale environment can leave two pollers racing to claim the same jobs.
-# The `[-]m` matches a literal "-m" while keeping the pattern from
-# matching this pgrep itself.
-runner_pids="$(pgrep -f "[-]m app.jobs.runner" 2>/dev/null || true)"
-runner_n="$(printf '%s' "$runner_pids" | grep -c . || true)"
+# The label is scoped to this checkout's path (not a fixed name) so two
+# different clones/worktrees of this repo on the same machine — e.g. a
+# feature worktree under .claude/worktrees/ — each get their own
+# LaunchAgent instead of silently taking over each other's.
+JOBS_LABEL="com.webdesignos.jobrunner.$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-12)"
+JOBS_PLIST="$HOME/Library/LaunchAgents/$JOBS_LABEL.plist"
+JOBS_DOMAIN="gui/$(id -u)"
 
-if [ "$runner_n" = "1" ] \
+# One-time cleanup: an older version of this script ran the poller as a
+# plain nohup'd process tracked by $JOBS_PID_FILE. If one of those is
+# still alive, launchd wouldn't know about it and we'd end up with two
+# pollers racing to claim the same jobs — stop it before handing control
+# to launchd.
+if [ -f "$JOBS_PID_FILE" ]; then
+  legacy_pid="$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)"
+  if [ "$legacy_pid" != "0" ] && kill -0 "$legacy_pid" 2>/dev/null && ps -p "$legacy_pid" -o command= 2>/dev/null | grep -q "app.jobs.runner"; then
+    info "Stopping the old unsupervised job runner process before switching to launchd..."
+    kill "$legacy_pid" 2>/dev/null
+    sleep 1
+  fi
+  rm -f "$JOBS_PID_FILE"
+fi
+
+mkdir -p "$HOME/Library/LaunchAgents"
+cat >"$JOBS_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$JOBS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$API_DIR/.venv/bin/python</string>
+    <string>-m</string>
+    <string>app.jobs.runner</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$API_DIR</string>
+  <key>StandardOutPath</key>
+  <string>$JOBS_LOG</string>
+  <key>StandardErrorPath</key>
+  <string>$JOBS_LOG</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+PLIST
+
+if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1 \
     && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
   ok "Job runner already running on current code - leaving it as is"
 else
-  if [ "$runner_n" != "0" ]; then
-    info "Restarting the job runner (code changed since it started, or more than one was running)..."
-    # shellcheck disable=SC2086
-    kill $runner_pids 2>/dev/null
-    sleep 1
+  if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
+    info "Restarting the job runner (code changed since it started)..."
+    launchctl kickstart -k "$JOBS_DOMAIN/$JOBS_LABEL" 2>/dev/null \
+      || fail "Couldn't restart the job runner via launchctl kickstart." "$JOBS_LOG"
   else
-    info "Starting the job runner..."
+    info "Starting the job runner (supervised by launchd)..."
+    launchctl bootstrap "$JOBS_DOMAIN" "$JOBS_PLIST" 2>/dev/null \
+      || fail "Couldn't load the job runner LaunchAgent ($JOBS_PLIST) via launchctl bootstrap." "$JOBS_LOG"
   fi
-  rm -f "$JOBS_PID_FILE"
-  # `exec` so the recorded pid is the python process itself, not a
-  # short-lived subshell wrapper that stop-mac.sh would fail to match.
-  ( cd "$API_DIR" && exec nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 ) &
-  echo $! >"$JOBS_PID_FILE"
   sleep 1
-  if kill -0 "$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)" 2>/dev/null; then
+  if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
     echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
-    ok "Job runner is running (log: $JOBS_LOG)"
+    ok "Job runner is running, supervised by launchd (log: $JOBS_LOG)"
   else
     echo "[WARN] Job runner didn't stay running - check $JOBS_LOG. The app still works; scheduled/background automation won't."
-    rm -f "$JOBS_PID_FILE"
   fi
 fi
 

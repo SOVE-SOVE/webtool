@@ -67,26 +67,34 @@ stop_port() {
 stop_port "API" 8000 "app.main:app" "$RUN_DIR/api.pid"
 stop_port "Web app" 3000 "next" "$RUN_DIR/web.pid"
 
-# The job runner doesn't listen on a port, so it's stopped by pid rather
-# than stop_port's socket-ownership check.
+# The job runner is supervised by launchd (KeepAlive) since
+# start-mac.sh's launchd migration — see that script for why. It doesn't
+# listen on a port, and plain `kill` won't stop it (launchd would just
+# restart it), so it's stopped with `launchctl bootout` instead. The
+# label is scoped to this checkout's path, same as start-mac.sh.
 JOBS_PID_FILE="$RUN_DIR/jobs.pid"
-if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
-  kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
+JOBS_LABEL="com.webdesignos.jobrunner.$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-12)"
+JOBS_DOMAIN="gui/$(id -u)"
+
+if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$JOBS_DOMAIN/$JOBS_LABEL" 2>/dev/null
   waited=0
-  while kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; do
+  while launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; do
     sleep 1
     waited=$((waited + 1))
-    if [ "$waited" -ge 10 ]; then
-      kill -9 "$(cat "$JOBS_PID_FILE")" 2>/dev/null
-      break
-    fi
+    [ "$waited" -ge 10 ] && break
   done
-  rm -f "$JOBS_PID_FILE"
   echo "[OK] Job runner stopped"
 else
   echo "-> Job runner: not running"
-  rm -f "$JOBS_PID_FILE"
 fi
+
+# Cleanup for the pre-launchd nohup/pid setup, in case this is the first
+# stop after upgrading from that version.
+if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
+  kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
+fi
+rm -f "$JOBS_PID_FILE"
 
 echo "-> Stopping Postgres..."
 if ( cd "$REPO_ROOT" && docker compose stop postgres ) >/dev/null 2>&1; then
