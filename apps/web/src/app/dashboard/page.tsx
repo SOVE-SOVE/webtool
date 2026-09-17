@@ -4,40 +4,29 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   api,
-  type ActivityItem,
   type CalendarEvent,
   type DashboardOverview,
   type Lead,
   type PlanningListItem,
   type Project,
-  type TodayBillingSnapshot,
+  type SalesDashboard,
 } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Metric, MetricGrid } from "@/components/ui/Metric";
-import { EmptyRow, ItemRow, Panel } from "@/components/ui/Panel";
+import { Metric } from "@/components/ui/Metric";
+import { EmptyRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { dateKey, formatLongDate, formatMoney, formatTime, timeAgo } from "@/lib/format";
-import { NEXT_PAYMENT_KIND_LABEL, relativeObligationLabel } from "@/lib/billing";
+import { dateKey, formatAud, formatLongDate, formatTime } from "@/lib/format";
+import { leadMatchesTab } from "@/lib/leads";
 import { loadOverview } from "@/lib/overview";
-import {
-  activityHref,
-  attentionPriority,
-  attentionTag,
-  computeNextActions,
-  computePipelineStages,
-  todaysScheduleEvents,
-} from "@/lib/today";
-
-const RECENT_ACTIVITY_LIMIT = 8;
+import { attentionPriority, attentionTag, computeNextActions, todaysScheduleEvents, type AttentionPriority } from "@/lib/today";
 
 type TodayData = {
   leads: Lead[];
   planning: PlanningListItem[];
-  reviewQueueCount: number;
   projects: Project[];
-  activity: ActivityItem[];
   overview: DashboardOverview;
 };
 
@@ -55,50 +44,54 @@ function RowsSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-const PRIORITY_TONE = { high: "danger", medium: "warn", low: "muted" } as const;
+/** Loading placeholder for a row of stat cards. */
+function StatsSkeleton({ count }: { count: number }) {
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-2 h-6 w-12" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const PRIORITY_BADGE_TONE: Record<AttentionPriority, BadgeTone> = {
+  high: "danger",
+  medium: "warning",
+  low: "muted",
+};
+
+function pct(value: number | null): string {
+  return value === null ? "—" : `${value.toFixed(0)}%`;
+}
 
 export default function TodayPage() {
   const [data, setData] = useState<TodayData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
-  const [billingSnapshot, setBillingSnapshot] = useState<TodayBillingSnapshot | null>(null);
-  const [billingError, setBillingError] = useState<string | null>(null);
-  const [currency, setCurrency] = useState("AUD");
+  const [sales, setSales] = useState<SalesDashboard | null>(null);
+  const [salesError, setSalesError] = useState<string | null>(null);
 
   function load() {
-    Promise.all([
-      api.listLeads(),
-      api.listPlanning(),
-      api.listReviewItems(),
-      api.listProjects(),
-      api.listActivity(),
-      loadOverview(),
-    ])
-      .then(([leads, planning, reviewItems, projects, activity, overview]) => {
+    Promise.all([api.listLeads(), api.listPlanning(), api.listProjects(), loadOverview()])
+      .then(([leads, planning, projects, overview]) => {
         setError(null);
-        setData({
-          leads,
-          planning,
-          reviewQueueCount: reviewItems.filter(
-            (item) => item.status !== "imported" && item.status !== "rejected" && item.status !== "archived",
-          ).length,
-          projects,
-          activity,
-          overview,
-        });
+        setData({ leads, planning, projects, overview });
       })
       .catch(() => setError("Couldn't load today's workspace."));
 
     const today = dateKey();
     api.listCalendarEvents(today, today).then(setEvents).catch(() => {});
     api
-      .getTodayBillingSnapshot()
+      .salesDashboard()
       .then((s) => {
-        setBillingError(null);
-        setBillingSnapshot(s);
+        setSalesError(null);
+        setSales(s);
       })
-      .catch(() => setBillingError("Couldn't load the revenue summary."));
-    api.getWorkspace().then((w) => setCurrency(w.currency)).catch(() => {});
+      .catch(() => setSalesError("Couldn't load the revenue summary."));
   }
 
   useEffect(load, []);
@@ -106,116 +99,120 @@ export default function TodayPage() {
   const nextActions = data
     ? computeNextActions({ leads: data.leads, planning: data.planning, projects: data.projects })
     : null;
-  const pipeline = data
-    ? computePipelineStages({
-        reviewQueueCount: data.reviewQueueCount,
-        leadsCount: data.leads.length,
-        planningCount: data.planning.length,
-        projects: data.projects,
-      })
-    : null;
   const schedule = events ? todaysScheduleEvents(events) : null;
 
+  const newLeadsCount = data
+    ? data.leads.filter((l) => !l.archived_at && leadMatchesTab(l, "new")).length
+    : null;
+  const planningNeedsReviewCount = data ? data.planning.filter((p) => p.status === "needs_review").length : null;
+
   return (
-    <div className="space-y-8 p-4 sm:p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <PageHeader title="Today" description={`${formatLongDate()} — your work, follow-ups and priorities for today.`} />
 
       {error && <ErrorState message={error} onRetry={load} compact />}
 
-      {/* 1. Today's priorities — the same server-ranked "what needs
-          attention" queue, given the hero treatment here instead of a
-          compact strip, since answering "what do I do today" is this
-          page's one job. */}
+      {/* Pipeline — where things stand right now, one stat per stage an
+          operator actually acts on day to day. */}
       <section>
-        <h2 className="section-title">Today&apos;s priorities</h2>
+        <h2 className="section-title">Pipeline</h2>
         {!data ? (
-          <div className="mt-2 rounded-md border border-border">
-            <RowsSkeleton rows={4} />
+          <StatsSkeleton count={4} />
+        ) : (
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/leads" />
+            <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/leads?tab=new" />
+            <Metric
+              label="Planning/build needing review"
+              value={planningNeedsReviewCount ?? 0}
+              href="/dashboard/build/planning"
+            />
+            <Metric label="Projects in progress" value={data.overview.active_projects} href="/dashboard/build/projects" />
           </div>
-        ) : data.overview.needs_attention.length === 0 ? (
+        )}
+      </section>
+
+      {/* Revenue — the sales funnel's money figures, same data source and
+          stat card as the Sales dashboard's own Potential value / Won
+          deals / Revenue won cards. */}
+      <section>
+        <h2 className="section-title">Revenue</h2>
+        {salesError ? (
           <div className="mt-2">
+            <ErrorState message={salesError} onRetry={load} compact />
+          </div>
+        ) : !sales ? (
+          <StatsSkeleton count={5} />
+        ) : (
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales" />
+            <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales" />
+            <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales" />
+            <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales" />
+            <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales" />
+          </div>
+        )}
+      </section>
+
+      {/* Three equal panels, side by side — today's work, split by kind
+          rather than stacked as one long page. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Panel
+          title="Today&apos;s priorities"
+          right={
+            <Link href="/dashboard/leads" className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+              See all →
+            </Link>
+          }
+        >
+          {!data ? (
+            <RowsSkeleton rows={4} />
+          ) : data.overview.needs_attention.length === 0 ? (
             <EmptyState
               title="You're all caught up"
-              description="Nothing needs your attention right now. Good time to open Map Discovery and find the next lead."
+              description="Nothing needs your attention right now."
               action={
                 <Link href="/dashboard/discovery" className="btn btn-secondary">
                   Open Map Discovery
                 </Link>
               }
             />
-          </div>
-        ) : (
-          <div className="mt-2 max-h-96 overflow-y-auto overscroll-contain rounded-md border border-border">
+          ) : (
             <ul className="divide-y divide-border">
               {data.overview.needs_attention.map((item) => (
                 <li key={`${item.kind}-${item.id}`}>
-                  <ItemRow
-                    href={item.href}
-                    primary={item.title}
-                    secondary={item.action}
-                    right={attentionTag(item)}
-                    rightTone={PRIORITY_TONE[attentionPriority(item)]}
-                  />
+                  <Link href={item.href} className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-surface-hover">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-fg">{item.title}</span>
+                      <span className="block truncate text-xs text-fg-muted">{item.action}</span>
+                    </span>
+                    <Badge tone={PRIORITY_BADGE_TONE[attentionPriority(item)]} className="mt-0.5 shrink-0">
+                      {attentionTag(item)}
+                    </Badge>
+                  </Link>
                 </li>
               ))}
             </ul>
-          </div>
-        )}
-      </section>
+          )}
+        </Panel>
 
-      {/* 2. Today's schedule — today's meetings and due tasks, chronological.
-          Deliberately just a list, not a calendar — see /dashboard/calendar
-          for that. */}
-      <section>
-        <h2 className="section-title">Today&apos;s schedule</h2>
-        {!schedule ? (
-          <div className="mt-2 rounded-md border border-border">
-            <RowsSkeleton rows={2} />
-          </div>
-        ) : schedule.length === 0 ? (
-          <div className="mt-2 rounded-md border border-border">
-            <EmptyRow>Nothing scheduled for today.</EmptyRow>
-          </div>
-        ) : (
-          <ul className="mt-2 divide-y divide-border rounded-md border border-border">
-            {schedule.map((event) => (
-              <li key={`${event.kind}-${event.id}`}>
-                <Link
-                  href={event.href}
-                  className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-surface-hover"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-fg">{event.title}</span>
-                    <span className="block truncate text-xs text-fg-muted">{event.detail}</span>
-                  </span>
-                  <span className="shrink-0 text-xs text-fg-muted">{formatTime(event.at)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* 3. Also on your plate — aggregate pipeline nudges (new leads to
-          triage, Planning audits ready to review, etc.) that aren't tied
-          to a specific day, so they sit below the time-bound sections
-          above. Hidden entirely once loaded and empty — Priorities' own
-          empty state already covers "you're caught up". */}
-      {(nextActions === null || nextActions.length > 0) && (
-        <section>
-          <h2 className="section-title">Also on your plate</h2>
+        <Panel
+          title="Also on your plate"
+          right={
+            <Link href="/dashboard/build" className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+              See all →
+            </Link>
+          }
+        >
           {!nextActions ? (
-            <div className="mt-2 rounded-md border border-border">
-              <RowsSkeleton rows={2} />
-            </div>
+            <RowsSkeleton rows={3} />
+          ) : nextActions.length === 0 ? (
+            <EmptyRow>Nothing else waiting on you right now.</EmptyRow>
           ) : (
-            <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+            <ul className="divide-y divide-border">
               {nextActions.map((action) => (
                 <li key={action.id}>
-                  <Link
-                    href={action.href}
-                    className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-hover"
-                  >
+                  <Link href={action.href} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-hover">
                     <span className="text-sm font-medium text-fg">{action.label}</span>
                     <span className="shrink-0 text-fg-muted">→</span>
                   </Link>
@@ -223,140 +220,37 @@ export default function TodayPage() {
               ))}
             </ul>
           )}
-        </section>
-      )}
+        </Panel>
 
-      {/* 4. Pipeline — a plain, non-decorative view of real counts at each stage. */}
-      <section>
-        <h2 className="section-title">Pipeline</h2>
-        {!pipeline ? (
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
-                <Skeleton className="h-3 w-14" />
-                <Skeleton className="mt-2 h-6 w-8" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {pipeline.map((stage) => (
-              <Metric
-                key={stage.id}
-                label={stage.label}
-                value={stage.count}
-                hint={stage.empty ? `${stage.empty.label} →` : undefined}
-                href={stage.empty ? stage.empty.href : stage.href}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 4.5. Revenue — a restrained snapshot, not a full report; see
-          the Clients workspace's Revenue tab for the breakdown,
-          transaction list, and full upcoming/overdue detail. Overdue
-          *items* the operator should act on already surface in "Today's
-          priorities" above (kind: overdue_payment) — this section is
-          the aggregate figures that list doesn't show (total received,
-          expected MRR, total overdue exposure) plus a short upcoming
-          preview, not a second copy of that per-item list. */}
-      <section>
-        <div className="flex items-center justify-between">
-          <h2 className="section-title">Revenue</h2>
-          <Link href="/dashboard/clients?tab=revenue" className="text-sm text-fg-muted hover:underline">
-            View Revenue →
-          </Link>
-        </div>
-        {billingError ? (
-          <div className="mt-2">
-            <ErrorState message={billingError} onRetry={load} compact />
-          </div>
-        ) : !billingSnapshot ? (
-          <MetricGrid className="mt-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="mt-2 h-6 w-16" />
-              </div>
-            ))}
-          </MetricGrid>
-        ) : (
-          <>
-            <MetricGrid className="mt-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
-              <Metric
-                label="Payments received this month"
-                value={formatMoney(billingSnapshot.payments_received_this_month_cents, currency)}
-                href="/dashboard/clients?tab=revenue"
-              />
-              <Metric
-                label="Expected monthly hosting revenue"
-                value={formatMoney(billingSnapshot.expected_mrr_cents, currency)}
-                hint="From active plans — not money received"
-                href="/dashboard/clients?tab=revenue&revenueTab=hosting"
-              />
-              <Metric
-                label="Overdue"
-                value={formatMoney(billingSnapshot.overdue_cents, currency)}
-                hint={
-                  billingSnapshot.overdue_client_count > 0
-                    ? `${billingSnapshot.overdue_client_count} client${billingSnapshot.overdue_client_count === 1 ? "" : "s"}`
-                    : "No clients overdue"
-                }
-                href="/dashboard/clients?tab=revenue&revenueTab=upcoming"
-              />
-            </MetricGrid>
-
-            <div className="mt-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">Next upcoming payments</p>
-              {billingSnapshot.upcoming_payments.length === 0 ? (
-                <div className="mt-1.5 rounded-md border border-border">
-                  <EmptyRow>No upcoming payments scheduled.</EmptyRow>
-                </div>
-              ) : (
-                <ul className="mt-1.5 divide-y divide-border rounded-md border border-border">
-                  {billingSnapshot.upcoming_payments.map((o) => (
-                    <li key={`${o.website_agreement_id ?? ""}${o.hosting_charge_id ?? ""}${o.hosting_plan_id ?? ""}${o.scheduled}`}>
-                      <ItemRow
-                        href={
-                          o.client_id
-                            ? `/dashboard/clients/${o.client_id}?tab=billing`
-                            : "/dashboard/clients?tab=revenue&revenueTab=upcoming"
-                        }
-                        primary={`${o.client_business_name ?? "No client (prospect)"} — ${formatMoney(o.amount_cents, currency)}`}
-                        secondary={`${NEXT_PAYMENT_KIND_LABEL[o.kind]} · ${relativeObligationLabel(o)}`}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* 5. Recent activity — the workspace-wide activity log, reused as-is. */}
-      <Panel title="Recent activity" bodyClassName="max-h-72">
-        {!data ? (
-          <RowsSkeleton rows={4} />
-        ) : data.activity.length === 0 ? (
-          <EmptyRow>Nothing has happened yet.</EmptyRow>
-        ) : (
-          <ul className="divide-y divide-border">
-            {data.activity.slice(0, RECENT_ACTIVITY_LIMIT).map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={activityHref(item)}
-                  className="flex items-start justify-between gap-4 px-4 py-2.5 hover:bg-surface-hover"
-                >
-                  <span className="min-w-0 text-sm text-fg">{item.summary ?? item.action}</span>
-                  <span className="shrink-0 text-xs text-fg-subtle">{timeAgo(item.created_at)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+        <Panel
+          title="Today&apos;s schedule"
+          right={
+            <Link href="/dashboard/calendar" className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+              See all →
+            </Link>
+          }
+        >
+          {!schedule ? (
+            <RowsSkeleton rows={2} />
+          ) : schedule.length === 0 ? (
+            <EmptyRow>Nothing scheduled for today.</EmptyRow>
+          ) : (
+            <ul className="divide-y divide-border">
+              {schedule.map((event) => (
+                <li key={`${event.kind}-${event.id}`}>
+                  <Link href={event.href} className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-surface-hover">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-fg">{event.title}</span>
+                      <span className="block truncate text-xs text-fg-muted">{event.detail}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-fg-muted">{formatTime(event.at)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }
