@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Badge } from "@/components/ui/Badge";
+import { monthGrid, toDateKey } from "@/lib/calendarGrid";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -36,22 +37,6 @@ const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
   cancelled: "Cancelled",
   no_show: "No-show",
 };
-
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Full weeks (Sun-start) covering the given month, so days from the
-// adjacent month that share a row still get their events fetched/shown.
-function monthGrid(year: number, month: number): Date[] {
-  const first = new Date(year, month, 1);
-  const gridStart = new Date(year, month, 1 - first.getDay());
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    return d;
-  });
-}
 
 export default function CalendarPage() {
   const today = useMemo(() => new Date(), []);

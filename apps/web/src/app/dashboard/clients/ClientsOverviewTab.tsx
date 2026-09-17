@@ -12,7 +12,6 @@ import {
   type Project,
   type RevenueHostingPlan,
   type Task,
-  type TodayBillingSnapshot,
   type User,
 } from "@/lib/api";
 import { filterClients, LIVE_STAGES, UNASSIGNED } from "@/lib/filters";
@@ -29,137 +28,92 @@ import {
   type ClientTone,
   type OverviewFilters,
 } from "@/lib/clients";
-import { relativeObligationLabel } from "@/lib/billing";
 import { nextOpenTask } from "@/lib/projects";
-import { formatMoney } from "@/lib/format";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
-import { useDensity } from "@/lib/useDensity";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
-import {
-  CLIENT_COLUMN_DEFAULTS,
-  CLIENT_COLUMN_LABELS,
-  useClientColumns,
-  type ClientColumnKey,
-} from "@/lib/useClientColumns";
-import { ClientStatusBadge } from "@/components/ClientStatusBadge";
-import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
-import { DensityToggle } from "@/components/ui/DensityToggle";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Metric, MetricGrid } from "@/components/ui/Metric";
-import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
-import { WebsitesField, HostingField, NextPaymentField, NextTaskField, type EnrichedClient } from "./ClientRowFields";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { ClientCard, ClientCardSkeleton } from "./ClientCard";
 import { ClientPreviewPanel } from "./ClientPreviewPanel";
-import { AttentionCards, AttentionCardsSkeleton } from "./AttentionCards";
+import type { EnrichedClient } from "./ClientRowFields";
 
-/** One shared source for the table's density → vertical-padding mapping, so the header row and body rows can never drift apart (they previously did — the header was stuck at a fixed py-2 while body rows shrank in Compact). */
-function rowPadY(density: "comfortable" | "compact"): string {
-  return density === "compact" ? "py-1.5" : "py-3";
-}
+type ClientView = "all" | "attention";
+type SortBy = "recent" | "name" | "payment";
 
-// ---------------------------------------------------------------------------
-// Small shared row-level controls
-// ---------------------------------------------------------------------------
+const SORT_LABEL: Record<SortBy, string> = {
+  recent: "Most recent activity",
+  name: "Business name (A–Z)",
+  payment: "Next payment date",
+};
 
-/** Compact, click-to-open control for a real, actionable issue — never a full-row warning background. Overdue payment takes precedence over an outstanding-required-tasks issue when a row has both, matching how buildOverviewAttentionItems orders the aggregate list. */
-function AttentionIndicator({ row, currency }: { row: EnrichedClient; currency: string }) {
-  const overdue = row.nextPayment?.is_overdue ?? false;
-  const blocked = !overdue && row.requiredOutstanding > 0;
-  if (!overdue && !blocked) return null;
-
-  const label = overdue
-    ? `Overdue payment — ${formatMoney(row.nextPayment!.amount_cents, currency)}, ${relativeObligationLabel(row.nextPayment!)}`
-    : `${row.requiredOutstanding} required task${row.requiredOutstanding === 1 ? "" : "s"} outstanding`;
-  const href = overdue ? `/dashboard/clients/${row.client.id}?tab=billing` : `/dashboard/clients/${row.client.id}?tab=tasks`;
-
+/** Segmented "All clients / Needs attention" switch — filters the one
+ * client grid below rather than adding a second render of the same
+ * clients, so a client can never appear twice in the current results. */
+function ViewSwitch({ active, onChange }: { active: ClientView; onChange: (next: ClientView) => void }) {
   return (
-    <Link
-      href={href}
-      onClick={(e) => e.stopPropagation()}
-      title={label}
-      aria-label={label}
-      className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-500/15 dark:text-red-400 dark:hover:bg-red-500/25"
-    >
-      <svg viewBox="0 0 16 16" fill="currentColor" className="h-2 w-2" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" />
-      </svg>
-    </Link>
-  );
-}
-
-/** Eye icon — the explicit, always-visible quick-preview trigger, distinct from the "⋯" menu (which navigates away; this opens a panel without leaving the list). */
-function PreviewButton({ client, onOpen }: { client: Client; onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onOpen();
-      }}
-      aria-label={`Quick preview of ${client.business_name}`}
-      className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
-    >
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4" aria-hidden="true">
-        <path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10Z" />
-        <circle cx="10" cy="10" r="2" />
-      </svg>
-    </button>
-  );
-}
-
-/** Row-level "⋯" menu — every real, already-existing shortcut into that client's own record. No Archive here: Client has no archive concept anywhere in this codebase (see ClientHeader's own SecondaryActionMenu), so none is fabricated. */
-function RowActionsMenu({ client }: { client: Client }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-block">
+    <div className="flex rounded-md border border-border-strong p-0.5 text-sm" role="group" aria-label="Client view">
       <button
         type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        aria-label={`More actions for ${client.business_name}`}
-        className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+        onClick={() => onChange("all")}
+        aria-current={active === "all" ? "true" : undefined}
+        className={`rounded px-2 py-1 ${active === "all" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
-        ⋯
+        All clients
       </button>
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen(false);
-            }}
-            aria-hidden="true"
-          />
-          <span className="absolute right-0 z-20 mt-1 block w-40 rounded-md border border-border bg-surface py-1 shadow-lg">
-            <Link href={`/dashboard/clients/${client.id}`} className="block px-3 py-1.5 text-left text-sm text-fg hover:bg-surface-hover">
-              Open Client
-            </Link>
-            <Link href={`/dashboard/clients/${client.id}?tab=billing`} className="block px-3 py-1.5 text-left text-sm text-fg hover:bg-surface-hover">
-              Billing
-            </Link>
-            <Link href={`/dashboard/clients/${client.id}?tab=details`} className="block px-3 py-1.5 text-left text-sm text-fg hover:bg-surface-hover">
-              Edit details
-            </Link>
-          </span>
-        </>
-      )}
-    </span>
+      <button
+        type="button"
+        onClick={() => onChange("attention")}
+        aria-current={active === "attention" ? "true" : undefined}
+        className={`rounded px-2 py-1 ${active === "attention" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+      >
+        Needs attention
+      </button>
+    </div>
   );
 }
 
-/** Show/hide the table's secondary columns, persisted per-operator (useClientColumns → localStorage). Client and the actions column are never toggleable — "essential" per the spec. */
-function ColumnsMenu({
-  columns,
-  onChange,
+/** Secondary filters, sort, and assignee — kept out of the main toolbar
+ * row so the primary controls (search, view switch, Add Client) stay
+ * aligned and uncluttered. Client has no archive concept anywhere in
+ * this codebase (no `archived_at`, no archive endpoint), so unlike
+ * Leads/Planning this panel has nothing to show for "archived" — every
+ * client `listClients()` returns is already the complete, current set. */
+function MoreFiltersMenu({
+  statusFilter,
+  onStatusChange,
+  hostingFilter,
+  onHostingChange,
+  paymentFilter,
+  onPaymentChange,
+  attentionFilter,
+  onAttentionChange,
+  assigneeFilter,
+  onAssigneeChange,
+  users,
+  sortBy,
+  onSortChange,
+  activeCount,
+  onClear,
 }: {
-  columns: Record<ClientColumnKey, boolean>;
-  onChange: (next: Record<ClientColumnKey, boolean>) => void;
+  statusFilter: ClientTone | "";
+  onStatusChange: (v: ClientTone | "") => void;
+  hostingFilter: OverviewFilters["hosting"];
+  onHostingChange: (v: OverviewFilters["hosting"]) => void;
+  paymentFilter: OverviewFilters["payment"];
+  onPaymentChange: (v: OverviewFilters["payment"]) => void;
+  attentionFilter: OverviewFilters["attention"];
+  onAttentionChange: (v: OverviewFilters["attention"]) => void;
+  assigneeFilter: string;
+  onAssigneeChange: (v: string) => void;
+  users: User[];
+  sortBy: SortBy;
+  onSortChange: (v: SortBy) => void;
+  activeCount: number;
+  onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -171,37 +125,96 @@ function ColumnsMenu({
         aria-expanded={open}
         className="btn btn-secondary btn-sm"
       >
-        Columns
+        More filters{activeCount > 0 ? ` (${activeCount})` : ""}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 z-20 mt-1 w-52 rounded-md border border-border bg-surface py-1 shadow-lg">
-            {(Object.keys(CLIENT_COLUMN_DEFAULTS) as ClientColumnKey[]).map((key) => (
-              <label
-                key={key}
-                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-fg hover:bg-surface-hover"
-              >
-                <input
-                  type="checkbox"
-                  checked={columns[key]}
-                  onChange={(e) => onChange({ ...columns, [key]: e.target.checked })}
-                />
-                {CLIENT_COLUMN_LABELS[key]}
+          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-border bg-surface p-3 shadow-lg">
+            <div className="space-y-2.5">
+              <label className="block text-xs text-fg-muted">
+                Status
+                <Select
+                  value={statusFilter}
+                  onChange={(e) => onStatusChange(e.target.value as ClientTone | "")}
+                  className="input mt-1 w-full"
+                >
+                  <option value="">Any status</option>
+                  {(Object.keys(CLIENT_STATUS_LABEL) as ClientTone[]).map((t) => (
+                    <option key={t} value={t}>
+                      {CLIENT_STATUS_LABEL[t]}
+                    </option>
+                  ))}
+                </Select>
               </label>
-            ))}
-            <div className="mt-1 border-t border-border pt-1">
+              <label className="block text-xs text-fg-muted">
+                Hosting
+                <Select
+                  value={hostingFilter}
+                  onChange={(e) => onHostingChange(e.target.value as OverviewFilters["hosting"])}
+                  className="input mt-1 w-full"
+                >
+                  <option value="">Any hosting</option>
+                  <option value="active">Active hosting</option>
+                </Select>
+              </label>
+              <label className="block text-xs text-fg-muted">
+                Payment status
+                <Select
+                  value={paymentFilter}
+                  onChange={(e) => onPaymentChange(e.target.value as OverviewFilters["payment"])}
+                  className="input mt-1 w-full"
+                >
+                  <option value="">Any payment status</option>
+                  <option value="overdue">Overdue payment</option>
+                </Select>
+              </label>
+              <label className="block text-xs text-fg-muted">
+                Tasks
+                <Select
+                  value={attentionFilter}
+                  onChange={(e) => onAttentionChange(e.target.value as OverviewFilters["attention"])}
+                  className="input mt-1 w-full"
+                >
+                  <option value="">Any tasks</option>
+                  <option value="required_tasks">Required tasks outstanding</option>
+                </Select>
+              </label>
+              <label className="block text-xs text-fg-muted">
+                Assigned to
+                <Select value={assigneeFilter} onChange={(e) => onAssigneeChange(e.target.value)} className="input mt-1 w-full">
+                  <option value="">Anyone assigned</option>
+                  <option value={UNASSIGNED}>Unassigned</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="block text-xs text-fg-muted">
+                Sort by
+                <Select value={sortBy} onChange={(e) => onSortChange(e.target.value as SortBy)} className="input mt-1 w-full">
+                  {(Object.keys(SORT_LABEL) as SortBy[]).map((s) => (
+                    <option key={s} value={s}>
+                      {SORT_LABEL[s]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+            {activeCount > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  onChange(CLIENT_COLUMN_DEFAULTS);
+                  onClear();
                   setOpen(false);
                 }}
-                className="block w-full px-3 py-1.5 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg"
+                className="mt-3 block w-full rounded px-1 py-1 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg"
               >
-                Reset to default
+                Clear filters
               </button>
-            </div>
+            )}
           </div>
         </>
       )}
@@ -209,152 +222,10 @@ function ColumnsMenu({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Desktop table row
-// ---------------------------------------------------------------------------
-
-function ClientTableRow({
-  row,
-  currency,
-  density,
-  columns,
-  isPreviewOpen,
-  onOpenPreview,
-}: {
-  row: EnrichedClient;
-  currency: string;
-  density: "comfortable" | "compact";
-  columns: Record<ClientColumnKey, boolean>;
-  isPreviewOpen: boolean;
-  onOpenPreview: () => void;
-}) {
-  const { client, tone, project } = row;
-  const padY = rowPadY(density);
-  // The sticky Client cell needs its own explicit background (a sticky
-  // element sits outside the row's normal paint order, so the row's own
-  // bg wouldn't reliably show through while scrolled) — `group-hover`
-  // keeps it in sync with the row's hover state, and the persistent
-  // preview-open tint overrides both while this row's panel is open.
-  const stickyBg = isPreviewOpen ? "bg-accent/5" : "bg-surface group-hover:bg-surface-hover";
-  return (
-    <tr className={`group align-top ${isPreviewOpen ? "bg-accent/5" : ""}`}>
-      <td className={`sticky left-0 z-10 ${padY} pr-4 ${stickyBg}`}>
-        <div className="flex items-start gap-1.5">
-          <Link
-            href={`/dashboard/clients/${client.id}`}
-            title={client.business_name}
-            className="block max-w-[15rem] truncate font-medium text-fg hover:underline"
-          >
-            {client.business_name}
-          </Link>
-          <AttentionIndicator row={row} currency={currency} />
-        </div>
-        <span className="block truncate text-xs text-fg-muted">{client.billing_email ?? "No contact on file"}</span>
-        <span className="mt-1 flex items-center gap-1.5">
-          <ClientStatusBadge tone={tone} />
-          {project && <ProjectStatusBadge project={project} />}
-        </span>
-      </td>
-      {columns.websites && (
-        <td className={`${padY} pr-4 text-sm`}>
-          <WebsitesField row={row} />
-        </td>
-      )}
-      {columns.hosting && (
-        <td className={`${padY} pr-4 text-sm`}>
-          <HostingField row={row} currency={currency} />
-        </td>
-      )}
-      {columns.nextPayment && (
-        <td className={`${padY} pr-4 text-sm`}>
-          <NextPaymentField row={row} currency={currency} />
-        </td>
-      )}
-      {columns.nextTask && (
-        <td className={`${padY} pr-4 text-sm`}>
-          <NextTaskField row={row} />
-        </td>
-      )}
-      <td className={`${padY} text-right`}>
-        <span className="inline-flex items-center gap-1">
-          <PreviewButton client={client} onOpen={onOpenPreview} />
-          <RowActionsMenu client={client} />
-        </span>
-      </td>
-    </tr>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Mobile card — name/status/next-task up front, everything else behind a
-// disclosure, per the spec's explicit "prioritise business name, attention
-// status, and next action" mobile requirement (not just a scrolled table).
-// ---------------------------------------------------------------------------
-
-function ClientMobileCard({
-  row,
-  currency,
-  onOpenPreview,
-}: {
-  row: EnrichedClient;
-  currency: string;
-  onOpenPreview: () => void;
-}) {
-  const { client, tone, project } = row;
-  return (
-    <div className="rounded-md border border-border bg-surface p-3">
-      <div className="flex items-start justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <Link href={`/dashboard/clients/${client.id}`} className="min-w-0 truncate font-medium text-fg hover:underline">
-            {client.business_name}
-          </Link>
-          <AttentionIndicator row={row} currency={currency} />
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <ClientStatusBadge tone={tone} />
-          <PreviewButton client={client} onOpen={onOpenPreview} />
-        </span>
-      </div>
-      <div className="mt-1 text-xs text-fg-muted">
-        <NextTaskField row={row} />
-      </div>
-      {project && (
-        <div className="mt-1.5">
-          <ProjectStatusBadge project={project} />
-        </div>
-      )}
-      <details className="mt-2 text-xs text-fg-muted">
-        <summary className="cursor-pointer select-none text-fg-subtle">More details</summary>
-        <div className="mt-2 space-y-1.5">
-          <p>{client.billing_email ?? "No contact on file"}</p>
-          <p>
-            <span className="text-fg-subtle">Websites: </span>
-            <WebsitesField row={row} />
-          </p>
-          <p>
-            <span className="text-fg-subtle">Hosting: </span>
-            <HostingField row={row} currency={currency} />
-          </p>
-          <p>
-            <span className="text-fg-subtle">Next payment: </span>
-            <NextPaymentField row={row} currency={currency} />
-          </p>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main tab
-// ---------------------------------------------------------------------------
-
 export function ClientsOverviewTab({ currency }: { currency: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [density, setDensity] = useDensity();
-  const [columns, setColumns] = useClientColumns();
 
   const [clients, setClients] = useState<Client[] | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -364,8 +235,6 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const [hostingPlans, setHostingPlans] = useState<RevenueHostingPlan[]>([]);
   const [obligations, setObligations] = useState<NextPaymentObligation[]>([]);
   const [checklistSummaries, setChecklistSummaries] = useState<ClientChecklistSummary[]>([]);
-  const [billingSnapshot, setBillingSnapshot] = useState<TodayBillingSnapshot | null>(null);
-  const [billingError, setBillingError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
@@ -374,6 +243,8 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const [paymentFilter, setPaymentFilter] = useState<OverviewFilters["payment"]>("");
   const [attentionFilter, setAttentionFilter] = useState<OverviewFilters["attention"]>("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [view, setViewState] = useState<ClientView>("all");
+  const [sortBy, setSortByState] = useState<SortBy>("recent");
 
   useDebouncedUrlSync("search", search);
 
@@ -392,8 +263,19 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
     const attention = searchParams.get("attention");
     setAttentionFilter(attention === "required_tasks" ? "required_tasks" : "");
     setAssigneeFilter(searchParams.get("assignee") ?? "");
+    setViewState(searchParams.get("view") === "attention" ? "attention" : "all");
+    const sort = searchParams.get("sort");
+    setSortByState(sort === "name" || sort === "payment" ? sort : "recent");
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  function setView(next: ClientView) {
+    updateParam("view", next === "attention" ? "attention" : null);
+  }
+
+  function setSortBy(next: SortBy) {
+    updateParam("sort", next === "recent" ? null : next);
+  }
 
   const previewId = searchParams.get("preview");
 
@@ -425,24 +307,15 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
     api.listAllHostingPlans().then(setHostingPlans).catch(() => {});
     api.getWorkspaceObligations().then(setObligations).catch(() => {});
     api.listChecklistSummaries().then(setChecklistSummaries).catch(() => {});
-    api
-      .getTodayBillingSnapshot()
-      .then((s) => {
-        setBillingError(null);
-        setBillingSnapshot(s);
-      })
-      .catch(() => setBillingError("Couldn't load the revenue summary."));
   }
 
   useEffect(load, []);
 
   // Opening/closing the quick-preview panel is an overlay action, not a
-  // different view of the list — excluding `preview` from the scroll
-  // key means the list's scroll position survives a round trip through
+  // different view of the grid — excluding `preview` from the scroll
+  // key means the grid's scroll position survives a round trip through
   // "Open Client →" even when the preview happened to be open at the
-  // moment of leaving (otherwise that trip's saved position lives under
-  // a `...&preview=<id>` bucket that a plain filtered URL never wrote
-  // to, so returning finds nothing and resets to the top).
+  // moment of leaving.
   const scrollKey = withParam(searchParams, "preview", null);
   useScrollRestoration(clients !== null, scrollKey);
 
@@ -491,12 +364,24 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const activeClientCount = useMemo(() => rows.filter((r) => r.tone === "active").length, [rows]);
   const liveWebsiteTotal = useMemo(() => liveWebsiteCount(projects), [projects]);
 
+  // Every overdue obligation + outstanding-required-task count, grouped
+  // one card per client — the same "existing attention rules" data
+  // source the old table's per-row indicator and the old separate
+  // "Needs attention" row both already read from. Keyed by clientId so
+  // it can be joined straight onto this grid's rows; a clientless
+  // (prospect) project's own card has no Client row here to join onto,
+  // so it's excluded rather than silently dropped elsewhere.
   const attentionCards = useMemo(
     () => buildAttentionCards(obligations.filter((o) => o.is_overdue), checklistSummaries, clients ?? []),
     [obligations, checklistSummaries, clients],
   );
+  const attentionByClientId = useMemo(
+    () => new Map(attentionCards.filter((c) => c.clientId).map((c) => [c.clientId as string, c])),
+    [attentionCards],
+  );
+  const attentionClientCount = attentionByClientId.size;
 
-  const activeFilterCount = [search, statusFilter, hostingFilter, paymentFilter, attentionFilter, assigneeFilter].filter(
+  const activeFilterCount = [statusFilter, hostingFilter, paymentFilter, attentionFilter, assigneeFilter, sortBy !== "recent"].filter(
     Boolean,
   ).length;
 
@@ -507,11 +392,12 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
     setPaymentFilter("");
     setAttentionFilter("");
     setAssigneeFilter("");
-    // Clearing filters is about the *filters*, not display preferences —
-    // density/columns are untouched, and `preview` (if a panel happens
-    // to be open) is preserved too, only the filter/search params go.
+    setSortByState("recent");
+    // Clearing filters is about the *filters*, not the view switch or
+    // display preferences — `view`/`preview` (if a panel happens to be
+    // open) are preserved too, only the filter/search/sort params go.
     let query = searchParams.toString();
-    for (const key of ["search", "clientStatus", "hosting", "payment", "attention", "assignee"]) {
+    for (const key of ["search", "clientStatus", "hosting", "payment", "attention", "assignee", "sort"]) {
       query = withParam(new URLSearchParams(query), key, null);
     }
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
@@ -534,94 +420,79 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
           { status: statusFilter, hosting: hostingFilter, payment: paymentFilter, attention: attentionFilter },
         ),
       )
+      .filter((row) => view !== "attention" || attentionByClientId.has(row.client.id))
       .sort((a, b) => {
+        if (sortBy === "name") return a.client.business_name.localeCompare(b.client.business_name);
+        if (sortBy === "payment") {
+          const aDate = a.nextPayment?.due_date ?? "9999";
+          const bDate = b.nextPayment?.due_date ?? "9999";
+          return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+        }
         const aKey = a.lastActivity ?? a.client.created_at;
         const bKey = b.lastActivity ?? b.client.created_at;
         return aKey < bKey ? 1 : -1;
       });
-  }, [clients, rows, search, assigneeFilter, statusFilter, hostingFilter, paymentFilter, attentionFilter]);
+  }, [clients, rows, search, assigneeFilter, statusFilter, hostingFilter, paymentFilter, attentionFilter, view, attentionByClientId, sortBy]);
 
   // A client can vanish from the current result set between the preview
   // being opened and this render (a filter change, a reload racing a
   // deletion elsewhere) — look it up defensively and simply don't render
   // the panel if it's gone, rather than crashing on a stale reference.
   const previewRow = previewId ? (rows.find((r) => r.client.id === previewId) ?? null) : null;
-  const headerPadY = rowPadY(density);
 
   return (
     <div>
-      {/* Compact summary strip — client-workspace figures first (Active
-          clients, Live websites), then the two Revenue figures most
-          relevant to "what needs attention" here; the full receipts
-          breakdown lives on the Revenue tab, not duplicated here. */}
-      {billingError ? (
-        <ErrorState message={billingError} onRetry={load} compact />
-      ) : (
-        <MetricGrid className="sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4">
-          {!clients || !billingSnapshot
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="mt-2 h-6 w-14" />
-                </div>
-              ))
-            : [
-                <Metric
-                  key="active"
-                  label="Active clients"
-                  value={activeClientCount}
-                  href={`${pathname}?${withParam(searchParams, "clientStatus", "active")}`}
-                />,
-                <Metric
-                  key="live"
-                  label="Live websites"
-                  value={liveWebsiteTotal}
-                  href="/dashboard/clients?tab=websites"
-                />,
-                <Metric
-                  key="mrr"
-                  label="Expected monthly hosting revenue"
-                  value={formatMoney(billingSnapshot.expected_mrr_cents, currency)}
-                  hint="Expected — not money received"
-                  href="/dashboard/clients?tab=revenue&revenueTab=hosting"
-                />,
-                <Metric
-                  key="overdue"
-                  label="Overdue balance"
-                  value={formatMoney(billingSnapshot.overdue_cents, currency)}
-                  hint={
-                    billingSnapshot.overdue_client_count > 0
-                      ? `${billingSnapshot.overdue_client_count} client${billingSnapshot.overdue_client_count === 1 ? "" : "s"}`
-                      : "No clients overdue"
-                  }
-                  href="/dashboard/clients?tab=revenue&revenueTab=upcoming"
-                />,
-              ]}
-        </MetricGrid>
-      )}
-
-      {/* Needs attention — one card per client, grouping every overdue
-          payment and their required-tasks-outstanding count together
-          (see buildAttentionCards). Each row's own small
-          AttentionIndicator dot shows the same underlying signal for a
-          different purpose (spot it in place while browsing the list,
-          vs. scan the whole workspace here) — neither is a redundant
-          copy of the other's UI. */}
-      {!clients ? <AttentionCardsSkeleton /> : <AttentionCards cards={attentionCards} projects={projects} />}
+      {/* Compact summary — one restrained line, not a grid of tiles.
+          Detailed financial totals (expected revenue, overdue balance)
+          live on the Revenue tab, not duplicated here. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        {!clients ? (
+          <>
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-36" />
+          </>
+        ) : (
+          <>
+            <Link href={`${pathname}?${withParam(searchParams, "clientStatus", "active")}`} className="text-fg-muted hover:text-fg hover:underline">
+              <span className="font-semibold tabular-nums text-fg">{activeClientCount}</span> active client
+              {activeClientCount === 1 ? "" : "s"}
+            </Link>
+            <span className="text-fg-subtle" aria-hidden="true">
+              ·
+            </span>
+            <Link href="/dashboard/clients?tab=websites" className="text-fg-muted hover:text-fg hover:underline">
+              <span className="font-semibold tabular-nums text-fg">{liveWebsiteTotal}</span> live website
+              {liveWebsiteTotal === 1 ? "" : "s"}
+            </Link>
+            <span className="text-fg-subtle" aria-hidden="true">
+              ·
+            </span>
+            <button
+              type="button"
+              onClick={() => setView("attention")}
+              className={`hover:underline ${attentionClientCount > 0 ? "text-red-700 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300" : "text-fg-muted hover:text-fg"}`}
+            >
+              <span className="font-semibold tabular-nums">{attentionClientCount}</span> client
+              {attentionClientCount === 1 ? "" : "s"} needing attention
+            </button>
+          </>
+        )}
+      </div>
 
       {showAdd && (
         <form onSubmit={handleCreate} className="mt-6 flex max-w-2xl flex-wrap items-end gap-2 rounded-md border border-border p-4">
           <div className="w-full text-xs text-fg-muted">
             For a client with no lead to convert — a referral, or a deal made outside the pipeline.
           </div>
-          <input
+          <Input
             required
             placeholder="Business name"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             className="input flex-1"
           />
-          <input
+          <Input
             placeholder="Billing email (optional)"
             value={billingEmail}
             onChange={(e) => setBillingEmail(e.target.value)}
@@ -633,106 +504,59 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         </form>
       )}
 
-      {/* Search + filters, directly above the list, with the one primary
-          action (Add Client) aligned alongside rather than under a
-          redundant second "Clients" heading. */}
+      {/* One toolbar: search, the All clients/Needs attention switch,
+          More filters, and Add Client — aligned in a single row, no
+          second filter bar underneath. */}
       {clients && clients.length > 0 && (
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          <input
+          <Input
             placeholder="Search clients…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input w-56"
           />
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              const next = e.target.value as ClientTone | "";
-              setStatusFilter(next);
-              updateParam("clientStatus", next || null);
+          <ViewSwitch active={view} onChange={setView} />
+          <MoreFiltersMenu
+            statusFilter={statusFilter}
+            onStatusChange={(v) => {
+              setStatusFilter(v);
+              updateParam("clientStatus", v || null);
             }}
-            className="input w-auto"
-            aria-label="Filter by status"
-          >
-            <option value="">Any status</option>
-            {(Object.keys(CLIENT_STATUS_LABEL) as ClientTone[]).map((tone) => (
-              <option key={tone} value={tone}>
-                {CLIENT_STATUS_LABEL[tone]}
-              </option>
-            ))}
-          </select>
-          <select
-            value={hostingFilter}
-            onChange={(e) => {
-              const next = e.target.value as OverviewFilters["hosting"];
-              setHostingFilter(next);
-              updateParam("hosting", next || null);
+            hostingFilter={hostingFilter}
+            onHostingChange={(v) => {
+              setHostingFilter(v);
+              updateParam("hosting", v || null);
             }}
-            className="input w-auto"
-            aria-label="Filter by hosting"
-          >
-            <option value="">Any hosting</option>
-            <option value="active">Active hosting</option>
-          </select>
-          <select
-            value={paymentFilter}
-            onChange={(e) => {
-              const next = e.target.value as OverviewFilters["payment"];
-              setPaymentFilter(next);
-              updateParam("payment", next || null);
+            paymentFilter={paymentFilter}
+            onPaymentChange={(v) => {
+              setPaymentFilter(v);
+              updateParam("payment", v || null);
             }}
-            className="input w-auto"
-            aria-label="Filter by payment status"
-          >
-            <option value="">Any payment status</option>
-            <option value="overdue">Overdue payment</option>
-          </select>
-          <select
-            value={attentionFilter}
-            onChange={(e) => {
-              const next = e.target.value as OverviewFilters["attention"];
-              setAttentionFilter(next);
-              updateParam("attention", next || null);
+            attentionFilter={attentionFilter}
+            onAttentionChange={(v) => {
+              setAttentionFilter(v);
+              updateParam("attention", v || null);
             }}
-            className="input w-auto"
-            aria-label="Filter by tasks needing attention"
-          >
-            <option value="">Any tasks</option>
-            <option value="required_tasks">Required tasks outstanding</option>
-          </select>
-          <select
-            value={assigneeFilter}
-            onChange={(e) => {
-              setAssigneeFilter(e.target.value);
-              updateParam("assignee", e.target.value || null);
+            assigneeFilter={assigneeFilter}
+            onAssigneeChange={(v) => {
+              setAssigneeFilter(v);
+              updateParam("assignee", v || null);
             }}
-            className="input w-auto"
-            aria-label="Filter by assignee"
-          >
-            <option value="">Anyone assigned</option>
-            <option value={UNASSIGNED}>Unassigned</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-          {activeFilterCount > 0 && (
+            users={users}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            activeCount={activeFilterCount}
+            onClear={clearFilters}
+          />
+          {(search || activeFilterCount > 0) && (
             <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
               Clear filters
             </button>
           )}
 
-          <div className="ml-auto flex items-center gap-2">
-            {/* Table-only controls — mobile always uses the card list below, where column visibility and density don't apply. */}
-            <span className="hidden items-center gap-2 sm:flex">
-              <ColumnsMenu columns={columns} onChange={setColumns} />
-              <DensityToggle density={density} onChange={setDensity} />
-            </span>
-            <button onClick={() => setShowAdd((v) => !v)} className="btn btn-primary btn-sm">
-              {showAdd ? "Cancel" : "+ Add Client"}
-            </button>
-          </div>
+          <button onClick={() => setShowAdd((v) => !v)} className="btn btn-primary btn-sm ml-auto">
+            {showAdd ? "Cancel" : "+ Add Client"}
+          </button>
         </div>
       )}
 
@@ -749,8 +573,10 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
       )}
 
       {!clients && !error && (
-        <div className="mt-4">
-          <TableSkeleton rows={6} cols={6} />
+        <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <ClientCardSkeleton key={i} />
+          ))}
         </div>
       )}
 
@@ -768,61 +594,53 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         </div>
       )}
 
-      {visibleRows && clients && clients.length > 0 && visibleRows.length === 0 && (
+      {visibleRows && clients && clients.length > 0 && visibleRows.length === 0 && view === "attention" && (
         <div className="mt-4">
-          <EmptyState title="No clients found" description="Try adjusting your search or filters." action={
-            <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-              Clear filters
-            </button>
-          } />
+          <EmptyState
+            title="No clients need attention"
+            description="Every client is caught up — no overdue payments or outstanding required tasks right now."
+            action={
+              (search || activeFilterCount > 0) && (
+                <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                  Clear filters
+                </button>
+              )
+            }
+          />
+        </div>
+      )}
+
+      {visibleRows && clients && clients.length > 0 && visibleRows.length === 0 && view === "all" && (
+        <div className="mt-4">
+          <EmptyState
+            title="No clients found"
+            description="Try adjusting your search or filters."
+            action={
+              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                Clear filters
+              </button>
+            }
+          />
         </div>
       )}
 
       {visibleRows && visibleRows.length > 0 && (
-        <>
-          <div className="table-shell mt-3 hidden sm:block">
-            <table className="table">
-              <thead>
-                <tr>
-                  {/* Header padding tracks the same density as the body
-                      rows below (py-1.5/py-2.5) — previously fixed at
-                      py-2 regardless of density, so Compact rows visibly
-                      out-tightened their own header. */}
-                  <th className={`sticky left-0 z-10 bg-surface-subtle px-3 ${headerPadY}`}>Client</th>
-                  {columns.websites && <th className={`px-3 ${headerPadY}`}>Websites</th>}
-                  {columns.hosting && <th className={`px-3 ${headerPadY}`}>Hosting</th>}
-                  {columns.nextPayment && <th className={`px-3 ${headerPadY}`}>Next payment</th>}
-                  {columns.nextTask && <th className={`px-3 ${headerPadY}`}>Next task</th>}
-                  <th className={`px-3 ${headerPadY}`}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row) => (
-                  <ClientTableRow
-                    key={row.client.id}
-                    row={row}
-                    currency={currency}
-                    density={density}
-                    columns={columns}
-                    isPreviewOpen={previewId === row.client.id}
-                    onOpenPreview={() => openPreview(row.client.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-3 space-y-2 sm:hidden">
-            {visibleRows.map((row) => (
-              <ClientMobileCard
+        <div className="animate-fade-in mt-3 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+          {visibleRows.map((row) => {
+            const card = attentionByClientId.get(row.client.id);
+            const issueCount = card ? card.payments.length + (card.requiredTasksOutstanding > 0 ? 1 : 0) : 0;
+            return (
+              <ClientCard
                 key={row.client.id}
                 row={row}
                 currency={currency}
+                issueCount={issueCount}
+                isPreviewOpen={previewId === row.client.id}
                 onOpenPreview={() => openPreview(row.client.id)}
               />
-            ))}
-          </div>
-        </>
+            );
+          })}
+        </div>
       )}
 
       {previewRow && <ClientPreviewPanel row={previewRow} currency={currency} onClose={closePreview} />}

@@ -17,6 +17,35 @@ type StatusFilter = "active" | "paused" | "cancelled" | "all";
 
 type PlanModal = { type: "pause" | "resume" | "cancel"; plan: HostingPlan } | { type: "fee"; plan: HostingPlan };
 
+/** The Hosting view's own secondary filter — plan status, including
+ * "All" so historical (cancelled) plans stay reachable — kept inside
+ * the shared "More filters" popover rather than a bare select sitting
+ * alone in the toolbar. */
+export function HostingFilterPanel() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const status = (searchParams.get("status") as StatusFilter | null) ?? "active";
+
+  function setStatus(next: StatusFilter) {
+    router.replace(`${pathname}?${withParam(searchParams, "status", next === "active" ? null : next)}`, {
+      scroll: false,
+    });
+  }
+
+  return (
+    <label className="block text-xs text-fg-muted">
+      Status
+      <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="input mt-1 w-full">
+        <option value="active">Active</option>
+        <option value="paused">Paused</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="all">All (includes historical)</option>
+      </select>
+    </label>
+  );
+}
+
 /** Row-level "⋯" menu — collapses Change fee/Pause/Resume/Cancel into one discoverable control instead of a button cluster in every row. */
 function PlanActionsMenu({ plan, onAction }: { plan: RevenueHostingPlan; onAction: (modal: PlanModal) => void }) {
   const [open, setOpen] = useState(false);
@@ -98,15 +127,17 @@ export function HostingPlansTab({
   currency,
   dataVersion,
   onChanged,
+  onClearAll,
 }: {
   currency: string;
   dataVersion: number;
   onChanged: () => void;
+  /** Clears the shared search box too — owned by the parent toolbar; see PaymentsTab's identical prop for why this can't just be a local setParam("q", null). */
+  onClearAll: () => void;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const status = (searchParams.get("status") as StatusFilter | null) ?? "active";
+  const search = (searchParams.get("q") ?? "").trim().toLowerCase();
 
   const [plans, setPlans] = useState<RevenueHostingPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,23 +155,24 @@ export function HostingPlansTab({
 
   useEffect(load, [dataVersion]);
 
-  function setStatus(next: StatusFilter) {
-    router.replace(`${pathname}?${withParam(searchParams, "status", next === "active" ? null : next)}`, {
-      scroll: false,
-    });
-  }
-
   function closeAndReload() {
     setModal(null);
     load();
     onChanged();
   }
 
-  const visible = useMemo(() => {
+  const byStatus = useMemo(() => {
     if (!plans) return [];
     if (status === "all") return plans;
     return plans.filter((p) => p.status === status);
   }, [plans, status]);
+
+  const visible = useMemo(() => {
+    if (!search) return byStatus;
+    return byStatus.filter(
+      (p) => (p.client_business_name ?? "").toLowerCase().includes(search) || p.project_name.toLowerCase().includes(search),
+    );
+  }, [byStatus, search]);
 
   if (error) {
     return <ErrorState message={error} onRetry={load} compact />;
@@ -152,15 +184,6 @@ export function HostingPlansTab({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="input w-auto" aria-label="Filter by status">
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="all">All</option>
-        </select>
-      </div>
-
       {plans.length === 0 ? (
         <div className="mt-4">
           <EmptyState
@@ -170,10 +193,20 @@ export function HostingPlansTab({
         </div>
       ) : visible.length === 0 ? (
         <div className="mt-4">
-          <EmptyState title={`No ${status} hosting plans`} description="Try a different status filter." />
+          <EmptyState
+            title={search ? "No matching hosting plans" : `No ${status} hosting plans`}
+            description="Try a different search or status filter."
+            action={
+              (search || status !== "active") && (
+                <button onClick={onClearAll} className="btn btn-secondary btn-sm">
+                  Clear filters
+                </button>
+              )
+            }
+          />
         </div>
       ) : (
-        <div className="table-shell mt-4">
+        <div className="table-shell mt-3">
           <table className="table">
             <thead>
               <tr>
@@ -210,7 +243,17 @@ export function HostingPlansTab({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoney(plan.monthly_fee_cents, currency)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-fg-muted">
-                    {plan.status === "cancelled" ? "—" : formatDate(plan.next_due_date)}
+                    {plan.status === "cancelled" ? (
+                      "—"
+                    ) : (
+                      <Link
+                        href={`/dashboard/clients?tab=revenue&revenueTab=upcoming&calCursor=${plan.next_due_date}&day=${plan.next_due_date}`}
+                        className="hover:underline"
+                        title="View in Upcoming"
+                      >
+                        {formatDate(plan.next_due_date)}
+                      </Link>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {plan.outstanding_cents > 0 ? (

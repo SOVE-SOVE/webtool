@@ -11,6 +11,967 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-17 (today box grid alignment) — Aligned the Today box's edges to the Overdue box via a shared grid
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation. Edited: `dashboard/
+clients/ClientsRevenueTab.tsx` only. No dependency, no backend change.
+
+**What changed.** The Today box used a fixed `w-80` (320px) width,
+positioned via `ml-auto` in a `flex` toolbar row — its width only ever
+coincidentally resembled the Overdue box's own width (a fluid `1fr` of
+`SummaryRow`'s separate `grid grid-cols-1 sm:grid-cols-3 gap-3`), and
+never matched it exactly except by chance at one specific viewport
+width. Made the toolbar row itself a grid using the *exact same*
+column template (`grid grid-cols-1 items-start gap-3 sm:grid-cols-3`)
+— the toolbar controls (view switch, search, More filters, Clear
+filters) span the first two columns (`sm:col-span-2`), and `TodayBox`
+sits directly in the third, un-wrapped. Two independent grid
+containers with an identical column template and the same total width
+(both are direct children of the same page-level `p-4 sm:p-6`
+container, no other width-affecting ancestor between them) produce
+pixel-identical column boundaries — this is deterministic CSS Grid
+math, not an approximation, so Today's left/right edges now genuinely
+equal Overdue's at every width rather than merely looking close.
+
+`TODAY_BOX_SHELL` changed from `"w-80 shrink-0 ..."` to `"w-full ..."`
+— it now fills whatever its grid cell computes to (the point of the
+whole change: no hardcoded pixel width anywhere, satisfying "keep the
+alignment responsive"), the same way `Metric`'s own boxes already fill
+their SummaryRow cells.
+
+`items-start` on the new grid deliberately overrides CSS Grid's own
+default `align-items: stretch` for *this* grid only — without it, the
+shorter toolbar-controls group would stretch to Today's own (taller)
+row height and its buttons would end up vertically centred mid-row,
+the same floating-controls problem worked through two sessions ago.
+`SummaryRow`'s own, separate grid keeps its default stretch untouched
+(a different DOM node — setting `items-start` here has no effect on
+it), so Received/Expected/Overdue still get equal height from each
+other exactly as before.
+
+**A real, acknowledged side effect of dropping the fixed width:** on
+mobile (`<sm:`, same breakpoint the 3 summary boxes already use),
+`TodayBox` now goes genuinely full-width (matching whatever the page's
+own content width is) rather than sitting at a fixed 320px. This is
+the correct, intended consequence of "responsive rather than hardcoded"
+and of literally sharing SummaryRow's own column rules — and it makes
+Today's mobile behaviour consistent with the 3 boxes above it (which
+already go full-width below `sm:`) rather than being the one box on
+the page with a fixed pixel width regardless of screen size.
+
+**Preserved, unchanged:** Today box's own content, click behaviour,
+loading/error states, demo isolation, and its position in the page
+(still the row directly below SummaryRow, above the trend
+chart/calendar — nothing moved vertically). Record Payment's new
+position in the calendar's own toolbar (from the immediately preceding
+session) — untouched.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean; `vitest`
+312/312 (no pure-logic files touched); production build succeeded with
+the correct route table (`.next` cleared first); dev server
+smoke-tested at `/dashboard/clients?tab=revenue` — HTTP 200, zero
+compile errors in the server log.
+
+**Not verified — this task asked for it explicitly ("Verify the
+alignment in the running browser at desktop widths," "Provide a
+screenshot showing both boxes"):** neither happened. The
+Claude-in-Chrome extension did not connect this session — the tenth
+consecutive session in this project where it has failed to connect at
+all. The edge alignment described above rests on CSS Grid's documented,
+deterministic column-sizing behaviour (verified by reasoning through
+the mechanics, including confirming both grids share the same ancestor
+padding and no other width-affecting element sits between them) rather
+than on seeing two aligned boxes on screen. No screenshot was captured.
+The page was opened in Safari (`open -a Safari`) for the user to check
+directly, since this session's browser tools only drive Chrome.
+
+---
+
+## 2026-09-17 (record payment relocation) — Moved Record Payment into the calendar's own toolbar
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation. Edited: `dashboard/
+clients/RevenueCalendar.tsx`, `dashboard/clients/PaymentsTab.tsx`,
+`dashboard/clients/UpcomingOverdueTab.tsx`, `dashboard/clients/
+ClientsRevenueTab.tsx`. No dependency, no backend change.
+
+**What moved.** "Record Payment" (plus its small currency label) used
+to sit beside the Today summary box, in `ClientsRevenueTab`'s own
+toolbar row. It now lives inside `RevenueCalendar`'s own navigation
+row, immediately after the "→" (next) button, in the same button
+cluster as that calendar's own "Today" (a date-navigation control,
+distinct from the larger Today *summary box* one level up — the
+request's own clarification, and a distinction already load-bearing
+elsewhere in this codebase). Same `.btn-sm` sizing and `gap-2` spacing
+as its new row-mates, so it reads as native to that toolbar rather than
+a bolted-on addition.
+
+**Why three other files needed touching, not just one.** `RevenueCalendar`
+is shared — rendered once by `PaymentsTab` and once by
+`UpcomingOverdueTab`, but the "Record Payment" action itself (the
+`showRecordPayment` state and the `RecordPaymentLauncher` it opens) is
+owned by their shared parent, `ClientsRevenueTab`, two levels up. Added
+one new `onRecordPayment: () => void` prop to `RevenueCalendar`, threaded
+it through both `PaymentsTab` and `UpcomingOverdueTab` (each already
+receiving/forwarding several other calendar-level callbacks the same
+way, e.g. `onCursorChange`/`onGridChange`), and wired both call sites in
+`ClientsRevenueTab` to the exact same `() => setShowRecordPayment(true)`
+that used to sit inline in its own JSX. The state, the modal, and its
+save/close behaviour are completely untouched — only which button
+triggers it moved. `HostingPlansTab` deliberately did *not* get this
+prop: it never renders `RevenueCalendar` (it's a plan-management table,
+not a calendar view), so Record Payment is no longer reachable from the
+Hosting view at all — a direct, literal consequence of "place it in the
+calendar's own toolbar" with no request to keep a second copy anywhere
+Record Payment used to be reachable from every sub-tab.
+
+**Today summary box:** untouched except for one simplification —
+its wrapping `<div className="ml-auto flex flex-wrap items-center
+gap-3">` (previously sized to hold both TodayBox and the
+Record-Payment-plus-currency cluster side by side) collapsed to a bare
+`<div className="ml-auto">`, since it now wraps only the one child. No
+prop, content, or behaviour of `TodayBox` itself changed.
+
+**One `UpcomingOverdueTab` naming note worth recording:** that file
+already had a *local* `handleRecordPayment(o)` function — a completely
+different thing (opens `RecordPaymentModal` for one specific obligation
+row, from the day-detail panel or overdue strip). The new prop is named
+`onRecordPayment` (the client/project-picker launcher, matching what
+the old beside-Today-box button opened) — same word, different scope,
+no actual collision, but flagged with an explicit comment on the new
+prop so a future reader doesn't conflate the two.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on all four
+touched files; `vitest` 312/312 (no pure-logic files touched);
+production build succeeded with the correct route table (`.next`
+cleared first); dev server smoke-tested at `/dashboard/
+clients?tab=revenue` — HTTP 200, zero compile errors in the server log.
+
+**Not verified — this task asked for it explicitly ("Verify the
+placement and payment form in the running browser," "Provide a
+screenshot"):** neither happened. The Claude-in-Chrome extension did
+not connect this session — the ninth consecutive session in this
+project where it has failed to connect at all. The button's new
+position, its alignment against the other calendar-toolbar controls,
+its wrapping behaviour at narrow widths, and the payment form it opens
+were none of them seen rendered — only reasoned about from the JSX/
+Tailwind classes involved. No screenshot was captured. The page was
+opened in Safari (`open -a Safari`) for the user to check directly,
+since this session's browser tools only drive Chrome.
+
+---
+
+## 2026-09-17 (revenue spacing polish) — Toolbar restructure + calendar/panel spacing cleanup
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation. Edited: `dashboard/
+clients/ClientsRevenueTab.tsx`, `dashboard/clients/RevenueCalendar.tsx`,
+`dashboard/clients/DayDetailPanel.tsx`. No dependency, no backend
+change. Deliberately left unchanged (see reasoning below):
+`RecordPaymentModal.tsx`, `CorrectPaymentModal.tsx`,
+`RecordPaymentLauncher.tsx`, `PaymentDetailPanel.tsx`,
+`HostingPlansTab.tsx`'s table, `PaymentsTab.tsx`/`UpcomingOverdueTab.tsx`'s
+own status/filter-panel spacing, `SummaryRow`'s Breakdown disclosure.
+
+**Audit approach.** Before touching anything, read every layout-bearing
+file in this tab (`ClientsRevenueTab`, `RevenueCalendar`,
+`DayDetailPanel`, `PaymentsTab`, `UpcomingOverdueTab`, `HostingPlansTab`,
+plus the shared billing forms) against each of the request's specific
+bullets, and cross-checked `ClientsOverviewTab.tsx` (a sibling tab with
+an already-established single-row toolbar: search + view switch +
+filters + primary action) as the "existing shared layout rule" to
+reuse rather than invent a new pattern.
+
+**1. Toolbar restructured into one deliberate row.** Previously two
+tiers — the Payments/Upcoming/Hosting switch on its own row, then
+search/filters below it, with Today+Record Payment as a separate
+top-aligned block to the right. Now one row, mirroring
+`ClientsOverviewTab`'s own toolbar exactly: a left group (view switch,
+search, More filters, Clear filters, `items-center` so its own
+similarly-sized controls line up against each other) and a right group
+(Today + Record Payment, pinned via `ml-auto` — the same mechanism
+Overview's own "+ Add Client" already uses) as two top-aligned
+siblings. Top-aligning the two GROUPS (rather than `items-center` on
+the whole row) was a deliberate choice: centering everything against
+TodayBox's height would have made the small toolbar controls float
+mid-row once Today's card is clearly taller than a search box — the
+one thing that does need to vertically centre is Record Payment
+specifically against Today, which its own inner group's `items-center`
+already handles.
+
+**One assumption reconsidered and reverted mid-session:** I initially
+read "button/input height consistency" as meaning the search input's
+plain `.input` height (which uses `.btn`'s own `py-1.5` scale) should
+match "More filters"/"Record Payment" (`.btn-sm`, a visibly shorter
+`py-1` scale) and started removing `-sm` from both. Before finishing
+that change I checked `ClientsOverviewTab.tsx`'s own identical
+toolbar and found it uses the *exact same* `.input` + `.btn-sm`
+pairing (its own "More filters" and "+ Add Client" are both
+`btn-sm` beside its own plain `.input` search box) — meaning this
+"mismatch" is the established, app-wide toolbar convention, not a
+Revenue-specific inconsistency. Reverted to `btn-sm` on both, to stay
+consistent WITH that convention rather than introduce a new one just
+here.
+
+**2. Today box internal spacing.** Replaced a mix of individually-set
+`mt-1`/`mt-1.5`/`space-y-1.5` (a real, if small, inconsistency — one
+child used a 4px top gap while every sibling around it used 6px) with
+one `flex flex-col gap-1.5` wrapper, so every visible section (header,
+rows, the optional "Filtered by client" note, the footer) shares
+exactly one declared rhythm instead of several one-off values that
+could drift apart independently. Rewrote the loading skeleton to mirror
+that same structure and gap value (previously `mt-2.5`/`space-y-2`,
+its own different scale), so the skeleton's shape and rough height now
+match what replaces it rather than jumping on load.
+
+**3. Calendar header row.** The Month/Week segmented toggle inherited
+`text-sm` from its own wrapper while the prev/Today/next buttons beside
+it use `.btn-sm` (effectively `text-xs`) — a small but real
+within-the-same-row font-size mismatch (this component is new this
+session, not a cross-page convention, so — unlike the toolbar case
+above — there was no existing precedent to defer to here). Added an
+explicit `text-xs` to the toggle's wrapper to match.
+
+**4. Calendar entry padding.** "+N more" used `px-1.5 py-0.5` plus its
+own extra `mt-0.5` on top of the day cell's shared `space-y-1` gap,
+while `EntryButton` (the entries above it) used `px-1.5 py-1` with no
+extra margin. Changed "+N more" to the identical `px-1.5 py-1` and
+dropped the redundant `mt-0.5`, so entries and "+N more" now share
+identical padding and an identical, single-source gap between every
+item in the day cell (not entries at 4px apart and "+N more" sitting
+6px from the last one).
+
+**5. Day-detail panel group heading.** The "Received today"/"Due
+today" group heading (added two sessions ago, for the Today box's
+combined view) carried a stray `px-0.5` that offset it 2px from the
+row cards' own left edge below it for no clear reason. Removed it so
+the heading sits flush with the cards it labels.
+
+**Reviewed and left unchanged, with reasoning:** `RecordPaymentModal`/
+`CorrectPaymentModal` are shared across Client Billing and Project
+Payment Summary too, not Revenue-only — their own spacing (`mt-4` after
+the title, `mt-3` between field groups, `mt-5` before the action row)
+is already internally consistent, and touching them risks changing
+pages outside this task's stated scope. `PaymentDetailPanel` and
+`RecordPaymentLauncher` (Revenue-only in practice, though they live in
+the shared `components/billing/` directory) were read in full and
+already use one consistent `space-y-4`/`mt-3`/`mt-4` rhythm each — no
+issue found worth changing. `HostingPlansTab`'s table already uses
+uniform `px-3 py-2` cells throughout. `OverdueStrip`/`NoDueDateStrip`
+in `UpcomingOverdueTab` already share identical padding with each
+other. `SummaryRow`'s three `Metric` boxes already get equal width,
+padding, and gap from the shared `grid grid-cols-1 sm:grid-cols-3
+gap-3` + `Metric`'s own fixed `px-4 py-3` shell, and equal height from
+CSS Grid's own default `align-items: stretch` (no explicit override
+present anywhere that would defeat it) — verified by reading the CSS
+mechanics involved, not by seeing it rendered.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean across every
+touched file; `vitest` 312/312 (no pure-logic files touched); production
+build succeeded with the correct route table (`.next` cleared first);
+dev server smoke-tested at `/dashboard/clients?tab=revenue` — HTTP 200,
+zero compile errors in the server log.
+
+**Not verified — stated plainly, as this task explicitly required it
+twice over ("Inspect the actual running page first" and "Verify the
+real page at approximately 1280px and 1440px... and on mobile"):**
+none of that happened. The Claude-in-Chrome extension did not connect
+this session — the eighth consecutive session in this project where it
+has failed to connect at all. Every fix above (the CSS Grid
+stretch-behaviour reasoning for equal summary-box heights in
+particular) was verified by reading component code and Tailwind/CSS
+semantics, not by looking at the rendered page — which is a
+meaningfully weaker form of verification than an "inspect, then
+refine" pass genuinely requires, and this task asked for that pass
+explicitly, twice. No before/after screenshots were captured. The page
+was opened in Safari (`open -a Safari`) for the user to inspect
+directly, since this session's browser tools only drive Chrome. If
+anything above doesn't actually read as "balanced, consistent, and
+evenly spaced" once seen, that's the expected outcome of code-only
+verification on a visual task, not evidence of a careless pass.
+
+---
+
+## 2026-09-17 (today box hierarchy) — Rebuilt the Today box's internal text/spacing hierarchy
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation. Edited: `dashboard/
+clients/ClientsRevenueTab.tsx` only — just `TodayBox`'s own internals
+plus one new local helper (`shortDateLabel`). Its outer shell
+(`TODAY_BOX_SHELL`, `w-80`), its position beside Record Payment, its
+click behaviour, and every prop it receives are all unchanged from the
+prior session — this pass only touched what's rendered *inside* the
+button. No other files, no dependency, no backend change.
+
+**What changed.** Replaced the 2-column "Received/Due" grid (each
+column carrying its own count baked into the label, e.g. "Received ·
+2") with the requested header → two rows → footer structure:
+
+- **Header**: "Today" left, a new `shortDateLabel()` helper's "17 Sep"
+  right — shorter than the existing `formatDate` (which adds the
+  year); the year was the one genuinely redundant part of a date next
+  to a box that already says "Today". Kept local to this file rather
+  than added to `lib/format.ts`, since nothing else in the app
+  currently wants a year-less date.
+- **Two rows**: `Received — amount` / `Due today — amount`, each a
+  `flex justify-between items-baseline` line — label small and muted
+  (`text-xs text-fg-muted`, matching `Metric`'s own label token) left,
+  amount right-aligned at a consistent `text-lg font-semibold
+  tabular-nums` regardless of which row or how large the number is
+  (no `truncate`, so a long amount wraps rather than clips or shrinks).
+  Counts moved entirely out of the rows and into the footer — they'd
+  been doing the same job twice.
+- **Footer**: one quiet `text-[11px]` line — "N payments due · View
+  details" when anything's outstanding, or "N payments received · View
+  details" when nothing is (never "0 payments due · View details",
+  which the prior per-row design could have produced for a same-day
+  fully-paid balance). Real counts, not any hard-coded number.
+- **Empty state**: "No activity today." — one line, still fully
+  clickable, replacing "No payments recorded or due today."
+- **Demo label**: exactly one small `text-[10px] uppercase` "Demo" tag,
+  inline right after "Due today" specifically (the row it actually
+  affects) rather than a separate sentence — same `demoActive` prop,
+  same underlying isolation from the prior session (still fully
+  excluded from any real total, still refused before any real payment
+  endpoint is ever called), just relabelled to match the new hierarchy.
+- **Filtered note**: kept as its own small line (unchanged in meaning,
+  reworded to fit the new spacing) rather than folded into the footer,
+  so the footer's own wording stays literally what was requested.
+- **Loading skeleton**: resized to the new shape (label bar pair, two
+  full-width row bars, one footer bar) instead of the old 2-column
+  skeleton. Error/retry state unchanged in behaviour, just re-padded to
+  match.
+- **Accessibility**: `aria-label` rebuilt to read the new hierarchy in
+  full sentences ("Today, 17 Sep. Received $X. Due today $Y. N payments
+  due.") rather than reusing the visual footer's "· View details" CTA
+  verbatim (screen-reader users already know it's a button).
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean across the whole
+`dashboard/clients/` directory; `vitest` 312/312 (no pure-logic files
+touched); production build succeeded with the correct route table
+(`.next` cleared first); dev server smoke-tested at `/dashboard/
+clients?tab=revenue` — HTTP 200, zero compile errors in the server log.
+
+**Not verified — and this needs to be said plainly:** this request's
+own explicit instruction was "Inspect the actual populated box in the
+running browser and refine it until the text is clean and balanced,"
+and "provide a screenshot of the finished Today box." Neither happened.
+The Claude-in-Chrome extension did not connect this session — the
+seventh consecutive session in this project where it has failed to
+connect at all (already filed as a product bug via `SendFeedback` two
+sessions ago; not re-filed, since it's the same standing issue, not a
+new one). Every typography/spacing/alignment decision above was made
+by reasoning about this app's existing conventions and the request's
+own literal wording, not by looking at the rendered result and
+iterating — which is a materially weaker form of verification than
+what was actually asked for. The page was opened in Safari
+(`open -a Safari`) for the user to inspect and judge directly, since
+this session's browser tools only drive Chrome. If the spacing or
+alignment doesn't read as "clean and balanced" once actually seen,
+that's expected to need a follow-up pass with real visual feedback,
+not a sign anything here was done carelessly.
+
+---
+
+## 2026-09-17 (today box refinement) — Resized the Today box, relocated Record Payment, added a dev-only demo fixture
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation + a small dev-only
+fixture. Edited: `dashboard/clients/ClientsRevenueTab.tsx` only. No
+other files touched, no new dependency, no backend change.
+
+**1. Today box now matches the 3 summary boxes' dimensions.** Reused
+`Metric`'s own shell classes verbatim (`rounded-md border border-border
+bg-surface px-4 py-3` — pulled into a new `TODAY_BOX_SHELL` constant)
+and its label/value/hint type scale, rather than the smaller, denser
+box from the prior pass (`px-3 py-2.5`, `w-full lg:w-64`, tiny
+`text-[11px]` two-row dot list). Since Today has two figures to show
+(Received, Due) where every other box has one, it uses a 2-column
+`grid-cols-2` layout inside the same shell instead of one `text-2xl`
+line — each column gets its own small label (`text-[11px]`, with the
+count folded in, e.g. "Received · 2") and a `text-xl font-semibold
+tabular-nums` value, landing at a comparable overall height to the
+other boxes. Width is now a fixed `w-80` (320px) at every breakpoint —
+deliberately never `w-full`/shrinking, so the box can't be squeezed;
+per this request, the *layout* wraps around it instead (see below).
+Genuine zero still renders as "None" (not "—", reserved for
+unavailable); loading skeleton and error/retry state resized to match.
+
+**2. Record Payment moved beside Today, not duplicated.** The button
+(and its currency label) came out of the search/filter toolbar's own
+`ml-auto` cluster and now sits as a sibling of `<TodayBox>` inside one
+`flex items-center gap-3` group — `items-center` is what vertically
+centres it against the box's height on desktop. That group itself is
+`flex flex-wrap`, so at a width where it can't fit beside the box, the
+button (and currency label) drop to their own line below the box
+instead of the box ever shrinking — the box's fixed `w-80` never
+changes regardless of viewport width. `onClick={() =>
+setShowRecordPayment(true)}` and the `RecordPaymentLauncher` it opens
+are completely untouched — this was purely a JSX relocation, zero
+behaviour change.
+
+**3. Dev-only demo fixture.** Added `SHOW_TODAY_DEMO = process.env
+.NODE_ENV === "development"` and `demoObligationFor(todayKey)`, which
+builds a real `NextPaymentObligation`-shaped object ("Example Client
+(Demo)" / "Example Project (Demo)" / kind `hosting_charge`, which
+`lib/billing.ts`'s own `NEXT_PAYMENT_KIND_LABEL` already renders as
+"Monthly hosting" / `amount_cents: 4900`, `due_date: todayKey`) —
+exactly the "$49 due today, Monthly hosting" example requested, using
+the currency the page is already rendering everything else in rather
+than a hard-coded "AUD" string. It's combined into a new
+`displayDueToday`/`displayDueTodayCents` pair used ONLY by `TodayBox`
+and the day-detail panel it opens — the real `dueToday`/
+`todayObligations` (and every other figure on this page) are never
+touched, so it cannot affect any financial total. It flows through the
+exact same `DayDetailPanel`/`ObligationRow` rendering every real
+due-today item already uses (no demo-specific UI built), with two
+explicit isolation measures: `client_id: null` means the existing
+"Client Billing →" link (which only renders when `client_id` is set)
+never appears for it, and `handleTodayRecordPayment` now checks
+`o.project_id === DEMO_PROJECT_ID` first and shows a toast instead of
+ever calling `api.getAgreement`/`api.listHostingPlans` against the fake
+id — refusing the action outright rather than relying on a fake id
+happening to fail harmlessly. TodayBox also shows a small "Includes 1
+demo entry" note next to "Filtered by client" whenever it's active, so
+the figures stay honest about what's real. No separate enable/disable
+UI was added — `NODE_ENV` already IS the on/off switch (dev shows it
+automatically, `next build`/`next start` never does), which is simpler
+and more reliable than a manual toggle someone could forget to flip.
+
+**Verified against an actual production build, not just reasoned
+about:** ran `npm run build` and grepped its output. `demoObligationFor`
+and the literal "Example Client (Demo)" text are absent from every
+compiled `.js` file and from `.next/static` (what's actually served to
+browsers) — confirming the `if (SHOW_TODAY_DEMO)` branch is eliminated
+at build time, not just false at runtime. Two small inert string
+literals do survive in the compiled output regardless (the constant
+`"__demo_today_example__"` itself, referenced unconditionally by
+`handleTodayRecordPayment`'s guard, and the JSX string `"Includes 1
+demo entry"`, since `demoActive` is a runtime prop value rather than a
+compile-time branch inside `TodayBox`) — both are unreachable/never
+rendered in production (confirmed: `SHOW_TODAY_DEMO` is always `false`
+there, so `demoActive` is always `false`), just not zero-bytes
+tree-shaken. Corrected an early draft of my own code comment that
+overclaimed "never... shipped" to instead say "never executes or
+renders," which is what was actually verified.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean; `vitest`
+312/312 (no pure-logic files touched); production build succeeded with
+the correct route table (`.next` cleared first) — see the bundle-content
+check above. Dev server smoke-tested at `/dashboard/clients?tab=revenue`
+— HTTP 200, zero compile errors in the server log.
+
+**Not verified:** the actual rendered layout, dimensions, and demo
+appearance in a real browser — the Claude-in-Chrome extension did not
+connect this session, the sixth consecutive session in this project
+where it has failed to connect at all. Nothing was inspected visually:
+box sizing/alignment against the other 3 boxes, Record Payment's
+vertical centring beside it, the wrap behaviour at narrower widths, or
+the populated demo entry inside the day-detail panel. No screenshots
+were captured. The page was opened in Safari (`open -a Safari`) for the
+user to inspect directly, since this session's browser tools only drive
+Chrome; a plain `curl` against the dev server confirms the route serves
+successfully but — being a client-rendered React page fetching data
+after mount — cannot show the populated content curl itself would need
+JS execution to observe.
+
+---
+
+## 2026-09-17 (revenue today box) — Added a "Today" summary box to Clients → Revenue
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation + a small amount of new
+state, Clients → Revenue. Edited: `dashboard/clients/
+ClientsRevenueTab.tsx` (new box + data + panel wiring, toolbar layout
+merged into one row), `dashboard/clients/DayDetailPanel.tsx` (added
+automatic "Received today"/"Due today" group headings, active only when
+a caller's `items` list genuinely mixes both types — every existing
+single-type caller is visually unchanged). No new files, no dependency,
+no backend change.
+
+**What happened:** Added a compact, clickable "Today" box to the right
+of the Payments/Upcoming/Hosting switch + search/filter toolbar (which
+are now one merged row so the box has something concrete to sit beside
+— see layout note below). It shows today's date, a "Received" line
+(count · amount, from non-voided `monthReport.transactions` dated
+today — `monthReport` already exists from the prior session's 3
+summary boxes and, being scoped to the real current month, always
+contains today) and a "Due" line (count · amount, from a **new**
+`todayObligations` fetch — `api.getWorkspaceObligations()`, independent
+of the one `UpcomingOverdueTab` already makes for itself, kept separate
+deliberately so this addition doesn't touch that component's own
+verified behaviour). Both lines respect the `?client=` filter already
+shared by Payments'/Upcoming's own "More filters" panels, with a small
+"Filtered by client" note when active. Refreshes on `dataVersion`, same
+as everything else on this page. Genuine zero renders as "None" (not
+"—", which this app already uses specifically for null/unavailable);
+a fetch failure shows its own small retry button instead of a blank or
+zero-looking box.
+
+**Reusing the existing day-detail interaction, not a new one.**
+Clicking the box opens the same `DayDetailPanel` component the
+calendar's own day cells already open, fed a combined list (today's
+received transactions + today's due obligations, in that order) —
+`DayDetailPanel` got one small addition (group headings that trigger
+only for a genuinely mixed list) so the two are "clearly separated
+groups" per the request, without changing anything about how it renders
+for Payments'/Upcoming's own single-type day panels. Mutual exclusion
+with those per-tab panels is by URL param (`?today=1` vs. `?day=`/
+`?payment=`) — `openToday` clears the other two on open; the
+full-viewport overlay every one of these panels already renders makes
+having two open at once unreachable through the UI regardless. Per-item
+actions inside Today's panel reuse existing components directly rather
+than navigating away: "Record Payment" on a due obligation opens
+`RecordPaymentModal` in place (same agreement/hosting-plan fetch
+`UpcomingOverdueTab`'s own identical action already performs, just a
+second call site — `RecordPaymentModal` already has more than one,
+e.g. `RecordPaymentLauncher`); "Details →" on a received payment
+switches to the Payments sub-tab and opens its own `PaymentDetailPanel`
+via the existing `?payment=` mechanism (closing Today's panel in the
+same URL update) rather than duplicating a second `PaymentDetailPanel`
+instance — `PaymentDetailPanel` uses `useDismissableOverlay`'s own
+Escape-key listener, and stacking a second one on top of Today's panel
+(also using it) would have made a single Escape press close both at
+once; routing through the existing Payments-tab panel instead avoids
+that new failure mode entirely rather than accepting it.
+
+**Layout.** The Payments/Upcoming/Hosting switch and the search/filter
+toolbar (previously two separate rows) are now nested inside one
+`min-w-0 flex-1` left column, with the Today box as a `flex` sibling —
+its own `w-full lg:w-64` sizing (not the row's) is what forces it onto
+a deliberate line of its own below that column at narrower widths,
+rather than squeezing in awkwardly. Chose `lg:` (1024px) over a
+narrower breakpoint after estimating the toolbar's own existing
+minimum width (search input + More filters + Clear filters + currency
++ Record Payment, before the box) at roughly 600-650px, wanting
+comfortable room rather than a tight fit at the boundary.
+
+**Also fixed while touching scroll restoration:** the page's own
+`useScrollRestoration` call had no `keyOverride` at all before this
+session — meaning opening/closing the calendar's existing `?day=`/
+`?payment=` overlays was *already* fragmenting scroll memory into a
+different bucket per open/closed state (a pre-existing gap, not
+something this session introduced). Since satisfying "preserve...
+scroll position when the [Today] panel closes" required touching this
+exact line anyway, extended the same `preview`-style exclusion
+`ClientsOverviewTab` already uses to all three overlay params
+(`day`/`payment`/`today`) rather than adding a narrower fix that left
+the pre-existing gap in place for the other two.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on both changed
+files (one `react/no-unescaped-entities` error caught and fixed —
+"Couldn't" inside literal JSX text, not a template-string prop, which
+is where this app's existing similar strings all live); `vitest`
+312/312 (no pure-logic files touched this pass); production build
+succeeded with the correct route table (`.next` cleared first). Dev
+server smoke-tested at `/dashboard/clients?tab=revenue` — HTTP 200,
+zero compile errors in the server log.
+
+**Not verified:** live browser QA or screenshots — the Claude-in-Chrome
+extension did not connect this session, the fifth consecutive session
+in this project where it has failed to connect at all (flagged via
+`SendFeedback` as a product bug this time, given the pattern). Nothing
+was exercised by clicking: payments received today, partial/unpaid
+amounts due today, no activity today, an active client filter, or the
+calendar displaying a month other than the current one. The page was
+opened in Safari (`open -a Safari`) for the user to inspect directly,
+since this session's browser tools only drive Chrome.
+
+---
+
+## 2026-09-17 (revenue polish) — Restored the 3 summary boxes; improved calendar entry text
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation only, Clients → Revenue.
+Edited: `dashboard/clients/ClientsRevenueTab.tsx` (new summary boxes +
+a second, fixed-month report fetch), `dashboard/clients/
+RevenueCalendar.tsx` (entry layout), `dashboard/clients/PaymentsTab.tsx`
+(passes a type label to entries; also wired a previously-dangling
+report-load error into a real local retry state — see below),
+`dashboard/clients/UpcomingOverdueTab.tsx` (passes a type label to
+entries). No new files, no dependency, no backend change. The calendar
+grid/navigation/day-panel/overdue-strip logic from the prior session is
+untouched.
+
+**1. Restored the three summary boxes.** The prior session had
+collapsed them into one text line — this request asked for them back as
+distinct cards. Reused the app's own `Metric` component (same
+`rounded-md border border-border bg-surface px-4 py-3` shell used on
+the Today dashboard/Sales/Leads/Review) in a plain `grid grid-cols-1
+sm:grid-cols-3` wrapper (not the shared `MetricGrid`, whose breakpoints
+are tuned for 4-5 tiles, not 3) — "Received this month" / "Expected
+hosting revenue" (hint: "Monthly") / "Overdue" (red value text only
+when > 0, no filled background — "restrained emphasis" per the
+request). A `<details>` "Breakdown (this month)" disclosure keeps the
+website/hosting split, refunds, and outstanding balance link available
+without a fourth large card.
+
+The one substantive behaviour change: **"Received this month" is now
+fixed to the real current calendar month, independent of the
+calendar's own navigation** — this was an explicit, different
+requirement from the prior session's design (where the equivalent
+figure followed whatever month/week the calendar was displaying). A
+second `RevenueReport` fetch (`monthReport`, own loading/error state)
+is made once against `calendarPeriodBounds(todayLocal(), "month")`, a
+range computed once per page view and never touched by `calCursor`.
+Since `expected_mrr_cents`/`overdue_cents` are workspace-wide snapshots
+on the backend (not scoped to the query's date range), reading them
+from this same fixed-range report is correct and needed no separate
+endpoint. Refreshes on `dataVersion` (payment recorded/corrected,
+hosting plan changed) — same as every other refreshed figure on this
+page.
+
+**2. Calendar entry text.** Each entry was one crammed 11px line (dot +
+name + amount). Now two lines: name (12px, medium weight, coloured by
+status) with the status dot beside it; amount (tabular-nums, medium
+weight) + an optional short type label ("Website"/"Hosting", or the
+existing `NEXT_PAYMENT_KIND_LABEL` wording for obligations) on the line
+below, truncating independently. A reversed transaction now strikes
+through both lines, not just the name. Every entry carries a real
+`aria-label` spelling out name, amount, and status in words (e.g. "Jane
+Doe, $450, Overdue") — the dot/colour was never the only signal, but
+previously had no text equivalent at all; the existing `title` tooltip
+is kept for sighted hover. Day cells grew from `min-h-[6rem]` to
+`min-h-[8rem]` to fit two-line entries without clipping — cells aren't
+`overflow-hidden`, so a day with more entries than that just grows the
+grid row (CSS grid auto-sizing), never clips or overlaps; text is
+`truncate`d within each line so nothing extends past the cell edge.
+"+N more" got a bit more visual weight (`text-xs`, its own hover
+background) so it doesn't read as a fourth faint entry.
+
+**Bug caught and fixed while wiring this up:** removing the old
+one-line summary's `error` prop from `SummaryRow` left the *calendar-
+period* report's own load-failure state (`error`, distinct from the
+new `monthReportError`) referenced nowhere — eslint's `no-unused-vars`
+caught it. That report backs the Payments calendar's transactions and
+the trend chart; before this session a failed fetch for it left
+`PaymentsTab` showing "Loading payments…" forever with no way to
+retry. Fixed properly rather than silencing the warning: `error`/
+`onRetry` are now real props on `PaymentsTab`, rendering the same
+`ErrorState` + retry every other failed fetch on this page already
+uses.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on every changed
+file; `vitest` 312/312 (no pure-logic files touched this pass, so the
+count is unchanged from the prior session); production build succeeded
+with the correct route table (ran with a cleared `.next` cache, having
+been caught by a stale-cache false negative in the prior session); dev
+server smoke-tested at `/dashboard/clients?tab=revenue` — HTTP 200,
+zero compile errors in the server log.
+
+**Not verified:** live browser QA. The Claude-in-Chrome extension did
+not connect this session either (fourth session in a row) — long
+client names, large amounts, several entries on one day, refunds,
+overdue payments, and empty days were not exercised by clicking, and
+no screenshots were captured. The page was opened in Safari
+(`open -a Safari`) for the user to inspect directly, since this
+session's browser tools only drive Chrome.
+
+---
+
+## 2026-09-17 (revenue calendar) — Added a payment calendar to Clients → Revenue
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation only. New: `lib/
+calendarGrid.ts` + `lib/calendarGrid.test.ts`, `lib/billing.test.ts`,
+`dashboard/clients/RevenueCalendar.tsx`, `dashboard/clients/
+DayDetailPanel.tsx`. Rewritten: `dashboard/clients/PaymentsTab.tsx`,
+`dashboard/clients/UpcomingOverdueTab.tsx`, `dashboard/clients/
+ClientsRevenueTab.tsx`. Small edits: `lib/billing.ts` (added
+`obligationKey`, nothing else), `dashboard/clients/HostingPlansTab.tsx`
+(next-due-date cell now links into Upcoming), `dashboard/calendar/
+page.tsx` (its two local date helpers replaced by the shared module —
+behaviour identical).
+**No new dependency.** The grid is plain CSS grid + the existing
+`monthGrid` day math already proven on the standalone Calendar page;
+no date library and no calendar library was added.
+**Untouched:** every financial calculation and record — `apps/api`
+entirely, `groupObligations`/`relativeObligationLabel`,
+`ReceiptsTrendChart`, `PaymentDetailPanel`, `RecordPaymentModal`,
+`CorrectPaymentModal`, `ChangeFeeModal`,
+`HostingPlanEffectiveActionModal`, `useRevenueSubTab`.
+
+**What happened:** Payments and Upcoming were flat lists; the request
+was to make them calendars while keeping Hosting as-is.
+
+- **Shared date math extracted first**: `lib/calendarGrid.ts` now owns
+  `toDateKey`/`monthGrid`/`weekGrid`/`addMonths`/`addWeeks`/
+  `isoToLocalDate`/`calendarPeriodBounds`/`calendarRangeLabel`. The
+  standalone Calendar page's own inline `toDateKey`/`monthGrid` were
+  deleted and re-imported from here, so there is one definition rather
+  than two drifting ones. `isoToLocalDate` deliberately parses
+  "YYYY-MM-DD" as *local* midnight (never `new Date(iso)`, which parses
+  UTC and can land a payment on the wrong local day).
+- **`RevenueCalendar.tsx`**: one shared grid used by both Payments and
+  Upcoming. Month/Week toggle, prev/Today/next, a live `aria-live`
+  range heading, max 3 entries per day then "+N more", today marked
+  with a filled accent pill. Entries carry a coloured status dot **and**
+  distinct text treatment (reversed is struck through, refunded/overdue
+  are coloured) so status never depends on colour alone. Day cells are
+  `role="button"` with Enter/Space handling — not real `<button>`s,
+  since they contain their own nested entry buttons. Below `sm:` the
+  grid is replaced by a day-by-day agenda listing only days that have
+  records, rather than a squeezed 7-column grid.
+- **Stable identity**: new `obligationKey()` in `lib/billing.ts`
+  composes whichever of `website_agreement_id`/`hosting_charge_id`/
+  `hosting_plan_id`/`scheduled` are set. No obligation has an id of its
+  own (a website balance is derived from an agreement; a scheduled
+  hosting charge has no row yet), so this is what stops one real-world
+  obligation rendering as two entries. Transactions key off
+  `payment_id` directly.
+- **Scheduled vs issued**: unchanged from the backend's existing rule —
+  `_obligations_for_project` only projects a `hosting_scheduled`
+  obligation when no real charge exists for that period, so one
+  obligation appears, never two. The UI just tags it "Scheduled" and
+  withholds Record Payment (there's no charge to pay yet), same as the
+  old list did.
+- **`DayDetailPanel.tsx`**: clicking a date opens it; same side-panel
+  shell, Escape-to-close, focus-trap and focus-restore as
+  `ClientPreviewPanel`/`PaymentDetailPanel` via the existing
+  `useDismissableOverlay`. Shows client, project/site, amount, type,
+  date, real status, and the existing actions — Record Payment for
+  unpaid obligations, "Details →" into the existing
+  `PaymentDetailPanel` (which still owns correct/refund/void), and a
+  Client Billing link.
+- **Overdue + undated**: Upcoming shows a compact overdue strip and a
+  separate "due date not set" strip above the calendar. Both are built
+  from the full workspace obligation list, not the visible range, so an
+  overdue charge from three months ago stays reachable no matter where
+  the calendar is pointed. Both open the same panel via two sentinel
+  values on the existing `day` param.
+- **Summary period label**: the receipts figure now follows the
+  calendar and is labelled with the same `calendarRangeLabel` the grid
+  heading uses. Expected hosting revenue and overdue stay current
+  snapshots, unchanged.
+
+**Bug caught during self-review (worth recording):** the first cut fed
+the report fetch the 42-cell month *grid* bounds, which start and end
+in the adjacent months — so a figure labelled "September 2026" would
+have quietly included days of August and October. Fixed by splitting
+`calendarPeriodBounds` (month proper, 1st→last; or Sun→Sat week) from
+the grid used for rendering, with tests asserting the two genuinely
+differ. Padding cells still render, dimmed, and simply hold no entries.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on all changed
+files (one pre-existing `exhaustive-deps` warning remains in
+`dashboard/calendar/page.tsx`, in a `useEffect` this session did not
+touch); `vitest` 312/312 passing, including 22 new tests covering
+month/week bounds, short and leap February, year boundaries, local-date
+round-tripping, obligation-key stability, scheduled-vs-issued
+distinctness, and every obligation landing in exactly one group;
+production build succeeded with the correct route table. Dev server
+smoke-tested at six URL variants (month, week, short month, year
+boundary, each sub-tab) — all HTTP 200 with zero compile errors after
+clearing a stale Turbopack cache that had briefly masked a rename.
+
+**Not verified:** live browser QA. The Claude-in-Chrome extension did
+not connect at any point across three sessions, so nothing was
+exercised by clicking: several payments on one day, partial payments,
+refunds, overdue items from previous months, obligations without due
+dates, active/paused/cancelled plans, keyboard navigation, the mobile
+agenda, or failed-loading states. No screenshots were captured.
+**Multiple currencies were not implemented and could not be** — the
+workspace has exactly one currency (`Workspace.currency`); neither
+`RevenueTransaction` nor `NextPaymentObligation` carries a per-record
+currency field, so there is nothing to separate. Noted rather than
+faked with a currency filter over a single-currency dataset.
+
+---
+
+## 2026-09-16 (clients revenue) — Reorganised Clients → Revenue around a compact summary + one toolbar
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation only, Clients → Revenue
+tab. Rewritten: `dashboard/clients/ClientsRevenueTab.tsx`,
+`dashboard/clients/PaymentsTab.tsx`, `dashboard/clients/
+UpcomingOverdueTab.tsx`, `dashboard/clients/HostingPlansTab.tsx`.
+Untouched: `lib/billing.ts` (`groupObligations`, `relativeObligationLabel`
+reused verbatim — already produced exactly the Overdue/Due today/Next 7
+days/Later/Due date not set buckets the spec asked for, each obligation
+in exactly one bucket), `useRevenueSubTab.ts`, `ReceiptsTrendChart.tsx`,
+`PaymentDetailPanel.tsx` (already showed method/reference/project/notes/
+correction action — satisfied "progressive detail" already), every
+modal (`RecordPaymentModal`, `CorrectPaymentModal`, `ChangeFeeModal`,
+`HostingPlanEffectiveActionModal` — confirmed none of them reset form
+state on a failed save, only set an error message, so "preserve entered
+values when saving fails" was already true), `apps/api` (no backend
+changes — all figures/groupings were already server-computed or already
+pure client-side derivations of existing data).
+
+**What happened:** Revenue repeated the same shape of clutter Clients →
+Overview had — a 4-tile metric strip (including two figures now judged
+better as expandable detail), a full toolbar row of selects competing
+for attention, and per-sub-tab filter UI duplicated in three different
+places. Restructured into Compact summary → view switch → one toolbar,
+per the request:
+
+- **Compact summary**: the 4-tile `MetricGrid` replaced with one line —
+  Received (period) / Expected hosting revenue / Overdue — each kept as
+  a clearly separate figure (received vs. expected are never summed).
+  Everything else the tiles used to show (website/hosting receipts
+  split, refunds, the full outstanding balance, overdue count) moved
+  into one native `<details>`/`<summary>` "Breakdown" disclosure — the
+  same element `ClientMobileCard` already used elsewhere in this app
+  for "More details," reused here rather than inventing a new
+  collapsible-panel component.
+- **View switch**: `RevenueSubTabBar`'s labels shortened to exactly
+  "Payments / Upcoming / Hosting" (were "Upcoming & Overdue"/"Hosting
+  Plans"); moved to sit directly under the summary, above the toolbar,
+  per the requested page order. The outer Clients workspace's own
+  Overview/Websites/Revenue `TabBar` one level up is untouched.
+- **One toolbar**: a single search box (new top-level `q`, shared
+  across all three views — each view already read `q` itself where it
+  existed, so no prop drilling, just each component independently
+  filtering its own list by the same URL param) + the period/date-range
+  control (now shown only on Payments, since Upcoming/Hosting never
+  consumed `start`/`end` at all — they show current state, not a
+  period) + Record Payment + one **`MoreFiltersMenu`** popover (same
+  shape as Clients Overview's own `MoreFiltersMenu` — new precedent
+  reused, not reinvented) whose contents swap with the active view:
+  `PaymentsFilterPanel` (type/status/sort — unchanged logic, moved out
+  of Payments' own inline row), `UpcomingFilterPanel` (a **new** type
+  filter — website vs. hosting — reusing the existing
+  `NextPaymentObligation.kind` field, the same distinction Payments'
+  own Type filter already offered elsewhere), `HostingFilterPanel`
+  (status — unchanged logic, including "All" so cancelled/historical
+  plans stay reachable). A single "Clear filters" control lives in the
+  parent, wired into each view via a new `onClearAll` prop — a plain
+  `setParam("q", null)` from inside a child would have been silently
+  undone by the parent's own debounced write-back of its still-stale
+  search-box state, so this had to be owned centrally rather than
+  duplicated per view.
+- **Payments**: table columns cut to exactly Date / Client / Type /
+  Amount / a "Details →" action (Project, Method, Reference moved out —
+  `PaymentDetailPanel` already showed all three, so nothing was lost,
+  only decluttered from the row). Refund/reversal state switched from
+  plain coloured text to the shared `Badge` component (`tone="warning"`
+  Refunded, `tone="muted"` Reversed) for visual consistency with the
+  rest of the app. Amounts stayed right-aligned; `formatDate`/
+  `formatMoney` (which already includes the currency symbol) unchanged.
+- **Upcoming**: grouping/row content unchanged (already matched the
+  spec exactly — Overdue/Due today/Next 7 days/Later/Due date not set,
+  Client + Project/site + amount + due date + payment type + Record
+  Payment, "Scheduled" hosting already distinguished from an issued
+  charge via its own label with no Record Payment button). Added search
+  (client/project) and the new type filter; a genuinely-empty workspace
+  still shows the calm "No upcoming or overdue payments" state,
+  distinct from a "No matching payments" state when search/filters
+  exclude everything.
+- **Hosting**: table content unchanged (Client / Hosted website /
+  Status / Monthly fee / Next payment / Outstanding / actions menu —
+  already matched the spec). Status select moved into
+  `HostingFilterPanel`; added search (client/website).
+- **Trends**: `ReceiptsTrendChart` itself untouched — now rendered only
+  on the Payments view, behind a "View trends" toggle button, collapsed
+  by default instead of always taking up space.
+
+**Verified:** `npx tsc --noEmit` (clean), `eslint` on all four changed
+files (clean, one unused-import warning fixed), `vitest` (290/290 passed
+— `lib/billing.ts`/`lib/clients.ts` untouched, no test changes needed),
+production build (succeeded, correct route table).
+**Not verified:** live browser QA — the Claude-in-Chrome extension was
+not connected this session (same gap as the Clients Overview session
+immediately before this one), so partial payments, refunds, overdue
+charges, hosting plans, long names, and empty states were not exercised
+in a real browser, and no screenshots were captured. Flagged to the
+user; pending either the extension reconnecting or manual QA at
+`localhost:3000` → Clients → Revenue.
+
+---
+
+## 2026-09-16 (clients overview) — Simplified Clients → Overview into one card grid
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, presentation only, Clients → Overview
+tab. New: `dashboard/clients/ClientCard.tsx`. Rewritten: `dashboard/
+clients/ClientsOverviewTab.tsx`. Removed (now unused, confirmed by grep
+— nothing else imported them): `dashboard/clients/AttentionCards.tsx`,
+`lib/useClientColumns.ts`. Untouched: `lib/clients.ts` (all attention/
+financial/sort logic reused as-is — `buildAttentionCards`,
+`clientRowMatchesFilters`, `clientTone`, `currentProject`, etc.),
+`ClientRowFields.tsx` (`EnrichedClient`, `WebsitesField`, `HostingField`,
+`NextTaskField` reused directly), `ClientPreviewPanel.tsx` (already
+satisfied "progressive detail" — contact, projects, hosting, next
+payment, next task — left as-is), individual Client pages, Websites tab,
+Revenue tab, pipeline workflows.
+
+**What happened:** The Overview tab repeated the same client info three
+times — a 4-tile metric strip, a horizontal-scrolling "Needs attention"
+card row, and a full client table below it. Restructured into Compact
+summary → one toolbar → one card grid, per the request:
+
+- **Compact summary**: the old `MetricGrid` (4 tiles, including two
+  Revenue-tab figures — expected MRR, overdue balance) replaced with one
+  line: "N active clients · N live websites · N clients needing
+  attention", each segment a link/button into the relevant filtered
+  view. `api.getTodayBillingSnapshot()` — fetched solely for the two
+  removed money figures — dropped from this tab's `load()` entirely;
+  those figures still live on Revenue, unchanged.
+- **One toolbar**: search input, a new `ViewSwitch` ("All clients /
+  Needs attention", same segmented-pill classes as `DensityToggle`/
+  `BuildSwitch`, URL-synced via `?view=attention`), a new
+  `MoreFiltersMenu` popover (status/hosting/payment/required-tasks/
+  assignee — the same five filters the old flat row had — plus a new
+  client-side "Sort by" select: recent activity/name/next payment date),
+  Clear filters, and + Add Client — replacing the old flat row of 5
+  selects + Clear filters + `ColumnsMenu` + `DensityToggle` + Add Client.
+  `ColumnsMenu`/`useClientColumns` and `DensityToggle`'s use here are
+  gone with the table (matching the precedent already set dropping
+  density from Build and Leads this session).
+- **One client card grid**: new `ClientCard.tsx`, built to match
+  `PlanningCard.tsx`/`ProjectCard.tsx` exactly (same shell classes,
+  `aspect-[16/10]` preview via the shared `ThumbnailPlaceholder`, `p-3`
+  content, `CardMenu` shape, footer button). Replaces the table (desktop)
+  + `ClientMobileCard` (mobile) + the separate `AttentionCards` row.
+  "Needs attention" is now the `ViewSwitch` filtering this same grid
+  (`view !== "attention" || attentionByClientId.has(row.client.id)`) —
+  a client can never render twice. Each card shows exactly: business
+  name, `ThumbnailPlaceholder` (no screenshot capability exists anywhere
+  in this codebase for a generated website — confirmed again; for
+  multiple live sites the label states the honest count, e.g. "3 live
+  websites", rather than arbitrarily picking one — there is no
+  "primary site" field anywhere in the Project model or API to key an
+  honest single pick off), `WebsitesField`+`HostingField` (reused
+  verbatim), one next-action line (`cardNextAction` — overdue payment
+  wins over outstanding required tasks, same precedence
+  `AttentionIndicator` already used, falling through to
+  `NextTaskField`'s own "Start intake"/"No open tasks"/task-title
+  logic), one `Badge tone="danger"` "N items need attention" when
+  `buildAttentionCards`' per-client issue count (payments +
+  required-tasks-outstanding, joined onto the row by `clientId`) is
+  `> 0`, "Open Client →", and a header-row pair of small icon buttons:
+  the existing eye-icon `PreviewButton` (opens `ClientPreviewPanel` via
+  `?preview=`, unchanged) and a `CardMenu` with the same three links
+  `RowActionsMenu` had (Open Client / Billing / Edit details) — no
+  Archive, since `Client` still has no archive concept anywhere in this
+  codebase (confirmed again directly against `apps/api/app/modules/
+  clients/models.py`: no `archived_at` column, no archive endpoint) —
+  every client `listClients()` returns is already the complete set, so
+  "All clients" and the full set are the same thing here.
+- **States**: skeleton grid of `ClientCardSkeleton` (matches
+  `PlanningCardSkeleton`/`ProjectCardSkeleton` shape) while loading; a
+  calm "No clients need attention" `EmptyState` specifically when
+  `view === "attention"` yields zero rows, distinct from the harsher
+  "No clients found — try adjusting your search or filters" shown for
+  `view === "all"`; existing "No clients yet" (zero clients at all) and
+  `ErrorState`+retry kept as-is. Search/filter/sort/scroll-position
+  preservation kept on the exact same URL-param + `useScrollRestoration`
+  mechanism as before (the `preview` param still excluded from the
+  scroll key so opening/closing quick-preview doesn't fragment scroll
+  memory).
+
+**Missing backend capability, not fabricated:** no "primary site"
+designation exists on `Project`/`Client` anywhere in the backend (the
+spec asked to "use the existing primary-site designation where
+available") — the card's preview label states an honest live-site count
+instead of guessing. No archive concept exists on `Client` — the
+spec's "More filters... archive/history access" has nothing to surface;
+noted in `MoreFiltersMenu`'s own docstring rather than added as a fake
+filter.
+
+**Verified:** `npx tsc --noEmit` (clean), `eslint` on both changed files
+(clean), `vitest` (290/290 passed — `lib/clients.ts` untouched, no test
+changes needed), production build (succeeded, correct route table).
+**Not verified:** live browser QA — the Claude-in-Chrome extension was
+not connected this session, so none of the required scenarios (long
+names, missing thumbnails, multiple websites, overdue payments, blocked
+tasks, empty/filtered states, desktop/mobile) or screenshots could be
+captured. Flagged to the user; pending either the extension reconnecting
+or manual QA at `localhost:3000` → Clients → Overview.
+
+---
+
 ## 2026-09-15 (attention cards) — Restyled "Needs attention" cards to match Build
 **Mode:** interactive session, direct to main (not yet committed/pushed).
 **Merge to main after:** yes — pending review

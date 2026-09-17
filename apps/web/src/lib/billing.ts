@@ -32,6 +32,17 @@ export function relativeObligationLabel(o: NextPaymentObligation): string {
   return `Due in ${pluralDays(o.days_relative)}`;
 }
 
+/** The one stable identifier for an obligation row — no obligation
+ * carries its own id (a website-balance obligation is derived from an
+ * agreement, a scheduled hosting charge doesn't exist as a row yet at
+ * all), so this composite of whichever backing ids are actually set is
+ * what every obligation-keyed UI (list rows, calendar entries, the
+ * overdue strip) must use to avoid rendering the same real-world
+ * obligation twice under two different React keys. */
+export function obligationKey(o: NextPaymentObligation): string {
+  return `${o.website_agreement_id ?? ""}:${o.hosting_charge_id ?? ""}:${o.hosting_plan_id ?? ""}:${o.scheduled}`;
+}
+
 export type ObligationGroup = "overdue" | "due_today" | "next_7_days" | "later" | "no_due_date";
 
 /**
