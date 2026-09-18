@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { TabBar, type TabItem } from "@/components/ui/Tabs";
 
 export type BuildViewId = "planning" | "projects";
 
@@ -12,10 +12,14 @@ const DEFAULT_HREF: Record<BuildViewId, string> = {
 };
 
 /**
- * Same pill-toggle position and styling as the Comfortable/Compact
- * DensityToggle it replaces in this workspace — but this switches the
- * actual view (real navigation to a real URL), not a display
- * preference, so it's built from <Link>s rather than a local setter.
+ * The same underline `TabBar` Clients uses for Overview/Websites/Revenue
+ * (see `dashboard/clients/page.tsx`) — reused here, not reimplemented,
+ * so typography, spacing, the active-tab indicator, hover/focus states,
+ * and responsive overflow all stay identical across workspaces. The one
+ * difference from Clients' own usage: this switches the actual view
+ * (real navigation to a real URL, not a local/URL-param setter), so
+ * each tab is built with an `href` rather than relying on `onChange` —
+ * `TabBar` renders those as real `<Link>`s.
  *
  * Each link targets that view's own last-known URL (search/filters/
  * sort/pagination — the same string each view's list already writes to
@@ -26,7 +30,7 @@ const DEFAULT_HREF: Record<BuildViewId, string> = {
  * the bare route is a correct, harmless first-paint fallback since it's
  * still a valid, working link to that view.
  */
-export function BuildSwitch({ active }: { active: BuildViewId }) {
+export function BuildSwitch({ active, className }: { active: BuildViewId; className?: string }) {
   const [hrefs, setHrefs] = useState<Record<BuildViewId, string>>(DEFAULT_HREF);
 
   // Re-read on every mount of this control (i.e. every time the user
@@ -41,20 +45,11 @@ export function BuildSwitch({ active }: { active: BuildViewId }) {
     });
   }, [active]);
 
-  return (
-    <div className="flex rounded-md border border-border-strong p-0.5 text-sm" role="group" aria-label="Build view">
-      {(["planning", "projects"] as const).map((view) => (
-        <Link
-          key={view}
-          href={hrefs[view]}
-          aria-current={active === view ? "page" : undefined}
-          className={`rounded px-2 py-1 transition-colors motion-reduce:transition-none ${
-            active === view ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
-          }`}
-        >
-          {LABEL[view]}
-        </Link>
-      ))}
-    </div>
-  );
+  const tabs: TabItem[] = (["planning", "projects"] as const).map((view) => ({
+    id: view,
+    label: LABEL[view],
+    href: hrefs[view],
+  }));
+
+  return <TabBar tabs={tabs} active={active} ariaLabel="Build view" className={className} />;
 }

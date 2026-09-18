@@ -6,9 +6,17 @@
  * Grouped into the six stages of the real operating workflow — WORKSPACE,
  * DISCOVER, SALES, BUILD, MANAGE, SYSTEM — so the sidebar reads as "where
  * am I in the business", not a CRM feature list (docs/05_DECISIONS.md UX
- * pass). Nothing is deleted: Tasks, Calendar, Sales and Follow-ups are
- * still first-class routes, surfaced as `secondary` links under the
- * primary concept they belong to.
+ * pass). Nothing is deleted: Tasks and Calendar are still first-class
+ * routes, surfaced as `secondary` links under the primary concept they
+ * belong to.
+ *
+ * Sales has a single entry, Sales (`/dashboard/sales`) — the old
+ * separate Leads, Sales, and Follow-ups destinations were folded into
+ * it as views (Leads/Sales Pipeline/Follow-ups) behind one shared
+ * header and switch, the same pattern Build already uses for
+ * Planning/Projects (see docs/07_SESSION_LOG.md). The old routes still
+ * work — each redirects into the corresponding Sales view, preserving
+ * query params.
  *
  * Manage has a single entry, Clients (`/dashboard/clients`) — the old
  * separate Live Websites and Revenue destinations were folded into it as
@@ -61,8 +69,6 @@ export type NavSection = {
   links: NavLink[];
 };
 
-const onLeads = (pathname: string) => pathname === "/dashboard/leads" || pathname.startsWith("/dashboard/leads/");
-
 export const NAV_SECTIONS: NavSection[] = [
   {
     id: "workspace",
@@ -92,15 +98,26 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "sales",
     label: "Sales",
     links: [
+      // One destination — the Sales workspace itself picks Leads vs.
+      // Sales Pipeline vs. Follow-ups (remembers the last view; each
+      // keeps its own stable /dashboard/sales/leads,
+      // /dashboard/sales/pipeline, /dashboard/sales/follow-ups URL).
+      // The Leads detail page stays at its original
+      // /dashboard/leads/{id} route and the old bare /dashboard/leads,
+      // /dashboard/follow-ups, /dashboard/pipeline routes still
+      // redirect here, so all four are listed here too — this one link
+      // stays highlighted from any of them.
       {
-        href: "/dashboard/leads",
-        label: "Leads",
-        icon: "leads",
-        activePrefixes: ["/dashboard/pipeline"],
-        isActive: (pathname, search) => onLeads(pathname) && search.get("tab") !== "won",
+        href: "/dashboard/sales",
+        label: "Sales",
+        icon: "sales",
+        activePrefixes: [
+          "/dashboard/sales",
+          "/dashboard/leads",
+          "/dashboard/follow-ups",
+          "/dashboard/pipeline",
+        ],
       },
-      { href: "/dashboard/sales", label: "Sales", icon: "sales", secondary: true },
-      { href: "/dashboard/follow-ups", label: "Follow-ups", icon: "followups", secondary: true },
     ],
   },
   {
@@ -139,14 +156,14 @@ export const ALL_NAV_HREFS: string[] = NAV_SECTIONS.flatMap((s) => s.links.map((
 
 /**
  * The four primary destinations for the mobile bottom nav — the
- * workflow's main line (Today, Discover, Leads, Build). Everything else
- * (Clients, Sales, Follow-ups, Tasks, Calendar, Settings, Review queue)
- * lives behind "More".
+ * workflow's main line (Today, Discover, Sales, Build). Everything else
+ * (Clients, Tasks, Calendar, Settings, Review queue) lives behind
+ * "More".
  */
 export const MOBILE_PRIMARY_HREFS = [
   "/dashboard",
   "/dashboard/discovery",
-  "/dashboard/leads",
+  "/dashboard/sales",
   "/dashboard/build",
 ] as const;
 

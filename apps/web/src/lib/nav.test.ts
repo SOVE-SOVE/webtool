@@ -20,16 +20,18 @@ describe("nav config", () => {
     expect(new Set(ALL_NAV_HREFS).size).toBe(ALL_NAV_HREFS.length);
   });
 
-  it("keeps Review, Sales, Follow-ups, Tasks and Calendar in the sidebar", () => {
-    for (const href of [
-      "/dashboard/review",
-      "/dashboard/sales",
-      "/dashboard/follow-ups",
-      "/dashboard/tasks",
-      "/dashboard/calendar",
-    ]) {
+  it("keeps Review, Sales, Tasks and Calendar in the sidebar", () => {
+    for (const href of ["/dashboard/review", "/dashboard/sales", "/dashboard/tasks", "/dashboard/calendar"]) {
       expect(ALL_NAV_HREFS).toContain(href);
     }
+  });
+
+  it("folds Leads, Sales and Follow-ups into a single Sales entry — no separate landing-page links", () => {
+    const sales = NAV_SECTIONS.find((s) => s.id === "sales")!;
+    expect(sales.links.map((l) => l.label)).toEqual(["Sales"]);
+    expect(sales.links[0].href).toBe("/dashboard/sales");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/leads");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/follow-ups");
   });
 
   it("folds Planning and Projects into a single Build entry — no separate landing-page links, and no redundant second 'Build' link alongside it", () => {
@@ -45,9 +47,9 @@ describe("nav config", () => {
     expect(ALL_NAV_HREFS).not.toContain("/dashboard/projects?view=live");
   });
 
-  it("folds Pipeline into Leads (its route redirects, so it's not a separate nav item)", () => {
+  it("folds Pipeline into Sales (its route redirects, so it's not a separate nav item)", () => {
     expect(ALL_NAV_HREFS).not.toContain("/dashboard/pipeline");
-    expect(isNavLinkActive("/dashboard/pipeline", q(), link("/dashboard/leads"))).toBe(true);
+    expect(isNavLinkActive("/dashboard/pipeline", q(), link("/dashboard/sales"))).toBe(true);
   });
 
   it("every href's path is under /dashboard", () => {
@@ -94,10 +96,16 @@ describe("isNavLinkActive", () => {
     expect(isNavLinkActive("/dashboard/discovered-businesses/xyz", q(), discovery)).toBe(false);
   });
 
-  it("Leads is active on the leads list and a lead detail page", () => {
-    const leads = link("/dashboard/leads");
-    expect(isNavLinkActive("/dashboard/leads", q(), leads)).toBe(true);
-    expect(isNavLinkActive("/dashboard/leads/abc123", q(), leads)).toBe(true);
+  it("Sales lights up on any of its three merged views, a lead detail page, and the old redirect routes", () => {
+    const sales = link("/dashboard/sales");
+    expect(isNavLinkActive("/dashboard/sales", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/sales/leads", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/sales/pipeline", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/sales/follow-ups", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads/abc123", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/follow-ups", q(), sales)).toBe(true);
+    expect(isNavLinkActive("/dashboard/pipeline", q(), sales)).toBe(true);
   });
 
   it("Clients is its own route, active on the list and a client detail page", () => {

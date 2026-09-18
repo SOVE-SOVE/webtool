@@ -179,8 +179,9 @@ function PlanningListPageInner() {
   if (error) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="Build" actions={<BuildSwitch active="planning" />} />
-        <div className="mt-4">
+        <PageHeader title="Build" />
+        <BuildSwitch active="planning" className="mt-4" />
+        <div className="mt-6">
           <ErrorState message={error} onRetry={load} />
         </div>
       </div>
@@ -188,157 +189,158 @@ function PlanningListPageInner() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <PageHeader
-        title="Build"
-        description={
-          activeCount === null
+    <div className="p-4 sm:p-6">
+      <PageHeader title="Build" />
+      <BuildSwitch active="planning" className="mt-4" />
+
+      <div className="mt-6 space-y-4">
+        <p className="max-w-2xl text-sm text-fg-muted">
+          {activeCount === null
             ? "Automated website analysis run against a lead's existing site."
-            : `${activeCount} active plan${activeCount === 1 ? "" : "s"} — where each one stands, and what to do next.`
-        }
-        actions={<BuildSwitch active="planning" />}
-      />
+            : `${activeCount} active plan${activeCount === 1 ? "" : "s"} — where each one stands, and what to do next.`}
+        </p>
 
-      {items === null ? null : items.length === 0 ? (
-        <EmptyState
-          title="No Planning items yet"
-          description={'Start one from a lead’s "Start Planning" action.'}
-          action={
-            <Link href="/dashboard/leads" className="btn btn-primary btn-sm">
-              Go to Leads →
-            </Link>
-          }
-        />
-      ) : (
-        <>
-          {/* Search + filters, compact toolbar above the grid. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              placeholder="Search business name…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input w-56"
-              aria-label="Search Planning by business name"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                const next = e.target.value as PlanningStatus | "";
-                setStatusFilter(next);
-                updateParam("status", next || null);
-              }}
-              className="input w-auto"
-              aria-label="Filter by status"
-            >
-              <option value="">Any status</option>
-              {PLANNING_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {PLANNING_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-            <select
-              value={modeFilter}
-              onChange={(e) => {
-                const next = e.target.value as PlanningMode | "";
-                setModeFilter(next);
-                updateParam("mode", next || null);
-              }}
-              className="input w-auto"
-              aria-label="Filter by planning mode"
-            >
-              <option value="">Any type</option>
-              <option value="existing">{PLANNING_MODE_LABEL.existing}</option>
-              <option value="new">{PLANNING_MODE_LABEL.new}</option>
-            </select>
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                const next = e.target.value as SortKey;
-                setSortBy(next);
-                updateParam("sort", next === "updated" ? null : next);
-              }}
-              className="input w-auto"
-              aria-label="Sort by"
-            >
-              {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
-                <option key={key} value={key}>
-                  {SORT_LABEL[key]}
-                </option>
-              ))}
-            </select>
-            {activeFilterCount > 0 && (
-              <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-                Clear filters
-              </button>
-            )}
-
-            <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
+        {items === null ? null : items.length === 0 ? (
+          <EmptyState
+            title="No Planning items yet"
+            description={'Start one from a lead’s "Start Planning" action.'}
+            action={
+              <Link href="/dashboard/sales/leads" className="btn btn-primary btn-sm">
+                Go to Leads →
+              </Link>
+            }
+          />
+        ) : (
+          <>
+            {/* Search + filters, compact toolbar above the grid. */}
+            <div className="flex flex-wrap items-center gap-2">
               <input
-                type="checkbox"
-                checked={showTransferred}
-                onChange={(e) => updateParam("transferred", e.target.checked ? "1" : null)}
+                placeholder="Search business name…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input w-56"
+                aria-label="Search Planning by business name"
               />
-              Show transferred
-            </label>
-          </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  const next = e.target.value as PlanningStatus | "";
+                  setStatusFilter(next);
+                  updateParam("status", next || null);
+                }}
+                className="input w-auto"
+                aria-label="Filter by status"
+              >
+                <option value="">Any status</option>
+                {PLANNING_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {PLANNING_STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={modeFilter}
+                onChange={(e) => {
+                  const next = e.target.value as PlanningMode | "";
+                  setModeFilter(next);
+                  updateParam("mode", next || null);
+                }}
+                className="input w-auto"
+                aria-label="Filter by planning mode"
+              >
+                <option value="">Any type</option>
+                <option value="existing">{PLANNING_MODE_LABEL.existing}</option>
+                <option value="new">{PLANNING_MODE_LABEL.new}</option>
+              </select>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  const next = e.target.value as SortKey;
+                  setSortBy(next);
+                  updateParam("sort", next === "updated" ? null : next);
+                }}
+                className="input w-auto"
+                aria-label="Sort by"
+              >
+                {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
+                  <option key={key} value={key}>
+                    {SORT_LABEL[key]}
+                  </option>
+                ))}
+              </select>
+              {activeFilterCount > 0 && (
+                <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
+                  Clear filters
+                </button>
+              )}
 
-          {visibleItems && (
-            <p className="text-xs text-fg-muted">
-              {visibleItems.length} of {items.length} plan{items.length === 1 ? "" : "s"}
-            </p>
-          )}
-        </>
-      )}
+              <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={showTransferred}
+                  onChange={(e) => updateParam("transferred", e.target.checked ? "1" : null)}
+                />
+                Show transferred
+              </label>
+            </div>
 
-      {items === null && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <PlanningCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
+            {visibleItems && (
+              <p className="text-xs text-fg-muted">
+                {visibleItems.length} of {items.length} plan{items.length === 1 ? "" : "s"}
+              </p>
+            )}
+          </>
+        )}
 
-      {pagedItems && pagedItems.length === 0 && items && items.length > 0 && (
-        <EmptyState
-          title="No matches"
-          description="Try adjusting your search or filters."
-          action={
-            <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-              Clear filters
-            </button>
-          }
-        />
-      )}
-
-      {pagedItems && pagedItems.length > 0 && (
-        <>
-          <div className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-            {pagedItems.map((item) => (
-              <PlanningCard
-                key={item.id}
-                item={item}
-                checklist={checklistById.get(item.id)}
-                density={DENSITY}
-                onRemove={handleRemove}
-                removing={removingId === item.id}
-              />
+        {items === null && (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <PlanningCardSkeleton key={i} />
             ))}
           </div>
+        )}
 
-          {visibleItems && visibleItems.length > pagedItems.length && (
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={() => updateParam("show", String(visibleCount + PAGE_SIZE))}
-                className="btn btn-secondary btn-sm"
-              >
-                Load more ({visibleItems.length - pagedItems.length} remaining)
+        {pagedItems && pagedItems.length === 0 && items && items.length > 0 && (
+          <EmptyState
+            title="No matches"
+            description="Try adjusting your search or filters."
+            action={
+              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                Clear filters
               </button>
+            }
+          />
+        )}
+
+        {pagedItems && pagedItems.length > 0 && (
+          <>
+            <div className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {pagedItems.map((item) => (
+                <PlanningCard
+                  key={item.id}
+                  item={item}
+                  checklist={checklistById.get(item.id)}
+                  density={DENSITY}
+                  onRemove={handleRemove}
+                  removing={removingId === item.id}
+                />
+              ))}
             </div>
-          )}
-        </>
-      )}
+
+            {visibleItems && visibleItems.length > pagedItems.length && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => updateParam("show", String(visibleCount + PAGE_SIZE))}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Load more ({visibleItems.length - pagedItems.length} remaining)
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,7 @@ describe("computeNextActions", () => {
     const actions = computeNextActions({ leads, planning: [], projects: [] });
     const action = actions.find((a) => a.id === "new-leads")!;
     expect(action.count).toBe(2);
-    expect(action.href).toBe("/dashboard/leads?tab=new");
+    expect(action.href).toBe("/dashboard/sales/leads?tab=new");
   });
 
   it("counts qualified-or-further leads with no Planning workspace yet", () => {

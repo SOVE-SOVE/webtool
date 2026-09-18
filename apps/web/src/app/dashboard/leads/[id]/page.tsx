@@ -95,7 +95,8 @@ export default function LeadDetailPage() {
   // Restores the exact filters/tab/search/scroll the operator left the
   // Leads list in, instead of always resetting to the bare list URL.
   const [leadsReturnUrl] = useState(
-    () => (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:leads")) || "/dashboard/leads",
+    () =>
+      (typeof window !== "undefined" && sessionStorage.getItem("wdos-list-return:leads")) || "/dashboard/sales/leads",
   );
   const confirm = useConfirm();
   const showToast = useToast();
@@ -629,7 +630,7 @@ export default function LeadDetailPage() {
             >
               {generatingFollowUp ? "Generating…" : scheduledFollowUp ? "Regenerate follow-up" : "Generate follow-up"}
             </button>
-            <Link href="/dashboard/follow-ups" className="text-xs text-fg-muted hover:underline">
+            <Link href="/dashboard/sales/follow-ups" className="text-xs text-fg-muted hover:underline">
               All follow-ups
             </Link>
           </div>

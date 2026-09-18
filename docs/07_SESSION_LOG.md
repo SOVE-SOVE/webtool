@@ -11,6 +11,243 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-18 (live browser QA) — Verified the Sales-workspace-merge and Build/Sales tab-styling work from the two prior sessions
+
+**Mode:** interactive session, direct to main (not yet committed — same
+uncommitted diff as the two entries below, no code changed this
+session).
+**Scope touched:** None — verification only.
+**What happened:** The two sessions below (2026-09-17) shipped the
+Sales-workspace merge and the Build/Sales tab-styling match, both
+verified via `tsc`/`eslint`/`vitest`/build/`curl` but never in an
+actual browser — the Claude-in-Chrome extension had failed to connect
+in every prior session on this project. It connected this time.
+Started both local servers (`docker compose up -d` for Postgres,
+`uvicorn app.main:app --port 8000` for the API, `next dev` for the
+frontend — none were running at session start) and drove the app for
+real: clicked through all three Sales tabs (Leads/Sales Pipeline/
+Follow-ups) and both Build tabs (Planning/Projects), confirming the
+underline slides and renders identically to Clients' own tabs; hit
+the old redirect routes (`/dashboard/leads`, `/dashboard/follow-ups`,
+`/dashboard/pipeline`) and confirmed they land on the new nested paths
+with state preserved (`?view=board` correctly pre-selects the Board
+toggle); opened a lead detail page and confirmed its "← All leads"
+back-link points at `/dashboard/sales/leads`; confirmed Today's stat
+cards link to the new Sales paths; confirmed `⌘K` global search surfaces
+the collapsed "Sales" nav entry; confirmed real keyboard Tab-traversal
+moves a visible focus ring between the tab items; resized to 420px and
+confirmed no mobile overflow. Everything matched what the two prior
+entries described — no defects found.
+**Blockers/issues:** None.
+**Next up:** All three uncommitted sessions (this one plus the two
+below, 15 modified + 6 new files) are now fully verified end to end.
+Ready to commit/review whenever the user wants — holding off since
+committing wasn't asked for.
+
+---
+
+## 2026-09-17 (Build/Sales tab styling) — Matched Build and Sales navigation to the Clients tab design
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, visual/presentation. Edited:
+`components/ui/Tabs.tsx`, `dashboard/build/BuildSwitch.tsx`,
+`dashboard/sales/SalesSwitch.tsx`, `dashboard/sales/layout.tsx`,
+`dashboard/build/planning/page.tsx`, `dashboard/build/projects/
+page.tsx`. No routes, no data model, no dependency change. Clients
+(`dashboard/clients/page.tsx`, its `TabBar` usage, `useClientsTab.ts`)
+was not touched — the request was explicit that Clients' own tabs and
+underlying workflows stay as they are.
+
+**What changed.** Build's Planning/Projects switch and Sales' Leads/
+Sales Pipeline/Follow-ups switch were a pill-style segmented control
+living inside each `PageHeader`'s `actions` slot (`rounded-md border
+border-border-strong p-0.5`, filled-pill active state). Both now use
+the exact same underline `TabBar` component Clients uses for Overview/
+Websites/Revenue — reused, not reimitated: `components/ui/Tabs.tsx`'s
+`TabItem` type gained an optional `href`, and `TabBar` now renders a
+real `<Link>` for any tab that has one (Build/Sales — distinct routes
+per tab) alongside its existing `onChange`-driven `<button>` mode
+(Clients — one route, `?tab=` param). Both modes share the identical
+`role="tab"`/`aria-selected` markup, hover/active text-color classes,
+and the animated sliding underline (measured via the same
+`useLayoutEffect`/`offsetLeft`/`offsetWidth` logic, unchanged), so
+typography, spacing, the active-tab indicator, hover state, keyboard
+focus (native browser `:focus-visible` — no custom override anywhere
+in this app, confirmed by grep), border/background/transition timings,
+and responsive `overflow-x-auto` wrapping are now byte-for-byte the
+same component instance across all three workspaces, not
+hand-maintained lookalikes.
+
+**Placement now matches Clients exactly:** each `PageHeader` dropped
+its `actions` prop; the tab strip is a full-width sibling directly
+below it (`className="mt-4"`, same as Clients' own `<TabBar ...
+className="mt-4" />`), and content sits in a `mt-6` wrapper below that
+— not nested inside the header's title column, which is what using
+`PageHeader`'s `actions`/`children` slots would have produced.
+
+**Contextual actions moved out of the shared header, into each view's
+own content — matching how Clients' "+ Add Client" lives inside
+`ClientsOverviewTab`, not the shared header:** Projects' "New project"
+button (previously bundled into the header `actions` alongside
+`BuildSwitch`) now sits in its own `flex justify-between` row with the
+view's description text, at the top of Projects' content, `btn-sm`
+sized to match Clients' own action-button precedent. One deliberate,
+minor behaviour note: in Projects' error state, "New project" no
+longer renders (only the tab strip + error banner do) — this matches
+Clients' own precedent, where `ClientsOverviewTab`'s "+ Add Client"
+is likewise gated behind data having loaded, rather than always
+visible regardless of load/error state as Build's old header-actions
+button was. Planning's and Projects' description text moved the same
+way `sales/leads/page.tsx` already did last session — out of
+`PageHeader`'s `description` prop and into a `<p className="max-w-2xl
+text-sm text-fg-muted">` at the top of the view's own content.
+
+**Preserved, unchanged:** every route and direct link (no path
+changed); selected-view persistence (`wdos-build-last-view`/
+`wdos-sales-last-view` + `wdos-list-return:<view>` sessionStorage —
+`BuildSwitch`/`SalesSwitch` keep their exact existing href-computation
+effects, only their render output changed from hand-rolled pill
+buttons to `<TabBar tabs={...} active={...} />`); all filters, sorting,
+pagination, and scroll-restoration state (none of that logic was
+touched); browser Back/Forward (still real `<Link>` navigation, now via
+`TabBar`'s href branch instead of a bespoke one); permissions, counts,
+and every workflow action (create/remove/status-change handlers
+untouched); loading/empty/error states (same conditionals, just
+re-indented under the new wrapper div).
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on every touched
+file; `vitest` 313/313 (unaffected — no test exercises these
+components' JSX output). Production build succeeded with an
+**unchanged** route table (this was a pure presentation change, so no
+route should have moved, and none did). Dev server smoke-tested via
+`curl`: `/dashboard/clients`, `/dashboard/build`, `/dashboard/build/
+planning`, `/dashboard/build/projects`, `/dashboard/sales/leads`,
+`/dashboard/sales/pipeline`, `/dashboard/sales/follow-ups` all return
+HTTP 200 (confirms no server-side render errors from the restructured
+JSX).
+
+**Not verified — live browser QA never happened, and no screenshots
+were captured.** The Claude-in-Chrome extension failed to connect
+again this session (the same unbroken pattern as every prior session
+in this project — see the immediately preceding two log entries).
+None of the task's requested visual/interactive checks — side-by-side
+comparison of Clients/Build/Sales in a running browser, the underline
+indicator's slide animation, actual keyboard-Tab traversal through the
+tabs, or desktop/mobile responsive layout — were exercised in a
+browser. The `curl`-level checks above confirm the pages compile and
+render without server errors, but client components serialize nothing
+into the initial HTML, so they can't confirm what the page actually
+looks like. Clients, Build/Planning, Build/Projects, and Sales/Leads
+were opened in Safari (`open -a Safari`) for the user to compare
+directly, since this session's browser automation tools only drive
+Chrome.
+
+---
+
+## 2026-09-17 (Sales workspace merge) — Merged Leads, Sales, and Follow-ups into one "Sales" workspace
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Frontend only, navigation/presentation. New:
+`dashboard/sales/lastView.ts`, `dashboard/sales/SalesSwitch.tsx`,
+`dashboard/sales/layout.tsx`, `dashboard/sales/leads/page.tsx`,
+`dashboard/sales/pipeline/page.tsx`, `dashboard/sales/follow-ups/
+page.tsx`. Rewritten as thin redirects: `dashboard/sales/page.tsx`,
+`dashboard/leads/page.tsx`, `dashboard/follow-ups/page.tsx`. Edited:
+`dashboard/pipeline/page.tsx` (redirect target only), `dashboard/leads/
+[id]/page.tsx` (2 link edits), `lib/nav.ts`, `dashboard/page.tsx`,
+`lib/today.ts`, `dashboard/build/planning/page.tsx`, `dashboard/build/
+projects/page.tsx` (1 link each), `lib/nav.test.ts`, `lib/today.test.ts`.
+No dependency, no backend change — Lead/SalesOpportunity/FollowUp/
+PipelineEvent stayed four separate backend tables/modules throughout.
+
+**What changed.** The sidebar's three separate Leads/Sales/Follow-ups
+destinations collapsed into one "Sales" nav entry. Inside it, a
+`SalesSwitch` pill toggle (visually and behaviourally identical to
+Build's own `BuildSwitch`) switches between three views under one
+shared `<PageHeader title="Sales">` in `dashboard/sales/layout.tsx`:
+**Leads** (`/dashboard/sales/leads` — the former `/dashboard/leads`
+page, verbatim, with its own `<PageHeader>` removed and its Table/Board
+view toggle relocated inline above the metrics row), **Sales Pipeline**
+(`/dashboard/sales/pipeline` — the former `/dashboard/sales` analytics
+dashboard, verbatim, with its own header removed and "Add lead"/"Find
+leads" relocated to a small inline row), and **Follow-ups**
+(`/dashboard/sales/follow-ups` — the former `/dashboard/follow-ups`
+page, verbatim, header removed). Each keeps its own contextual
+metrics/toolbar/primary actions beneath the shared header — "one
+header" did not mean "one toolbar." `dashboard/sales/page.tsx` is now a
+bare redirect (mirroring `dashboard/build/page.tsx` exactly) that picks
+up the last-used view via `wdos-sales-last-view` / `wdos-list-return:
+<view>` sessionStorage, same convention Build already uses.
+
+**Old routes kept as redirects, not deleted**, so bookmarks and
+external links keep working: `/dashboard/leads` and `/dashboard/
+follow-ups` are now thin client-redirect stubs (mirroring `dashboard/
+planning/page.tsx`) forwarding to `/dashboard/sales/leads`/`/dashboard/
+sales/follow-ups` with every query param intact; `/dashboard/pipeline`
+kept its existing server-side `redirect()` mechanism, just pointed at
+the new `/dashboard/sales/leads?view=board` target. The Leads detail
+route (`/dashboard/leads/{id}`) was **not** moved — only two internal
+links inside it changed (`leadsReturnUrl` fallback and the "All
+follow-ups" link), both now pointing at the new nested paths.
+
+**Cross-links updated** (list-level hrefs only — every `/dashboard/
+leads/{id}` detail link was left untouched): Today dashboard's Leads/
+New-leads/Revenue metric cards and priorities panel's "See all" link;
+`lib/today.ts`'s `computeNextActions`/`computePipelineStages` hrefs
+(the `ENTITY_HREF.lead` detail template was left alone); Build's two
+empty-state links ("Review Leads", "New project" fallback). Global
+search needed no edit — it reads `NAV_SECTIONS` directly and picked up
+the collapsed Sales entry automatically.
+
+**One self-caught mistake, no data lost:** while implementing, `sales/
+page.tsx` was overwritten with the new redirect stub before its full
+309-line original content had been read into context — a risk of
+losing the analytics-dashboard implementation needed for the new
+`sales/pipeline/page.tsx`. Caught immediately; recovered via `git show
+HEAD:apps/web/src/app/dashboard/sales/page.tsx`, since the original was
+still committed. No content was actually lost.
+
+**Preserved, unchanged (per the task's explicit constraints):** Lead
+relationship status vs. sales-opportunity stage vs. follow-up
+completion stayed three separate fields/tables; `handleStartPlanning`/
+"Start Planning" still never touches `client_id` or creates a Client;
+resolving/snoozing a follow-up still only ever calls the follow-up
+endpoints, never touches Lead status or opportunity stage; archive/
+restore, assignments, due dates, and activity history on Leads are
+untouched; no new task system was introduced.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on every touched
+and new file; `vitest` 313/313 (all passing, including the rewritten
+`nav.test.ts` Sales-merge assertions and updated `today.test.ts` href
+assertions; `tasks.test.ts` needed no change — confirmed its
+`taskContextHref` assertion targets the untouched detail route).
+Production build succeeded; the route table confirms `/dashboard/
+sales`, `/dashboard/sales/leads`, `/dashboard/sales/pipeline`,
+`/dashboard/sales/follow-ups` as new static routes, with `/dashboard/
+leads`, `/dashboard/follow-ups`, `/dashboard/pipeline` still present as
+redirect routes and `/dashboard/leads/[id]` still a real detail route.
+Dev server smoke-tested via `curl`: every new and redirect route
+returns HTTP 200; the static `/dashboard/pipeline` page's embedded RSC
+payload confirmed its redirect target string is now `sales/leads?
+view=board;307`, matching the updated `redirect()` call.
+
+**Not verified — live browser QA never happened.** The
+Claude-in-Chrome extension failed to connect again this session
+(consistent with every prior session in this project). None of the
+task's requested interactive checks — switching between the three
+views, browser Back/Forward, restoring per-view filter/search/scroll
+state via the switch, the lead-detail back-link, follow-up creation/
+completion not touching lead status, Lead → Start Planning not creating
+a Client, desktop/mobile visual QA, or screenshots — were actually
+exercised in a browser. `curl`-level checks confirm the pages compile
+and serve correctly, but client components render nothing into the
+initial server HTML, so those checks can't confirm what actually
+appears on screen. The three new views were opened in Safari (`open -a
+Safari`) for the user to check directly, since this session's browser
+automation tools only drive Chrome.
+
+---
+
 ## 2026-09-17 (today box grid alignment) — Aligned the Today box's edges to the Overdue box via a shared grid
 **Mode:** interactive session, direct to main (not yet committed).
 **Scope touched:** Frontend only, presentation. Edited: `dashboard/

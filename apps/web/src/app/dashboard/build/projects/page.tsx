@@ -197,25 +197,12 @@ function ProjectsPageInner() {
 
   const pagedProjects = visibleProjects?.slice(0, visibleCount) ?? null;
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <BuildSwitch active="projects" />
-      <button
-        onClick={() => setShowForm((v) => !v)}
-        disabled={clients.length === 0}
-        className="btn btn-primary"
-        title={clients.length === 0 ? "Convert a lead to a client first" : undefined}
-      >
-        {showForm ? "Cancel" : "New project"}
-      </button>
-    </div>
-  );
-
   if (error) {
     return (
       <div className="p-4 sm:p-6">
-        <PageHeader title="Build" actions={actions} />
-        <div className="mt-4">
+        <PageHeader title="Build" />
+        <BuildSwitch active="projects" className="mt-4" />
+        <div className="mt-6">
           <ErrorState message={error} onRetry={load} />
         </div>
       </div>
@@ -223,223 +210,234 @@ function ProjectsPageInner() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <PageHeader
-        title="Build"
-        description={
-          activeCount === null
-            ? "Websites in production for signed clients — where each one is, and what needs to happen next."
-            : `${activeCount} active project${activeCount === 1 ? "" : "s"} — where each one is, and what needs to happen next.`
-        }
-        actions={actions}
-      />
+    <div className="p-4 sm:p-6">
+      <PageHeader title="Build" />
+      <BuildSwitch active="projects" className="mt-4" />
 
-      {showForm && (
-        <form onSubmit={handleCreate} className="max-w-xl space-y-3 rounded-md border border-border p-4">
-          <select
-            required
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="input"
+      <div className="mt-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-fg-muted">
+            {activeCount === null
+              ? "Websites in production for signed clients — where each one is, and what needs to happen next."
+              : `${activeCount} active project${activeCount === 1 ? "" : "s"} — where each one is, and what needs to happen next.`}
+          </p>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            disabled={clients.length === 0}
+            className="btn btn-primary btn-sm shrink-0"
+            title={clients.length === 0 ? "Convert a lead to a client first" : undefined}
           >
-            <option value="">Select a client…</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.business_name}
-              </option>
-            ))}
-          </select>
-          <input
-            required
-            placeholder="Project name (e.g. “Riverside Plumbing Website”)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input"
-          />
-          <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
-            <option value="">Unassigned</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit" disabled={saving} className="btn btn-primary">
-            {saving ? "Saving…" : "Create project"}
+            {showForm ? "Cancel" : "New project"}
           </button>
-        </form>
-      )}
+        </div>
 
-      {projects === null ? null : projects.length === 0 ? (
-        <EmptyState
-          title="No projects yet"
-          description={
-            clients.length === 0
-              ? "Projects are for signed clients. Convert a won lead first (Leads → Won), or start one from Planning."
-              : "Start a project for a client, or it's created automatically when you convert a won lead."
-          }
-          action={
-            clients.length > 0 ? (
-              <button onClick={() => setShowForm(true)} className="btn btn-primary">
-                New project
-              </button>
-            ) : (
-              <Link href="/dashboard/leads?tab=won" className="btn btn-primary">
-                Go to Leads
-              </Link>
-            )
-          }
-        />
-      ) : (
-        <>
-          {/* Search + filters, compact toolbar above the grid. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              placeholder="Search project, business, package…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input w-56"
-              aria-label="Search projects by project or business name"
-            />
+        {showForm && (
+          <form onSubmit={handleCreate} className="max-w-xl space-y-3 rounded-md border border-border p-4">
             <select
-              value={stageFilter}
-              onChange={(e) => {
-                const next = e.target.value as ProjectStage | "";
-                setStageFilter(next);
-                updateParam("stage", next || null);
-              }}
-              className="input w-auto"
-              aria-label="Filter by stage"
+              required
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className="input"
             >
-              <option value="">All stages</option>
-              {PROJECT_STAGES.map((stage) => (
-                <option key={stage} value={stage}>
-                  {PROJECT_STAGE_LABELS[stage]}
+              <option value="">Select a client…</option>
+              {clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.business_name}
                 </option>
               ))}
             </select>
-            <select
-              value={ownerFilter}
-              onChange={(e) => {
-                const next = e.target.value as "" | "prospect" | "client";
-                setOwnerFilter(next);
-                updateParam("owner", next || null);
-              }}
-              className="input w-auto"
-              aria-label="Filter by prospect or client"
-            >
-              <option value="">Prospect or Client</option>
-              <option value="prospect">{PROJECT_OWNER_LABEL.prospect}</option>
-              <option value="client">{PROJECT_OWNER_LABEL.client}</option>
-            </select>
-            <select
-              value={assigneeFilter}
-              onChange={(e) => {
-                setAssigneeFilter(e.target.value);
-                updateParam("assignee", e.target.value || null);
-              }}
-              className="input w-auto"
-              aria-label="Filter by assignee"
-            >
-              <option value="">Anyone assigned</option>
-              <option value={UNASSIGNED}>Unassigned</option>
+            <input
+              required
+              placeholder="Project name (e.g. “Riverside Plumbing Website”)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input"
+            />
+            <select value={assignedUserId} onChange={(e) => setAssignedUserId(e.target.value)} className="input">
+              <option value="">Unassigned</option>
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
                 </option>
               ))}
             </select>
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                const next = e.target.value as SortKey;
-                setSortBy(next);
-                updateParam("sort", next === "updated" ? null : next);
-              }}
-              className="input w-auto"
-              aria-label="Sort by"
-            >
-              {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
-                <option key={key} value={key}>
-                  {SORT_LABEL[key]}
-                </option>
-              ))}
-            </select>
-            {activeFilterCount > 0 && (
-              <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-                Clear filters
-              </button>
-            )}
-
-            <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
-              <input
-                type="checkbox"
-                checked={showFinished}
-                onChange={(e) => {
-                  setShowFinished(e.target.checked);
-                  updateParam("finished", e.target.checked ? "1" : null);
-                }}
-                disabled={stageFilter !== ""}
-              />
-              Show finished
-            </label>
-          </div>
-
-          {visibleProjects && (
-            <p className="text-xs text-fg-muted">
-              {visibleProjects.length} of {projects.length} project{projects.length === 1 ? "" : "s"}
-            </p>
-          )}
-        </>
-      )}
-
-      {projects === null && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <ProjectCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
-
-      {pagedProjects && pagedProjects.length === 0 && projects && projects.length > 0 && (
-        <EmptyState
-          title="No matches"
-          description="Try adjusting your search or filters."
-          action={
-            <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-              Clear filters
+            <button type="submit" disabled={saving} className="btn btn-primary">
+              {saving ? "Saving…" : "Create project"}
             </button>
-          }
-        />
-      )}
+          </form>
+        )}
 
-      {pagedProjects && pagedProjects.length > 0 && (
-        <>
-          <div className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-            {pagedProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                nextTask={nextOpenTask(tasks, project.id)}
-                checklist={checklistById.get(project.id)}
-                density={DENSITY}
+        {projects === null ? null : projects.length === 0 ? (
+          <EmptyState
+            title="No projects yet"
+            description={
+              clients.length === 0
+                ? "Projects are for signed clients. Convert a won lead first (Leads → Won), or start one from Planning."
+                : "Start a project for a client, or it's created automatically when you convert a won lead."
+            }
+            action={
+              clients.length > 0 ? (
+                <button onClick={() => setShowForm(true)} className="btn btn-primary">
+                  New project
+                </button>
+              ) : (
+                <Link href="/dashboard/sales/leads?tab=won" className="btn btn-primary">
+                  Go to Leads
+                </Link>
+              )
+            }
+          />
+        ) : (
+          <>
+            {/* Search + filters, compact toolbar above the grid. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                placeholder="Search project, business, package…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input w-56"
+                aria-label="Search projects by project or business name"
               />
+              <select
+                value={stageFilter}
+                onChange={(e) => {
+                  const next = e.target.value as ProjectStage | "";
+                  setStageFilter(next);
+                  updateParam("stage", next || null);
+                }}
+                className="input w-auto"
+                aria-label="Filter by stage"
+              >
+                <option value="">All stages</option>
+                {PROJECT_STAGES.map((stage) => (
+                  <option key={stage} value={stage}>
+                    {PROJECT_STAGE_LABELS[stage]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={ownerFilter}
+                onChange={(e) => {
+                  const next = e.target.value as "" | "prospect" | "client";
+                  setOwnerFilter(next);
+                  updateParam("owner", next || null);
+                }}
+                className="input w-auto"
+                aria-label="Filter by prospect or client"
+              >
+                <option value="">Prospect or Client</option>
+                <option value="prospect">{PROJECT_OWNER_LABEL.prospect}</option>
+                <option value="client">{PROJECT_OWNER_LABEL.client}</option>
+              </select>
+              <select
+                value={assigneeFilter}
+                onChange={(e) => {
+                  setAssigneeFilter(e.target.value);
+                  updateParam("assignee", e.target.value || null);
+                }}
+                className="input w-auto"
+                aria-label="Filter by assignee"
+              >
+                <option value="">Anyone assigned</option>
+                <option value={UNASSIGNED}>Unassigned</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  const next = e.target.value as SortKey;
+                  setSortBy(next);
+                  updateParam("sort", next === "updated" ? null : next);
+                }}
+                className="input w-auto"
+                aria-label="Sort by"
+              >
+                {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
+                  <option key={key} value={key}>
+                    {SORT_LABEL[key]}
+                  </option>
+                ))}
+              </select>
+              {activeFilterCount > 0 && (
+                <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
+                  Clear filters
+                </button>
+              )}
+
+              <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={showFinished}
+                  onChange={(e) => {
+                    setShowFinished(e.target.checked);
+                    updateParam("finished", e.target.checked ? "1" : null);
+                  }}
+                  disabled={stageFilter !== ""}
+                />
+                Show finished
+              </label>
+            </div>
+
+            {visibleProjects && (
+              <p className="text-xs text-fg-muted">
+                {visibleProjects.length} of {projects.length} project{projects.length === 1 ? "" : "s"}
+              </p>
+            )}
+          </>
+        )}
+
+        {projects === null && (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <ProjectCardSkeleton key={i} />
             ))}
           </div>
+        )}
 
-          {visibleProjects && visibleProjects.length > pagedProjects.length && (
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={() => updateParam("show", String(visibleCount + PAGE_SIZE))}
-                className="btn btn-secondary btn-sm"
-              >
-                Load more ({visibleProjects.length - pagedProjects.length} remaining)
+        {pagedProjects && pagedProjects.length === 0 && projects && projects.length > 0 && (
+          <EmptyState
+            title="No matches"
+            description="Try adjusting your search or filters."
+            action={
+              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                Clear filters
               </button>
+            }
+          />
+        )}
+
+        {pagedProjects && pagedProjects.length > 0 && (
+          <>
+            <div className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {pagedProjects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  nextTask={nextOpenTask(tasks, project.id)}
+                  checklist={checklistById.get(project.id)}
+                  density={DENSITY}
+                />
+              ))}
             </div>
-          )}
-        </>
-      )}
+
+            {visibleProjects && visibleProjects.length > pagedProjects.length && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => updateParam("show", String(visibleCount + PAGE_SIZE))}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Load more ({visibleProjects.length - pagedProjects.length} remaining)
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

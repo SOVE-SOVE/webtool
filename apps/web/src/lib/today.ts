@@ -53,7 +53,7 @@ export function computeNextActions(input: {
       id: "new-leads",
       count: newLeadsCount,
       label: `${newLeadsCount} new lead${newLeadsCount === 1 ? "" : "s"} to review`,
-      href: "/dashboard/leads?tab=new",
+      href: "/dashboard/sales/leads?tab=new",
     });
   }
   if (readyForPlanningCount > 0) {
@@ -61,7 +61,7 @@ export function computeNextActions(input: {
       id: "ready-for-planning",
       count: readyForPlanningCount,
       label: `${readyForPlanningCount} lead${readyForPlanningCount === 1 ? "" : "s"} ready to start Planning`,
-      href: "/dashboard/leads",
+      href: "/dashboard/sales/leads",
     });
   }
   if (planningNeedsReviewCount > 0) {
@@ -109,7 +109,7 @@ export function computePipelineStages(input: {
       id: "leads",
       label: "Leads",
       count: input.leadsCount,
-      href: "/dashboard/leads",
+      href: "/dashboard/sales/leads",
       empty: input.leadsCount === 0 ? { label: "Open Map Discovery", href: "/dashboard/discovery" } : undefined,
     },
     {
@@ -117,7 +117,7 @@ export function computePipelineStages(input: {
       label: "Planning",
       count: input.planningCount,
       href: "/dashboard/build/planning",
-      empty: input.planningCount === 0 ? { label: "Review Leads", href: "/dashboard/leads" } : undefined,
+      empty: input.planningCount === 0 ? { label: "Review Leads", href: "/dashboard/sales/leads" } : undefined,
     },
     {
       id: "projects",

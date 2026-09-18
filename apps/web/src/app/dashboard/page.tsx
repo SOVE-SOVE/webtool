@@ -120,8 +120,8 @@ export default function TodayPage() {
           <StatsSkeleton count={4} />
         ) : (
           <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/leads" />
-            <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/leads?tab=new" />
+            <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/sales/leads" />
+            <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/sales/leads?tab=new" />
             <Metric
               label="Planning/build needing review"
               value={planningNeedsReviewCount ?? 0}
@@ -145,11 +145,11 @@ export default function TodayPage() {
           <StatsSkeleton count={5} />
         ) : (
           <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales" />
-            <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales" />
-            <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales" />
-            <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales" />
-            <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales" />
+            <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales/pipeline" />
+            <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales/pipeline" />
+            <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales/pipeline" />
+            <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales/pipeline" />
+            <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales/pipeline" />
           </div>
         )}
       </section>
@@ -160,7 +160,7 @@ export default function TodayPage() {
         <Panel
           title="Today&apos;s priorities"
           right={
-            <Link href="/dashboard/leads" className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+            <Link href="/dashboard/sales/leads" className="rounded hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
               See all →
             </Link>
           }

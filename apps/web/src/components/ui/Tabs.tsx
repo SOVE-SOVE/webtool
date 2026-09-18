@@ -1,11 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useLayoutEffect, useRef, useState } from "react";
 
 export type TabItem = {
   id: string;
   label: string;
   count?: number;
+  /**
+   * When set, this tab renders as a real `<Link>` to this URL instead of
+   * a button firing `onChange` — for workspaces like Build/Sales where
+   * each tab is its own route (so browser Back/Forward, direct links,
+   * and open-in-new-tab all keep working), as opposed to Clients' single
+   * route + `?tab=` query param switched via local state.
+   */
+  href?: string;
 };
 
 /**
@@ -13,6 +22,13 @@ export type TabItem = {
  * narrow screens. Deliberately not a `<Disclosure>`-style accordion:
  * tabs are for switching between whole sections of a page, not
  * progressively revealing detail within one.
+ *
+ * Two modes, per tab: a plain `id` fires `onChange` (Clients' own
+ * usage — one route, local/URL-param state); an `href` renders a real
+ * `<Link>` instead (Build/Sales — distinct routes per tab). Both modes
+ * share the exact same visual markup/classes, so the active-tab
+ * underline, hover/focus states, and responsive overflow behave
+ * identically regardless of which a given workspace uses.
  */
 export function TabBar({
   tabs,
@@ -23,16 +39,16 @@ export function TabBar({
 }: {
   tabs: readonly TabItem[];
   active: string;
-  onChange: (id: string) => void;
+  onChange?: (id: string) => void;
   className?: string;
   ariaLabel?: string;
 }) {
-  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const tabRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
   useLayoutEffect(() => {
     function measure() {
-      const el = buttonRefs.current.get(active);
+      const el = tabRefs.current.get(active);
       if (el) setIndicator({ left: el.offsetLeft, width: el.offsetWidth });
     }
     measure();
@@ -49,23 +65,34 @@ export function TabBar({
     >
       {tabs.map((tab) => {
         const isActive = tab.id === active;
-        return (
+        const tabClassName = `shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)] ${
+          isActive ? "text-fg" : "text-fg-muted hover:text-fg"
+        }`;
+        const setRef = (el: HTMLElement | null) => {
+          if (el) tabRefs.current.set(tab.id, el);
+          else tabRefs.current.delete(tab.id);
+        };
+        const label = (
+          <>
+            {tab.label}
+            {tab.count !== undefined && <span className="ml-1.5 text-xs text-fg-subtle">{tab.count}</span>}
+          </>
+        );
+        return tab.href ? (
+          <Link key={tab.id} ref={setRef} href={tab.href} role="tab" aria-selected={isActive} className={tabClassName}>
+            {label}
+          </Link>
+        ) : (
           <button
             key={tab.id}
-            ref={(el) => {
-              if (el) buttonRefs.current.set(tab.id, el);
-              else buttonRefs.current.delete(tab.id);
-            }}
+            ref={setRef}
             type="button"
             role="tab"
             aria-selected={isActive}
-            onClick={() => onChange(tab.id)}
-            className={`shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)] ${
-              isActive ? "text-fg" : "text-fg-muted hover:text-fg"
-            }`}
+            onClick={() => onChange?.(tab.id)}
+            className={tabClassName}
           >
-            {tab.label}
-            {tab.count !== undefined && <span className="ml-1.5 text-xs text-fg-subtle">{tab.count}</span>}
+            {label}
           </button>
         );
       })}
