@@ -155,12 +155,17 @@ class RejectRequest(BaseModel):
 @discovered_businesses_router.get("", response_model=list[DiscoveredBusinessReviewRead])
 def list_review_items(
     include_archived: bool = False,
+    queued_only: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DiscoveredBusinessReviewRead]:
     """The dedicated review interface's backing list — every discovered business
-    across every search in the workspace, with research/quality/score context."""
-    return service.list_review_items(db, current_user.workspace_id, include_archived=include_archived)
+    across every search in the workspace, with research/quality/score context.
+    `queued_only=true` is the Discovery workspace's Review Queue tab: only
+    businesses explicitly added via POST .../queue."""
+    return service.list_review_items(
+        db, current_user.workspace_id, include_archived=include_archived, queued_only=queued_only
+    )
 
 
 @discovered_businesses_router.post("/bulk-approve", response_model=BulkApproveResult)
@@ -222,6 +227,28 @@ def archive_business(
         business = service.archive_business(db, current_user.workspace_id, current_user.id, business_id)
     except service.InvalidReviewActionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.post("/{business_id}/queue", response_model=DiscoveredBusinessRead)
+def add_to_review_queue(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DiscoveredBusinessRead:
+    """Explicit "Add to Review Queue" — Map Discovery's row/popup action.
+    Idempotent; never implies approval or import."""
+    business = service.add_to_review_queue(db, current_user.workspace_id, current_user.id, business_id)
+    if business is None:
+        raise HTTPException(status_code=404, detail="Discovered business not found")
+    return business
+
+
+@discovered_businesses_router.delete("/{business_id}/queue", response_model=DiscoveredBusinessRead)
+def remove_from_review_queue(
+    business_id: uuid.UUID, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> DiscoveredBusinessRead:
+    business = service.remove_from_review_queue(db, current_user.workspace_id, current_user.id, business_id)
     if business is None:
         raise HTTPException(status_code=404, detail="Discovered business not found")
     return business

@@ -712,13 +712,20 @@ def _latest_score(db: Session, business_id: uuid.UUID) -> OpportunityScoreResult
 
 
 def list_review_items(
-    db: Session, workspace_id: uuid.UUID, include_archived: bool = False
+    db: Session, workspace_id: uuid.UUID, include_archived: bool = False, queued_only: bool = False
 ) -> list[DiscoveredBusinessReviewRead]:
     """
     The dedicated review interface's backing list — every discovered
     business across every search in the workspace, with the latest
     research/quality/score context folded in so the operator can decide
     approve/reject/archive/import without opening each one individually.
+
+    `queued_only=True` is the Discovery workspace's actual Review Queue
+    tab: only businesses explicitly added via `add_to_review_queue` (see
+    below). The default (`False`) stays the full, unfiltered list this
+    endpoint has always returned — existing callers/tests that read
+    every discovered business regardless of queue membership are
+    unaffected.
     """
     query = (
         select(DiscoveredBusiness)
@@ -728,6 +735,8 @@ def list_review_items(
     )
     if not include_archived:
         query = query.where(DiscoveredBusiness.status != DiscoveredBusinessStatus.ARCHIVED)
+    if queued_only:
+        query = query.where(DiscoveredBusiness.review_queued_at.is_not(None))
     businesses = list(db.scalars(query.order_by(DiscoveredBusiness.discovered_at.desc())))
 
     items: list[DiscoveredBusinessReviewRead] = []
@@ -757,6 +766,7 @@ def list_review_items(
                 raw_snippet=business.raw_snippet,
                 reviewed_by_user_name=business.reviewed_by_user.name if business.reviewed_by_user else None,
                 reviewed_at=business.reviewed_at,
+                review_queued_at=business.review_queued_at,
                 researched_at=research.researched_at if research else None,
                 research_error=research.research_error if research else None,
                 quality_summary=quality_audit.summary if quality_audit else None,
@@ -772,6 +782,61 @@ def list_review_items(
             )
         )
     return items
+
+
+def add_to_review_queue(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
+) -> DiscoveredBusinessRead | None:
+    """
+    Explicit "Add to Review Queue" from Map Discovery. Idempotent — an
+    already-queued business is returned unchanged (no re-timestamp, no
+    second activity-log entry) so a double-click or a stale UI retry
+    never duplicates anything. Deliberately has no status restriction:
+    queue membership is orthogonal to approve/reject/import, so even an
+    already-decided business can be queued (e.g. to reconsider it).
+    """
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    if business.review_queued_at is None:
+        business.review_queued_at = datetime.now(timezone.utc)
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="discovered_business",
+            entity_id=business.id,
+            action="queued_for_review",
+            summary=f"{business.name}: added to the review queue",
+        )
+        db.commit()
+        db.refresh(business)
+    return DiscoveredBusinessRead.model_validate(business)
+
+
+def remove_from_review_queue(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, business_id: uuid.UUID
+) -> DiscoveredBusinessRead | None:
+    """The reverse of `add_to_review_queue` — also idempotent, and also
+    doesn't touch `status`: removing a business from the queue is not a
+    rejection."""
+    business = _get_discovered_business_orm(db, workspace_id, business_id)
+    if business is None:
+        return None
+    if business.review_queued_at is not None:
+        business.review_queued_at = None
+        activity_service.record(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+            entity_type="discovered_business",
+            entity_id=business.id,
+            action="removed_from_review_queue",
+            summary=f"{business.name}: removed from the review queue",
+        )
+        db.commit()
+        db.refresh(business)
+    return DiscoveredBusinessRead.model_validate(business)
 
 
 def _set_review_status(

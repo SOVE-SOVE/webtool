@@ -8,6 +8,63 @@ top. Each entry: date, decision, why, alternatives considered (if any).
 
 ---
 
+## 2026-09-18 — Discovery workspace merge: a real explicit Review Queue, and a keep-both-mounted tab layout instead of Sales/Build's per-route unmount
+
+**Decision:** Two decisions bundled into one merge (see
+docs/07_SESSION_LOG.md for the full file list):
+
+1. **`DiscoveredBusiness.review_queued_at`** (nullable timestamp) is a
+   new, explicit "in the Review Queue" flag, fully orthogonal to
+   `status`. Before this, "the Review Queue" was simply every
+   discovered business across every search — there was no opt-in step.
+   `GET /api/v1/discovered-businesses` keeps that original full-list
+   behavior as its default (`queued_only=false`); only the frontend's
+   actual Review Queue tab passes `queued_only=true`. Chose an additive
+   query param over changing the endpoint's default specifically to
+   avoid breaking `test_lead_intelligence_workflow.py`'s existing
+   contract (a dozen tests read this endpoint with no params expecting
+   every business, imported or not).
+2. **`DiscoveryLayout` keeps both Map Discovery and Review Queue
+   mounted permanently**, toggling visibility with a plain `hidden`
+   attribute instead of the Sales/Build pattern (separate routed
+   `page.tsx` files that fully unmount on switch). Three reasons this
+   workspace needed it where Sales/Build didn't: a Leaflet map instance
+   that's expensive to recreate and loses pan/zoom on remount; neither
+   old page had *any* URL-synced filter/search state to begin with, so
+   real unmounting would have lost it outright rather than just
+   flickering; and both views run their own background polls
+   (website-check progress, research/audit/score) that should keep
+   updating invisibly on the inactive tab. The two routed `page.tsx`
+   files under `map`/`review` render `null` — they exist only so the
+   URLs are real, and `DiscoveryLayout` (not `children`) owns all
+   content, keyed off `usePathname()`/`useParams()`.
+
+**Why:** The task required "switching back to Map Discovery must not
+rerun a paid search" and "preserve filters/pagination/scroll/map
+position when switching tabs" with zero pre-existing URL-state
+machinery to build on for either page — keeping both mounted satisfies
+every one of those for free (including scroll position, via the
+browser's own hidden-but-not-detached DOM) instead of retrofitting a
+sessionStorage key per field. `DiscoveryMap` needed one specific
+consequence handled: `invalidateSize()` on a rAF when `mapVisible`
+flips true again, since Leaflet's size cache goes stale while
+`display:none`.
+
+**Alternatives considered:** Mirroring Sales/Build's per-route unmount
++ sessionStorage-restore pattern exactly was the first approach
+considered, for consistency with the rest of the app — rejected once
+the Leaflet-remount cost and the complete absence of existing
+URL-synced state on both pages became clear; it would have meant
+inventing new sessionStorage plumbing for two pages that had never
+needed any, just to claw back parity with what "never unmounting"
+gives for free. A generic "keep filters in a query param" refactor of
+both pages (matching Leads/Planning's existing convention) was also
+considered and set aside as unrelated scope-creep — this merge is a
+navigation/presentation change, not a rebuild of either view's
+internals.
+
+---
+
 ## 2026-09-14 — Desktop UX overhaul: `<main>`'s `overflow-x-auto` broke `position: sticky`
 
 **Decision:** Removed `overflow-x-auto` from `dashboard/layout.tsx`'s

@@ -1,15 +1,31 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { DiscoveryWorkspace } from "@/components/DiscoveryWorkspace";
+import { Suspense, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 
 /**
- * A permalink to one discovery search. Renders the same single Discovery
- * workspace as `/dashboard/discovery`, just opened on this search — so
- * links from the discovered-business detail page and any bookmarked
- * search URLs keep working after the workspace was unified.
+ * The old permalink to one discovery search, from before Map Discovery
+ * and Review Queue merged into one Discovery workspace — kept as a
+ * redirect (not deleted) so bookmarked search URLs and any stored
+ * `discovery_search` activity links keep working. Forwards to the same
+ * search under its new home, `/dashboard/discovery/map/{id}`.
  */
-export default function DiscoverySearchPage() {
+function DiscoverySearchRedirectInner() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
-  return <DiscoveryWorkspace initialSearchId={params.id} />;
+
+  useEffect(() => {
+    router.replace(`/dashboard/discovery/map/${params.id}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
+}
+
+export default function DiscoverySearchRedirect() {
+  return (
+    <Suspense fallback={null}>
+      <DiscoverySearchRedirectInner />
+    </Suspense>
+  );
 }

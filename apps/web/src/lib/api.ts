@@ -2473,6 +2473,10 @@ export type DiscoveredBusiness = {
   reviewed_by_user_id: string | null;
   reviewed_at: string | null;
   review_notes: string | null;
+  // Explicit Review Queue membership — separate from `status`. Null
+  // until an operator adds this business via "Add to Review Queue"
+  // (Map Discovery); never implies approval or import.
+  review_queued_at: string | null;
   imported_lead_id: string | null;
   discovered_at: string;
   updated_at: string;
@@ -2510,6 +2514,7 @@ export type DiscoveredBusinessReviewItem = {
   imported_lead_id: string | null;
   reviewed_by_user_name: string | null;
   reviewed_at: string | null;
+  review_queued_at: string | null;
   instagram_handle: string | null;
   instagram_website_status: InstagramWebsiteStatus | null;
   instagram_website_checked_at: string | null;
@@ -3324,10 +3329,20 @@ export const api = {
       { method: "POST" },
     ),
 
-  listReviewItems: (opts?: { includeArchived?: boolean }) =>
-    request<DiscoveredBusinessReviewItem[]>(
-      `/api/v1/discovered-businesses${opts?.includeArchived ? "?include_archived=true" : ""}`,
-    ),
+  listReviewItems: (opts?: { includeArchived?: boolean; queuedOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.includeArchived) params.set("include_archived", "true");
+    if (opts?.queuedOnly) params.set("queued_only", "true");
+    const qs = params.toString();
+    return request<DiscoveredBusinessReviewItem[]>(`/api/v1/discovered-businesses${qs ? `?${qs}` : ""}`);
+  },
+  // Explicit "Add to Review Queue" (Map Discovery rows/popups) and its
+  // reverse. Both are idempotent on the backend — safe to call again on
+  // a stale UI retry without duplicating anything.
+  addToReviewQueue: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/queue`, { method: "POST" }),
+  removeFromReviewQueue: (id: string) =>
+    request<DiscoveredBusiness>(`/api/v1/discovered-businesses/${id}/queue`, { method: "DELETE" }),
   approveDiscoveredBusiness: (id: string) =>
     request<ApproveResult>(`/api/v1/discovered-businesses/${id}/approve`, { method: "POST" }),
   rejectDiscoveredBusiness: (id: string, notes?: string) =>

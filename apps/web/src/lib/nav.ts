@@ -10,6 +10,14 @@
  * routes, surfaced as `secondary` links under the primary concept they
  * belong to.
  *
+ * Discover has a single entry, Discovery (`/dashboard/discovery`) — the
+ * old separate Map Discovery and Review queue destinations were folded
+ * into it as tabs (Map Discovery/Review Queue) behind one shared header
+ * and switch, the same pattern Sales/Build/Clients already use (see
+ * docs/07_SESSION_LOG.md). The old routes still work — `/dashboard/
+ * review` and `/dashboard/discovery/{searchId}` each redirect into the
+ * corresponding Discovery tab, preserving query params.
+ *
  * Sales has a single entry, Sales (`/dashboard/sales`) — the old
  * separate Leads, Sales, and Follow-ups destinations were folded into
  * it as views (Leads/Sales Pipeline/Follow-ups) behind one shared
@@ -83,13 +91,20 @@ export const NAV_SECTIONS: NavSection[] = [
     id: "discover",
     label: "Discover",
     links: [
-      { href: "/dashboard/discovery", label: "Map Discovery", icon: "discovery" },
+      // One destination — the Discovery workspace itself picks Map
+      // Discovery vs. Review Queue (remembers the last view; each keeps
+      // its own stable /dashboard/discovery/map and
+      // /dashboard/discovery/review URL). A specific search stays
+      // reachable at /dashboard/discovery/map/{searchId}; the old bare
+      // /dashboard/discovery/{searchId} and /dashboard/review routes
+      // still redirect here, so both are listed here too — this one
+      // link stays highlighted from either, and from a discovered-
+      // business detail page.
       {
-        href: "/dashboard/review",
-        label: "Review queue",
-        icon: "review",
-        secondary: true,
-        activePrefixes: ["/dashboard/discovered-businesses"],
+        href: "/dashboard/discovery",
+        label: "Discovery",
+        icon: "discovery",
+        activePrefixes: ["/dashboard/discovery", "/dashboard/review", "/dashboard/discovered-businesses"],
         countKey: "reviewQueue",
       },
     ],

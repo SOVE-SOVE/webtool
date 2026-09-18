@@ -28,7 +28,21 @@ type Located = LocatedBusiness;
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function popupHtml(b: Located): string {
+// The queue action rendered inside a Leaflet popup — plain HTML (Leaflet
+// popups aren't React), wired up via the `popupopen` event below. Mirrors
+// the results table's own three states (imported / queued / not queued).
+function popupQueueAction(b: Located, busy: boolean): string {
+  if (b.status === "imported" && b.imported_lead_id) {
+    return `<br/><a href="/dashboard/leads/${b.imported_lead_id}">View lead &rarr;</a>`;
+  }
+  if (busy) return `<br/><em>Working…</em>`;
+  if (b.review_queued_at) {
+    return `<br/><span data-queue-state="in-queue">In Review Queue</span> · <a href="#" data-queue-action="remove" data-queue-id="${b.id}">Remove</a>`;
+  }
+  return `<br/><a href="#" data-queue-action="add" data-queue-id="${b.id}">Add to Review Queue</a>`;
+}
+
+function popupHtml(b: Located, busy: boolean): string {
   const category = b.business_category || b.industry;
   const cat = category ? ` · ${esc(category)}` : "";
   const handle = b.instagram_handle
@@ -46,7 +60,7 @@ function popupHtml(b: Located): string {
           ? `<br/><em>No website</em>`
           : "";
   const details = `<br/><a href="/dashboard/discovered-businesses/${b.id}">View details &rarr;</a>`;
-  return `<strong>${esc(b.name)}</strong>${cat}${handle}${addr}${phone}${site}${details}`;
+  return `<strong>${esc(b.name)}</strong>${cat}${handle}${addr}${phone}${site}${details}${popupQueueAction(b, busy)}`;
 }
 
 const noWebsite = (b: Located) => b.website_status === "none";
@@ -55,10 +69,22 @@ export default function DiscoveryMap({
   businesses,
   selectedId,
   onSelect,
+  mapVisible = true,
+  onQueue,
+  onUnqueue,
+  queuingId,
 }: {
   businesses: DiscoveredBusiness[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Whether this map's (permanently-mounted) container is currently
+   * shown — see DiscoveryWorkspace. Toggling it back to true re-measures
+   * the Leaflet instance, which otherwise keeps stale 0-size bounds from
+   * whenever it was last visible. */
+  mapVisible?: boolean;
+  onQueue?: (id: string) => void;
+  onUnqueue?: (id: string) => void;
+  queuingId?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -69,6 +95,12 @@ export default function DiscoveryMap({
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+  const onQueueRef = useRef(onQueue);
+  const onUnqueueRef = useRef(onUnqueue);
+  useEffect(() => {
+    onQueueRef.current = onQueue;
+    onUnqueueRef.current = onUnqueue;
+  }, [onQueue, onUnqueue]);
 
   const located = useMemo<Located[]>(() => businesses.filter(hasCoordinates), [businesses]);
 
@@ -89,7 +121,28 @@ export default function DiscoveryMap({
     mapRef.current = map;
     clusterRef.current = cluster;
     setTimeout(() => map.invalidateSize(), 0);
+
+    // Delegated on the stable container (not the individual popup
+    // button) because `setPopupContent` replaces the popup's DOM
+    // wholesale on every business update — a listener bound directly to
+    // the button would be silently dropped the moment a queue action
+    // succeeds and the popup re-renders "Add to Review Queue" into "In
+    // Review Queue" while still open.
+    const container = containerRef.current;
+    function handleClick(ev: MouseEvent) {
+      const target = (ev.target as HTMLElement | null)?.closest("[data-queue-action]") as HTMLElement | null;
+      if (!target) return;
+      ev.preventDefault();
+      const id = target.getAttribute("data-queue-id");
+      const action = target.getAttribute("data-queue-action");
+      if (!id) return;
+      if (action === "add") onQueueRef.current?.(id);
+      else if (action === "remove") onUnqueueRef.current?.(id);
+    }
+    container.addEventListener("click", handleClick);
+
     return () => {
+      container.removeEventListener("click", handleClick);
       map.remove();
       mapRef.current = null;
       clusterRef.current = null;
@@ -112,16 +165,17 @@ export default function DiscoveryMap({
       }
     }
     for (const b of located) {
+      const busy = queuingId === b.id;
       let marker = markersRef.current.get(b.id);
       if (!marker) {
         marker = L.marker([b.latitude, b.longitude], { icon: pinIcon(false, noWebsite(b)) });
-        marker.bindPopup(popupHtml(b));
+        marker.bindPopup(popupHtml(b, busy));
         marker.on("click", () => onSelectRef.current(b.id));
         markersRef.current.set(b.id, marker);
         cluster.addLayer(marker);
       } else {
         marker.setLatLng([b.latitude, b.longitude]);
-        marker.setPopupContent(popupHtml(b));
+        marker.setPopupContent(popupHtml(b, busy));
         marker.setIcon(pinIcon(b.id === selectedId, noWebsite(b)));
       }
     }
@@ -131,7 +185,7 @@ export default function DiscoveryMap({
       map.fitBounds(cluster.getBounds().pad(0.2), { maxZoom: 15 });
       fittedSignatureRef.current = signature;
     }
-  }, [located, selectedId]);
+  }, [located, selectedId, queuingId]);
 
   // Reflect the current selection: highlight + reveal + focus its marker.
   useEffect(() => {
@@ -152,6 +206,18 @@ export default function DiscoveryMap({
       }
     }
   }, [selectedId, located]);
+
+  // This map's container is permanently mounted and only CSS-`hidden`
+  // while the Review Queue tab is active (see DiscoveryWorkspace) —
+  // Leaflet measures its container's size when it can't see it, so
+  // becoming visible again needs an explicit re-measure or the map
+  // stays clipped/blank until the window itself resizes. Deferred a
+  // frame so the container has already been un-hidden and painted.
+  useEffect(() => {
+    if (!mapVisible) return;
+    const frame = requestAnimationFrame(() => mapRef.current?.invalidateSize());
+    return () => cancelAnimationFrame(frame);
+  }, [mapVisible]);
 
   return (
     <div className="relative mt-4">

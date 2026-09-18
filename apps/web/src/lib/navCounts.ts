@@ -35,7 +35,10 @@ let planningItemsCache: PlanningListItem[] | null = null;
 let inflight: Promise<NavCounts> | null = null;
 
 async function fetchNavCounts(): Promise<NavCounts> {
-  const [reviewItems, planningItems] = await Promise.all([api.listReviewItems(), api.listPlanning()]);
+  const [reviewItems, planningItems] = await Promise.all([
+    api.listReviewItems({ queuedOnly: true }),
+    api.listPlanning(),
+  ]);
   planningItemsCache = planningItems;
   return {
     reviewQueue: reviewItems.filter((item) => !DECIDED_STATUSES.has(item.status)).length,

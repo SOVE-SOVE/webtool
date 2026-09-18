@@ -11,6 +11,165 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-18 (Discovery workspace merge) — Merged Map Discovery and Review Queue into one Discovery workspace, and added a real explicit Review Queue
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Backend: `apps/api/app/modules/discovery/{models,schemas,service,routes}.py`,
+new migration `a1c3e8f0d2b4_discovered_business_review_queue.py`,
+`apps/api/tests/test_lead_intelligence_workflow.py` (new tests appended).
+Frontend, new: `dashboard/discovery/{layout.tsx,DiscoverySwitch.tsx,lastView.ts}`,
+`dashboard/discovery/map/{page.tsx,[id]/page.tsx}`, `dashboard/discovery/review/page.tsx`,
+`components/ReviewQueueWorkspace.tsx`. Rewritten as redirects:
+`dashboard/discovery/page.tsx`, `dashboard/discovery/[id]/page.tsx`,
+`dashboard/review/page.tsx`. Edited: `components/DiscoveryWorkspace.tsx`,
+`components/DiscoveryMap.tsx`, `lib/nav.ts`, `lib/nav.test.ts`, `lib/today.ts`,
+`lib/today.test.ts`, `lib/api.ts`, `lib/navCounts.ts`, `lib/reviewQueue.test.ts`,
+`dashboard/discovered-businesses/[id]/page.tsx`.
+
+**What happened.** The request asked to combine Map Discovery and Review
+Queue into one "Discovery" workspace with Clients-style tabs, plus a real
+"Add to Review Queue" workflow (queue → review → import) distinct from
+approval. Investigation before building anything (per this file's own
+purpose) found a genuine mismatch: this app's existing "Review Queue"
+was every discovered business across every search, auto-populated by
+the background research/audit/score pipeline — there was no explicit
+per-business queue membership, no "Add to Review Queue" action anywhere,
+and Map Discovery's only action was a direct "Add lead" shortcut that
+skipped review entirely. Flagged this to the user before proceeding
+(the two designs have very different scope) — confirmed building the
+real explicit queue, not just relabelling the existing all-businesses
+list.
+
+**Backend — real queue semantics, additive and backward-compatible.**
+Added `DiscoveredBusiness.review_queued_at` (nullable timestamp — null
+means "not queued"; never implies approval/import, kept fully
+orthogonal to `status`). Migration backfills every pre-existing row to
+its own `discovered_at`, so nothing already sitting in any status
+silently disappeared from view — only businesses discovered *after*
+this migration start out unqueued. `POST/DELETE /api/v1/discovered-
+businesses/{id}/queue` (idempotent both ways — a double-click or stale
+retry can't duplicate anything or error). `GET /api/v1/discovered-
+businesses` gained an *additive* `queued_only` query param (default
+`false`, preserving the endpoint's existing full-list contract exactly
+— `test_lead_intelligence_workflow.py`'s dozen existing tests read this
+endpoint with no params and expect every business regardless of queue
+membership, so changing the default would have broken real, valuable
+coverage). The frontend's Review Queue tab is the only caller that ever
+passes `queued_only=true`. 8 new backend tests cover add/remove,
+idempotency, workspace isolation, 404s, and that approve/reject/import
+work identically whether or not a business was ever queued.
+
+**Frontend — one shared header/tab-strip, but both views stay mounted.**
+Unlike the Sales/Build merges (docs entries below), the two Discovery
+tabs are **not** separate route pages that unmount each other on
+switch. `DiscoveryLayout` renders both `DiscoveryWorkspace` (Map) and
+the new `ReviewQueueWorkspace` (extracted verbatim from the old
+`/dashboard/review` page body) permanently, toggling visibility with a
+plain `hidden` attribute keyed off `usePathname()`/`useParams()`. Three
+reasons this workspace needed that where Sales/Build didn't: (1) Map
+Discovery owns a Leaflet map instance that's expensive to recreate and
+loses pan/zoom/selection on remount; (2) neither old page had any
+URL-synced filter/sort/search state to begin with, so a real unmount
+would have lost it — keeping both mounted preserves everything
+(including native scroll position of the hidden view) for free instead
+of retrofitting per-field sessionStorage restoration neither page ever
+needed before; (3) both views' background polls (website-check
+progress, research/audit/score) keep running invisibly on the inactive
+tab, so switching back shows current state immediately. `DiscoveryMap`
+gained a `mapVisible` prop that calls `invalidateSize()` on a rAF after
+becoming visible again, since Leaflet's size cache goes stale while
+`display:none`. The two mounted `page.tsx` files under `map`/`review`
+render `null` — they exist purely so the URLs are real, bookmarkable
+routes; the layout owns all content. Tab labels/hrefs/underline/focus/
+reduced-motion all come from the same `TabBar` Clients/Sales/Build
+already use, unmodified.
+
+**Add to Review Queue, on both surfaces.** The results table's old
+"Add lead" direct-import shortcut was removed from Map Discovery
+(deliberate behaviour change — the task's Map Discovery spec lists only
+"Add to Review Queue" and "keep the *existing* Open Lead action for
+already-imported rows," not preserving the bypass) and replaced with
+Add to Review Queue → "In Review Queue" + a small Remove link, matching
+the intended discover → queue → review → import workflow; "Add to
+CRM"/"Approve" inside Review Queue itself is untouched and still the
+one real import path. `DiscoveryMap`'s Leaflet popups got the same
+three-state action, wired via one delegated click listener on the
+map's container (not per-button) — necessary because `setPopupContent`
+replaces the popup's DOM wholesale on every business update, which
+would silently drop a listener bound to the button itself the moment a
+queue action succeeds while the popup is still open. The Review Queue
+tab's badge count (`DiscoverySwitch`'s `count` prop, already supported
+by `TabBar`) is lifted from `ReviewQueueWorkspace`'s own already-loaded
+`items` state — no second fetch — and refreshes via a `refreshToken`
+bump whenever Map Discovery queues/unqueues something, since both stay
+mounted side by side. Queue/unqueue and every Review Queue action also
+call `invalidateNavCounts()` + a forced `loadNavCounts()` so the
+sidebar badge (same `reviewQueue` `countKey`, now correctly scoped
+since `listReviewItems()` defaults to `queuedOnly: true` in
+`navCounts.ts`) picks up the change on the next navigation.
+
+**Routes.** `/dashboard/discovery` is now a redirect-picker (last-view,
+same convention as Sales/Build) → `/dashboard/discovery/map` or
+`/dashboard/discovery/review`, restoring Map's exact last search via
+`wdos-list-return:discovery-map`. `/dashboard/discovery/map/{searchId}`
+replaces the old `/dashboard/discovery/{searchId}` (kept as a redirect
+stub). `/dashboard/review` (old standalone page) redirects to
+`/dashboard/discovery/review`. The discovered-business detail page's
+"Back to search results" link, Today's Discovery/empty-state links,
+`lib/today.ts`'s `discovery_search` entity href, and the sidebar
+(one "Discovery" entry replacing Map Discovery + Review queue, same
+`activePrefixes`/`countKey` pattern as the Sales/Build merges) were all
+updated. Global search needed no edit — same as the Sales merge, it
+reads `NAV_SECTIONS` directly.
+
+**Verified:** `npx tsc --noEmit` clean; `eslint` clean on every touched/
+new file; `vitest` 316/316 (up from 313 — new `nav.test.ts`/
+`today.test.ts` assertions for the merged entry and updated hrefs,
+`reviewQueue.test.ts` fixture updated for the new field). Production
+build succeeded; route table confirms `/dashboard/discovery`,
+`/dashboard/discovery/map`, `/dashboard/discovery/map/[id]`,
+`/dashboard/discovery/review` as new routes, `/dashboard/discovery/[id]`
+and `/dashboard/review` still present as redirect routes, and
+`/dashboard/discovered-businesses/[id]` unchanged. Backend: 28/28 in
+`test_lead_intelligence_workflow.py` (12 new — queue add/remove/
+idempotency/workspace-scoping/404s/coexistence with approve-without-
+queueing), 165/165 across `test_business_discovery.py`/
+`test_discovery_map.py`/`test_instagram_import.py`/
+`test_instagram_search_discovery.py`/`test_dashboard.py`. Dev server
+smoke-tested via `curl`: `/dashboard/discovery`, `/dashboard/discovery/
+map`, `/dashboard/discovery/review`, `/dashboard/review`,
+`/dashboard/discovery/map/{id}`, `/dashboard/discovery/{id}` all return
+HTTP 200.
+
+**Not verified — live interactive browser QA never happened.** The
+Claude-in-Chrome extension failed to connect this session (consistent
+with the pattern noted in the two entries immediately below). None of
+the task's requested interactive checks — running a real search,
+queueing several results without leaving the map, switching to Review
+Queue and seeing them there, reviewing and importing one into Leads,
+returning to the map with the previous search/position intact,
+confirming tab switches issue no new paid search request, the popup's
+click-to-queue button, keyboard-Tab traversal, or desktop/mobile visual
+QA — were exercised in a browser this session. The `curl`/build/test
+checks above confirm every route compiles, renders without a server
+error, and the new backend logic is correct end-to-end, but none of
+that confirms what the merged workspace actually looks or feels like.
+No screenshots were captured (attempted a `screencapture` fallback
+since the Chrome tool was unavailable; it only captured the physical
+desktop, not a specific browser tab, so it was discarded as more
+invasive than useful). The Map and Review Queue tabs were opened in
+Safari (`open -a Safari`) for the user to check directly.
+**Blockers/issues:** Same recurring Claude-in-Chrome connectivity gap
+as noted in the entries below — worth investigating independently of
+any single session's work, since it's now blocked live QA on at least
+three consecutive sessions in this project.
+**Next up:** Live browser QA per the checklist above, then commit. If
+the extension keeps failing, consider a Playwright-based smoke script
+(see other projects' `run` skill patterns) as a fallback that doesn't
+depend on it.
+
+---
+
 ## 2026-09-18 (live browser QA) — Verified the Sales-workspace-merge and Build/Sales tab-styling work from the two prior sessions
 
 **Mode:** interactive session, direct to main (not yet committed — same

@@ -104,13 +104,13 @@ export function computePipelineStages(input: {
   const liveCount = input.projects.filter((p) => LIVE_STAGES.includes(p.stage)).length;
 
   return [
-    { id: "discovery", label: "Discovery", count: input.reviewQueueCount, href: "/dashboard/review" },
+    { id: "discovery", label: "Discovery", count: input.reviewQueueCount, href: "/dashboard/discovery/review" },
     {
       id: "leads",
       label: "Leads",
       count: input.leadsCount,
       href: "/dashboard/sales/leads",
-      empty: input.leadsCount === 0 ? { label: "Open Map Discovery", href: "/dashboard/discovery" } : undefined,
+      empty: input.leadsCount === 0 ? { label: "Open Map Discovery", href: "/dashboard/discovery/map" } : undefined,
     },
     {
       id: "planning",
@@ -137,7 +137,7 @@ const ENTITY_HREF: Record<string, (id: string) => string> = {
   task: () => "/dashboard/tasks",
   meeting: () => "/dashboard/calendar",
   discovered_business: (id) => `/dashboard/discovered-businesses/${id}`,
-  discovery_search: (id) => `/dashboard/discovery/${id}`,
+  discovery_search: (id) => `/dashboard/discovery/map/${id}`,
   // No dedicated detail page per payment/plan/agreement row — same
   // fallback shape as `task`/`meeting` above, linking to the section
   // that lists them rather than a row the app can't route to directly.

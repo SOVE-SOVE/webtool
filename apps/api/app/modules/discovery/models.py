@@ -282,6 +282,17 @@ class DiscoveredBusiness(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_notes: Mapped[str | None] = mapped_column(Text)
 
+    # Explicit membership in the Review Queue workspace tab — separate
+    # from `status`, so being queued never implies a decision (approve/
+    # reject) was made. Null until an operator deliberately adds this
+    # candidate from Map Discovery (or it's re-added after removal);
+    # never set automatically just because a search discovered it, per
+    # "do not automatically queue every search result". Existing rows
+    # from before this column existed were backfilled to their
+    # `discovered_at` by the migration that added it, so nothing already
+    # reviewed/imported/rejected silently disappeared from view.
+    review_queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # Traceability once a human imports this into the CRM — same pattern
     # as projects.source_lead_id. Set exactly once; a row whose status is
     # IMPORTED always has this populated.

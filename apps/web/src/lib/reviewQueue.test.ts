@@ -28,6 +28,7 @@ function item(overrides: Partial<DiscoveredBusinessReviewItem> = {}): Discovered
     imported_lead_id: null,
     reviewed_by_user_name: null,
     reviewed_at: null,
+    review_queued_at: null,
     instagram_handle: null,
     instagram_website_status: null,
     instagram_website_checked_at: null,

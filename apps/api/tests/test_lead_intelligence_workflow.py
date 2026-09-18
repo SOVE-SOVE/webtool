@@ -408,3 +408,105 @@ def test_review_list_returns_key_context_fields(authed_client, monkeypatch):
     assert row["recommended_sales_angle"]
     assert row["source_provider"] == "brave_search"
     assert row["researched_at"] is not None
+
+
+# Discovery workspace merge (docs/07_SESSION_LOG.md) — explicit Review
+# Queue membership, separate from status/approval.
+
+
+def test_queued_business_is_marked_and_appears_in_queued_only_list(authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+    business_id = business["id"]
+
+    queued_only = authed_client.get("/api/v1/discovered-businesses?queued_only=true").json()
+    assert business_id not in [b["id"] for b in queued_only]
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/queue")
+    assert res.status_code == 200
+    assert res.json()["review_queued_at"] is not None
+
+    queued_only = authed_client.get("/api/v1/discovered-businesses?queued_only=true").json()
+    assert business_id in [b["id"] for b in queued_only]
+
+    # Queue membership carries no status/approval implication.
+    row = next(b for b in queued_only if b["id"] == business_id)
+    assert row["status"] == "new"
+
+
+def test_queuing_is_idempotent_and_does_not_duplicate_activity(authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+    business_id = business["id"]
+
+    first = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/queue").json()
+    second = authed_client.post(f"/api/v1/discovered-businesses/{business_id}/queue").json()
+    assert first["review_queued_at"] == second["review_queued_at"]
+
+
+def test_removing_from_review_queue_drops_it_from_the_queued_only_list(authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+    business_id = business["id"]
+
+    authed_client.post(f"/api/v1/discovered-businesses/{business_id}/queue")
+    res = authed_client.delete(f"/api/v1/discovered-businesses/{business_id}/queue")
+    assert res.status_code == 200
+    assert res.json()["review_queued_at"] is None
+
+    queued_only = authed_client.get("/api/v1/discovered-businesses?queued_only=true").json()
+    assert business_id not in [b["id"] for b in queued_only]
+
+    # Removing from the queue is not a rejection.
+    assert res.json()["status"] == "new"
+
+
+def test_removing_an_unqueued_business_is_a_harmless_no_op(authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    res = authed_client.delete(f"/api/v1/discovered-businesses/{business['id']}/queue")
+    assert res.status_code == 200
+    assert res.json()["review_queued_at"] is None
+
+
+def test_queue_actions_return_404_for_missing_business(authed_client):
+    assert authed_client.post(f"/api/v1/discovered-businesses/{uuid.uuid4()}/queue").status_code == 404
+    assert authed_client.delete(f"/api/v1/discovered-businesses/{uuid.uuid4()}/queue").status_code == 404
+
+
+def test_queue_actions_workspace_scoped(authed_client, other_authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    assert other_authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/queue").status_code == 404
+    assert other_authed_client.delete(f"/api/v1/discovered-businesses/{business['id']}/queue").status_code == 404
+
+
+def test_approving_a_business_never_queued_still_works(authed_client, monkeypatch):
+    """Queue membership is purely a Map Discovery convenience layer —
+    approve/reject/import work exactly as before regardless of it."""
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+
+    res = authed_client.post(f"/api/v1/discovered-businesses/{business['id']}/approve")
+    assert res.status_code == 200
+    assert res.json()["business"]["review_queued_at"] is None
+
+    # Never queued, so it's absent from the queued-only Review Queue tab
+    # even though it's fully decided.
+    queued_only = authed_client.get("/api/v1/discovered-businesses?queued_only=true").json()
+    assert business["id"] not in [b["id"] for b in queued_only]
+
+
+def test_queued_business_stays_in_queue_after_import(authed_client, monkeypatch):
+    _patch_discovery_and_research(monkeypatch)
+    business = _run_discovery(authed_client)
+    business_id = business["id"]
+
+    authed_client.post(f"/api/v1/discovered-businesses/{business_id}/queue")
+    authed_client.post(f"/api/v1/discovered-businesses/{business_id}/import")
+
+    queued_only = authed_client.get("/api/v1/discovered-businesses?queued_only=true").json()
+    row = next(b for b in queued_only if b["id"] == business_id)
+    assert row["status"] == "imported"

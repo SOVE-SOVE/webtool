@@ -127,6 +127,7 @@ class DiscoveredBusinessRead(BaseModel):
     reviewed_by_user_id: uuid.UUID | None
     reviewed_at: datetime | None
     review_notes: str | None
+    review_queued_at: datetime | None
     imported_lead_id: uuid.UUID | None
     discovered_at: datetime
     updated_at: datetime
@@ -173,6 +174,7 @@ class DiscoveredBusinessReviewRead(BaseModel):
     imported_lead_id: uuid.UUID | None
     reviewed_by_user_name: str | None
     reviewed_at: datetime | None
+    review_queued_at: datetime | None
 
     instagram_handle: str | None
     instagram_website_status: InstagramWebsiteStatus | None

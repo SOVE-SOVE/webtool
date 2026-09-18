@@ -100,7 +100,7 @@ describe("computePipelineStages", () => {
     const stages = computePipelineStages({ reviewQueueCount: 0, leadsCount: 0, planningCount: 3, projects: [] });
     expect(stages.find((s) => s.id === "leads")!.empty).toEqual({
       label: "Open Map Discovery",
-      href: "/dashboard/discovery",
+      href: "/dashboard/discovery/map",
     });
     expect(stages.find((s) => s.id === "planning")!.empty).toBeUndefined();
     expect(stages.find((s) => s.id === "projects")!.empty).toEqual({
@@ -113,6 +113,11 @@ describe("computePipelineStages", () => {
     const stages = computePipelineStages({ reviewQueueCount: 0, leadsCount: 0, planningCount: 0, projects: [] });
     expect(stages.find((s) => s.id === "live")!.href).toBe("/dashboard/clients?tab=websites");
   });
+
+  it("the Discovery stage opens the Review Queue tab directly", () => {
+    const stages = computePipelineStages({ reviewQueueCount: 0, leadsCount: 0, planningCount: 0, projects: [] });
+    expect(stages.find((s) => s.id === "discovery")!.href).toBe("/dashboard/discovery/review");
+  });
 });
 
 describe("activityHref", () => {
@@ -123,6 +128,18 @@ describe("activityHref", () => {
   it("links a project activity item to its project detail page", () => {
     expect(activityHref({ entity_type: "project", entity_id: "abc" } as ActivityItem)).toBe(
       "/dashboard/projects/abc",
+    );
+  });
+
+  it("links a discovery_search activity item into the Discovery workspace's Map tab", () => {
+    expect(activityHref({ entity_type: "discovery_search", entity_id: "abc" } as ActivityItem)).toBe(
+      "/dashboard/discovery/map/abc",
+    );
+  });
+
+  it("links a discovered_business activity item to its detail page (unchanged route)", () => {
+    expect(activityHref({ entity_type: "discovered_business", entity_id: "abc" } as ActivityItem)).toBe(
+      "/dashboard/discovered-businesses/abc",
     );
   });
 

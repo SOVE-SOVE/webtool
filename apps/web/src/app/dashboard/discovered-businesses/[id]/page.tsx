@@ -463,7 +463,10 @@ export default function DiscoveredBusinessDetailPage() {
   return (
     <div className="p-6">
       {business && (
-        <Link href={`/dashboard/discovery/${business.discovery_search_id}`} className="text-sm text-fg-muted hover:underline">
+        <Link
+          href={`/dashboard/discovery/map/${business.discovery_search_id}`}
+          className="text-sm text-fg-muted hover:underline"
+        >
           &larr; Back to search results
         </Link>
       )}

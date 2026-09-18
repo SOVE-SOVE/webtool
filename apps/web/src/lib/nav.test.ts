@@ -20,10 +20,17 @@ describe("nav config", () => {
     expect(new Set(ALL_NAV_HREFS).size).toBe(ALL_NAV_HREFS.length);
   });
 
-  it("keeps Review, Sales, Tasks and Calendar in the sidebar", () => {
-    for (const href of ["/dashboard/review", "/dashboard/sales", "/dashboard/tasks", "/dashboard/calendar"]) {
+  it("keeps Discovery, Sales, Tasks and Calendar in the sidebar", () => {
+    for (const href of ["/dashboard/discovery", "/dashboard/sales", "/dashboard/tasks", "/dashboard/calendar"]) {
       expect(ALL_NAV_HREFS).toContain(href);
     }
+  });
+
+  it("folds Map Discovery and Review Queue into a single Discovery entry — no separate landing-page links", () => {
+    const discover = NAV_SECTIONS.find((s) => s.id === "discover")!;
+    expect(discover.links.map((l) => l.label)).toEqual(["Discovery"]);
+    expect(discover.links[0].href).toBe("/dashboard/discovery");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/review");
   });
 
   it("folds Leads, Sales and Follow-ups into a single Sales entry — no separate landing-page links", () => {
@@ -85,15 +92,14 @@ describe("isNavLinkActive", () => {
     expect(isNavLinkActive("/dashboard/leads", q(), build)).toBe(false);
   });
 
-  it("honours activePrefixes (Review lights up on a discovered-business page)", () => {
-    const review = link("/dashboard/review");
-    expect(isNavLinkActive("/dashboard/discovered-businesses/xyz", q(), review)).toBe(true);
-    expect(isNavLinkActive("/dashboard/discovery", q(), review)).toBe(false);
-  });
-
-  it("does not confuse Map Discovery with Review's discovered-business pages", () => {
+  it("Discovery lights up on either tab, a discovered-business page, and both old redirect routes — never on an unrelated path", () => {
     const discovery = link("/dashboard/discovery");
-    expect(isNavLinkActive("/dashboard/discovered-businesses/xyz", q(), discovery)).toBe(false);
+    expect(isNavLinkActive("/dashboard/discovery", q(), discovery)).toBe(true);
+    expect(isNavLinkActive("/dashboard/discovery/map", q(), discovery)).toBe(true);
+    expect(isNavLinkActive("/dashboard/discovery/review", q(), discovery)).toBe(true);
+    expect(isNavLinkActive("/dashboard/discovered-businesses/xyz", q(), discovery)).toBe(true);
+    expect(isNavLinkActive("/dashboard/review", q(), discovery)).toBe(true);
+    expect(isNavLinkActive("/dashboard/leads", q(), discovery)).toBe(false);
   });
 
   it("Sales lights up on any of its three merged views, a lead detail page, and the old redirect routes", () => {

@@ -28,12 +28,12 @@ import {
 } from "@/lib/filters";
 import { diffNewIds } from "@/lib/discovery-diff";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 
 // Leaflet touches `window` on import — client-only, no SSR.
 const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
@@ -66,16 +66,6 @@ const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, BadgeTone> = {
   needs_review: "muted",
 };
 
-// Discovered businesses the operator can still bring into the CRM. A
-// rejected/archived/imported row shows its status instead of an action.
-const IMPORTABLE = new Set<DiscoveredBusiness["status"]>([
-  "new",
-  "researched",
-  "audited",
-  "scored",
-  "approved",
-]);
-
 function criteriaSummary(search: DiscoverySearch): string {
   const parts = [search.industry, search.business_type, search.location, search.keywords].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "No criteria on record";
@@ -86,14 +76,31 @@ function searchLabel(search: DiscoverySearch): string {
 }
 
 /**
- * The single Lead Discovery workspace: search controls, the map, and the
+ * The Map Discovery tab's content: search controls, the map, and the
  * discovered-business results with their website status and review/add
- * actions — all on one screen. `/dashboard/discovery` renders it against
- * the most recent search; `/dashboard/discovery/[id]` renders the same
- * thing deep-linked to one specific search (so old links and the
- * business detail page's "back" link keep working).
+ * actions — all on one screen. `/dashboard/discovery/map` renders it
+ * against the most recent search; `/dashboard/discovery/map/[id]`
+ * renders the same thing deep-linked to one specific search (so old
+ * links and the business detail page's "back" link keep working).
+ *
+ * Rendered by `DiscoveryLayout`, which owns the shared "Discovery"
+ * header/tab-strip — this component has no header of its own.
+ * `mapVisible` tells the map when its (permanently-mounted, just CSS-
+ * `hidden` while on the Review Queue tab) container becomes visible
+ * again, so it can fix up its Leaflet size cache. `onQueueChanged`
+ * notifies the layout after a successful queue add/remove so the
+ * Review Queue tab (also always mounted) refetches and its tab-badge
+ * count stays current.
  */
-export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: string }) {
+export function DiscoveryWorkspace({
+  initialSearchId,
+  mapVisible = true,
+  onQueueChanged,
+}: {
+  initialSearchId?: string;
+  mapVisible?: boolean;
+  onQueueChanged?: () => void;
+}) {
   const [searches, setSearches] = useState<DiscoverySearch[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(initialSearchId ?? null);
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -102,7 +109,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const [error, setError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [importingId, setImportingId] = useState<string | null>(null);
+  const [queuingId, setQueuingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
@@ -217,14 +224,20 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   }, [loadSearches, initialSearchId]);
 
   // Load (and keep the URL in step with) whichever search is active.
+  // Also remembered in sessionStorage (DiscoverySwitch's own
+  // `wdos-list-return:discovery-map` read) so navigating to Review
+  // Queue and back returns to this exact search, not the bare
+  // /dashboard/discovery/map route — this component never unmounts on
+  // that round trip (see DiscoveryLayout), so its own React state
+  // already has the answer; this only keeps the *URL* honest for
+  // Back/Forward, bookmarks, and a fresh tab.
   useEffect(() => {
     if (!activeId) return;
     loadResults(activeId);
-    if (
-      typeof window !== "undefined" &&
-      window.location.pathname !== `/dashboard/discovery/${activeId}`
-    ) {
-      window.history.replaceState(null, "", `/dashboard/discovery/${activeId}`);
+    const path = `/dashboard/discovery/map/${activeId}`;
+    if (typeof window !== "undefined") {
+      if (window.location.pathname !== path) window.history.replaceState(null, "", path);
+      sessionStorage.setItem("wdos-list-return:discovery-map", path);
     }
   }, [activeId, loadResults]);
 
@@ -350,16 +363,39 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
     selectSearch(result.search.id);
   }
 
-  async function handleAddLead(business: DiscoveredBusiness) {
-    setImportingId(business.id);
+  // Queue businesses without navigating away — the row/popup action
+  // just updates this business's own row in place. Idempotent on the
+  // backend (see api.addToReviewQueue), so a double-click or a slow
+  // retry can never queue the same business twice.
+  async function handleQueue(business: DiscoveredBusiness) {
+    setQueuingId(business.id);
     setError(null);
     try {
-      const updated = await api.importDiscoveredBusiness(business.id);
+      const updated = await api.addToReviewQueue(business.id);
       setResults((rows) => (rows ? rows.map((r) => (r.id === updated.id ? updated : r)) : rows));
+      onQueueChanged?.();
+      invalidateNavCounts();
+      loadNavCounts({ force: true }).catch(() => {});
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Couldn't add ${business.name} as a lead.`);
+      setError(err instanceof ApiError ? err.message : `Couldn't add ${business.name} to the review queue.`);
     } finally {
-      setImportingId(null);
+      setQueuingId(null);
+    }
+  }
+
+  async function handleUnqueue(business: DiscoveredBusiness) {
+    setQueuingId(business.id);
+    setError(null);
+    try {
+      const updated = await api.removeFromReviewQueue(business.id);
+      setResults((rows) => (rows ? rows.map((r) => (r.id === updated.id ? updated : r)) : rows));
+      onQueueChanged?.();
+      invalidateNavCounts();
+      loadNavCounts({ force: true }).catch(() => {});
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : `Couldn't remove ${business.name} from the review queue.`);
+    } finally {
+      setQueuingId(null);
     }
   }
 
@@ -368,19 +404,33 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
   const noWebsiteCount = visible.filter((b) => b.website_status === "none").length;
 
   return (
-    <div className="p-6">
-      <PageHeader
-        actions={
-          <button onClick={() => setShowImportModal(true)} className="btn btn-secondary">
-            Import from Instagram
-          </button>
-        }
-        title="Discovery"
-        description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
-      />
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-fg-muted">
+          Find businesses that might be a good fit for a website redesign, then queue and review the best ones
+          before bringing them into the CRM.
+        </p>
+        <button onClick={() => setShowImportModal(true)} className="btn btn-secondary btn-sm">
+          Import from Instagram
+        </button>
+      </div>
 
       {activeResults && activeResults.length > 0 && (
-        <DiscoveryMap businesses={visible} selectedId={activeSelectionId} onSelect={setSelectedId} />
+        <DiscoveryMap
+          businesses={visible}
+          selectedId={activeSelectionId}
+          onSelect={setSelectedId}
+          mapVisible={mapVisible}
+          onQueue={(id) => {
+            const business = visible.find((b) => b.id === id);
+            if (business) handleQueue(business);
+          }}
+          onUnqueue={(id) => {
+            const business = visible.find((b) => b.id === id);
+            if (business) handleUnqueue(business);
+          }}
+          queuingId={queuingId}
+        />
       )}
 
       {/* Search controls — always visible: this is where discovery starts.
@@ -474,7 +524,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
               </option>
             ))}
           </Select>
-          <Link href="/dashboard/review" className="text-fg-muted hover:text-fg hover:underline">
+          <Link href="/dashboard/discovery/review" className="text-fg-muted hover:text-fg hover:underline">
             Review queue →
           </Link>
         </div>
@@ -678,7 +728,7 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                     <th className="px-3 py-2">Phone</th>
                     <th className="px-3 py-2">Website</th>
                     <th className="px-3 py-2">Score</th>
-                    <th className="px-3 py-2">Lead</th>
+                    <th className="px-3 py-2">Review</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -782,19 +832,31 @@ export function DiscoveryWorkspace({ initialSearchId }: { initialSearchId?: stri
                             >
                               View lead &rarr;
                             </Link>
-                          ) : IMPORTABLE.has(business.status) ? (
+                          ) : business.review_queued_at ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-fg-muted">In Review Queue</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUnqueue(business);
+                                }}
+                                disabled={queuingId === business.id}
+                                className="text-xs text-fg-subtle hover:underline disabled:opacity-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ) : (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleAddLead(business);
+                                handleQueue(business);
                               }}
-                              disabled={importingId === business.id}
+                              disabled={queuingId === business.id}
                               className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
                             >
-                              {importingId === business.id ? "Adding…" : "Add lead"}
+                              {queuingId === business.id ? "Adding…" : "Add to Review Queue"}
                             </button>
-                          ) : (
-                            <span className="text-xs text-fg-subtle">{business.status}</span>
                           )}
                         </td>
                       </tr>
