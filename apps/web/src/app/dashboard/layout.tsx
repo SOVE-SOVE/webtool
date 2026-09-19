@@ -4,135 +4,14 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
-import {
-  MOBILE_PRIMARY_HREFS,
-  NAV_SECTIONS,
-  isNavLinkActive,
-  type NavLink as NavLinkType,
-} from "@/lib/nav";
+import { MOBILE_PRIMARY_HREFS, NAV_SECTIONS, isNavLinkActive, type NavLink as NavLinkType } from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
 import { ActivityIndicatorButton } from "@/components/activity/ActivityIndicatorButton";
+import { Sidebar } from "@/components/nav/Sidebar";
 import { CommandMenuButton, CommandMenuProvider } from "@/components/ui/CommandMenuProvider";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
-import { CountBadge } from "@/components/ui/CountBadge";
 import { NavIcon } from "@/components/ui/Icons";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-
-function NavLink({
-  link,
-  active,
-  count,
-  onNavigate,
-}: {
-  link: NavLinkType;
-  active: boolean;
-  count?: number;
-  onNavigate?: () => void;
-}) {
-  if (link.secondary) {
-    return (
-      <Link
-        href={link.href}
-        onClick={onNavigate}
-        aria-current={active ? "page" : undefined}
-        className={`flex items-center gap-2 rounded-md py-1.5 pl-[2.375rem] pr-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
-          active ? "font-medium text-fg" : "text-fg-subtle hover:text-fg"
-        }`}
-      >
-        <span className="truncate">{link.label}</span>
-        <CountBadge count={count} />
-      </Link>
-    );
-  }
-
-  return (
-    <Link
-      href={link.href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
-        active
-          ? "bg-accent font-medium text-accent-fg"
-          : "text-fg-muted hover:bg-surface-hover hover:text-fg"
-      }`}
-    >
-      <NavIcon name={link.icon} className="h-[18px] w-[18px] shrink-0" />
-      <span className="truncate">{link.label}</span>
-      <CountBadge count={count} />
-    </Link>
-  );
-}
-
-function SidebarContent({
-  me,
-  pathname,
-  search,
-  counts,
-  onNavigate,
-}: {
-  me: Me;
-  pathname: string;
-  search: URLSearchParams;
-  counts: NavCounts | null;
-  onNavigate?: () => void;
-}) {
-  const router = useRouter();
-
-  async function handleLogout() {
-    await api.logout();
-    router.push("/login");
-  }
-
-  return (
-    <>
-      <div className="border-b border-border px-4 py-4">
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-sm bg-accent" />
-          <span className="text-sm font-semibold text-fg">Web Design OS</span>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-fg-muted">{me.workspace_name}</p>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
-        {NAV_SECTIONS.map((section, i) => (
-          <div key={section.id} className={i === 0 ? undefined : "mt-5"}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-              {section.label}
-            </p>
-            <div className="mt-1 space-y-0.5">
-              {section.links.map((link) => (
-                <NavLink
-                  key={link.href}
-                  link={link}
-                  active={isNavLinkActive(pathname, search, link)}
-                  count={link.countKey ? counts?.[link.countKey] : undefined}
-                  onNavigate={onNavigate}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      <div className="border-t border-border px-4 py-3">
-        <p className="truncate text-xs font-medium text-fg">{me.name}</p>
-        <p className="truncate text-xs text-fg-muted">
-          {me.email} · {me.role}
-        </p>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <ThemeToggle />
-          <button
-            onClick={handleLogout}
-            className="shrink-0 rounded text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
 
 // The mobile bottom nav's five primary destinations, resolved once from
 // the shared nav data so their icon/label never drifts from the sidebar.
@@ -310,7 +189,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 className="flex h-full w-64 flex-col border-r border-border bg-surface"
                 onClick={(e) => e.stopPropagation()}
               >
-                <SidebarContent
+                <Sidebar
+                  variant="mobile"
                   me={me}
                   pathname={pathname}
                   search={searchParams}
@@ -323,9 +203,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Desktop sidebar */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface-subtle lg:flex">
-          <SidebarContent me={me} pathname={pathname} search={searchParams} counts={counts} />
-        </aside>
+        <Sidebar variant="desktop" me={me} pathname={pathname} search={searchParams} counts={counts} />
 
         {/* No overflow-x-auto here (removed) — it used to catch wide
             tables/boards, but every one of those already wraps itself in

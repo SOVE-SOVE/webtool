@@ -26,6 +26,11 @@
   --fg-subtle: #a3a3a3; /* placeholders, disabled, faint metadata */
   --accent: #171717; /* primary action bg */
   --accent-fg: #ffffff; /* primary action text */
+  /* Soft tint for the current sidebar destination — a restrained
+     highlight (not a solid fill) so the active row reads as "gently
+     emphasized", matching the app's monochrome accent rather than
+     introducing a separate brand hue. */
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
   --focus-ring: #171717;
   --overlay: rgb(0 0 0 / 0.4); /* modal/drawer backdrop */
   --danger: #dc2626;
@@ -159,6 +164,7 @@ html[data-font="mono"] {
   --color-fg-subtle: var(--fg-subtle);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
   --color-focus-ring: var(--focus-ring);
   --color-overlay: var(--overlay);
   --color-danger: var(--danger);
@@ -420,6 +426,34 @@ body {
   /* Loading */
   .skeleton {
     @apply animate-pulse rounded bg-surface-subtle motion-reduce:animate-none;
+  }
+
+  /* Dashboard sidebar (layout.tsx / components/nav). Width itself is set
+     inline (it depends on collapsed state); this only owns the
+     transition so expand/collapse animates instead of jumping, and
+     backs off under reduced motion like every other transform-y
+     animation in the app. */
+  .app-sidebar {
+    transition: width var(--duration-base) var(--ease-standard);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-sidebar {
+      transition: none;
+    }
+  }
+
+  /* The label a collapsed sidebar row shows on hover/keyboard focus —
+     the row's real text label stays in the DOM (sr-only) either way, so
+     this is a sighted-user affordance only, not the accessible name
+     itself. Positioned via inline style from a measured trigger rect
+     (see useHoverTooltip in components/nav/Sidebar.tsx) rather than
+     CSS `absolute` + `group-hover`: the sidebar nav list is a scroll
+     container (`overflow-y-auto`), which per CSS's own asymmetric-
+     overflow rule silently makes overflow-x `auto` too — an
+     absolutely-positioned tooltip poking out past the collapsed rail's
+     edge was clipped by that, invisible, even at opacity 1. */
+  .sidebar-tooltip {
+    @apply pointer-events-none fixed z-40 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs text-fg shadow-sm;
   }
 
   /* The "inspection" sweep over a website preview while it's being
