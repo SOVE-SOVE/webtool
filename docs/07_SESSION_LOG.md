@@ -11,6 +11,40 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (command-bar controls) — Shared Search / Filters / Sort / chips components
+
+**Mode:** interactive session, feature branch `command-bar-controls`, merged to main.
+**Scope touched:** `apps/web/src/app/globals.css` (new `.control`,
+`.control-bare`, `.control-btn`, `.chip` classes); new
+`components/ui/{ControlIcons,SearchInput,CompactSelect,FilterPopover,FilterChips,CommandBar}.tsx`.
+No page migrated yet (Leads / Planning / Projects follow).
+
+**Why a new class family instead of restyling `.input`:** `.input` is
+used by every form in the app (modals, settings, calendar, billing);
+changing it would silently restyle all of them. `.control` is the
+compact 40px / 8px-radius / soft-surface treatment for list-page
+command bars only. Both sit on the same tokens, so theming is free.
+
+**Design points worth knowing:**
+- `CompactSelect` keeps a real native `<select>` (native keyboard +
+  mobile picker) stretched invisibly over a painted control; the visible
+  text mirrors the selection, and all option labels are stacked
+  invisibly so the control doesn't change width as you pick.
+- `FilterPopover` is a non-modal popover: focus moves in on open, Escape
+  closes and restores focus to the trigger, pointer-down outside or Tab
+  out closes it. `activeCount` counts only the filters *inside* the
+  popover (Search and Sort are visible and not counted).
+- `FilterChips` renders nothing without chips; "Clear all" only appears
+  with chips; removing a chip focuses its neighbour.
+
+**Verified:** `next build`, `eslint` (0 errors), vitest (316 pass), plus
+a throwaway harness page driven in Playwright at 1280px and 375px in
+light and dark (keyboard open/close, Escape, click-outside, Tab-out,
+chip removal, search Escape-to-clear, invalid/disabled states). Harness
+deleted.
+
+---
+
 ## 2026-09-19 (website analysis stuck) — Root cause: no job-runner process, masked by a false "[OK] running" in start-mac.sh
 
 **Mode:** interactive session, direct to main (not yet committed).

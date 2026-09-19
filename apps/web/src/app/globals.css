@@ -285,6 +285,61 @@ body {
     @apply pr-8;
   }
 
+  /* Command-bar controls (SearchInput, CompactSelect/SortSelect,
+     FilterPopover, FilterChips). A quieter, denser treatment than
+     `.input`: 40px tall, 8px radius, a soft `surface-subtle` fill with a
+     hairline border that firms up on hover. Deliberately a separate
+     class family so the existing forms that use `.input` are untouched.
+
+     `.control` works both directly on an <input> and on a wrapper that
+     holds an icon + a bare field (`.control-bare`) — the focus/invalid/
+     disabled states below are written for both shapes. */
+  .control {
+    @apply h-10 w-full rounded-lg border border-border bg-surface-subtle px-3 text-sm text-fg transition-colors duration-[var(--duration-fast)] ease-standard placeholder:text-fg-subtle motion-reduce:transition-none;
+  }
+  .control:hover:not(:disabled):not(:has(:disabled)) {
+    border-color: var(--border-strong);
+  }
+  .control:focus-visible,
+  .control:focus-within {
+    outline: none;
+    border-color: color-mix(in srgb, var(--focus-ring) 70%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 22%, transparent);
+  }
+  .control[aria-invalid="true"],
+  .control:has([aria-invalid="true"]) {
+    border-color: var(--danger);
+  }
+  .control[aria-invalid="true"]:focus-visible,
+  .control:has([aria-invalid="true"]):focus-within {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
+  }
+  .control:disabled,
+  .control:has(:disabled) {
+    @apply cursor-not-allowed opacity-50;
+  }
+  /* The borderless field inside a `.control` wrapper. */
+  .control-bare {
+    @apply h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-fg outline-none placeholder:text-fg-subtle disabled:cursor-not-allowed;
+  }
+  .control-bare::-webkit-search-cancel-button,
+  .control-bare::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* A button that sits in a row of `.control`s (the Filters trigger). */
+  .control-btn {
+    @apply inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-surface-subtle px-3 text-sm font-medium text-fg transition-colors duration-[var(--duration-fast)] ease-standard hover:border-border-strong hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring/40 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none;
+  }
+  .control-btn[aria-expanded="true"] {
+    @apply border-border-strong bg-surface-hover;
+  }
+  /* A removable active-filter chip. */
+  .chip {
+    @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg;
+  }
+
   /* Surfaces */
   .card {
     @apply rounded-md border border-border bg-surface;
