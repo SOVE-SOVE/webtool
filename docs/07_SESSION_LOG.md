@@ -11,6 +11,49 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (command-bar migration) — Leads, Planning and Projects on the new command bar
+
+**Mode:** interactive session, feature branch
+`command-bar-leads-planning-projects`, merged to main.
+**Scope touched:** `sales/leads/page.tsx`, `build/planning/page.tsx`,
+`build/projects/page.tsx` (toolbar only — cards, tables, data loading and
+every filter/sort function untouched); `lib/useDebouncedUrlSync.ts`;
+`components/ui/FilterPopover.tsx` (scroll-into-view on open).
+
+**Layout per page:** visible Search + Filters (count badge) + Sort, active
+filters as removable chips beneath, "Clear all" only when chips exist.
+- Leads: Status (the lifecycle tab), Priority, Website, Show archived
+  under Filters.
+- Planning: Status, Type, Show transferred under Filters; Sort keeps
+  "Recently updated".
+- Projects: Stage, Owner, Assigned to, Show finished under Filters (Show
+  finished stays disabled while a stage is picked, as before).
+Search is never a chip (it has its own clear button); the "X of Y"
+result counts on Planning/Projects are unchanged.
+
+**Existing bug found and fixed:** `useDebouncedUrlSync` wrote the search
+param into the `searchParams` captured when its timer was armed, so
+"Clear filters" with a search active had its other params put back 400ms
+later (reproduced on the old Planning page: `?status=completed` came back
+and the select re-filled). It now merges into the latest params via a
+ref. Every page using the hook benefits.
+
+**Behaviour change to know about:** Clear all now also resets the
+toggle-style criteria (Leads "Show archived", Planning "Show transferred",
+Projects "Show finished"), which the old "Clear filters" left on, and it
+clears every URL-backed param in a single `router.replace` (Leads' old
+clear reset state only, so the URL could resurrect stale filters).
+
+**Verified:** `next build`, `eslint` (0 errors), vitest (316 pass), and
+Playwright against the live app (throwaway user, deleted afterwards) at
+1280px and 375px: per-filter result counts add up, chips/URL/Clear all
+round-trip, popover Escape/outside/Tab-out, no horizontal overflow on
+phone. The Leads test data has no archived leads and is already in
+score order, so Show archived and non-default sorts were verified for
+wiring (URL, control state), not for a visibly different list.
+
+---
+
 ## 2026-09-19 (command-bar controls) — Shared Search / Filters / Sort / chips components
 
 **Mode:** interactive session, feature branch `command-bar-controls`, merged to main.

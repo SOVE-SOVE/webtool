@@ -29,7 +29,11 @@ import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import {
   isLeadTab,
   LEAD_SORT_LABEL,
@@ -45,6 +49,8 @@ import {
 type ViewMode = "table" | "board";
 type WebsiteFilter = "" | "has" | "none";
 type PriorityFilter = "" | LeadPriority;
+
+const PRIORITY_LABEL: Record<LeadPriority, string> = { low: "Low priority", medium: "Medium priority", high: "High priority" };
 
 function nextFollowUpByLead(
   buckets:
@@ -433,6 +439,64 @@ function LeadsPageInner() {
     };
   }, [leads, followUpMap]);
 
+  function changeTab(next: LeadTab) {
+    setTab(next);
+    updateParam("tab", next === "all" ? null : next);
+  }
+  function changeWebsite(next: WebsiteFilter) {
+    setWebsiteFilter(next);
+    updateParam("website", next || null);
+  }
+  function changeShowArchived(next: boolean) {
+    setShowArchived(next);
+    updateParam("archived", next ? "1" : null);
+  }
+
+  // Clears every filter in one go — including the URL-backed ones, in a
+  // single replace(): clearing them one updateParam() at a time would
+  // each start from the same stale searchParams and undo one another.
+  function clearAllFilters() {
+    setSearch("");
+    setTab("all");
+    setWebsiteFilter("");
+    setPriorityFilter("");
+    setShowArchived(false);
+    const params = new URLSearchParams(searchParams.toString());
+    for (const key of ["search", "tab", "website", "archived"]) params.delete(key);
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
+
+  // The secondary criteria living in the Filters popover, as removable chips.
+  const filterChips: FilterChip[] = [];
+  if (tab !== "all") {
+    filterChips.push({
+      id: "tab",
+      label: "Status",
+      value: LEAD_TABS.find((t) => t.id === tab)?.label ?? tab,
+      onRemove: () => changeTab("all"),
+    });
+  }
+  if (priorityFilter) {
+    filterChips.push({
+      id: "priority",
+      label: "Priority",
+      value: PRIORITY_LABEL[priorityFilter],
+      onRemove: () => setPriorityFilter(""),
+    });
+  }
+  if (websiteFilter) {
+    filterChips.push({
+      id: "website",
+      label: "Website",
+      value: websiteFilter === "has" ? "Has a website" : "No website",
+      onRemove: () => changeWebsite(""),
+    });
+  }
+  if (showArchived) {
+    filterChips.push({ id: "archived", label: "Archived", value: "Included", onRemove: () => changeShowArchived(false) });
+  }
+
   const viewToggle = (
     <div className="flex rounded-md border border-border-strong p-0.5 text-sm">
       <button
@@ -478,81 +542,70 @@ function LeadsPageInner() {
         </div>
       )}
 
-      {/* Controls: search + status + website + priority + sort + archived (list view only) */}
+      {/* Command bar (list view only): Search + Filters + Sort, with the
+          active filters as removable chips underneath. */}
       {view === "table" && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="Search business, industry, suburb, email…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input w-64"
-          />
-          <Select
-            value={tab}
-            onChange={(e) => {
-              const next = e.target.value as LeadTab;
-              setTab(next);
-              updateParam("tab", next === "all" ? null : next);
-            }}
-            className="input w-auto"
-            aria-label="Filter by status"
-          >
-            {LEAD_TABS.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label} ({tabCounts.get(t.id) ?? 0})
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
-            className="input w-auto"
-            aria-label="Filter by priority"
-          >
-            <option value="">Any priority</option>
-            {LEAD_PRIORITIES.map((p) => (
-              <option key={p} value={p} className="capitalize">
-                {p} priority
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={websiteFilter}
-            onChange={(e) => {
-              const next = e.target.value as WebsiteFilter;
-              setWebsiteFilter(next);
-              updateParam("website", next || null);
-            }}
-            className="input w-auto"
-            aria-label="Filter by website"
-          >
-            <option value="">Any website</option>
-            <option value="has">Has a website</option>
-            <option value="none">No website</option>
-          </Select>
-          <Select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as LeadSort)}
-            className="input ml-auto w-auto"
-            aria-label="Sort leads"
-          >
-            {LEAD_SORTS.map((s) => (
-              <option key={s} value={s}>
-                Sort: {LEAD_SORT_LABEL[s]}
-              </option>
-            ))}
-          </Select>
-          <label className="flex items-center gap-1.5 text-sm text-fg-muted">
-            <Checkbox
-              checked={showArchived}
-              onChange={(e) => {
-                setShowArchived(e.target.checked);
-                updateParam("archived", e.target.checked ? "1" : null);
-              }}
+        <CommandBar
+          className="mt-4"
+          search={
+            <SearchInput
+              placeholder="Search business, industry, suburb, email…"
+              aria-label="Search leads"
+              value={search}
+              onValueChange={setSearch}
             />
-            Show archived
-          </label>
-        </div>
+          }
+          filters={
+            <FilterPopover activeCount={filterChips.length} onClearAll={clearAllFilters}>
+              <FilterField label="Status">
+                <CompactSelect
+                  aria-label="Filter by status"
+                  value={tab}
+                  onValueChange={changeTab}
+                  options={LEAD_TABS.map((t) => ({ value: t.id, label: `${t.label} (${tabCounts.get(t.id) ?? 0})` }))}
+                />
+              </FilterField>
+              <FilterField label="Priority">
+                <CompactSelect
+                  aria-label="Filter by priority"
+                  value={priorityFilter}
+                  onValueChange={setPriorityFilter}
+                  options={[
+                    { value: "", label: "Any priority" },
+                    ...LEAD_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] })),
+                  ]}
+                />
+              </FilterField>
+              <FilterField label="Website">
+                <CompactSelect
+                  aria-label="Filter by website"
+                  value={websiteFilter}
+                  onValueChange={changeWebsite}
+                  options={[
+                    { value: "", label: "Any website" },
+                    { value: "has", label: "Has a website" },
+                    { value: "none", label: "No website" },
+                  ]}
+                />
+              </FilterField>
+              <FilterToggle
+                label="Show archived"
+                hint="Include archived leads in the list"
+                checked={showArchived}
+                onChange={changeShowArchived}
+              />
+            </FilterPopover>
+          }
+          sort={
+            <SortSelect
+              aria-label="Sort leads"
+              value={sort}
+              onValueChange={setSort}
+              options={LEAD_SORTS.map((s) => ({ value: s, label: LEAD_SORT_LABEL[s] }))}
+            />
+          }
+          chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearAllFilters} /> : undefined}
+        />
       )}
 
       {error && (
@@ -612,15 +665,7 @@ function LeadsPageInner() {
             title="No leads match"
             description="Try a different status, search, or clear the filters above."
             action={
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setWebsiteFilter("");
-                  setPriorityFilter("");
-                  setTab("all");
-                }}
-                className="btn btn-secondary btn-sm"
-              >
+              <button onClick={clearAllFilters} className="btn btn-secondary btn-sm">
                 Clear filters
               </button>
             }

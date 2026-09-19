@@ -19,9 +19,14 @@ import { nextOpenTask } from "@/lib/projects";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { PROJECT_OWNER_LABEL } from "./lib";
 import { ProjectCard, ProjectCardSkeleton } from "./ProjectCard";
 import { BuildSwitch } from "../BuildSwitch";
@@ -166,18 +171,66 @@ function ProjectsPageInner() {
     [projects],
   );
 
-  const activeFilterCount = [search, stageFilter, ownerFilter, assigneeFilter].filter(Boolean).length;
-
+  // Clears everything in one replace() — search, stage, owner, assignee
+  // and the "show finished" toggle — so no param is left behind to be
+  // re-read into state by the searchParams effect above.
   function clearFilters() {
     setSearch("");
     setStageFilter("");
     setOwnerFilter("");
     setAssigneeFilter("");
+    setShowFinished(false);
     let query = searchParams.toString();
-    for (const key of ["search", "stage", "owner", "assignee"]) {
+    for (const key of ["search", "stage", "owner", "assignee", "finished"]) {
       query = withParam(new URLSearchParams(query), key, null);
     }
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
+
+  function changeStage(next: ProjectStage | "") {
+    setStageFilter(next);
+    updateParam("stage", next || null);
+  }
+  function changeOwner(next: "" | "prospect" | "client") {
+    setOwnerFilter(next);
+    updateParam("owner", next || null);
+  }
+  function changeAssignee(next: string) {
+    setAssigneeFilter(next);
+    updateParam("assignee", next || null);
+  }
+  function changeShowFinished(next: boolean) {
+    setShowFinished(next);
+    updateParam("finished", next ? "1" : null);
+  }
+  function changeSort(next: SortKey) {
+    setSortBy(next);
+    updateParam("sort", next === "updated" ? null : next);
+  }
+
+  // The secondary criteria living in the Filters popover, as removable chips.
+  const filterChips: FilterChip[] = [];
+  if (stageFilter) {
+    filterChips.push({
+      id: "stage",
+      label: "Stage",
+      value: PROJECT_STAGE_LABELS[stageFilter],
+      onRemove: () => changeStage(""),
+    });
+  }
+  if (ownerFilter) {
+    filterChips.push({ id: "owner", label: "Owner", value: PROJECT_OWNER_LABEL[ownerFilter], onRemove: () => changeOwner("") });
+  }
+  if (assigneeFilter) {
+    filterChips.push({
+      id: "assignee",
+      label: "Assigned to",
+      value: assigneeFilter === UNASSIGNED ? "Unassigned" : (users.find((u) => u.id === assigneeFilter)?.name ?? "Unknown"),
+      onRemove: () => changeAssignee(""),
+    });
+  }
+  if (showFinished) {
+    filterChips.push({ id: "finished", label: "Finished", value: "Shown", onRemove: () => changeShowFinished(false) });
   }
 
   const visibleProjects = useMemo(() => {
@@ -289,98 +342,71 @@ function ProjectsPageInner() {
           />
         ) : (
           <>
-            {/* Search + filters, compact toolbar above the grid. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                placeholder="Search project, business, package…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="input w-56"
-                aria-label="Search projects by project or business name"
-              />
-              <select
-                value={stageFilter}
-                onChange={(e) => {
-                  const next = e.target.value as ProjectStage | "";
-                  setStageFilter(next);
-                  updateParam("stage", next || null);
-                }}
-                className="input w-auto"
-                aria-label="Filter by stage"
-              >
-                <option value="">All stages</option>
-                {PROJECT_STAGES.map((stage) => (
-                  <option key={stage} value={stage}>
-                    {PROJECT_STAGE_LABELS[stage]}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={ownerFilter}
-                onChange={(e) => {
-                  const next = e.target.value as "" | "prospect" | "client";
-                  setOwnerFilter(next);
-                  updateParam("owner", next || null);
-                }}
-                className="input w-auto"
-                aria-label="Filter by prospect or client"
-              >
-                <option value="">Prospect or Client</option>
-                <option value="prospect">{PROJECT_OWNER_LABEL.prospect}</option>
-                <option value="client">{PROJECT_OWNER_LABEL.client}</option>
-              </select>
-              <select
-                value={assigneeFilter}
-                onChange={(e) => {
-                  setAssigneeFilter(e.target.value);
-                  updateParam("assignee", e.target.value || null);
-                }}
-                className="input w-auto"
-                aria-label="Filter by assignee"
-              >
-                <option value="">Anyone assigned</option>
-                <option value={UNASSIGNED}>Unassigned</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  const next = e.target.value as SortKey;
-                  setSortBy(next);
-                  updateParam("sort", next === "updated" ? null : next);
-                }}
-                className="input w-auto"
-                aria-label="Sort by"
-              >
-                {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
-                  <option key={key} value={key}>
-                    {SORT_LABEL[key]}
-                  </option>
-                ))}
-              </select>
-              {activeFilterCount > 0 && (
-                <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-                  Clear filters
-                </button>
-              )}
-
-              <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
-                  checked={showFinished}
-                  onChange={(e) => {
-                    setShowFinished(e.target.checked);
-                    updateParam("finished", e.target.checked ? "1" : null);
-                  }}
-                  disabled={stageFilter !== ""}
+            {/* Command bar: Search + Filters + Sort, active filters as chips beneath. */}
+            <CommandBar
+              search={
+                <SearchInput
+                  placeholder="Search project, business, package…"
+                  aria-label="Search projects by project or business name"
+                  value={search}
+                  onValueChange={setSearch}
                 />
-                Show finished
-              </label>
-            </div>
+              }
+              filters={
+                <FilterPopover activeCount={filterChips.length} onClearAll={clearFilters}>
+                  <FilterField label="Stage">
+                    <CompactSelect
+                      aria-label="Filter by stage"
+                      value={stageFilter}
+                      onValueChange={changeStage}
+                      options={[
+                        { value: "", label: "All stages" },
+                        ...PROJECT_STAGES.map((stage) => ({ value: stage, label: PROJECT_STAGE_LABELS[stage] })),
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterField label="Owner">
+                    <CompactSelect
+                      aria-label="Filter by prospect or client"
+                      value={ownerFilter}
+                      onValueChange={changeOwner}
+                      options={[
+                        { value: "", label: "Prospect or Client" },
+                        { value: "prospect", label: PROJECT_OWNER_LABEL.prospect },
+                        { value: "client", label: PROJECT_OWNER_LABEL.client },
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterField label="Assigned to">
+                    <CompactSelect
+                      aria-label="Filter by assignee"
+                      value={assigneeFilter}
+                      onValueChange={changeAssignee}
+                      options={[
+                        { value: "", label: "Anyone assigned" },
+                        { value: UNASSIGNED, label: "Unassigned" },
+                        ...users.map((user) => ({ value: user.id, label: user.name })),
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterToggle
+                    label="Show finished"
+                    hint={stageFilter ? "Not needed while a stage is selected" : "Include maintenance and complete projects"}
+                    checked={showFinished}
+                    onChange={changeShowFinished}
+                    disabled={stageFilter !== ""}
+                  />
+                </FilterPopover>
+              }
+              sort={
+                <SortSelect
+                  value={sortBy}
+                  onValueChange={changeSort}
+                  options={(Object.keys(SORT_LABEL) as SortKey[]).map((key) => ({ value: key, label: SORT_LABEL[key] }))}
+                />
+              }
+              chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearFilters} /> : undefined}
+            />
 
             {visibleProjects && (
               <p className="text-xs text-fg-muted">

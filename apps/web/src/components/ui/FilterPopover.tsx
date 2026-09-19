@@ -44,7 +44,10 @@ export function FilterPopover({
   useEffect(() => {
     if (!open) return;
     const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panelRef.current)?.focus();
+    (first ?? panelRef.current)?.focus({ preventScroll: true });
+    // On a phone the panel can open below the fold, behind the bottom nav
+    // (`scroll-mb-24` on the panel leaves room for it).
+    panelRef.current?.scrollIntoView({ block: "nearest" });
 
     function handlePointerDown(e: PointerEvent) {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
@@ -99,7 +102,7 @@ export function FilterPopover({
           role="dialog"
           aria-label={label}
           tabIndex={-1}
-          className={`animate-fade-in absolute top-full z-30 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl outline-none ${
+          className={`animate-fade-in absolute top-full z-30 mt-2 scroll-mb-24 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl outline-none ${
             align === "end" ? "right-0" : "left-0"
           }`}
         >

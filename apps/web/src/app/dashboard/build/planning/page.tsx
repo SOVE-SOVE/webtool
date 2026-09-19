@@ -11,10 +11,15 @@ import {
   type PlanningListItem,
   type PlanningStatus,
 } from "@/lib/api";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { useToast } from "@/components/ui/ToastProvider";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
@@ -139,6 +144,19 @@ function PlanningListPageInner() {
     }
   }
 
+  function changeStatus(next: PlanningStatus | "") {
+    setStatusFilter(next);
+    updateParam("status", next || null);
+  }
+  function changeMode(next: PlanningMode | "") {
+    setModeFilter(next);
+    updateParam("mode", next || null);
+  }
+  function changeSort(next: SortKey) {
+    setSortBy(next);
+    updateParam("sort", next === "updated" ? null : next);
+  }
+
   const checklistById = useMemo(() => {
     const map = new Map<string, PlanningChecklistSummary>();
     for (const c of checklists) map.set(c.planning_id, c);
@@ -147,17 +165,40 @@ function PlanningListPageInner() {
 
   const activeCount = useMemo(() => (items ? items.filter((i) => i.project_id === null).length : null), [items]);
 
-  const activeFilterCount = [search, statusFilter, modeFilter].filter(Boolean).length;
-
+  // Clears everything in one replace() — search, status, type and the
+  // "show transferred" toggle — so no param is left behind to be re-read
+  // into state by the searchParams effect above.
   function clearFilters() {
     setSearch("");
     setStatusFilter("");
     setModeFilter("");
     let query = searchParams.toString();
-    for (const key of ["search", "status", "mode"]) {
+    for (const key of ["search", "status", "mode", "transferred"]) {
       query = withParam(new URLSearchParams(query), key, null);
     }
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
+
+  // The secondary criteria living in the Filters popover, as removable chips.
+  const filterChips: FilterChip[] = [];
+  if (statusFilter) {
+    filterChips.push({
+      id: "status",
+      label: "Status",
+      value: PLANNING_STATUS_LABELS[statusFilter],
+      onRemove: () => changeStatus(""),
+    });
+  }
+  if (modeFilter) {
+    filterChips.push({ id: "mode", label: "Type", value: PLANNING_MODE_LABEL[modeFilter], onRemove: () => changeMode("") });
+  }
+  if (showTransferred) {
+    filterChips.push({
+      id: "transferred",
+      label: "Transferred",
+      value: "Included",
+      onRemove: () => updateParam("transferred", null),
+    });
   }
 
   const visibleItems = useMemo(() => {
@@ -212,77 +253,58 @@ function PlanningListPageInner() {
           />
         ) : (
           <>
-            {/* Search + filters, compact toolbar above the grid. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                placeholder="Search business name…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="input w-56"
-                aria-label="Search Planning by business name"
-              />
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  const next = e.target.value as PlanningStatus | "";
-                  setStatusFilter(next);
-                  updateParam("status", next || null);
-                }}
-                className="input w-auto"
-                aria-label="Filter by status"
-              >
-                <option value="">Any status</option>
-                {PLANNING_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {PLANNING_STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={modeFilter}
-                onChange={(e) => {
-                  const next = e.target.value as PlanningMode | "";
-                  setModeFilter(next);
-                  updateParam("mode", next || null);
-                }}
-                className="input w-auto"
-                aria-label="Filter by planning mode"
-              >
-                <option value="">Any type</option>
-                <option value="existing">{PLANNING_MODE_LABEL.existing}</option>
-                <option value="new">{PLANNING_MODE_LABEL.new}</option>
-              </select>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  const next = e.target.value as SortKey;
-                  setSortBy(next);
-                  updateParam("sort", next === "updated" ? null : next);
-                }}
-                className="input w-auto"
-                aria-label="Sort by"
-              >
-                {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => (
-                  <option key={key} value={key}>
-                    {SORT_LABEL[key]}
-                  </option>
-                ))}
-              </select>
-              {activeFilterCount > 0 && (
-                <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-                  Clear filters
-                </button>
-              )}
-
-              <label className="ml-auto flex items-center gap-1.5 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
-                  checked={showTransferred}
-                  onChange={(e) => updateParam("transferred", e.target.checked ? "1" : null)}
+            {/* Command bar: Search + Filters + Sort, active filters as chips beneath. */}
+            <CommandBar
+              search={
+                <SearchInput
+                  placeholder="Search business name…"
+                  aria-label="Search Planning by business name"
+                  value={search}
+                  onValueChange={setSearch}
                 />
-                Show transferred
-              </label>
-            </div>
+              }
+              filters={
+                <FilterPopover activeCount={filterChips.length} onClearAll={clearFilters}>
+                  <FilterField label="Status">
+                    <CompactSelect
+                      aria-label="Filter by status"
+                      value={statusFilter}
+                      onValueChange={changeStatus}
+                      options={[
+                        { value: "", label: "Any status" },
+                        ...PLANNING_STATUSES.map((s) => ({ value: s, label: PLANNING_STATUS_LABELS[s] })),
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterField label="Type">
+                    <CompactSelect
+                      aria-label="Filter by planning mode"
+                      value={modeFilter}
+                      onValueChange={changeMode}
+                      options={[
+                        { value: "", label: "Any type" },
+                        { value: "existing", label: PLANNING_MODE_LABEL.existing },
+                        { value: "new", label: PLANNING_MODE_LABEL.new },
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterToggle
+                    label="Show transferred"
+                    hint="Include plans already handed over to a project"
+                    checked={showTransferred}
+                    onChange={(checked) => updateParam("transferred", checked ? "1" : null)}
+                  />
+                </FilterPopover>
+              }
+              sort={
+                <SortSelect
+                  value={sortBy}
+                  onValueChange={changeSort}
+                  options={(Object.keys(SORT_LABEL) as SortKey[]).map((key) => ({ value: key, label: SORT_LABEL[key] }))}
+                />
+              }
+              chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearFilters} /> : undefined}
+            />
 
             {visibleItems && (
               <p className="text-xs text-fg-muted">
