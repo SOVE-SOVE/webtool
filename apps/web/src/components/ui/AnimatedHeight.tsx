@@ -34,9 +34,12 @@ export function AnimatedHeight({ open, children }: { open: boolean; children: Re
       className="grid transition-[grid-template-rows] duration-[var(--duration-base)] ease-standard motion-reduce:transition-none"
       style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
       onTransitionEnd={(e) => {
+        // Ignore transitions bubbling up from a nested AnimatedHeight.
+        if (e.target !== e.currentTarget) return;
         if (e.propertyName === "grid-template-rows" && !open) setMounted(false);
       }}
       aria-hidden={!open}
+      inert={!open}
     >
       <div
         className={`overflow-hidden transition-opacity duration-base ease-standard motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}

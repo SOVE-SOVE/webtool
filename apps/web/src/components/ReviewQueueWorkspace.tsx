@@ -7,6 +7,8 @@ import { api, ApiError, type DiscoveredBusinessReviewItem } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { SoftSwap } from "@/components/ui/SoftSwap";
+import { useRecentChanges } from "@/lib/useRecentChanges";
 import { Metric, MetricGrid } from "@/components/ui/Metric";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { timeAgo } from "@/lib/format";
@@ -48,7 +50,9 @@ function ReviewQueueRow({
   needsAttention,
   onToggleSelect,
   onOpen,
+  flash,
 }: {
+  flash?: boolean;
   item: DiscoveredBusinessReviewItem;
   href: string;
   selected: boolean;
@@ -64,7 +68,7 @@ function ReviewQueueRow({
   return (
     <div
       onClick={onOpen}
-      className="flex cursor-pointer flex-col gap-2 px-3 py-3 hover:bg-surface-hover sm:flex-row sm:items-center sm:gap-4"
+      className={`flex cursor-pointer flex-col gap-2 px-3 py-3 transition-colors duration-fast ease-standard hover:bg-surface-hover motion-reduce:transition-none sm:flex-row sm:items-center sm:gap-4 ${flash ? "row-flash" : ""}`}
     >
       <div className="flex shrink-0 items-center pt-0.5 sm:pt-0" onClick={(e) => e.stopPropagation()}>
         {selectable ? (
@@ -252,6 +256,9 @@ function ReviewQueueWorkspaceInner({
     return items.filter((i) => reviewItemMatchesTab(i, tab));
   }, [items, tab]);
 
+  // Rows created/updated since the last load flash briefly (unfiltered set).
+  const recentIds = useRecentChanges(items, (i) => i.id, (i) => `${i.status}|${i.reviewed_at}|${i.researched_at}`);
+
   const visibleItems = useMemo(() => {
     if (!tabItems) return null;
     const filtered = tabItems.filter((i) => {
@@ -438,12 +445,13 @@ function ReviewQueueWorkspaceInner({
               {visibleItems.length} of {tabItems?.length ?? visibleItems.length} shown
             </span>
           </div>
-          <div className="divide-y divide-border">
+          <SoftSwap signature={`${tab}|${websiteFilter}|${sort}`} className="animate-fade-in divide-y divide-border">
             {visibleItems.map((item) => {
               const href = `/dashboard/discovered-businesses/${item.id}`;
               return (
                 <ReviewQueueRow
                   key={item.id}
+                  flash={recentIds.has(item.id)}
                   item={item}
                   href={href}
                   selected={selected.has(item.id)}
@@ -454,7 +462,7 @@ function ReviewQueueWorkspaceInner({
                 />
               );
             })}
-          </div>
+          </SoftSwap>
         </div>
       )}
     </div>

@@ -14,7 +14,7 @@ export function EmptyState({
 }) {
   if (compact) {
     return (
-      <div className="px-3 py-8 text-center">
+      <div className="animate-fade-in px-3 py-8 text-center">
         <p className="text-sm font-medium text-fg">{title}</p>
         {description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
         {action && <div className="mt-3 flex justify-center">{action}</div>}
@@ -23,7 +23,7 @@ export function EmptyState({
   }
 
   return (
-    <div className="card flex flex-col items-center justify-center px-6 py-12 text-center">
+    <div className="card animate-fade-in flex flex-col items-center justify-center px-6 py-12 text-center">
       <p className="text-sm font-medium text-fg">{title}</p>
       {description && <p className="mt-1 max-w-sm text-sm text-fg-muted">{description}</p>}
       {action && <div className="mt-4">{action}</div>}

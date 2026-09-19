@@ -18,7 +18,10 @@ export function LeadsBoard({
   leads,
   stages,
   onMove,
+  recentIds,
 }: {
+  /** Ids to flash briefly (just created/updated) — see useRecentChanges. */
+  recentIds?: ReadonlySet<string>;
   leads: Lead[];
   stages: PipelineStage[];
   onMove: (leadId: string, status: LeadStatus) => void | Promise<void>;
@@ -59,7 +62,7 @@ export function LeadsBoard({
               const leadId = e.dataTransfer.getData("text/lead-id");
               if (leadId) handleMove(leadId, stage.key);
             }}
-            className={`flex w-64 shrink-0 flex-col rounded-md border ${
+            className={`flex w-64 shrink-0 flex-col rounded-md border transition-colors duration-fast ease-standard motion-reduce:transition-none ${
               isDragOver ? "border-fg bg-surface-subtle" : "border-border"
             }`}
           >
@@ -90,9 +93,9 @@ export function LeadsBoard({
                       e.dataTransfer.setData("text/lead-id", lead.id);
                       e.dataTransfer.effectAllowed = "move";
                     }}
-                    className={`cursor-grab rounded-md border bg-surface p-2.5 text-sm shadow-sm active:cursor-grabbing ${
+                    className={`cursor-grab rounded-md border bg-surface p-2.5 text-sm shadow-sm transition-opacity duration-fast ease-standard active:cursor-grabbing motion-reduce:transition-none ${
                       stale ? "border-amber-300" : "border-border"
-                    } ${movingLeadId === lead.id ? "opacity-50" : ""}`}
+                    } ${movingLeadId === lead.id ? "opacity-50" : ""} ${recentIds?.has(lead.id) ? "row-flash" : ""}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <Link

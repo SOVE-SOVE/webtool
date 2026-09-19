@@ -11,6 +11,46 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**New shared pieces:** `components/ui/SoftSwap.tsx` (150ms opacity settle when a
+tab/filter/sort changes; never on first mount, never on search text or data
+refresh; restarts by alternating two identical keyframe names so nothing
+remounts), `lib/recentChanges.ts` (+ test) and `lib/useRecentChanges.ts`
+(+ `.row-flash`: 1.4s faint accent tint on rows created/updated since the last
+load; nothing on first load; `resetKey` re-baselines, e.g. "show archived"),
+`pageFadeKey()` in `lib/nav.ts` (+ test).
+**Applied to:** Leads (cards + board), Review Queue, Tasks, Planning, Projects,
+Calendar month grid, Pipeline activity panel (`Panel` gained `swapKey`).
+Badge eases colour on status/priority change; EmptyState fades in; dashboard
+content is keyed by `pageFadeKey(pathname)` → 200ms opacity-only page fade
+(Sales/Discovery collapse to one key so their persistent header/tabs don't
+re-fade; Sales layout fades its own content); project/planning/sitemap inline
+expanders now use `AnimatedHeight`; board drag-over column + moving-card dim ease.
+**Stamps:** Review items and Tasks have no `updated_at`, so their highlight stamp
+is built from status/reviewed_at/researched_at and done/assignee/due/title.
+**Verified (real browser, temp user):** SoftSwap inert on load and on search
+typing, fires on sort/tab change; a manually created lead flashed one card
+~0.25–1.6s then settled (test lead + business deleted); Sales tab bar persists
+across Leads→Pipeline while page changes fade 200ms opacity-only; reduced motion
+→ 0.01ms and final state within a few frames; 7 routes at 390px with no
+horizontal overflow; project detail accordions open with 0 console errors.
+Build, eslint (0 errors), vitest 381/381.
+**Design-review fixes folded in:** Planning highlight re-baselines on "show
+transferred" (`resetKey`); `useRecentChanges` merges flags so a refetch inside the
+window can't cut a running highlight short; `AnimatedHeight` ignores bubbled
+`transitionend` from nested instances and is `inert` while closed; SoftSwap dip
+0.6→0.75. Earlier T2 review fixes: checkbox-pop overshoot removed, command-menu
+rows no longer ease their selection, `.chip` no longer hovers.
+**Not done (nice-to-have):** SitemapView details collapse over 200ms as the edit form
+appears; the flash background overrides row hover for 1.4s.
+**Testing gotcha:** in the headless browser, timer-based waits don't guarantee
+rendered frames — transition/height reads lag one step. Drive waits with
+`requestAnimationFrame` when measuring transitions.
+
+---
+
 ## 2026-09-19 (UI motion, T2 shared controls) — Subtle motion on reusable controls
 
 **Mode:** background job, worktree branch `worktree-ui-motion-system`.

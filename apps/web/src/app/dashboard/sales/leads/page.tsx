@@ -19,6 +19,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SoftSwap } from "@/components/ui/SoftSwap";
+import { useRecentChanges } from "@/lib/useRecentChanges";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Badge } from "@/components/ui/Badge";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
@@ -111,7 +113,9 @@ function LeadCard({
   onArchive,
   onRestore,
   onPreview,
+  flash,
 }: {
+  flash?: boolean;
   lead: Lead;
   nextAction: string;
   checklistSummary: ClientChecklistSummary | undefined;
@@ -121,7 +125,7 @@ function LeadCard({
   onPreview: (lead: Lead) => void;
 }) {
   return (
-    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
+    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""} ${flash ? "row-flash" : ""}`}>
       <Link href={`/dashboard/leads/${lead.id}`} className="block">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -389,6 +393,10 @@ function LeadsPageInner() {
     return sortLeads(filteredLeads, sort, followUpMap);
   }, [filteredLeads, sort, followUpMap]);
 
+  // Cards for leads created/updated since the last load flash briefly.
+  // Watches the unfiltered set; re-baselines when "archived" toggles.
+  const recentLeadIds = useRecentChanges(leads, (l) => l.id, (l) => l.updated_at, showArchived ? "archived" : "active");
+
   const boardLeads = useMemo(
     () => (filteredLeads ?? []).filter((l) => !l.archived_at),
     [filteredLeads],
@@ -653,7 +661,7 @@ function LeadsPageInner() {
               ))}
             </div>
           ) : (
-            <LeadsBoard leads={boardLeads} stages={stages} onMove={handleStatusChange} />
+            <LeadsBoard leads={boardLeads} stages={stages} onMove={handleStatusChange} recentIds={recentLeadIds} />
           )}
         </div>
       )}
@@ -674,10 +682,14 @@ function LeadsPageInner() {
       )}
 
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <SoftSwap
+          signature={`${tab}|${websiteFilter}|${priorityFilter}|${sort}`}
+          className="animate-fade-in mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+        >
           {visibleLeads.map((lead) => (
             <LeadCard
               key={lead.id}
+              flash={recentLeadIds.has(lead.id)}
               lead={lead}
               nextAction={leadNextAction(lead, followUpMap.get(lead.id))}
               checklistSummary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
@@ -687,7 +699,7 @@ function LeadsPageInner() {
               onPreview={(l) => openPreview(l.id)}
             />
           ))}
-        </div>
+        </SoftSwap>
       )}
 
       {/* Manual entry — secondary */}

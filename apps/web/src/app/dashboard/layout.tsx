@@ -8,6 +8,7 @@ import {
   MOBILE_PRIMARY_HREFS,
   NAV_SECTIONS,
   isNavLinkActive,
+  pageFadeKey,
   type NavLink as NavLinkType,
 } from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
@@ -350,7 +351,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             <CommandMenuButton />
             <ActivityIndicatorButton />
           </div>
-          <div className="min-w-0 flex-1">{children}</div>
+          {/* Keyed so a real page change replays a short opacity fade (no
+              movement, so no layout shift); see pageFadeKey. */}
+          <div key={pageFadeKey(pathname)} className="animate-fade-in min-w-0 flex-1">
+            {children}
+          </div>
         </main>
 
         <BottomNav pathname={pathname} search={searchParams} onOpenMore={() => setMobileNavOpen(true)} />

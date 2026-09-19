@@ -96,7 +96,9 @@ export function ProjectCard({
   nextTask,
   checklist,
   density,
+  flash,
 }: {
+  flash?: boolean;
   project: Project;
   nextTask: Task | null;
   checklist: ProjectChecklistSummary | undefined;
@@ -132,7 +134,7 @@ export function ProjectCard({
   const href = `/dashboard/projects/${project.id}`;
 
   return (
-    <div className="card-interactive flex flex-col overflow-hidden rounded-md border border-border bg-surface hover:border-border-strong">
+    <div className={`card-interactive flex flex-col overflow-hidden rounded-md border border-border bg-surface hover:border-border-strong ${flash ? "row-flash" : ""}`}>
       <Link href={href} tabIndex={-1} aria-hidden="true">
         <ProjectPreview project={project} liveUrl={liveDeployment?.url ?? null} />
       </Link>

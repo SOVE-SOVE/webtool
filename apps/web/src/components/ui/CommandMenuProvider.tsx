@@ -147,7 +147,7 @@ function CommandMenu({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => go(item.href)}
                     onMouseEnter={() => setSelectedIndex(itemIndex)}
-                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-fast ease-standard ${
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
                       active ? "bg-surface-hover text-fg" : "text-fg"
                     }`}
                   >

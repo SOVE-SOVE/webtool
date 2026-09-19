@@ -52,7 +52,9 @@ export function Badge({
   className?: string;
 }) {
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${TONE_CLASS[tone]} ${className}`}>
+    <span
+      className={`inline-block rounded px-2 py-0.5 text-xs font-medium transition-colors duration-base ease-standard motion-reduce:transition-none ${TONE_CLASS[tone]} ${className}`}
+    >
       {children}
     </span>
   );

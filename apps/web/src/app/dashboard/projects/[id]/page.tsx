@@ -832,11 +832,11 @@ export default function ProjectDetailPage() {
                       {s.flagged_for_review && <Badge tone="warning">Flagged</Badge>}
                     </div>
                   </div>
-                  {expanded && (
+                  <AnimatedHeight open={expanded}>
                     <div className="mt-3">
                       <SitemapView sitemap={s} onChange={handleSitemapUpdated} />
                     </div>
-                  )}
+                  </AnimatedHeight>
                 </li>
               );
             })}
@@ -878,11 +878,11 @@ export default function ProjectDetailPage() {
                     </button>
                     <StatusChip status={b.status} />
                   </div>
-                  {expanded && (
+                  <AnimatedHeight open={expanded}>
                     <div className="mt-3">
                       <WebsiteBriefView brief={b} onChange={handleWebsiteBriefUpdated} />
                     </div>
-                  )}
+                  </AnimatedHeight>
                 </li>
               );
             })}

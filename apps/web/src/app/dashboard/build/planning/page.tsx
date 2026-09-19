@@ -15,6 +15,8 @@ import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { SoftSwap } from "@/components/ui/SoftSwap";
+import { useRecentChanges } from "@/lib/useRecentChanges";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
@@ -201,6 +203,9 @@ function PlanningListPageInner() {
     });
   }
 
+  // Cards created/updated since the last load flash briefly (unfiltered set).
+  const recentIds = useRecentChanges(items, (i) => i.id, (i) => i.updated_at, showTransferred ? "transferred" : "active");
+
   const visibleItems = useMemo(() => {
     if (!items) return null;
     const term = search.trim().toLowerCase();
@@ -336,10 +341,14 @@ function PlanningListPageInner() {
 
         {pagedItems && pagedItems.length > 0 && (
           <>
-            <div className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+            <SoftSwap
+              signature={`${statusFilter}|${modeFilter}|${sortBy}`}
+              className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
+            >
               {pagedItems.map((item) => (
                 <PlanningCard
                   key={item.id}
+                  flash={recentIds.has(item.id)}
                   item={item}
                   checklist={checklistById.get(item.id)}
                   density={DENSITY}
@@ -347,7 +356,7 @@ function PlanningListPageInner() {
                   removing={removingId === item.id}
                 />
               ))}
-            </div>
+            </SoftSwap>
 
             {visibleItems && visibleItems.length > pagedItems.length && (
               <div className="flex justify-center pt-2">

@@ -211,3 +211,17 @@ export function isNavLinkActive(pathname: string, search: URLSearchParams, link:
   const linkPath = link.href.split("?")[0];
   return pathname === linkPath || pathname.startsWith(`${linkPath}/`);
 }
+
+/**
+ * Which "page" the dashboard content fade belongs to. Changing this key
+ * remounts the content and replays a short fade — so it must NOT change
+ * where a nested layout keeps its own header/tab strip on screen
+ * (Sales, Discovery): those collapse to one key per workspace, and
+ * switching between their views is faded by the layout itself.
+ */
+export function pageFadeKey(pathname: string): string {
+  for (const workspace of ["/dashboard/sales", "/dashboard/discovery"]) {
+    if (pathname === workspace || pathname.startsWith(`${workspace}/`)) return workspace;
+  }
+  return pathname;
+}

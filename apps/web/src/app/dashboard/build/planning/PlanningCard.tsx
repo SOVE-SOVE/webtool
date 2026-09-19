@@ -130,7 +130,9 @@ export function PlanningCard({
   density,
   onRemove,
   removing,
+  flash,
 }: {
+  flash?: boolean;
   item: PlanningListItem;
   checklist: PlanningChecklistSummary | undefined;
   density: Density;
@@ -146,7 +148,7 @@ export function PlanningCard({
   const href = `/dashboard/planning/${item.id}`;
 
   return (
-    <div className="card-interactive flex flex-col overflow-hidden rounded-md border border-border bg-surface hover:border-border-strong">
+    <div className={`card-interactive flex flex-col overflow-hidden rounded-md border border-border bg-surface hover:border-border-strong ${flash ? "row-flash" : ""}`}>
       <Link href={href} tabIndex={-1} aria-hidden="true">
         <PlanningPreview item={item} />
       </Link>

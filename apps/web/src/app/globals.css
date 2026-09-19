@@ -216,6 +216,9 @@ html[data-font="mono"] {
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --duration-panel: 250ms;
+  /* A "this just changed" highlight is a deliberate exception to the
+     scale: long enough to notice, then it settles without a trace. */
+  --duration-highlight: 1400ms;
   /* How far an arriving popover/dropdown rises from. Small on purpose:
      it should read as "settling into place", never as travel. */
   --rise-distance: 6px;
@@ -415,7 +418,7 @@ body {
   }
   /* A removable active-filter chip. */
   .chip {
-    @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg transition-colors duration-fast ease-standard hover:border-border-strong motion-reduce:transition-none;
+    @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg;
   }
   /* A pill that can be switched on/off or picked from a set (a filter
      scope, a view toggle). Selection changes colour smoothly instead of
@@ -577,6 +580,21 @@ body {
     animation: rise-in var(--duration-panel) var(--ease-out-calm);
   }
 
+  /* A results list that just re-queried (filter/sort/tab). Two names,
+     one keyframe — see SoftSwap. Opacity only, so layout never moves. */
+  .soft-swap-a {
+    animation: soft-swap-a var(--duration-fast) var(--ease-out-calm);
+  }
+  .soft-swap-b {
+    animation: soft-swap-b var(--duration-fast) var(--ease-out-calm);
+  }
+
+  /* A row/card that was just created or updated: a faint accent tint
+     that fades back to the row's own surface. Nothing moves or resizes. */
+  .row-flash {
+    animation: row-flash var(--duration-highlight) var(--ease-out-calm);
+  }
+
   /* Applied to a completion glyph (checkbox tick, status icon) on the
      frame it newly matches/mounts — a brief acknowledgement, not a
      decorative loop. */
@@ -636,12 +654,32 @@ body {
   }
 }
 
+@keyframes soft-swap-a {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes soft-swap-b {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes row-flash {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  }
+}
+
 @keyframes checkbox-pop {
   0% {
     transform: scale(0.92);
-  }
-  60% {
-    transform: scale(1.06);
   }
   100% {
     transform: scale(1);
