@@ -65,6 +65,53 @@ tests), and the loading/error notes.
 
 ---
 
+## 2026-09-19 (calendar placement) — Compact month calendar moves from the Review Queue to Today
+
+**Mode:** background job, worktree branch `worktree-calendar-placement-review`
+(two commits: detach from the review page, then add to Today).
+**Scope touched:** `dashboard/discovered-businesses/[id]/page.tsx` and
+`components/discovery/ReviewSummaryStrip.tsx` (back to the pre-calendar layout —
+byte-identical to `c0f1ce7`); removed `components/LeadScheduleCard.tsx`,
+`lib/leadSchedule.ts` (+ test), which only the review page used; `dashboard/page.tsx`
+(Today); new `lib/todaySchedule.ts` (+ test). **Untouched:** `TaskScheduleCalendar`,
+`lib/taskSchedule.ts`, the task-detail usage (`TaskScheduleSection`), the full Calendar
+page, all routes, the API.
+
+**What the widget takes:** `taskEvents` / `clientEvents` (`{id,title,at}`), optional
+`showClientLegend`, `taskLabel`, `clientLabel`, `initialMonth`, `className`. It is purely
+presentational — callers normalise their own data.
+
+**Today wiring:** `listTasks()` + `listMeetings()` (all, unfiltered) are loaded in their own
+effects so a slow/failed calendar never blocks Today; projects come from the data Today
+already loads. `todayScheduleFeeds` builds amber = every open dated task, blue = meetings
+held against a client's project or the lead it converted from (cancelled dropped) plus
+open tasks under those. A client task therefore arrives from both feeds and the widget's
+existing `indexScheduleByDay` keeps it once, under the task source — so on Today the blue
+dot means "client meeting". Prospect-project meetings and loose meetings are left off the
+client calendar (their tasks still show amber). No new endpoint.
+
+**Placement:** a right-hand 17rem secondary column beside Pipeline + Revenue
+(`lg:grid-cols-[minmax(0,1fr)_17rem]`), stacked after Revenue below `lg`. Revenue drops to
+3-across (5 at `2xl`) to make room. Panel header links to the full Calendar page. The three
+existing panels below are unchanged. The panel body is deliberately not the scrolling `Panel`
+component — the day popover is positioned inside the grid and would clip.
+
+**Decision worth knowing:** an earlier prompt asked for the calendar *only* in the review
+page and not on Today; this one reverses that. The task-detail modal's calendar (Today →
+Tasks) was not mentioned and was left as is.
+
+**Verified:** vitest 352 pass (+5 in `todaySchedule.test.ts`), eslint 0 errors, `next build
+--webpack`, and Playwright on a second API (:8002) + web (:3002) against real data with a
+throwaway user and tagged tasks/meetings (all deleted afterwards). 1440×900: one calendar
+grid, top-right, fully in view, no page scroll; task-only, client-only and both-dot days
+correct, done task and cancelled meeting hidden; day preview, Escape, previous/next month and
+legend work; 390px is one column with no horizontal overflow and the preview stays inside
+the viewport; review detail and the review queue list render no calendar grid. Playwright's
+screenshot call kept timing out on Today (element "not stable"), but sampled bounding boxes
+were identical across frames, so verification was by DOM measurement.
+
+---
+
 ## 2026-09-19 (review brief) — Discovered-business review page: accordion stack → compact review brief
 
 **Mode:** background job, worktree branch `worktree-review-brief-overview`.

@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   api,
   type CalendarEvent,
   type DashboardOverview,
   type Lead,
+  type Meeting,
   type PlanningListItem,
   type Project,
   type SalesDashboard,
+  type Task,
 } from "@/lib/api";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -18,10 +20,12 @@ import { Metric } from "@/components/ui/Metric";
 import { EmptyRow, Panel } from "@/components/ui/Panel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { TaskScheduleCalendar } from "@/components/TaskScheduleCalendar";
 import { dateKey, formatAud, formatLongDate, formatTime } from "@/lib/format";
 import { leadMatchesTab } from "@/lib/leads";
 import { loadOverview } from "@/lib/overview";
 import { attentionPriority, attentionTag, computeNextActions, todaysScheduleEvents, type AttentionPriority } from "@/lib/today";
+import { todayScheduleFeeds } from "@/lib/todaySchedule";
 
 type TodayData = {
   leads: Lead[];
@@ -74,6 +78,11 @@ export default function TodayPage() {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
   const [sales, setSales] = useState<SalesDashboard | null>(null);
   const [salesError, setSalesError] = useState<string | null>(null);
+  // The compact month calendar's two sources. Loaded separately from the
+  // rest of the page so a slow or failed calendar never blocks Today.
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [calendarError, setCalendarError] = useState(false);
 
   function load() {
     Promise.all([api.listLeads(), api.listPlanning(), api.listProjects(), loadOverview()])
@@ -85,6 +94,20 @@ export default function TodayPage() {
 
     const today = dateKey();
     api.listCalendarEvents(today, today).then(setEvents).catch(() => {});
+    api
+      .listTasks()
+      .then((t) => {
+        setCalendarError(false);
+        setTasks(t);
+      })
+      .catch(() => setCalendarError(true));
+    api
+      .listMeetings()
+      .then((m) => {
+        setCalendarError(false);
+        setMeetings(m);
+      })
+      .catch(() => setCalendarError(true));
     api
       .salesDashboard()
       .then((s) => {
@@ -100,6 +123,10 @@ export default function TodayPage() {
     ? computeNextActions({ leads: data.leads, planning: data.planning, projects: data.projects })
     : null;
   const schedule = events ? todaysScheduleEvents(events) : null;
+  const calendarFeeds = useMemo(
+    () => (data && tasks && meetings ? todayScheduleFeeds({ tasks, meetings, projects: data.projects }) : null),
+    [data, tasks, meetings],
+  );
 
   const newLeadsCount = data
     ? data.leads.filter((l) => !l.archived_at && leadMatchesTab(l, "new")).length
@@ -112,47 +139,83 @@ export default function TodayPage() {
 
       {error && <ErrorState message={error} onRetry={load} compact />}
 
-      {/* Pipeline — where things stand right now, one stat per stage an
-          operator actually acts on day to day. */}
-      <section>
-        <h2 className="section-title">Pipeline</h2>
-        {!data ? (
-          <StatsSkeleton count={4} />
-        ) : (
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/sales/leads" />
-            <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/sales/leads?tab=new" />
-            <Metric
-              label="Planning/build needing review"
-              value={planningNeedsReviewCount ?? 0}
-              href="/dashboard/build/planning"
-            />
-            <Metric label="Projects in progress" value={data.overview.active_projects} href="/dashboard/build/projects" />
-          </div>
-        )}
-      </section>
+      {/* Overview row: the primary Pipeline + Revenue figures on the left,
+          and the compact month calendar as a secondary column on the right
+          (stacked below them on narrow screens). The full Calendar page stays
+          the place for detail — this is an at-a-glance month view. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="min-w-0 space-y-6">
+          {/* Pipeline — where things stand right now, one stat per stage an
+              operator actually acts on day to day. */}
+          <section>
+            <h2 className="section-title">Pipeline</h2>
+            {!data ? (
+              <StatsSkeleton count={4} />
+            ) : (
+              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/sales/leads" />
+                <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/sales/leads?tab=new" />
+                <Metric
+                  label="Planning/build needing review"
+                  value={planningNeedsReviewCount ?? 0}
+                  href="/dashboard/build/planning"
+                />
+                <Metric label="Projects in progress" value={data.overview.active_projects} href="/dashboard/build/projects" />
+              </div>
+            )}
+          </section>
 
-      {/* Revenue — the sales funnel's money figures, same data source and
-          stat card as the Sales dashboard's own Potential value / Won
-          deals / Revenue won cards. */}
-      <section>
-        <h2 className="section-title">Revenue</h2>
-        {salesError ? (
-          <div className="mt-2">
-            <ErrorState message={salesError} onRetry={load} compact />
+          {/* Revenue — the sales funnel's money figures, same data source and
+              stat card as the Sales dashboard's own Potential value / Won
+              deals / Revenue won cards. */}
+          <section>
+            <h2 className="section-title">Revenue</h2>
+            {salesError ? (
+              <div className="mt-2">
+                <ErrorState message={salesError} onRetry={load} compact />
+              </div>
+            ) : !sales ? (
+              <StatsSkeleton count={5} />
+            ) : (
+              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
+                <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales/pipeline" />
+                <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales/pipeline" />
+                <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales/pipeline" />
+                <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales/pipeline" />
+                <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales/pipeline" />
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="card min-w-0" aria-labelledby="today-calendar-heading">
+          <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-2.5">
+            <h2 id="today-calendar-heading" className="text-sm font-semibold text-fg">
+              Calendar
+            </h2>
+            <Link
+              href="/dashboard/calendar"
+              className="rounded text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              Full calendar →
+            </Link>
           </div>
-        ) : !sales ? (
-          <StatsSkeleton count={5} />
-        ) : (
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales/pipeline" />
-            <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales/pipeline" />
-            <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales/pipeline" />
-            <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales/pipeline" />
-            <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales/pipeline" />
+          <div className="p-3">
+            {calendarFeeds ? (
+              <TaskScheduleCalendar taskEvents={calendarFeeds.taskEvents} clientEvents={calendarFeeds.clientEvents} />
+            ) : calendarError ? (
+              <p className="text-xs text-fg-muted" role="status">
+                Couldn&apos;t load the calendar.{" "}
+                <button type="button" onClick={load} className="rounded underline hover:text-fg">
+                  Retry
+                </button>
+              </p>
+            ) : (
+              <Skeleton className="h-52 w-full" />
+            )}
           </div>
-        )}
-      </section>
+        </section>
+      </div>
 
       {/* Three equal panels, side by side — today's work, split by kind
           rather than stacked as one long page. */}
