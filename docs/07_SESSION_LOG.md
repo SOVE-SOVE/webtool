@@ -11,6 +11,40 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (review page header bug) — Sticky header overhung the sidebar and made the page scroll sideways
+
+**Mode:** interactive session, worktree branch `worktree-fix-review-header-overflow`.
+**Scope touched:** `dashboard/discovered-businesses/[id]/page.tsx` only (the
+sticky header, and the `Fact` row).
+
+**Root cause:** the header used `-mx-4 sm:-mx-6` to bleed to the edges of a
+padded parent, but the dashboard layout gives pages no padding (`<div
+className="min-w-0 flex-1">{children}</div>`; each page pads itself), so it
+stuck out 24px each side — over the sidebar on the left, and past the
+viewport on the right, which made the whole document scroll horizontally and
+shift/clip the sidebar. Introduced in `d626eb7` (full review page). Measured
+before the fix at 1280px: header x=200→1304 vs content column 224→1280,
+document 1304px wide. Sticky itself was fine (held at top=44), but the sideways
+scroll defeated it visually.
+**Fix:** no negative margins; the padding moved onto the inner `max-w-5xl`
+wrapper. That also fixes a misalignment — header text sat ~36px left of the
+cards at wide widths because the padding was outside the `max-w-5xl` box.
+**Second bug found while verifying at 375px:** the long unbroken website URL in
+the Contact card widened the page by 21px (`Fact` value couldn't shrink);
+value now wraps (`min-w-0`, `overflow-wrap:anywhere`, right-aligned).
+
+**Verified:** Playwright on the real page (throwaway user, deleted after; second
+API on :8001 / web on :3001) at 375, 768, 1024, 1280, 1600px: header spans
+exactly the content column, stays pinned at scrollY 0/300/500/max (top=44
+desktop, 48 mobile under the fixed top bar), document width == viewport at
+every size, header text/actions align with body content edges. eslint 0
+errors, vitest 332 pass, `next build`.
+**Known, not changed:** on phones the pinned header is ~181px tall (over a
+quarter of a 667px screen) — that was already the design; say so if you want
+it condensed on mobile.
+
+---
+
 ## 2026-09-19 (task schedule calendar) — Compact monthly calendar on the task detail
 
 **Mode:** interactive session, worktree branch `worktree-task-schedule-calendar`

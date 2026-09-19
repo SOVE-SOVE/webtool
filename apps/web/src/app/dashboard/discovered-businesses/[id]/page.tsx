@@ -34,9 +34,11 @@ const SEVERITY_TONE: Record<QualityFindingSeverity, BadgeTone> = {
 
 function Fact({ label, value }: { label: string; value: string | boolean | null }) {
   return (
-    <div className="flex justify-between border-b border-border py-1.5 text-sm">
-      <span className="text-fg-muted">{label}</span>
-      <span className="text-fg">
+    <div className="flex justify-between gap-4 border-b border-border py-1.5 text-sm">
+      <span className="shrink-0 text-fg-muted">{label}</span>
+      {/* min-w-0 + overflow-wrap:anywhere so a long unbroken value (a website
+          URL) wraps inside the card instead of widening the whole page. */}
+      <span className="min-w-0 text-right text-fg [overflow-wrap:anywhere]">
         {value === null ? "Unknown" : typeof value === "boolean" ? (value ? "Yes" : "No") : value}
       </span>
     </div>
@@ -645,8 +647,13 @@ export default function DiscoveredBusinessDetailPage() {
   return (
     <div>
       {business && (
-        <header className="sticky top-12 z-20 -mx-4 border-b border-border bg-surface px-4 py-4 sm:-mx-6 sm:px-6 lg:top-11">
-          <div className="mx-auto flex max-w-5xl flex-col gap-3">
+        // No negative margins: the dashboard layout gives pages no padding of
+        // their own, so `-mx-*` here pushed the header 24px past both edges
+        // of the content column (over the sidebar, and a horizontal scrollbar
+        // that shifted the whole page). The padding lives on the inner
+        // wrapper instead, so it lines up with the body's `max-w-5xl p-6`.
+        <header className="sticky top-12 z-20 border-b border-border bg-surface lg:top-11">
+          <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4 sm:px-6">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <Link href={backTo || "/dashboard/discovery/review"} className="text-fg-muted hover:text-fg hover:underline">
                 &larr; Back to Review Queue
