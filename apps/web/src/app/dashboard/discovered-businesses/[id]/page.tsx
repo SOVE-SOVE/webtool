@@ -20,6 +20,7 @@ import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { LeadScheduleCard } from "@/components/LeadScheduleCard";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 import { timeAgo } from "@/lib/format";
@@ -740,65 +741,73 @@ export default function DiscoveredBusinessDetailPage() {
             {/* Overview — concise, always visible: who they are, how to
                 reach them, and the headline signals, before any
                 expandable technical evidence below. */}
-            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="panel">
-                <h2 className="text-sm font-semibold text-fg">Contact & location</h2>
-                <div className="mt-2">
-                  <Fact label="Address" value={business.address || [business.suburb, business.state, business.postcode].filter(Boolean).join(", ") || null} />
-                  <Fact label="Phone" value={business.phone} />
-                  <Fact label="Email" value={business.email} />
-                  <Fact
-                    label="Website"
-                    value={business.website_url ?? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
-                  />
-                </div>
-                {socialLinks.length > 0 && (
-                  <div className="mt-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Social links</h3>
-                    <ul className="mt-1 space-y-0.5">
-                      {socialLinks.map((link, i) => (
-                        <li key={i}>
-                          <a href={link} target="_blank" rel="noreferrer" className="text-sm text-fg-muted hover:underline">
-                            {link}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
+            {/* The calendar sits in a fixed-width right column beside the score
+                and contact cards so it's in view on first load (the two cards
+                stack to roughly the calendar's own height). Below `lg` it drops
+                to a single column: contact, score, then schedule — directly
+                after the summary, ahead of the evidence below. */}
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+              <div className="flex min-w-0 flex-col gap-4">
+                <div className="panel">
+                  <h2 className="text-sm font-semibold text-fg">Contact & location</h2>
+                  <div className="mt-2">
+                    <Fact label="Address" value={business.address || [business.suburb, business.state, business.postcode].filter(Boolean).join(", ") || null} />
+                    <Fact label="Phone" value={business.phone} />
+                    <Fact label="Email" value={business.email} />
+                    <Fact
+                      label="Website"
+                      value={business.website_url ?? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
+                    />
                   </div>
-                )}
-              </div>
-
-              <div className="panel">
-                <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
-                {latestScore ? (
-                  <>
-                    <div className="mt-2 flex items-center gap-3">
-                      <ScoreCategoryBadge category={latestScore.category} />
-                      <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
-                      <span className="text-xs text-fg-muted">{Math.round(latestScore.confidence * 100)}% confidence</span>
+                  {socialLinks.length > 0 && (
+                    <div className="mt-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Social links</h3>
+                      <ul className="mt-1 space-y-0.5">
+                        {socialLinks.map((link, i) => (
+                          <li key={i}>
+                            <a href={link} target="_blank" rel="noreferrer" className="text-sm text-fg-muted hover:underline">
+                              {link}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <p className="mt-2 text-sm text-fg-muted">{latestScore.recommendation_reason}</p>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-fg-subtle">Not scored yet — run a detailed review below.</p>
-                )}
-                <div className="mt-3 border-t border-border pt-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Google reviews</h3>
-                  {latestReviewIntel && latestReviewIntel.data_status === "ok" ? (
-                    <div className="mt-1 flex items-center gap-2">
-                      {latestReviewIntel.google_rating !== null && <Stars rating={latestReviewIntel.google_rating} />}
-                      <span className="text-sm text-fg">
-                        {latestReviewIntel.google_rating?.toFixed(1) ?? "—"}
-                        {latestReviewIntel.google_review_count !== null && ` (${latestReviewIntel.google_review_count})`}
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-sm text-fg-subtle">
-                      {latestReviewIntel ? "No Google listing found" : "Not analyzed yet"}
-                    </p>
                   )}
                 </div>
+
+                <div className="panel">
+                  <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
+                  {latestScore ? (
+                    <>
+                      <div className="mt-2 flex items-center gap-3">
+                        <ScoreCategoryBadge category={latestScore.category} />
+                        <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
+                        <span className="text-xs text-fg-muted">{Math.round(latestScore.confidence * 100)}% confidence</span>
+                      </div>
+                      <p className="mt-2 text-sm text-fg-muted">{latestScore.recommendation_reason}</p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-fg-subtle">Not scored yet — run a detailed review below.</p>
+                  )}
+                  <div className="mt-3 border-t border-border pt-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Google reviews</h3>
+                    {latestReviewIntel && latestReviewIntel.data_status === "ok" ? (
+                      <div className="mt-1 flex items-center gap-2">
+                        {latestReviewIntel.google_rating !== null && <Stars rating={latestReviewIntel.google_rating} />}
+                        <span className="text-sm text-fg">
+                          {latestReviewIntel.google_rating?.toFixed(1) ?? "—"}
+                          {latestReviewIntel.google_review_count !== null && ` (${latestReviewIntel.google_review_count})`}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-sm text-fg-subtle">
+                        {latestReviewIntel ? "No Google listing found" : "Not analyzed yet"}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
+              <LeadScheduleCard key={`${business.id}:${business.imported_lead_id ?? ""}`} business={business} />
             </div>
 
             {missingInfo.length > 0 && (

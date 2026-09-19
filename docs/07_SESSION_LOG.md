@@ -11,6 +11,54 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (lead review calendar) — Schedule card in the review page's top overview
+
+**Mode:** interactive session, worktree branch `worktree-lead-review-calendar`.
+**Scope touched:** new `components/LeadScheduleCard.tsx`, `lib/leadSchedule.ts`
+(+ `.test.ts`); `components/TaskScheduleCalendar.tsx` (new optional
+`taskLabel` / `clientLabel` props — defaults unchanged, so the task-detail
+widget is untouched); `dashboard/discovered-businesses/[id]/page.tsx` (overview
+layout only). The full Calendar page, its routes and the backend are untouched.
+
+**Layout:** the overview row is now `lg:grid-cols-[1fr_17rem]` — Contact and
+Opportunity-score cards stacked on the left, the Schedule card in a fixed 17rem
+right column (`lg:items-start`, so it hugs its ~300px content instead of being
+stretched to the ~430px stack and leaving dead space). Below `lg` it's one
+column in DOM order Contact → Score → Schedule → Missing information, i.e.
+directly after the summary. Measured at 1440×900, 1280×720 and 1024×768: card
+fully visible at first load (below the pinned header) without scrolling.
+
+**Data — the important caveat:** a review-queue business is normally *not in
+the CRM yet*, so it has no lead, tasks, meetings or client and the card just
+shows an empty month with "Not in the CRM yet…" (no requests made). It only
+has content once linked: `imported_lead_id`, or `duplicate_of_business_id`
+pointing at a business that is already a Lead and/or Client. `reviewLinks`
+resolves that; `LeadScheduleCard` then loads leads (+ clients), tasks,
+follow-ups, projects and meetings (each lead's/project's meetings fetched
+once). Lead marker = the lead's (and its prospect project's) open task due
+dates, non-cancelled meetings, unacknowledged meeting reminders, pending
+follow-ups; client marker = the client calendar via the existing
+`clientScope`/`clientScheduleEvents`. Same item in both feeds is shown once
+(ids match, lead side wins). Reminders exist only on meetings and follow-ups
+only on leads in this app — there is no free-standing reminder record. The
+review-queue dates themselves (queued/reviewed at) are deliberately *not*
+plotted: they're history, not schedule.
+
+**Verified:** vitest 339 pass (7 new), eslint 0 errors, `next build`. Playwright
+on the real page (throwaway user; second API :8001 / web :3001; tagged
+`QA-CAL` records and a *temporary* `duplicate_of_business_id` on one real
+discovered business — all reverted/deleted, checked) for: unlinked business,
+imported lead (task/reminder/meeting/follow-up markers, cancelled meeting
+hidden, right-edge hover popover), lead + client (both legend entries, client
+task/meeting, month navigation), click-to-pin, phone (375px order + no
+overflow + popover in bounds), 1024/1280/1440. `browser_take_screenshot`
+hangs in this environment even at 45s, so all visual checks were DOM
+measurements. **Not exercised:** a single day carrying both a lead and a
+client marker on this page (covered on the task-detail widget and by unit
+tests), and the loading/error notes.
+
+---
+
 ## 2026-09-19 (review page header bug) — Sticky header overhung the sidebar and made the page scroll sideways
 
 **Mode:** interactive session, worktree branch `worktree-fix-review-header-overflow`.

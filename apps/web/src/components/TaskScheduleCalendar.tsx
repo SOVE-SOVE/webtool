@@ -44,6 +44,8 @@ export function TaskScheduleCalendar({
   taskEvents,
   clientEvents,
   showClientLegend = true,
+  taskLabel = "Task",
+  clientLabel = "Client calendar",
   initialMonth,
   className = "",
 }: {
@@ -51,6 +53,10 @@ export function TaskScheduleCalendar({
   clientEvents: ScheduleEvent[];
   /** Hide the client entry of the legend when there is no client to show. */
   showClientLegend?: boolean;
+  /** Legend / screen-reader name for the first (amber) marker. */
+  taskLabel?: string;
+  /** Legend / screen-reader name for the second (blue) marker. */
+  clientLabel?: string;
   /** Any date within the month to open on. Defaults to the current month. */
   initialMonth?: Date;
   className?: string;
@@ -159,7 +165,7 @@ export function TaskScheduleCalendar({
               const hasClient = (schedule?.client.length ?? 0) > 0;
               const marked = hasTask || hasClient;
 
-              const activity = [hasTask && "task activity", hasClient && "client calendar activity"]
+              const activity = [hasTask && `${taskLabel.toLowerCase()} activity`, hasClient && `${clientLabel.toLowerCase()} activity`]
                 .filter(Boolean)
                 .join(" and ");
               const label = `${day.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}${
@@ -237,12 +243,12 @@ export function TaskScheduleCalendar({
       <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
         <li className="flex items-center gap-1.5">
           <TaskDot />
-          Task
+          {taskLabel}
         </li>
         {showClientLegend && (
           <li className="flex items-center gap-1.5">
             <ClientDot />
-            Client calendar
+            {clientLabel}
           </li>
         )}
       </ul>
