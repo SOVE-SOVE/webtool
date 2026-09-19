@@ -23,6 +23,9 @@ RUN_DIR="$SCRIPT_DIR/.run"
 LOG_DIR="$SCRIPT_DIR/.logs"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+# shellcheck source=lib/job_runner_health.sh
+source "$SCRIPT_DIR/lib/job_runner_health.sh"
+
 API_DIR="$REPO_ROOT/apps/api"
 WEB_DIR="$REPO_ROOT/apps/web"
 API_PORT=8000
@@ -154,20 +157,32 @@ JOBS_LABEL="com.webdesignos.jobrunner.$(printf '%s' "$REPO_ROOT" | shasum -a 256
 JOBS_PLIST="$HOME/Library/LaunchAgents/$JOBS_LABEL.plist"
 JOBS_DOMAIN="gui/$(id -u)"
 
-# One-time cleanup: an older version of this script ran the poller as a
-# plain nohup'd process tracked by $JOBS_PID_FILE. If one of those is
-# still alive, launchd wouldn't know about it and we'd end up with two
-# pollers racing to claim the same jobs — stop it before handing control
-# to launchd.
-if [ -f "$JOBS_PID_FILE" ]; then
-  legacy_pid="$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)"
-  if [ "$legacy_pid" != "0" ] && kill -0 "$legacy_pid" 2>/dev/null && ps -p "$legacy_pid" -o command= 2>/dev/null | grep -q "app.jobs.runner"; then
-    info "Stopping the old unsupervised job runner process before switching to launchd..."
-    kill "$legacy_pid" 2>/dev/null
+# job_runner_pid / job_runner_alive / fallback_pid_alive are defined in
+# lib/job_runner_health.sh (sourced above) — shared with stop-mac.sh and
+# covered by lib/job_runner_health.test.sh.
+
+# Already running our own unsupervised fallback on current code? Leave
+# it alone rather than killing and respawning it every single run —
+# same "leave it as is" precedent as the API/web checks above, and
+# critically avoids interrupting whatever job it might be mid-way
+# through. This intentionally does NOT retry launchd on every run once
+# it's known not to work here; scripts/README.md covers re-running this
+# script after fixing the underlying TCC/permissions issue to pick
+# launchd supervision back up.
+if fallback_pid_alive && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
+  ok "Job runner already running (unsupervised fallback) on current code - leaving it as is"
+else
+  # Stop any stale poller before (re)starting — an old-code fallback
+  # process, or an older pre-launchd version of this script that always
+  # ran the poller this way. If one of those is still alive, launchd
+  # wouldn't know about it and we'd end up with two pollers racing to
+  # claim the same jobs.
+  if fallback_pid_alive; then
+    info "Stopping the old unsupervised job runner process before (re)starting it..."
+    kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
     sleep 1
   fi
   rm -f "$JOBS_PID_FILE"
-fi
 
 mkdir -p "$HOME/Library/LaunchAgents"
 cat >"$JOBS_PLIST" <<PLIST
@@ -204,12 +219,11 @@ cat >"$JOBS_PLIST" <<PLIST
 </plist>
 PLIST
 
-if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1 \
-    && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
+if job_runner_alive && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
   ok "Job runner already running on current code - leaving it as is"
 else
   if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
-    info "Restarting the job runner (code changed since it started)..."
+    info "Restarting the job runner (code changed since it started, or it wasn't actually alive)..."
     launchctl kickstart -k "$JOBS_DOMAIN/$JOBS_LABEL" 2>/dev/null \
       || fail "Couldn't restart the job runner via launchctl kickstart." "$JOBS_LOG"
   else
@@ -217,12 +231,43 @@ else
     launchctl bootstrap "$JOBS_DOMAIN" "$JOBS_PLIST" 2>/dev/null \
       || fail "Couldn't load the job runner LaunchAgent ($JOBS_PLIST) via launchctl bootstrap." "$JOBS_LOG"
   fi
-  sleep 1
-  if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
+
+  # Give launchd a few real rounds to actually spawn and settle it
+  # before judging success/failure — each `job_runner_alive` call
+  # already waits out one same-pid confirmation window on its own.
+  runner_confirmed=false
+  for _ in 1 2 3; do
+    if job_runner_alive; then
+      runner_confirmed=true
+      break
+    fi
+  done
+
+  if [ "$runner_confirmed" = true ]; then
     echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
     ok "Job runner is running, supervised by launchd (log: $JOBS_LOG)"
   else
-    echo "[WARN] Job runner didn't stay running - check $JOBS_LOG. The app still works; scheduled/background automation won't."
+    echo "[WARN] The launchd-supervised job runner isn't actually staying alive"
+    echo "   ('launchctl print $JOBS_DOMAIN/$JOBS_LABEL' shows no live pid — check $JOBS_LOG"
+    echo "   and its 'last exit code' for why). A common cause: this repo lives under"
+    echo "   ~/Desktop, ~/Documents, or ~/Downloads, and macOS's Files-and-Folders privacy"
+    echo "   protection silently blocks a background LaunchAgent (which has no window to"
+    echo "   show a permission prompt) from running there, even though an interactive"
+    echo "   Terminal-launched process works fine. Grant Full Disk Access to your terminal"
+    echo "   app in System Settings > Privacy & Security to fix launchd supervision."
+    echo "   Falling back to an unsupervised background process so analysis still works"
+    echo "   this session — it won't auto-restart if it crashes; re-run this script if"
+    echo "   background analysis stops completing again."
+    launchctl bootout "$JOBS_DOMAIN/$JOBS_LABEL" 2>/dev/null
+    ( cd "$API_DIR" && nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 & echo $! >"$JOBS_PID_FILE" )
+    sleep 1
+    if kill -0 "$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)" 2>/dev/null; then
+      echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
+      ok "Job runner is running, unsupervised (log: $JOBS_LOG)"
+    else
+      fail "Job runner didn't start at all (tried both launchd and a plain background process)." "$JOBS_LOG"
+    fi
+  fi
   fi
 fi
 

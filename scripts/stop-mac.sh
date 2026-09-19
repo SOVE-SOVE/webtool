@@ -12,6 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUN_DIR="$SCRIPT_DIR/.run"
 
+# shellcheck source=lib/job_runner_health.sh
+source "$SCRIPT_DIR/lib/job_runner_health.sh"
+
 echo ""
 echo "Web Design OS - stopping local development environment"
 echo ""
@@ -67,14 +70,27 @@ stop_port() {
 stop_port "API" 8000 "app.main:app" "$RUN_DIR/api.pid"
 stop_port "Web app" 3000 "next" "$RUN_DIR/web.pid"
 
-# The job runner is supervised by launchd (KeepAlive) since
-# start-mac.sh's launchd migration — see that script for why. It doesn't
-# listen on a port, and plain `kill` won't stop it (launchd would just
-# restart it), so it's stopped with `launchctl bootout` instead. The
-# label is scoped to this checkout's path, same as start-mac.sh.
+# The job runner is normally supervised by launchd (KeepAlive) — see
+# start-mac.sh for why. It doesn't listen on a port, and plain `kill`
+# won't stop a launchd-supervised one (launchd would just restart it),
+# so that path is stopped with `launchctl bootout` instead.
+#
+# start-mac.sh also has an unsupervised fallback for when launchd
+# itself won't stay alive (e.g. a Files-and-Folders privacy restriction
+# on a repo under ~/Desktop/~/Documents/~/Downloads) — a plain
+# background process with no launchd entry to bootout. That fallback
+# used to be found via $JOBS_PID_FILE's recorded pid, which turned out
+# unreliable: a `( cd ... && nohup cmd & echo $! )` subshell doesn't
+# always hand back the exact pid `ps` later reports for the exec'd
+# program (the venv python binary is a symlink chain `ps`/`pgrep`
+# report resolved) — confirmed leaving a real fallback poller running
+# after this script claimed everything was stopped. `pgrep -f` finds it
+# by command line instead, regardless of what pid was ever recorded.
 JOBS_PID_FILE="$RUN_DIR/jobs.pid"
 JOBS_LABEL="com.webdesignos.jobrunner.$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-12)"
 JOBS_DOMAIN="gui/$(id -u)"
+
+stopped_anything=0
 
 if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
   launchctl bootout "$JOBS_DOMAIN/$JOBS_LABEL" 2>/dev/null
@@ -84,16 +100,27 @@ if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
     waited=$((waited + 1))
     [ "$waited" -ge 10 ] && break
   done
-  echo "[OK] Job runner stopped"
-else
-  echo "-> Job runner: not running"
+  echo "[OK] Job runner (launchd) stopped"
+  stopped_anything=1
 fi
 
-# Cleanup for the pre-launchd nohup/pid setup, in case this is the first
-# stop after upgrading from that version.
-if [ -f "$JOBS_PID_FILE" ] && kill -0 "$(cat "$JOBS_PID_FILE")" 2>/dev/null; then
-  kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
+fallback_pids="$(pgrep -f "app\.jobs\.runner" 2>/dev/null)"
+if [ -n "$fallback_pids" ]; then
+  echo "$fallback_pids" | xargs -r kill 2>/dev/null
+  waited=0
+  while [ -n "$(pgrep -f "app\.jobs\.runner" 2>/dev/null)" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "$waited" -ge 10 ]; then
+      echo "$fallback_pids" | xargs -r kill -9 2>/dev/null
+      break
+    fi
+  done
+  echo "[OK] Job runner (unsupervised fallback) stopped"
+  stopped_anything=1
 fi
+
+[ "$stopped_anything" -eq 0 ] && echo "-> Job runner: not running"
 rm -f "$JOBS_PID_FILE"
 
 echo "-> Stopping Postgres..."

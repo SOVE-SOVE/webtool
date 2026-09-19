@@ -11,6 +11,406 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (website analysis stuck) — Root cause: no job-runner process, masked by a false "[OK] running" in start-mac.sh
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** `scripts/start-mac.sh`, `scripts/stop-mac.sh`; new
+`scripts/lib/job_runner_health.sh` (the liveness checks, extracted so
+they're testable in isolation) and
+`scripts/lib/job_runner_health.test.sh` (6 assertions against mocked
+`launchctl`/`pgrep`, no framework/dependency — run directly as a
+script). No application code changed — the analysis pipeline itself
+(backend handlers, agents, frontend polling/handlers) was already
+correct.
+
+**What happened.** Reported symptom: website analysis (Planning's
+"Analyse Website", shared analysis infrastructure with Discovery's
+Review page) no longer completes or shows results. Traced the full
+stack per the task's own checklist before touching anything.
+
+**Root cause, confirmed not assumed:** queried the `jobs` table
+directly — `planning_analysis`, `business_research`, `opportunity_score`,
+`review_intelligence`, and `website_quality_audit` all had rows stuck
+`PENDING` since 2026-09-18, with the last successful `planning_analysis`
+completion over a day old. `apps/api/app/jobs/runner.py` (the poller
+that actually claims and executes queued jobs) simply wasn't running —
+this session (and the two large sessions immediately before it) had
+started the API/web processes by hand instead of via
+`scripts/start-mac.sh`, which is the only thing that also starts the
+job runner. Every route/handler/agent downstream of "job gets claimed"
+was untouched and correct; nothing was actually broken until the
+poller itself came back.
+
+**A second, real bug found while fixing the first:** running
+`scripts/start-mac.sh` reported "[OK] Job runner is running, supervised
+by launchd" — but `launchctl print` showed `state = spawn scheduled`,
+`runs = 36`, `last exit code = 78: EX_CONFIG`, and zero bytes ever
+written to its own log. The script's health check only verified that
+launchd *knew about* the label (`launchctl print ... >/dev/null`
+succeeding), not that the process was actually alive — which stays
+true even while a job crash-loops in launchd's own backoff state. This
+is very likely why the underlying problem went unnoticed: the script
+that's supposed to catch "job runner isn't running" was itself lying
+about it. Root-caused the crash itself to a probable macOS
+Files-and-Folders privacy restriction on background LaunchAgents for a
+repo checked out under `~/Desktop` (confirmed the exact same command
+runs fine when launched directly/interactively, both with a normal and
+a launchd-matching minimal `PATH`; the crash reproduces specifically
+through `launchctl bootstrap`/`kickstart`, with `EX_CONFIG` and zero log
+output consistent with the process failing before it even starts,
+which TCC denial for a background process presents as) — this can't be
+fixed from here (no interactive access to grant macOS's own privacy
+prompt), but the *silent false-positive report* is a real, fixable bug.
+
+**Fixed:** `start-mac.sh`'s job-runner health check now verifies a live
+`pid = ` line in `launchctl print`'s own output, confirmed present on
+two checks 2 seconds apart (a single sighting can still land between
+deaths of a tight crash-loop — confirmed happening for real during
+testing). When that genuinely fails, it now falls back automatically to
+an unsupervised background process (clearly logging why, and that it
+won't auto-restart) instead of leaving analysis silently broken again.
+Two more bugs surfaced and fixed while building and testing that
+fallback itself: (1) the fallback's own liveness check trusted
+`$JOBS_PID_FILE`'s recorded pid, which a `( cd ... && nohup cmd & echo
+$! )` subshell doesn't always report accurately (confirmed producing a
+false "not alive" that let a real duplicate poller start on a second
+script run); (2) `stop-mac.sh` had the identical trust-the-pid-file
+problem, confirmed actually leaking a live fallback process after
+reporting "stopped". Both now use `pgrep -f` against the process's own
+command line instead of the recorded pid. Verified with a real
+start → start (idempotent, no duplicate) → stop (process actually gone)
+→ start cycle, checking `ps` directly after each step rather than
+trusting the scripts' own messages this time — this exact sequence is
+what caught both of these follow-on bugs, each of which the *previous*
+"fixed" version still had. Extracted the three liveness functions into
+`lib/job_runner_health.sh` (both scripts now source it — one
+implementation, not two copies to drift) and added
+`lib/job_runner_health.test.sh`: 6 assertions against mocked
+`launchctl`/`pgrep` covering the crash-loop-reported-alive bug this
+whole entry is about, the momentary-pid-during-a-crash-loop edge case,
+and the fallback/launchd double-counting edge case — all 6 pass.
+
+**Everything else on the required-behaviour checklist was already
+correctly implemented** — read and confirmed in code, then most of it
+also verified live:
+- Immediate "Starting…" feedback + disabled button while in flight
+  (`AnalyseWebsiteAction.tsx`) — confirmed live.
+- Real step-by-step progress from `current_step`, no simulated timers
+  (`AnalysingProgress.tsx`) — confirmed live (a fresh run went
+  Starting → real findings in the time the actual browser fetch took).
+- Duplicate-run guard (`_has_pending_analysis_job`, `planning/
+  service.py`) — an existing comment there notes it was added after
+  this exact class of bug ("repeated clicks... each enqueued another
+  duplicate job") was found for real previously; read, not re-tested
+  live (would need a genuine network race to trigger meaningfully).
+- A 60-second staleness detector with its own "Retry analysis" escape
+  hatch (`STALE_ANALYSING_MS`, `planning/[id]/page.tsx`) — already
+  exactly satisfies "must not remain indefinitely stuck", found reading
+  the code; not exercised live (would require reproducing a genuine
+  60s+ hang, which the actual fix above eliminates the cause of).
+- Missing-AI graceful degradation (`run_analysis_job`,
+  `planning/service.py`): each LLM-touching step (visual review,
+  Website Summary) is individually wrapped in its own
+  `except LlmUnavailableError`, so a missing model degrades that one
+  step to `NEEDS_REVIEW` with an honest message instead of failing the
+  whole job — deterministic technical findings and screenshots (which
+  don't depend on any LLM at all — confirmed both `planning_audit.py`
+  and Discovery's `website_quality.py`/`business_research.py` are pure,
+  no LLM call) are never discarded. Confirmed live, twice: a business
+  whose site loaded got real screenshots, five real technical findings,
+  and "Visual appearance: Not checked"; a business whose site failed to
+  load got zero screenshots (correctly — never fabricated) plus the
+  same honest AI-unavailable message.
+- Previous-result preservation during a rerun (`OverviewTab.tsx`'s
+  "Re-analysing — the results below are from the previous run.") — read,
+  not exercised live (would need a rerun on a business with prior
+  results, not just this session's first-run cases).
+- No auto-rerun on page open — `useEffect(load, [planningId])` only
+  ever issues GETs; POSTing a fresh analysis happens only from an
+  explicit click. Confirmed by construction and by every page load in
+  this session's testing never itself triggering a new run.
+
+**Why Discovery's Review page never showed this symptom the same way:**
+its equivalent research/audit/score actions
+(`business_research.py`/`website_quality.py`/`opportunity_score.py`)
+are synchronous HTTP calls, not job-queued at all — verified by
+checking each agent's own module docstring ("Deterministic, no LLM
+call") — so they never depended on the poller being alive in the first
+place. The *asynchronous* half of Discovery's own pipeline
+(`_enqueue_research`'s background jobs, e.g. Instagram website-checks)
+was equally stuck in the same PENDING backlog and equally fixed by the
+same restart — confirmed via the same `jobs` table query.
+
+**Verified live, end-to-end, in the browser:** created a brand-new
+Planning workspace for a Lead with no prior analysis, clicked "Analyse
+Website", watched it go Starting → (real browser fetch + deterministic
+findings, no LLM) → a completed `NEEDS_REVIEW` result with the correct
+honest AI-unavailable summary, entirely via the restarted job runner —
+no manual refresh needed, the existing 4s poll picked it up. Also
+opened two previously-stuck-since-2026-09-18 Planning workspaces (one
+with a real screenshot + 5 real findings, one with zero screenshots
+because its own site genuinely never loaded) and confirmed both
+display correctly after the drain. `apps/web`: `tsc --noEmit`,
+`eslint`, `vitest` (316/316) all clean (no application code changed, so
+this is confirming nothing regressed, not new coverage).
+`apps/api`: full `pytest` suite, 1356/1356 passed.
+
+**Not verified live — explicit limitation:** the actual *content* of a
+real AI-generated visual review / Website Summary was never observed,
+because the app's own configured local model (`qwen3:30b-a3b`, per
+`ai_local_provider`/`ai_local_model` in `core/settings.py` — routine
+AI tasks deliberately route to a free local Ollama model rather than
+the paid Claude key, see the AI-router commit history) isn't pulled on
+this machine. Started `ollama pull qwen3:30b-a3b` (an 18GB model) —
+still in progress at time of writing, ETA measured in tens of minutes
+at this connection's speed, too slow to wait out inside this session.
+Every other stage of the pipeline (browser fetch, screenshot capture,
+deterministic technical findings, job claiming/completion, persistence,
+frontend polling/rendering) was verified with real execution, not
+mocks — only this one LLM-generated-content stage stayed on its
+graceful-degradation path throughout testing.
+**Blockers/issues:** The launchd/TCC restriction itself is unresolved
+(can't grant a macOS privacy prompt from here) — the app now degrades
+to a working unsupervised fallback automatically instead of silently
+doing nothing, but true crash-auto-restart supervision needs the
+operator to grant Full Disk Access to their terminal app, or move this
+checkout out of `~/Desktop`/`~/Documents`/`~/Downloads`, and confirm
+launchd works from their own regular Terminal session (it may simply
+work fine there — this was only confirmed broken inside this coding
+session's own process tree).
+**Next up:** Check back on the `ollama pull` and, once it completes, do
+one more live run to see a real AI-generated visual review/summary end
+to end (not required for this bug's fix, but would close the last
+untested piece of the pipeline). Commit `scripts/start-mac.sh`/
+`stop-mac.sh` once reviewed.
+
+---
+
+## 2026-09-19 (full review page) — Replaced Review Queue's small popup with a full-page review workspace, extending the existing discovered-business detail page
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** Rewritten: `app/dashboard/discovered-businesses/[id]/page.tsx`,
+`components/ReviewQueueWorkspace.tsx`. Deleted: `components/ReviewItemDrawer.tsx`
+(dead code once its only caller stopped using it). No backend changes.
+
+**What happened.** Extended the existing discovered-business detail page
+(already had research/audit/score/Google-review history) into the full
+review workspace, rather than building a second review system —
+`ReviewItemDrawer` (the old small popup) is gone entirely; its
+approve/reject/archive/Add-to-Leads logic moved onto this page's own
+sticky header.
+
+**Page structure:** sticky header (business name/category/location,
+status badges, decision actions — stays reachable while scrolling a
+long review) → concise overview (contact/social links card, opportunity
+score + Google rating summary card, a "Missing information" panel
+synthesizing every known gap in one place) → a "Detailed review" panel
+with one **Run Detailed Review** action that sequences the *existing*
+research→audit→score endpoints (same ones the old three-button UI
+called) with live per-step status (Not run/Running/Completed/Failed/Not
+applicable) and per-step retry, skipping the audit step (marked "Not
+applicable", not "Failed") for a business with no reachable website →
+`Disclosure`-wrapped expandable sections below for the full technical
+evidence (research facts, audit findings, score breakdown, Google
+reviews, Instagram, a screenshots section honestly stating "not
+available at this stage" since Discovery-stage research never captures
+them — that's Planning-only, deliberately not reached into — sources/
+timestamps/confidence, and the existing stage checklist).
+
+**Navigation:** `ReviewQueueWorkspace`'s "Review" action (row click and
+button) now navigates to this page (`<Link>`, not a drawer `onClick`).
+Its filters/tab/sort/search are now URL-synced (`useDebouncedUrlSync`
+for search, a `searchParams`-driven read-effect for tab/website/sort —
+the same convention Leads/Planning/Projects already use) and scroll-
+restored, wrapped in its own internal `<Suspense>` so `DiscoveryLayout`
+didn't need to change. This became *necessary* here, not just nice-to-
+have: going to the detail page is a real route change out of the
+`/dashboard/discovery` segment, so the "both tabs stay mounted" trick
+that used to make Review's filters durable (see the previous session)
+doesn't apply across that boundary — the detail page's "Back to Review
+Queue" link now restores the exact list state via `wdos-list-return:
+discovery-review`, verified live (searched "Bam Bam", opened a review,
+approved it, clicked back — search term and result count both correct).
+
+**A real hydration bug found and fixed during live QA:** the Google-
+reviews section's "Analyze" button was passed as `Disclosure`'s `badge`
+prop, which renders inside `Disclosure`'s own clickable header
+`<button>` — an invalid `<button>`-inside-`<button>`, confirmed via a
+real React hydration error in the console (`<button> cannot be a
+descendant of <button>`). Checked every other `badge` usage in the
+app first (Projects/Planning) — none of them pass interactive content,
+confirming this page's own mistake rather than a `Disclosure` defect.
+Fixed by moving that button to a plain sibling row above the
+`Disclosure` instead of trying to change the shared component.
+
+**Verified end-to-end, live, in a real browser:** Map Discovery → "Add
+to Review Queue" → Review Queue (searched, sorted) → "Review" opens
+this full page (not a popup) → "Run Detailed Review" actually ran
+research→audit→score in sequence with live status updates (watched
+"Not run yet" → "Running…" → "Completed" for a real business, landing
+on a real WARM·45 score with real audit findings) → "Approve" created
+a real Lead (its Notes carried over every research/audit/score
+finding, matching the existing `_build_import_notes` behavior
+unchanged) → header switched to "Open Lead →" → clicked through to the
+real Lead detail page → browser Back returned to the review page intact
+→ "Back to Review Queue" restored the exact search filter and showed
+the updated Needs-review/Imported counts. Separately verified a
+no-website business (`Himalayan Cafe`, HOT·90, real Google rating
+4.6★/753) shows "Not applicable" for the audit step and an honest
+"nothing to audit" explanation — never a misleading failure. Confirmed
+in `tsc`/`eslint`/`vitest` (316/316)/`next build`, and desktop (1400px)
+and mobile (400px) viewports both hold up with no overflow.
+
+**One live-QA hiccup, unrelated to the code:** the Chrome tab's
+renderer froze mid-session (CDP `Page.captureScreenshot` timed out
+repeatedly) while inspecting the no-website business — recovered by
+opening a fresh tab and closing the frozen one; all further checks
+(including reloading the exact same page) worked cleanly in the new
+tab, so this reads as a one-off browser/extension hiccup rather than
+anything the page itself did.
+**Blockers/issues:** None outstanding. Same testing-infrastructure gap
+noted in the immediately preceding session applies here too — no
+automated regression test was added for the URL-sync/Suspense wiring
+or the hydration-bug fix, since this codebase has no component/DOM-
+rendering test setup; both were instead verified live as described
+above.
+**Next up:** None on this feature. If a future session wants automated
+coverage for Discovery's page-level React behavior, that's the moment
+to deliberately add a jsdom-based test setup rather than bolting one on
+for a single fix.
+
+---
+
+## 2026-09-18 (Discovery merge bug fix) — Fixed "Add to Review Queue" 404, plus two real regressions the fix's own verification surfaced
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** `apps/web/src/components/DiscoveryWorkspace.tsx`,
+`apps/web/src/components/DiscoveryMap.tsx`. No backend code changed.
+
+**What happened.** Reported symptom: clicking "Add to Review Queue" in
+the just-shipped Discovery workspace threw an error. Reproduced live in
+the running browser first, per the task's own instruction, before
+touching any code.
+
+**Root cause #1 (the reported error): a stale backend process, not a
+code defect.** The FastAPI dev server (`uvicorn`, no `--reload`) had
+been started at 17:55:50 — before the `/queue` routes, service
+functions, model column, and migration were written (routes.py last
+edited 18:24:26). `GET /openapi.json` against the live server confirmed
+`/api/v1/discovered-businesses/{id}/queue` simply didn't exist on it.
+Clicking "Add to Review Queue" sent a real `POST .../queue`, got a real
+`404`, and the existing `ErrorState`/Retry banner correctly surfaced
+it — the frontend's error handling was never the problem. `pytest`
+imports the exact same `app.main:app` uvicorn serves
+(`tests/conftest.py`), and the full suite (1356 tests, run right after
+the Discovery merge, before this session) already proved the code
+itself correct — conclusive evidence this was purely an operational
+staleness issue. **Fix:** killed the stale process, restarted with
+`--reload` this time so it can't recur silently for the rest of this
+dev session. No code change, no migration re-run needed (the `a1c3e8f0d2b4`
+migration was already applied correctly to the dev DB in the prior
+session — this bug was never about persistence).
+
+**Root cause #2, found while verifying "confirm it persists after
+refreshing and appears in the Review Queue tab" (a real frontend
+regression from the Discovery merge itself):** navigating directly to
+`/dashboard/discovery/review` bounced back to Map Discovery. Cause:
+`DiscoveryWorkspace` (Map's content) stays mounted-but-hidden while
+Review Queue is the active tab (see the merge's own "keep both
+mounted" design, docs/05_DECISIONS.md), and its URL-sync effect
+(`window.history.replaceState` to `/dashboard/discovery/map/{activeId}`)
+fired unconditionally on mount — including while hidden. Next.js's App
+Router patches the History API to keep its own router state in sync
+with *any* `pushState`/`replaceState` call, so this silently dragged
+the router's active-tab state to "map" out from under Review Queue.
+**Fix:** gated the `replaceState` call on the existing `mapVisible`
+prop (the sessionStorage write stays unconditional — it's just
+recording state, harmless either way). Verified live: hard-reloading
+directly onto `/dashboard/discovery/review` now correctly stays there.
+
+**Root cause #3, found verifying the same requirement plus "zoom
+preserved" (a second real regression, also from the merge):**
+`DiscoveryMap`'s `fitBounds()` was being computed while its container
+was CSS-`hidden` (0×0 size) during that same mounted-but-hidden window,
+producing a nonsense world-zoomed-out viewport that then stuck once the
+tab became visible (the merge's existing `invalidateSize()`-on-visible
+fix corrected the map's size cache but not a pan/zoom already computed
+wrong). **Fix:** a `wasVisibleRef` now detects the hidden→visible
+transition and forces one real re-fit at that point (folded into the
+existing marker-refresh effect, replacing the separate invalidateSize-
+only effect). Verified live via the tile URLs' actual `z` value
+(`document.querySelectorAll('.leaflet-tile-pane img')`) staying flat at
+zoom 10 across two independent tab-switch round trips — manual pan/zoom
+is genuinely preserved now, not just coincidentally similar-looking.
+
+**Root cause #4, found verifying the map-popup action specifically (a
+third real regression, also from the merge):** clicking "Add to Review
+Queue" inside a Leaflet popup never even sent a request. Cause: the
+merge's popup click-handling was delegated on the map's own container
+div (chosen specifically to survive `setPopupContent` replacing the
+popup's inner HTML) — but Leaflet's `Popup` calls
+`L.DomEvent.disableClickPropagation` on its own container precisely so
+a click inside a popup never bubbles up to the map, which meant the
+container-level listener could never receive these clicks at all.
+Confirmed via network log: zero requests fired on repeated popup-link
+clicks. **Fix:** delegate on `e.popup.getElement()` instead, bound once
+per `popupopen`. This still survives content updates while open (Popup
+only replaces the *inner* content node's `innerHTML`, never the outer
+element `getElement()` returns), which is what the container-level
+choice was trying to preserve in the first place — just attached to
+the correct ancestor. Verified live end-to-end via `ref`-targeted
+clicks (pixel-coordinate clicks on the popup were themselves briefly
+mistaken for a persisting bug — the animated marker-selection zoom
+shifts the popup's on-screen position, so a coordinate click can miss
+even when the code is correct): a real `POST .../queue` fired (200),
+the popup's own content live-updated from "Add to Review Queue" to "In
+Review Queue · Remove" while still open, clicking Remove reverted it
+and the tab's count dropped back down correctly.
+
+**Verified end-to-end, live:** result-list "Add to Review Queue" and
+map-popup "Add to Review Queue" both queue the business without
+creating a Lead (`status` stayed `new`/unimported throughout); the
+tab's actionable count updates immediately in both directions (508 →
+509 → 508 across an add and a remove); the queued business appears in
+the Review Queue tab and survives a hard page refresh; returning to Map
+Discovery keeps the same search, same manually-zoomed/panned map
+position (confirmed via tile zoom level), and the same scroll/filter
+state; duplicate-add is a no-op per the existing backend idempotency
+(already covered by last session's 12 backend tests, re-confirmed
+passing here). `npx tsc --noEmit`, `eslint`, `vitest` (316/316), and
+`next build` all clean after both fixes.
+
+**Not a code regression, but worth naming:** the very first symptom
+(the reported 404) had nothing to do with the Discovery merge's code
+quality — it was this session's own dev-environment hygiene (a
+long-lived server process outliving the code it was serving). The
+three bugs actually found and fixed here were real, silent regressions
+in the merge's "keep both tabs permanently mounted" design that hadn't
+been caught by the previous session's live QA, because that QA never
+happened to hard-refresh directly onto the Review Queue route, zoom the
+map before switching tabs, or click a popup's queue action specifically
+(it verified the result-list action and general tab navigation, not
+these three edge cases).
+
+**Blockers/issues:** None outstanding. No automated regression test
+was added for these three frontend fixes — this codebase has no
+component/DOM-rendering test infrastructure (every existing `.test.ts`
+tests pure logic only, vitest's environment is `node` not `jsdom`), and
+introducing one (a new dependency + a new per-file test pattern) for
+three fixes already verified live seemed like disproportionate scope
+for this task. Flagging this as a real gap rather than skipping it
+silently: if Discovery's "keep both tabs mounted" pattern gets reused
+elsewhere, a jsdom-based component test setup would be worth adding
+deliberately, not as a byproduct of one bug-fix session.
+**Next up:** None on this specific bug. The backend dev server now runs
+with `--reload`; worth checking whether the *deployed* (non-dev)
+process manager already restarts on deploy (it should, but this bug
+class — a route silently missing from a long-lived process — is exactly
+the kind of thing that also bites a real deployment if a release
+doesn't fully cycle the process).
+
+---
+
 ## 2026-09-18 (Discovery workspace merge) — Merged Map Discovery and Review Queue into one Discovery workspace, and added a real explicit Review Queue
 
 **Mode:** interactive session, direct to main (not yet committed).
