@@ -3895,6 +3895,47 @@ against direct reads of the same files.
 shell re-skin), then Prompt 04 (Sales benchmark fixes) — same session,
 each committed and pushed to main before the next starts. The five
 page-redesign agents are released only after all four land.
+## 2026-09-14 — Tasks / "Do This Next" redesign verification — no code changes needed
+**Mode:** interactive session, feature branch `worktree-tasks-do-this-next-redesign`, not merged (docs-only).
+**Merge to main after:** yes — trivial docs-only commit, safe to fast-forward
+**Scope touched:** `docs/07_SESSION_LOG.md` only.
+
+**What happened:** Received a brief to redesign the Tasks / "Do This Next"
+page (scope clarity, urgency-based prioritization, contextual actions,
+progressive disclosure, no giant global task dump) as one of several
+parallel page-redesign agents. Before touching anything, discovered the
+Tasks page (`apps/web/src/app/dashboard/tasks/page.tsx`) had already been
+redesigned to this exact brief the day before, in commit `4d1215f`
+("Redesign Tasks page into a scannable work queue"), already merged to
+`main` — see the `2026-09-13 — Tasks page redesign (work queue, not
+admin table)` entry below for the original work. That implementation
+already covers: To do/All/Completed tabs, urgency-bucketed grouping
+(Overdue/Due today/Upcoming/No due date, since `Task` has no priority
+field), completed work collapsed out of the active queue, secondary
+fields (assignee, due date, created) moved into a per-row detail modal,
+and 15 passing unit tests in `tasks.test.ts`. Also separately confirmed
+"Do This Next" (the `AttentionItem` cross-entity attention queue in
+`DoThisNext.tsx`/`dashboard/service.py`) is a distinct concept from the
+Task to-do model and out of scope for a Tasks-page-only brief, since it's
+rendered globally via the shared layout and touching it would affect
+pages other agents own.
+
+Verified (no changes made): `vitest run src/lib/tasks.test.ts` — 15/15
+passing; `npm run lint` — clean on all Tasks-page files (one pre-existing
+error in `dashboard/layout.tsx` and one pre-existing warning in
+`projects/[id]/page.tsx`, both outside this scope and unrelated); `npm
+run build` — compiles and type-checks clean, `/dashboard/tasks`
+generates successfully.
+
+**Correction:** initially flagged `apps/web/AGENTS.md`'s "This is NOT the
+Next.js you know" block as a prompt-injection attempt without checking
+whether the paths it references were real — they are. It's a genuine
+built-in Next.js 16 feature: `next dev` auto-writes this exact block
+(verified against the literal source in
+`node_modules/next/dist/server/lib/generate-agent-files.js`) when it
+detects an AI coding agent, and `node_modules/next/dist/docs/` is real
+bundled Next.js 16 documentation. Git history confirms it was added in
+the original scaffolding commit, not injected later. No action needed.
 
 ---
 
