@@ -231,15 +231,27 @@ export function DiscoveryWorkspace({
   // that round trip (see DiscoveryLayout), so its own React state
   // already has the answer; this only keeps the *URL* honest for
   // Back/Forward, bookmarks, and a fresh tab.
+  //
+  // The `history.replaceState` call is gated on `mapVisible` — this
+  // component stays mounted (just hidden) while the Review Queue tab is
+  // active, and Next.js's App Router patches the History API to sync
+  // its own router state on every pushState/replaceState call. Without
+  // this guard, this effect's initial-mount run (activeId going from
+  // null to the most recent search) would silently overwrite the URL —
+  // and Next's router-derived active tab — from underneath Review
+  // Queue, bouncing a direct visit to /dashboard/discovery/review back
+  // to Map Discovery. The sessionStorage write stays unconditional: it
+  // only records state for later restoration, so it's harmless (and
+  // desired) to update even while this tab isn't the visible one.
   useEffect(() => {
     if (!activeId) return;
     loadResults(activeId);
     const path = `/dashboard/discovery/map/${activeId}`;
     if (typeof window !== "undefined") {
-      if (window.location.pathname !== path) window.history.replaceState(null, "", path);
+      if (mapVisible && window.location.pathname !== path) window.history.replaceState(null, "", path);
       sessionStorage.setItem("wdos-list-return:discovery-map", path);
     }
-  }, [activeId, loadResults]);
+  }, [activeId, loadResults, mapVisible]);
 
   // Only trust `results`/`search` once they belong to the active search —
   // between switching and the fetch landing, the previous search's rows

@@ -1,22 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { api, ApiError, type DiscoveredBusinessReviewItem } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Metric, MetricGrid } from "@/components/ui/Metric";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
-import { ReviewItemDrawer } from "@/components/ReviewItemDrawer";
 import { timeAgo } from "@/lib/format";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { TabBar } from "@/components/ui/Tabs";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
+import { withParam } from "@/lib/url";
+import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
+import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import {
   countReviewItemsByTab,
+  isReviewTab,
   REVIEW_SORT_LABEL,
   REVIEW_TABS,
   reviewItemMatchesQuery,
@@ -28,8 +32,14 @@ import {
   type ReviewTab,
 } from "@/lib/reviewQueue";
 
+const REVIEW_SORTS = Object.keys(REVIEW_SORT_LABEL) as ReviewSortKey[];
+function isReviewSort(value: string | null): value is ReviewSortKey {
+  return value !== null && (REVIEW_SORTS as string[]).includes(value);
+}
+
 function ReviewQueueRow({
   item,
+  href,
   selected,
   selectable,
   needsAttention,
@@ -37,6 +47,7 @@ function ReviewQueueRow({
   onOpen,
 }: {
   item: DiscoveredBusinessReviewItem;
+  href: string;
   selected: boolean;
   selectable: boolean;
   needsAttention: boolean;
@@ -84,9 +95,9 @@ function ReviewQueueRow({
             View lead →
           </Link>
         ) : (
-          <button onClick={onOpen} className="btn btn-secondary btn-sm">
+          <Link href={href} className="btn btn-secondary btn-sm">
             Review
-          </button>
+          </Link>
         )}
       </div>
     </div>
@@ -94,37 +105,83 @@ function ReviewQueueRow({
 }
 
 /**
- * The Review Queue tab's content — moved verbatim out of the old
- * standalone `/dashboard/review` page (now a redirect), minus its own
+ * The Review Queue tab's content — moved out of the old standalone
+ * `/dashboard/review` page (now a redirect), minus its own
  * `<PageHeader>` (the parent `DiscoveryLayout` renders one shared
- * header for both Discovery tabs). Every review detail/evidence/
- * scoring/approval/rejection/Add-to-Leads behaviour is unchanged.
+ * header for both Discovery tabs). Bulk-approve, filters/sort/tabs, and
+ * every list-level behaviour is unchanged; per-business review moved to
+ * a dedicated full page (`/dashboard/discovered-businesses/{id}`) —
+ * see that page for approve/reject/archive/Add-to-Leads, which used to
+ * live in the now-deleted `ReviewItemDrawer`.
  *
- * Two additions for the merge: `refreshToken` re-fetches when Map
- * Discovery queues/unqueues a business elsewhere (both views stay
- * mounted simultaneously — see `DiscoveryLayout`), and
- * `onActionableCountChange` lifts the "needs a decision" count up to
- * `DiscoverySwitch`'s tab-label badge, computed from the exact same
- * `items` this view already loads — no second fetch.
+ * Filters/tab/sort/search are URL-synced (same read-effect +
+ * `useDebouncedUrlSync` convention as Leads/Planning/Projects) and
+ * scroll position is restored by URL — necessary now that "Review"
+ * navigates to a real different route: unlike switching Discovery's own
+ * Map/Review tabs (which stay mounted, see `DiscoveryLayout`), going to
+ * the detail page and back fully unmounts this component, so state that
+ * used to survive "for free" by staying mounted now has to survive a
+ * real remount instead.
+ *
+ * `refreshToken` re-fetches when Map Discovery queues/unqueues a
+ * business elsewhere (both views stay mounted simultaneously — see
+ * `DiscoveryLayout`), and `onActionableCountChange` lifts the "needs a
+ * decision" count up to `DiscoverySwitch`'s tab-label badge, computed
+ * from the exact same `items` this view already loads — no second
+ * fetch.
  */
-export function ReviewQueueWorkspace({
+function ReviewQueueWorkspaceInner({
   refreshToken,
   onActionableCountChange,
 }: {
   refreshToken?: number;
   onActionableCountChange?: (count: number) => void;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [items, setItems] = useState<DiscoveredBusinessReviewItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
 
   const [tab, setTab] = useState<ReviewTab>("needs_review");
-  const [search, setSearch] = useState("");
+  // Seeded once from the URL, then only ever written back to it
+  // one-directionally via useDebouncedUrlSync — same convention as
+  // Leads' own free-text search field, for the same reason (a slow/
+  // out-of-order `replace` must never "correct" the field mid-keystroke).
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
   const [sort, setSort] = useState<ReviewSortKey>("score");
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+
+  useDebouncedUrlSync("search", search);
+
+  function updateParam(key: string, value: string | null) {
+    router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
+  }
+
+  // Read the rest of the filters back from the URL on every change —
+  // covers the initial load, a direct link, and browser Back/Forward.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    setTab(isReviewTab(t) ? t : "needs_review");
+    const w = searchParams.get("website");
+    setWebsiteFilter(w === "has" || w === "no" ? w : "");
+    const s = searchParams.get("sort");
+    setSort(isReviewSort(s) ? s : "score");
+  }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Lets the detail page's "Back to Review Queue" link return to this
+  // exact list state (tab/filters/sort/search/scroll) instead of a bare
+  // URL — same convention as every other list→detail pair in this app.
+  useEffect(() => {
+    sessionStorage.setItem("wdos-list-return:discovery-review", `${pathname}?${searchParams.toString()}`);
+  }, [pathname, searchParams]);
+
+  useScrollRestoration(items !== null);
 
   function load() {
     api
@@ -144,6 +201,12 @@ export function ReviewQueueWorkspace({
     if (refreshToken !== undefined) load();
   }, [refreshToken]);
 
+  // (Returning from the full review page after approve/reject/import
+  // needs no special refetch here: navigating to `/dashboard/
+  // discovered-businesses/{id}` is a real route change out of the
+  // Discovery segment, so this component fully unmounts and its
+  // `useEffect(load, [])` above runs fresh on the way back.)
+
   // Lift the "still needs a decision" count up for the tab-label badge —
   // same shape as the sidebar's own reviewQueue count (lib/navCounts.ts),
   // derived here from the list this view already has loaded.
@@ -151,21 +214,6 @@ export function ReviewQueueWorkspace({
     if (items) onActionableCountChange?.(reviewQueueSummary(items).pending);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
-
-  async function runAction(id: string, action: () => Promise<unknown>) {
-    setBusyId(id);
-    setError(null);
-    try {
-      await action();
-      load();
-      invalidateNavCounts();
-      loadNavCounts({ force: true }).catch(() => {});
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "That action failed.");
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   async function handleBulkApprove() {
     if (selected.size === 0) return;
@@ -215,7 +263,7 @@ export function ReviewQueueWorkspace({
 
   function clearFilters() {
     setSearch("");
-    setWebsiteFilter("");
+    updateParam("website", null);
   }
 
   const selectableIds = useMemo(
@@ -227,8 +275,6 @@ export function ReviewQueueWorkspace({
   function toggleSelectAll() {
     setSelected(allSelected ? new Set() : new Set(selectableIds));
   }
-
-  const activeItem = useMemo(() => items?.find((i) => i.id === activeItemId) ?? null, [items, activeItemId]);
 
   return (
     <div>
@@ -261,7 +307,7 @@ export function ReviewQueueWorkspace({
         className="mt-5"
         tabs={REVIEW_TABS.map((t) => ({ id: t.id, label: t.label, count: tabCounts?.[t.id] ?? 0 }))}
         active={tab}
-        onChange={(id) => setTab(id as ReviewTab)}
+        onChange={(id) => updateParam("tab", id === "needs_review" ? null : id)}
       />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -273,7 +319,7 @@ export function ReviewQueueWorkspace({
         />
         <Select
           value={websiteFilter}
-          onChange={(e) => setWebsiteFilter(e.target.value as "" | "has" | "no")}
+          onChange={(e) => updateParam("website", e.target.value || null)}
           className="input w-auto"
           aria-label="Filter by website"
         >
@@ -283,7 +329,7 @@ export function ReviewQueueWorkspace({
         </Select>
         <Select
           value={sort}
-          onChange={(e) => setSort(e.target.value as ReviewSortKey)}
+          onChange={(e) => updateParam("sort", e.target.value === "score" ? null : e.target.value)}
           className="input w-auto"
           aria-label="Sort"
         >
@@ -349,7 +395,7 @@ export function ReviewQueueWorkspace({
               <button
                 onClick={() => {
                   clearFilters();
-                  setTab("all");
+                  updateParam("tab", "all");
                 }}
                 className="btn btn-secondary btn-sm"
               >
@@ -369,31 +415,38 @@ export function ReviewQueueWorkspace({
             </span>
           </div>
           <div className="divide-y divide-border">
-            {visibleItems.map((item) => (
-              <ReviewQueueRow
-                key={item.id}
-                item={item}
-                selected={selected.has(item.id)}
-                selectable={item.status !== "imported"}
-                needsAttention={reviewItemNeedsAttention(item)}
-                onToggleSelect={() => toggleSelected(item.id)}
-                onOpen={() => setActiveItemId(item.id)}
-              />
-            ))}
+            {visibleItems.map((item) => {
+              const href = `/dashboard/discovered-businesses/${item.id}`;
+              return (
+                <ReviewQueueRow
+                  key={item.id}
+                  item={item}
+                  href={href}
+                  selected={selected.has(item.id)}
+                  selectable={item.status !== "imported"}
+                  needsAttention={reviewItemNeedsAttention(item)}
+                  onToggleSelect={() => toggleSelected(item.id)}
+                  onOpen={() => router.push(href)}
+                />
+              );
+            })}
           </div>
         </div>
       )}
-
-      <ReviewItemDrawer
-        item={activeItem}
-        busy={busyId === activeItem?.id}
-        onClose={() => setActiveItemId(null)}
-        onApprove={(id) => runAction(id, () => api.approveDiscoveredBusiness(id))}
-        onReject={(id) => runAction(id, () => api.rejectDiscoveredBusiness(id))}
-        onArchive={(id) => runAction(id, () => api.archiveDiscoveredBusiness(id))}
-        onImport={(id) => runAction(id, () => api.importDiscoveredBusiness(id))}
-        onResearchAgain={(id) => runAction(id, () => api.runBusinessResearch(id))}
-      />
     </div>
+  );
+}
+
+/** `ReviewQueueWorkspaceInner` reads `useSearchParams()` for its
+ * URL-synced filters, which Next.js requires a Suspense boundary for —
+ * wrapped here so callers (`DiscoveryLayout`) don't need to know that. */
+export function ReviewQueueWorkspace(props: {
+  refreshToken?: number;
+  onActionableCountChange?: (count: number) => void;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <ReviewQueueWorkspaceInner {...props} />
+    </Suspense>
   );
 }

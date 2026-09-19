@@ -19,6 +19,10 @@ import {
 import { StageChecklistPanel } from "@/components/checklists/StageChecklistPanel";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { Disclosure } from "@/components/ui/Disclosure";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
+import { timeAgo } from "@/lib/format";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 
 const SEVERITY_TONE: Record<QualityFindingSeverity, BadgeTone> = {
@@ -64,37 +68,45 @@ const ACTIVITY_LABEL: Record<string, string> = {
   unknown: "UNKNOWN",
 };
 
+// A run-once/check-status pill shared by every analysis type on this
+// page (research/audit/score) — "clearly distinguish completed,
+// pending, unavailable, and failed" is the explicit requirement this
+// exists to satisfy, in one place rather than four ad hoc renderings.
+type CheckStatus = "not_run" | "running" | "done" | "failed" | "unavailable";
+const CHECK_STATUS_TONE: Record<CheckStatus, BadgeTone> = {
+  not_run: "muted",
+  running: "info",
+  done: "success",
+  failed: "danger",
+  unavailable: "muted",
+};
+const CHECK_STATUS_LABEL: Record<CheckStatus, string> = {
+  not_run: "Not run yet",
+  running: "Running…",
+  done: "Completed",
+  failed: "Failed",
+  unavailable: "Not applicable",
+};
+function CheckStatusBadge({ status }: { status: CheckStatus }) {
+  return <Badge tone={CHECK_STATUS_TONE[status]}>{CHECK_STATUS_LABEL[status]}</Badge>;
+}
+
 function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) {
   if (result.data_status === "no_listing") {
-    return (
-      <div className="mt-6 max-w-2xl panel">
-        <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
-        <p className="mt-2 text-sm text-fg-subtle">{result.data_limitations || "No Google listing on record."}</p>
-      </div>
-    );
+    return <p className="text-sm text-fg-subtle">{result.data_limitations || "No Google listing on record."}</p>;
   }
 
   if (result.data_status === "unavailable") {
     return (
-      <div className="mt-6 max-w-2xl panel">
-        <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
-        <p className="mt-2 text-sm text-fg-subtle">
-          {result.data_limitations || "Google Places is currently unavailable."}
-        </p>
-      </div>
+      <p className="text-sm text-fg-subtle">
+        {result.data_limitations || "Google Places is currently unavailable."}
+      </p>
     );
   }
 
   return (
-    <div className="mt-6 max-w-2xl panel">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-fg">Google reviews</h2>
-        <span className="text-xs text-fg-subtle">
-          Updated {new Date(result.review_data_updated_at).toLocaleString()}
-        </span>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+    <div>
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <div>
           {result.google_rating !== null ? (
             <div className="flex items-center gap-2">
@@ -136,9 +148,7 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
         {result.recent_review_count !== null
           ? `${result.recent_review_count} of the visible reviews are from the last 90 days`
           : "Recent activity: insufficient data"}
-        {result.last_review_at && (
-          <> · Most recent review {new Date(result.last_review_at).toLocaleDateString()}</>
-        )}
+        {result.last_review_at && <> · Most recent review {new Date(result.last_review_at).toLocaleDateString()}</>}
         {result.review_volume_trend !== "insufficient_data" && (
           <> · Volume trend: {TREND_LABEL[result.review_volume_trend]}</>
         )}
@@ -188,16 +198,9 @@ function GoogleReviewsSection({ result }: { result: ReviewIntelligenceResult }) 
         </p>
       )}
 
-      <div className="mt-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Rating distribution</h3>
-        <p className="mt-1 text-sm text-fg-subtle">
-          {result.rating_distribution ? "Available" : "Rating distribution unavailable"}
-        </p>
-      </div>
-
       {result.review_evidence.length > 0 && (
         <div className="mt-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence excerpts</h3>
           <ul className="mt-1 space-y-1.5">
             {result.review_evidence.map((e, i) => (
               <li key={i} className="text-sm text-fg-muted">
@@ -238,7 +241,7 @@ const LOCATION_CONFIDENCE_LABEL: Record<string, string> = {
 /** Shown for any business with an Instagram handle on record — from
  * either instagram_import (Phase 1, manual CSV) or instagram_search
  * (Phase 2, automated site:instagram.com search). */
-function InstagramCard({
+function InstagramSection({
   business,
   onCheckWebsite,
   checking,
@@ -249,7 +252,7 @@ function InstagramCard({
 }) {
   const igState = instagramCheckDisplayState(business);
   return (
-    <div className="mt-6 max-w-2xl panel">
+    <div>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {business.instagram_profile_image_url && (
@@ -265,12 +268,11 @@ function InstagramCard({
             />
           )}
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-fg">Instagram</h2>
             <a
               href={business.instagram_profile_url ?? `https://instagram.com/${business.instagram_handle}`}
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-fg-muted hover:underline"
+              className="text-sm font-medium text-fg hover:underline"
             >
               @{business.instagram_handle}
             </a>
@@ -278,11 +280,7 @@ function InstagramCard({
           </div>
         </div>
         {igState && igState !== "website_found" && (
-          <button
-            onClick={onCheckWebsite}
-            disabled={checking}
-            className="btn btn-secondary btn-sm shrink-0"
-          >
+          <button onClick={onCheckWebsite} disabled={checking} className="btn btn-secondary btn-sm shrink-0">
             {checking ? "Checking…" : igState === "check_pending" ? "Check now" : "Check for website"}
           </button>
         )}
@@ -295,9 +293,7 @@ function InstagramCard({
         />
         <Fact
           label="Last post"
-          value={
-            business.instagram_last_post_at ? new Date(business.instagram_last_post_at).toLocaleDateString() : null
-          }
+          value={business.instagram_last_post_at ? new Date(business.instagram_last_post_at).toLocaleDateString() : null}
         />
         {igState === "website_found" && business.website_url ? (
           <div className="flex justify-between border-b border-border py-1.5 text-sm">
@@ -342,19 +338,57 @@ function InstagramCard({
   );
 }
 
+/**
+ * The Discovery workspace's full review page — extended from what was
+ * already the discovered-business detail page (research/audit/score/
+ * Google-reviews history) rather than building a second review system.
+ * Reached from Review Queue's "Review" action (previously a small
+ * `ReviewItemDrawer` popup, now this real page — see
+ * docs/07_SESSION_LOG.md), from Map Discovery's "View details" links,
+ * and from map popups' "View details" link. All three keep working
+ * unchanged since none of their hrefs moved.
+ *
+ * New here: the decision actions (approve/reject/archive/Add to Leads)
+ * that used to live only in the now-deleted drawer, a sticky header so
+ * they stay reachable while scrolling a long review, a "Back to Review
+ * Queue" link that restores that list's exact filters/tab/sort/scroll
+ * (`wdos-list-return:discovery-review`, written by `ReviewQueueWorkspace`
+ * on every render), a single "Run Detailed Review" action that
+ * sequences the existing research→audit→score endpoints with visible
+ * per-step status instead of three separate buttons, and `Disclosure`-
+ * wrapped detail sections so the page opens on a concise overview.
+ * Google Reviews analysis and the Instagram website-check stay their
+ * own independent actions (separate evidence sources, already
+ * separately freshness-cached server-side) — folding them into "Run
+ * Detailed Review" would blur "detailed *website* review" with data
+ * this page already treats as distinct.
+ */
 export default function DiscoveredBusinessDetailPage() {
   const params = useParams<{ id: string }>();
+  const confirm = useConfirm();
   const [business, setBusiness] = useState<DiscoveredBusiness | null>(null);
   const [research, setResearch] = useState<BusinessResearchResult[] | null>(null);
   const [audits, setAudits] = useState<WebsiteQualityAudit[] | null>(null);
   const [scores, setScores] = useState<OpportunityScoreResult[] | null>(null);
   const [reviewIntel, setReviewIntel] = useState<ReviewIntelligenceResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [researching, setResearching] = useState(false);
-  const [auditing, setAuditing] = useState(false);
-  const [scoring, setScoring] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [analyzingReviews, setAnalyzingReviews] = useState(false);
   const [checkingWebsite, setCheckingWebsite] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  // "Run Detailed Review" — sequences research → audit → score using
+  // the exact same endpoints the old three-button UI called, just
+  // orchestrated with visible per-step progress instead of requiring
+  // three separate clicks. `pipelineStep` is which one is in flight
+  // right now (or null when idle); `pipelineFailedStep` is which one
+  // to offer a retry for for.
+  const [pipelineStep, setPipelineStep] = useState<"research" | "audit" | "score" | null>(null);
+  const [pipelineFailedStep, setPipelineFailedStep] = useState<"research" | "audit" | "score" | null>(null);
+
+  const backTo =
+    typeof window !== "undefined" ? sessionStorage.getItem("wdos-list-return:discovery-review") : null;
 
   function load() {
     if (!params.id) return;
@@ -383,59 +417,20 @@ export default function DiscoveredBusinessDetailPage() {
       .catch(() => setError("Couldn't load Google review data for this business."));
   }
 
+  // Loads whatever has already been saved — never triggers a fresh
+  // (paid) research/audit/score/review-analysis run on its own. Those
+  // only ever happen from an explicit click below.
   useEffect(load, [params.id]);
-
-  async function handleResearch() {
-    if (!params.id) return;
-    setResearching(true);
-    setError(null);
-    try {
-      await api.runBusinessResearch(params.id);
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't research this business.");
-    } finally {
-      setResearching(false);
-    }
-  }
-
-  async function handleAudit() {
-    if (!params.id) return;
-    setAuditing(true);
-    setError(null);
-    try {
-      await api.runQualityAudit(params.id);
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't audit this business.");
-    } finally {
-      setAuditing(false);
-    }
-  }
-
-  async function handleScore() {
-    if (!params.id) return;
-    setScoring(true);
-    setError(null);
-    try {
-      await api.runOpportunityScore(params.id);
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't score this business.");
-    } finally {
-      setScoring(false);
-    }
-  }
 
   async function handleCheckWebsite() {
     if (!params.id) return;
     setCheckingWebsite(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.checkInstagramWebsite(params.id);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't check for a website.");
+      setActionError(err instanceof ApiError ? err.message : "Couldn't check for a website.");
     } finally {
       setCheckingWebsite(false);
     }
@@ -444,15 +439,148 @@ export default function DiscoveredBusinessDetailPage() {
   async function handleReviewAnalysis() {
     if (!params.id) return;
     setAnalyzingReviews(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.runReviewIntelligence(params.id);
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't analyze Google reviews for this business.");
+      setActionError(err instanceof ApiError ? err.message : "Couldn't analyze Google reviews for this business.");
     } finally {
       setAnalyzingReviews(false);
     }
+  }
+
+  // One click, three existing endpoints in sequence — never re-runs a
+  // step that already has a fresh-enough result (each service's own
+  // freshness cache still applies, e.g. research's 7-day window), and
+  // skips the audit step entirely for a business with no reachable
+  // website rather than showing a misleading "failed" audit.
+  async function handleRunDetailedReview() {
+    if (!params.id) return;
+    setActionError(null);
+    setPipelineFailedStep(null);
+
+    setPipelineStep("research");
+    let latestResearch: BusinessResearchResult;
+    try {
+      latestResearch = await api.runBusinessResearch(params.id);
+      setResearch((rows) => [latestResearch, ...(rows ?? []).filter((r) => r.id !== latestResearch.id)]);
+    } catch (err) {
+      setPipelineFailedStep("research");
+      setPipelineStep(null);
+      setActionError(err instanceof ApiError ? err.message : "Couldn't research this business.");
+      return;
+    }
+
+    const hasWebsite = !latestResearch.research_error && latestResearch.website_reachable === true;
+    if (hasWebsite) {
+      setPipelineStep("audit");
+      try {
+        const audit = await api.runQualityAudit(params.id);
+        setAudits((rows) => [audit, ...(rows ?? []).filter((a) => a.id !== audit.id)]);
+      } catch (err) {
+        setPipelineFailedStep("audit");
+        setPipelineStep(null);
+        setActionError(err instanceof ApiError ? err.message : "Couldn't audit this business.");
+        return;
+      }
+    }
+
+    setPipelineStep("score");
+    try {
+      const score = await api.runOpportunityScore(params.id);
+      setScores((rows) => [score, ...(rows ?? []).filter((s) => s.id !== score.id)]);
+    } catch (err) {
+      setPipelineFailedStep("score");
+      setPipelineStep(null);
+      setActionError(err instanceof ApiError ? err.message : "Couldn't score this business.");
+      return;
+    }
+
+    setPipelineStep(null);
+    load(); // reconcile business.status/opportunity_score etc. from the server
+  }
+
+  async function retryPipelineStep(step: "research" | "audit" | "score") {
+    if (!params.id) return;
+    setActionError(null);
+    setPipelineFailedStep(null);
+    setPipelineStep(step);
+    try {
+      if (step === "research") {
+        const r = await api.runBusinessResearch(params.id);
+        setResearch((rows) => [r, ...(rows ?? []).filter((x) => x.id !== r.id)]);
+      } else if (step === "audit") {
+        const a = await api.runQualityAudit(params.id);
+        setAudits((rows) => [a, ...(rows ?? []).filter((x) => x.id !== a.id)]);
+      } else {
+        const s = await api.runOpportunityScore(params.id);
+        setScores((rows) => [s, ...(rows ?? []).filter((x) => x.id !== s.id)]);
+      }
+      setPipelineStep(null);
+      load();
+    } catch (err) {
+      setPipelineFailedStep(step);
+      setPipelineStep(null);
+      setActionError(err instanceof ApiError ? err.message : "That step failed again.");
+    }
+  }
+
+  async function runDecision(action: () => Promise<unknown>) {
+    setDeciding(true);
+    setActionError(null);
+    try {
+      await action();
+      load();
+      invalidateNavCounts();
+      loadNavCounts({ force: true }).catch(() => {});
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "That action failed.");
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  async function handleApprove() {
+    if (!params.id) return;
+    await runDecision(() => api.approveDiscoveredBusiness(params.id));
+  }
+
+  async function handleReject() {
+    if (!params.id || !business) return;
+    const ok = await confirm({
+      title: "Reject this business?",
+      description: `${business.name} will be marked rejected and drop out of the active queue.`,
+      confirmLabel: "Reject",
+      danger: true,
+    });
+    if (!ok) return;
+    await runDecision(() => api.rejectDiscoveredBusiness(params.id));
+  }
+
+  async function handleArchive() {
+    if (!params.id || !business) return;
+    const ok = await confirm({
+      title: "Archive this business?",
+      description: `${business.name} will drop out of the default queue with no way to bring it back except finding it under the Archived tab.`,
+      confirmLabel: "Archive",
+      danger: true,
+    });
+    if (!ok) return;
+    await runDecision(() => api.archiveDiscoveredBusiness(params.id));
+  }
+
+  async function handleImport() {
+    if (!params.id || !business) return;
+    const ok = await confirm({
+      title: "Add to CRM?",
+      description: `Creates a business and lead record for ${business.name}.`,
+      confirmLabel: "Add to CRM",
+    });
+    if (!ok) return;
+    setImporting(true);
+    await runDecision(() => api.importDiscoveredBusiness(params.id));
+    setImporting(false);
   }
 
   const latest = research && research.length > 0 ? research[0] : null;
@@ -460,198 +588,483 @@ export default function DiscoveredBusinessDetailPage() {
   const latestScore = scores && scores.length > 0 ? scores[0] : null;
   const latestReviewIntel = reviewIntel && reviewIntel.length > 0 ? reviewIntel[0] : null;
 
+  // Same gating as the old ReviewItemDrawer's canDecide/canImport —
+  // approve/reject/archive only make sense before a decision is
+  // already made; Add to CRM stays available for a not-yet-decided or
+  // already-approved business, just not a rejected/archived one.
+  const canDecide = business ? !["approved", "rejected", "archived", "imported"].includes(business.status) : false;
+  const canImport = business ? !["rejected", "archived", "imported"].includes(business.status) : false;
+
+  const knownNoWebsite = business?.website_status === "none";
+  const websiteReachable = latest ? !latest.research_error && latest.website_reachable === true : null;
+
+  const researchStatus: CheckStatus =
+    pipelineStep === "research"
+      ? "running"
+      : pipelineFailedStep === "research"
+        ? "failed"
+        : latest
+          ? latest.research_error
+            ? "failed"
+            : "done"
+          : "not_run";
+  const auditStatus: CheckStatus =
+    pipelineStep === "audit"
+      ? "running"
+      : pipelineFailedStep === "audit"
+        ? "failed"
+        : knownNoWebsite || websiteReachable === false
+          ? "unavailable"
+          : latestAudit
+            ? "done"
+            : "not_run";
+  const scoreStatus: CheckStatus =
+    pipelineStep === "score"
+      ? "running"
+      : pipelineFailedStep === "score"
+        ? "failed"
+        : latestScore
+          ? "done"
+          : latest
+            ? "not_run"
+            : "unavailable";
+
+  // "Missing information and facts requiring confirmation" — one place
+  // that lists every gap this page already knows about, instead of
+  // making the operator hunt through each section for what's absent.
+  const missingInfo: string[] = [];
+  if (!business?.phone && !business?.email) missingInfo.push("No phone or email on record");
+  if (!latest) missingInfo.push("Website research hasn't run yet");
+  if (latest?.unavailable_fields.length) missingInfo.push(...latest.unavailable_fields);
+  if (!latestReviewIntel) missingInfo.push("Google review data hasn't been analyzed yet");
+  else if (latestReviewIntel.data_status === "no_listing") missingInfo.push("No Google Business listing found");
+  if (!latestScore) missingInfo.push("Not yet scored for opportunity");
+
+  const socialLinks = business?.social_links?.split("\n").filter(Boolean) ?? [];
+
   return (
-    <div className="p-6">
+    <div>
       {business && (
-        <Link
-          href={`/dashboard/discovery/map/${business.discovery_search_id}`}
-          className="text-sm text-fg-muted hover:underline"
-        >
-          &larr; Back to search results
-        </Link>
+        <header className="sticky top-12 z-20 -mx-4 border-b border-border bg-surface px-4 py-4 sm:-mx-6 sm:px-6 lg:top-11">
+          <div className="mx-auto flex max-w-5xl flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <Link href={backTo || "/dashboard/discovery/review"} className="text-fg-muted hover:text-fg hover:underline">
+                &larr; Back to Review Queue
+              </Link>
+              <span className="text-fg-subtle">·</span>
+              <Link
+                href={`/dashboard/discovery/map/${business.discovery_search_id}`}
+                className="text-fg-muted hover:text-fg hover:underline"
+              >
+                Back to search results
+              </Link>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-semibold text-fg">{business.name}</h1>
+                <p className="mt-1 text-sm text-fg-muted">
+                  {[business.business_category || business.industry, [business.suburb, business.state].filter(Boolean).join(", ")]
+                    .filter(Boolean)
+                    .join(" · ") || "No details on record"}
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <ReviewStatusBadge status={business.status} />
+                  {latestScore && <ScoreCategoryBadge category={latestScore.category} score={latestScore.overall_score} />}
+                  {business.review_queued_at && <Badge tone="muted">In Review Queue</Badge>}
+                </div>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {business.status === "imported" && business.imported_lead_id ? (
+                  <Link href={`/dashboard/leads/${business.imported_lead_id}`} className="btn btn-primary btn-sm">
+                    Open Lead →
+                  </Link>
+                ) : (
+                  <>
+                    {canDecide && (
+                      <button onClick={handleApprove} disabled={deciding} className="btn btn-primary btn-sm">
+                        {deciding ? "Working…" : "Approve"}
+                      </button>
+                    )}
+                    {canImport && (
+                      <button onClick={handleImport} disabled={deciding || importing} className="btn btn-secondary btn-sm">
+                        Add to CRM
+                      </button>
+                    )}
+                    {canDecide && (
+                      <button
+                        onClick={handleReject}
+                        disabled={deciding}
+                        className="btn btn-sm text-red-700 hover:underline disabled:opacity-50 dark:text-red-400"
+                      >
+                        Reject
+                      </button>
+                    )}
+                    {canDecide && (
+                      <button onClick={handleArchive} disabled={deciding} className="btn btn-sm text-fg-muted hover:underline disabled:opacity-50">
+                        Archive
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
       )}
 
-      {business && (
-        <div className="mt-2 flex items-start justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-fg">{business.name}</h1>
-            <p className="mt-1 text-sm text-fg-muted">
-              {[business.industry, [business.suburb, business.state].filter(Boolean).join(", ")]
-                .filter(Boolean)
-                .join(" · ") || "No details on record"}
-            </p>
-            {business.website_url ? (
-              <a
-                href={business.website_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-fg-muted hover:underline"
-              >
-                {business.website_url}
-              </a>
-            ) : (
-              <p className="text-sm text-fg-subtle">{DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}</p>
-            )}
+      <div className="mx-auto max-w-5xl p-4 sm:p-6">
+        {error && (
+          <div className="mt-4">
+            <ErrorState message={error} onRetry={load} compact />
           </div>
-          <div className="text-right">
-            <ReviewStatusBadge status={business.status} />
-            <div className="mt-2 flex gap-2">
-              <button
-                onClick={handleResearch}
-                disabled={researching}
-                className="btn btn-primary"
-              >
-                {researching ? "Researching…" : latest ? "Research again" : "Run research"}
-              </button>
-              <button
-                onClick={handleAudit}
-                disabled={auditing || !latest}
-                title={!latest ? "Run research first" : undefined}
-                className="btn btn-secondary"
-              >
-                {auditing ? "Auditing…" : "Audit quality"}
-              </button>
-              <button
-                onClick={handleScore}
-                disabled={scoring || !latest}
-                title={!latest ? "Run research first" : undefined}
-                className="btn btn-secondary"
-              >
-                {scoring ? "Scoring…" : "Score opportunity"}
-              </button>
-              <button
-                onClick={handleReviewAnalysis}
-                disabled={analyzingReviews}
-                className="btn btn-secondary"
-              >
-                {analyzingReviews ? "Analyzing…" : latestReviewIntel ? "Refresh reviews" : "Analyze Google reviews"}
-              </button>
+        )}
+        {actionError && (
+          <div className="mt-4">
+            <ErrorState message={actionError} onRetry={() => setActionError(null)} compact />
+          </div>
+        )}
+
+        {!business && !error && <p className="mt-6 text-sm text-fg-muted">Loading…</p>}
+
+        {business && (
+          <>
+            {/* Overview — concise, always visible: who they are, how to
+                reach them, and the headline signals, before any
+                expandable technical evidence below. */}
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="panel">
+                <h2 className="text-sm font-semibold text-fg">Contact & location</h2>
+                <div className="mt-2">
+                  <Fact label="Address" value={business.address || [business.suburb, business.state, business.postcode].filter(Boolean).join(", ") || null} />
+                  <Fact label="Phone" value={business.phone} />
+                  <Fact label="Email" value={business.email} />
+                  <Fact
+                    label="Website"
+                    value={business.website_url ?? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
+                  />
+                </div>
+                {socialLinks.length > 0 && (
+                  <div className="mt-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Social links</h3>
+                    <ul className="mt-1 space-y-0.5">
+                      {socialLinks.map((link, i) => (
+                        <li key={i}>
+                          <a href={link} target="_blank" rel="noreferrer" className="text-sm text-fg-muted hover:underline">
+                            {link}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="panel">
+                <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
+                {latestScore ? (
+                  <>
+                    <div className="mt-2 flex items-center gap-3">
+                      <ScoreCategoryBadge category={latestScore.category} />
+                      <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
+                      <span className="text-xs text-fg-muted">{Math.round(latestScore.confidence * 100)}% confidence</span>
+                    </div>
+                    <p className="mt-2 text-sm text-fg-muted">{latestScore.recommendation_reason}</p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-fg-subtle">Not scored yet — run a detailed review below.</p>
+                )}
+                <div className="mt-3 border-t border-border pt-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Google reviews</h3>
+                  {latestReviewIntel && latestReviewIntel.data_status === "ok" ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      {latestReviewIntel.google_rating !== null && <Stars rating={latestReviewIntel.google_rating} />}
+                      <span className="text-sm text-fg">
+                        {latestReviewIntel.google_rating?.toFixed(1) ?? "—"}
+                        {latestReviewIntel.google_review_count !== null && ` (${latestReviewIntel.google_review_count})`}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-fg-subtle">
+                      {latestReviewIntel ? "No Google listing found" : "Not analyzed yet"}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-            {latestScore && (
-              <div className="mt-2">
-                <ScoreCategoryBadge category={latestScore.category} score={latestScore.overall_score} />
+
+            {missingInfo.length > 0 && (
+              <div className="mt-4 panel">
+                <h2 className="text-sm font-semibold text-fg">Missing information</h2>
+                <ul className="mt-2 list-inside list-disc space-y-0.5 text-sm text-fg-muted">
+                  {missingInfo.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {business?.instagram_handle && (
-        <InstagramCard business={business} onCheckWebsite={handleCheckWebsite} checking={checkingWebsite} />
-      )}
-
-      <div className="mt-4 max-w-2xl">
-        <StageChecklistPanel ownerType="discovered-business" ownerId={params.id} title="Stage checklist" />
-      </div>
-
-      {error && (
-        <div className="mt-4">
-          <ErrorState message={error} onRetry={load} compact />
-        </div>
-      )}
-
-      {research && research.length === 0 && !error && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          No research yet for this business.
-        </div>
-      )}
-
-      {latest && (
-        <div className="mt-6 max-w-2xl panel">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Website research</h2>
-            <span className="text-xs text-fg-subtle">
-              {new Date(latest.researched_at).toLocaleString()}
-            </span>
-          </div>
-
-          {latest.research_error ? (
-            <p className="mt-2 text-error">Could not load website: {latest.research_error}</p>
-          ) : (
-            <div className="mt-2">
-              <Fact label="Reachable" value={latest.website_reachable} />
-              <Fact label="HTTPS" value={latest.https} />
-              <Fact label="Page title" value={latest.page_title} />
-              <Fact label="Mobile viewport tag" value={latest.mobile_viewport_present} />
-              <Fact label="Contact path found" value={latest.contact_cta_present} />
-              <Fact label="Estimated age" value={latest.estimated_site_age} />
-              <Fact label="Appears template/placeholder" value={latest.appears_template_or_placeholder} />
+            {/* Run Detailed Review — one action orchestrating the
+                existing research/audit/score endpoints in sequence,
+                with real per-step status instead of three separate
+                buttons. Audit is skipped (marked "Not applicable") for
+                a business confirmed to have no reachable website,
+                rather than showing a misleading failed audit. */}
+            <div className="mt-4 panel">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold text-fg">Detailed review</h2>
+                <button onClick={handleRunDetailedReview} disabled={pipelineStep !== null} className="btn btn-primary btn-sm">
+                  {pipelineStep
+                    ? `${pipelineStep === "research" ? "Researching" : pipelineStep === "audit" ? "Auditing" : "Scoring"}…`
+                    : latest
+                      ? "Run Detailed Review again"
+                      : "Run Detailed Review"}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-fg-muted">
+                    Website research
+                    {latest && !latest.research_error && (
+                      <span className="ml-2 text-xs text-fg-subtle">{timeAgo(latest.researched_at)}</span>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <CheckStatusBadge status={researchStatus} />
+                    {researchStatus === "failed" && (
+                      <button onClick={() => retryPipelineStep("research")} className="text-xs text-fg-muted hover:underline">
+                        Retry
+                      </button>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-fg-muted">
+                    Website quality audit
+                    {latestAudit && <span className="ml-2 text-xs text-fg-subtle">{timeAgo(latestAudit.audited_at)}</span>}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <CheckStatusBadge status={auditStatus} />
+                    {auditStatus === "failed" && (
+                      <button onClick={() => retryPipelineStep("audit")} className="text-xs text-fg-muted hover:underline">
+                        Retry
+                      </button>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-fg-muted">
+                    Opportunity score
+                    {latestScore && <span className="ml-2 text-xs text-fg-subtle">{timeAgo(latestScore.scored_at)}</span>}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <CheckStatusBadge status={scoreStatus} />
+                    {scoreStatus === "failed" && (
+                      <button onClick={() => retryPipelineStep("score")} className="text-xs text-fg-muted hover:underline">
+                        Retry
+                      </button>
+                    )}
+                  </span>
+                </div>
+                {knownNoWebsite && (
+                  <p className="pt-1 text-xs text-fg-subtle">
+                    No website on record for this business — the audit step focuses on business, review, and social
+                    evidence instead of website findings that don&rsquo;t apply here.
+                  </p>
+                )}
+              </div>
             </div>
-          )}
 
-          <ListSection title="Confirmed" items={latest.confirmed_facts} tone="confirmed" />
-          <ListSection title="Inferred" items={latest.inferred_facts} tone="inferred" />
-          <ListSection title="Technical issues" items={latest.technical_issues} tone="inferred" />
-          <ListSection title="Social presence" items={latest.social_presence} tone="confirmed" />
-          <ListSection title="Unavailable" items={latest.unavailable_fields} tone="unavailable" />
-        </div>
-      )}
+            {business.instagram_handle && (
+              <div className="mt-4">
+                <Disclosure title="Instagram" defaultOpen hint={`@${business.instagram_handle}`}>
+                  <InstagramSection business={business} onCheckWebsite={handleCheckWebsite} checking={checkingWebsite} />
+                </Disclosure>
+              </div>
+            )}
 
-      {latestAudit && (
-        <div className="mt-6 max-w-2xl panel">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Website quality audit</h2>
-            <span className="text-xs text-fg-subtle">{new Date(latestAudit.audited_at).toLocaleString()}</span>
-          </div>
-          <p className="mt-2 text-sm text-fg-muted">{latestAudit.summary}</p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button onClick={handleReviewAnalysis} disabled={analyzingReviews} className="btn btn-secondary btn-sm">
+                {analyzingReviews ? "Analyzing…" : latestReviewIntel ? "Refresh Google reviews" : "Analyze Google reviews"}
+              </button>
+            </div>
+            <div className="mt-2">
+              <Disclosure
+                title="Google reviews — full detail"
+                hint={
+                  latestReviewIntel
+                    ? `Updated ${timeAgo(latestReviewIntel.review_data_updated_at)}`
+                    : "Not analyzed yet"
+                }
+              >
+                {latestReviewIntel ? (
+                  <GoogleReviewsSection result={latestReviewIntel} />
+                ) : (
+                  <p className="text-sm text-fg-subtle">No Google review analysis has run yet.</p>
+                )}
+              </Disclosure>
+            </div>
 
-          {latestAudit.findings.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {latestAudit.findings.map((finding, i) => (
-                <li key={i} className="border border-border p-2.5 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge tone={SEVERITY_TONE[finding.severity]}>{finding.severity}</Badge>
-                    <span className="text-xs uppercase tracking-wide text-fg-subtle">{finding.category}</span>
-                    <span className="ml-auto text-xs text-fg-subtle">
-                      {Math.round(finding.confidence * 100)}% confidence
+            <div className="mt-4">
+              <Disclosure
+                title="Website research evidence"
+                hint={latest ? (latest.research_error ? "Research failed" : "Confirmed & inferred facts") : "Not researched yet"}
+              >
+                {latest ? (
+                  latest.research_error ? (
+                    <p className="text-error">Could not load website: {latest.research_error}</p>
+                  ) : (
+                    <div>
+                      <Fact label="Reachable" value={latest.website_reachable} />
+                      <Fact label="HTTPS" value={latest.https} />
+                      <Fact label="Page title" value={latest.page_title} />
+                      <Fact label="Mobile viewport tag" value={latest.mobile_viewport_present} />
+                      <Fact label="Contact path found" value={latest.contact_cta_present} />
+                      <Fact label="Estimated age" value={latest.estimated_site_age} />
+                      <Fact label="Appears template/placeholder" value={latest.appears_template_or_placeholder} />
+                      <ListSection title="Confirmed" items={latest.confirmed_facts} tone="confirmed" />
+                      <ListSection title="Inferred" items={latest.inferred_facts} tone="inferred" />
+                      <ListSection title="Technical issues" items={latest.technical_issues} tone="inferred" />
+                      <ListSection title="Social presence" items={latest.social_presence} tone="confirmed" />
+                      <ListSection title="Unavailable" items={latest.unavailable_fields} tone="unavailable" />
+                    </div>
+                  )
+                ) : (
+                  <p className="text-sm text-fg-subtle">No research yet for this business.</p>
+                )}
+              </Disclosure>
+            </div>
+
+            <div className="mt-4">
+              <Disclosure
+                title="Website quality audit — findings"
+                hint={latestAudit ? latestAudit.summary : knownNoWebsite ? "Not applicable — no website" : "Not run yet"}
+              >
+                {latestAudit ? (
+                  <div>
+                    <p className="text-sm text-fg-muted">{latestAudit.summary}</p>
+                    {latestAudit.findings.length > 0 && (
+                      <ul className="mt-3 space-y-2">
+                        {latestAudit.findings.map((finding, i) => (
+                          <li key={i} className="border border-border p-2.5 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Badge tone={SEVERITY_TONE[finding.severity]}>{finding.severity}</Badge>
+                              <span className="text-xs uppercase tracking-wide text-fg-subtle">{finding.category}</span>
+                              <span className="ml-auto text-xs text-fg-subtle">
+                                {Math.round(finding.confidence * 100)}% confidence
+                              </span>
+                            </div>
+                            <p className="mt-1 text-fg">{finding.message}</p>
+                            <p className="mt-0.5 text-xs text-fg-muted">Evidence: {finding.evidence}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-fg-subtle">
+                    {knownNoWebsite
+                      ? "This business has no website on record, so there's nothing to audit — see the business/review/social evidence above instead."
+                      : "No quality audit has run yet."}
+                  </p>
+                )}
+              </Disclosure>
+            </div>
+
+            <div className="mt-4">
+              <Disclosure title="Opportunity score — full breakdown" hint={latestScore ? `${latestScore.overall_score} / 100` : "Not scored yet"}>
+                {latestScore ? (
+                  <div>
+                    <ListSection title="Positive signals" items={latestScore.positive_signals} tone="confirmed" />
+                    <ListSection title="Negative signals" items={latestScore.negative_signals} tone="inferred" />
+                    {latestScore.factors.length > 0 && (
+                      <div className="mt-3">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Score breakdown</h3>
+                        <ul className="mt-1 space-y-1">
+                          {latestScore.factors.map((factor, i) => (
+                            <li key={i} className="flex justify-between text-sm">
+                              <span className="text-fg-muted">{factor.explanation}</span>
+                              <span className="ml-2 shrink-0 text-fg-muted">+{factor.points}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-fg-subtle">No opportunity score yet.</p>
+                )}
+              </Disclosure>
+            </div>
+
+            <div className="mt-4">
+              <Disclosure title="Desktop / mobile screenshots" hint="Not available at this stage">
+                <p className="text-sm text-fg-subtle">
+                  Discovery-stage research doesn&rsquo;t capture screenshots — they&rsquo;re generated later, once this
+                  business becomes a Lead and moves into Planning.
+                </p>
+              </Disclosure>
+            </div>
+
+            <div className="mt-4">
+              <Disclosure
+                title="Sources, timestamps & confidence"
+                hint="Where each finding above came from"
+              >
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between border-b border-border py-1">
+                    <span className="text-fg-muted">Discovered via</span>
+                    <span className="text-fg">
+                      {business.source_provider} · {timeAgo(business.discovered_at)}
                     </span>
                   </div>
-                  <p className="mt-1 text-fg">{finding.message}</p>
-                  <p className="mt-0.5 text-xs text-fg-muted">Evidence: {finding.evidence}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {latestReviewIntel && <GoogleReviewsSection result={latestReviewIntel} />}
-
-      {latestScore && (
-        <div className="mt-6 max-w-2xl panel">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Opportunity score</h2>
-            <span className="text-xs text-fg-subtle">{new Date(latestScore.scored_at).toLocaleString()}</span>
-          </div>
-
-          <div className="mt-2 flex items-center gap-3">
-            <ScoreCategoryBadge category={latestScore.category} />
-            <span className="text-2xl font-semibold text-fg">{latestScore.overall_score}</span>
-            <span className="text-xs text-fg-muted">
-              {Math.round(latestScore.confidence * 100)}% confidence
-            </span>
-          </div>
-
-          <p className="mt-2 text-sm text-fg-muted">{latestScore.recommendation_reason}</p>
-
-          <ListSection title="Positive signals" items={latestScore.positive_signals} tone="confirmed" />
-          <ListSection title="Negative signals" items={latestScore.negative_signals} tone="inferred" />
-
-          {latestScore.factors.length > 0 && (
-            <div className="mt-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Score breakdown</h3>
-              <ul className="mt-1 space-y-1">
-                {latestScore.factors.map((factor, i) => (
-                  <li key={i} className="flex justify-between text-sm">
-                    <span className="text-fg-muted">{factor.explanation}</span>
-                    <span className="ml-2 shrink-0 text-fg-muted">+{factor.points}</span>
-                  </li>
-                ))}
-              </ul>
+                  {latest && !latest.research_error && (
+                    <div className="flex justify-between border-b border-border py-1">
+                      <span className="text-fg-muted">Website research</span>
+                      <span className="text-fg">{new Date(latest.researched_at).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {latestAudit && (
+                    <div className="flex justify-between border-b border-border py-1">
+                      <span className="text-fg-muted">Quality audit</span>
+                      <span className="text-fg">{new Date(latestAudit.audited_at).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {latestScore && (
+                    <div className="flex justify-between border-b border-border py-1">
+                      <span className="text-fg-muted">Opportunity score</span>
+                      <span className="text-fg">
+                        {new Date(latestScore.scored_at).toLocaleString()} · {Math.round(latestScore.confidence * 100)}%
+                        confidence
+                      </span>
+                    </div>
+                  )}
+                  {latestReviewIntel && latestReviewIntel.data_status === "ok" && (
+                    <div className="flex justify-between py-1">
+                      <span className="text-fg-muted">Google reviews</span>
+                      <span className="text-fg">{new Date(latestReviewIntel.review_data_updated_at).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {business.reviewed_at && (
+                    <div className="flex justify-between border-t border-border py-1 pt-2">
+                      <span className="text-fg-muted">Last reviewed</span>
+                      <span className="text-fg">
+                        {new Date(business.reviewed_at).toLocaleString()}
+                        {business.review_notes ? ` — ${business.review_notes}` : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </Disclosure>
             </div>
-          )}
-        </div>
-      )}
+
+            <div className="mt-4">
+              <StageChecklistPanel ownerType="discovered-business" ownerId={params.id} title="Stage checklist" />
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

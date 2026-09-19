@@ -91,6 +91,7 @@ export default function DiscoveryMap({
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const fittedSignatureRef = useRef<string>("");
+  const wasVisibleRef = useRef(mapVisible);
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -122,27 +123,40 @@ export default function DiscoveryMap({
     clusterRef.current = cluster;
     setTimeout(() => map.invalidateSize(), 0);
 
-    // Delegated on the stable container (not the individual popup
-    // button) because `setPopupContent` replaces the popup's DOM
-    // wholesale on every business update — a listener bound directly to
-    // the button would be silently dropped the moment a queue action
-    // succeeds and the popup re-renders "Add to Review Queue" into "In
-    // Review Queue" while still open.
-    const container = containerRef.current;
-    function handleClick(ev: MouseEvent) {
-      const target = (ev.target as HTMLElement | null)?.closest("[data-queue-action]") as HTMLElement | null;
-      if (!target) return;
-      ev.preventDefault();
-      const id = target.getAttribute("data-queue-id");
-      const action = target.getAttribute("data-queue-action");
-      if (!id) return;
-      if (action === "add") onQueueRef.current?.(id);
-      else if (action === "remove") onUnqueueRef.current?.(id);
+    // Delegated on each popup's own element (via `popupopen`), NOT on
+    // the map container — Leaflet's `Popup` calls
+    // `L.DomEvent.disableClickPropagation` on its own container
+    // specifically so clicks inside a popup never bubble up to the map
+    // (it doesn't want a popup click to also fire a map/marker click).
+    // That's exactly why a container-level delegated listener silently
+    // never sees these clicks at all — confirmed live (POST .../queue
+    // simply never fired). Delegating on `e.popup.getElement()` instead
+    // still survives `setPopupContent` updates while the popup is open:
+    // that only replaces the *inner* content node's `innerHTML`
+    // (`Popup.prototype._updateContent`), never the outer element this
+    // listener is bound to — so "Add to Review Queue" flipping into "In
+    // Review Queue" mid-popup still has a working "Remove" link. The
+    // `_queueDelegated` flag guards against double-binding if Leaflet
+    // ever reuses the same element across multiple `popupopen` firings.
+    function handlePopupOpen(e: L.PopupEvent) {
+      const el = e.popup.getElement() as (HTMLElement & { _queueDelegated?: boolean }) | null;
+      if (!el || el._queueDelegated) return;
+      el._queueDelegated = true;
+      el.addEventListener("click", (ev) => {
+        const target = (ev.target as HTMLElement | null)?.closest("[data-queue-action]") as HTMLElement | null;
+        if (!target) return;
+        ev.preventDefault();
+        const id = target.getAttribute("data-queue-id");
+        const action = target.getAttribute("data-queue-action");
+        if (!id) return;
+        if (action === "add") onQueueRef.current?.(id);
+        else if (action === "remove") onUnqueueRef.current?.(id);
+      });
     }
-    container.addEventListener("click", handleClick);
+    map.on("popupopen", handlePopupOpen);
 
     return () => {
-      container.removeEventListener("click", handleClick);
+      map.off("popupopen", handlePopupOpen);
       map.remove();
       mapRef.current = null;
       clusterRef.current = null;
@@ -152,10 +166,27 @@ export default function DiscoveryMap({
   }, []);
 
   // Keep the markers in step with the visible (filtered) result set.
+  //
+  // `mapVisible` is in the dependency list purely to re-run this on a
+  // hidden->visible transition (see below) — this component stays
+  // mounted while CSS-`hidden` behind the Review Queue tab (see
+  // DiscoveryWorkspace/DiscoveryLayout), and Leaflet can't compute a
+  // meaningful `fitBounds` against a `display:none` container (it
+  // reads 0x0, so the "fit" silently produces a nonsense/world-view
+  // viewport). `wasVisibleRef` detects that exact transition and
+  // forces a re-fit — `invalidateSize()` alone (a separate, narrower
+  // fix) corrects the map's *size* cache but not a pan/zoom that was
+  // already computed wrong while hidden.
   useEffect(() => {
     const cluster = clusterRef.current;
     const map = mapRef.current;
     if (!cluster || !map) return;
+
+    if (mapVisible && !wasVisibleRef.current) {
+      map.invalidateSize();
+      fittedSignatureRef.current = ""; // force the fit below to re-run for real
+    }
+    wasVisibleRef.current = mapVisible;
 
     const wanted = new Set(located.map((b) => b.id));
     for (const [id, marker] of markersRef.current) {
@@ -181,11 +212,11 @@ export default function DiscoveryMap({
     }
 
     const signature = [...wanted].sort().join(",");
-    if (signature !== fittedSignatureRef.current && !selectedId && markersRef.current.size > 0) {
+    if (mapVisible && signature !== fittedSignatureRef.current && !selectedId && markersRef.current.size > 0) {
       map.fitBounds(cluster.getBounds().pad(0.2), { maxZoom: 15 });
       fittedSignatureRef.current = signature;
     }
-  }, [located, selectedId, queuingId]);
+  }, [located, selectedId, queuingId, mapVisible]);
 
   // Reflect the current selection: highlight + reveal + focus its marker.
   useEffect(() => {
@@ -206,18 +237,6 @@ export default function DiscoveryMap({
       }
     }
   }, [selectedId, located]);
-
-  // This map's container is permanently mounted and only CSS-`hidden`
-  // while the Review Queue tab is active (see DiscoveryWorkspace) —
-  // Leaflet measures its container's size when it can't see it, so
-  // becoming visible again needs an explicit re-measure or the map
-  // stays clipped/blank until the window itself resizes. Deferred a
-  // frame so the container has already been un-hidden and painted.
-  useEffect(() => {
-    if (!mapVisible) return;
-    const frame = requestAnimationFrame(() => mapRef.current?.invalidateSize());
-    return () => cancelAnimationFrame(frame);
-  }, [mapVisible]);
 
   return (
     <div className="relative mt-4">
