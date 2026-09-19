@@ -6,22 +6,13 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { TaskChecklistList } from "./TaskChecklistList";
 
 /**
- * A compact, collapsible "Stage Checklist" panel — one per pre-Client
- * stage (Discovery review, Lead, Planning, Project), reusing the Client
- * Setup & Delivery checklist's shape without needing a Client to exist
- * yet (docs/05_DECISIONS.md). Collapsed by default; the progress hint is
- * still fetched and shown on the closed header, same as the Client
- * page's own per-project Delivery Disclosures.
+ * Loads a stage checklist and the workspace users its items can be
+ * assigned to. Shared by `StageChecklistPanel` (the collapsible
+ * version every stage page uses) and the discovered-business review
+ * brief, which shows the progress on a card and the editable list in a
+ * side panel — both need the same state without a second fetch.
  */
-export function StageChecklistPanel({
-  ownerType,
-  ownerId,
-  title,
-}: {
-  ownerType: StageChecklistOwnerType;
-  ownerId: string;
-  title: string;
-}) {
+export function useStageChecklist(ownerType: StageChecklistOwnerType, ownerId: string) {
   const [checklist, setChecklist] = useState<StageChecklist | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +32,58 @@ export function StageChecklistPanel({
     api.listUsers().then(setUsers).catch(() => {});
   }, []);
 
+  return { checklist, users, error, setChecklist };
+}
+
+/** The editable checklist itself — no Disclosure/card chrome around it. */
+export function StageChecklistBody({
+  ownerType,
+  ownerId,
+  checklist,
+  users,
+  onUpdated,
+}: {
+  ownerType: StageChecklistOwnerType;
+  ownerId: string;
+  checklist: StageChecklist;
+  users: User[];
+  onUpdated: (next: StageChecklist) => void;
+}) {
+  return (
+    <TaskChecklistList
+      items={checklist.items}
+      progress={checklist.progress}
+      nextAction={checklist.next_action}
+      users={users}
+      updateItem={(itemId, patch) => api.updateStageChecklistItem(itemId, patch)}
+      addItem={(title, assignedUserId) => api.addStageChecklistItem(ownerType, ownerId, { title, assigned_user_id: assignedUserId })}
+      reorderItems={(items) => api.reorderStageChecklistItems(ownerType, ownerId, { items })}
+      removeItem={(itemId) => api.removeStageChecklistItem(itemId)}
+      fetchHistory={(itemId) => api.listActivity({ entity_type: "stage_checklist_item", entity_id: itemId })}
+      onUpdated={onUpdated}
+    />
+  );
+}
+
+/**
+ * A compact, collapsible "Stage Checklist" panel — one per pre-Client
+ * stage (Discovery review, Lead, Planning, Project), reusing the Client
+ * Setup & Delivery checklist's shape without needing a Client to exist
+ * yet (docs/05_DECISIONS.md). Collapsed by default; the progress hint is
+ * still fetched and shown on the closed header, same as the Client
+ * page's own per-project Delivery Disclosures.
+ */
+export function StageChecklistPanel({
+  ownerType,
+  ownerId,
+  title,
+}: {
+  ownerType: StageChecklistOwnerType;
+  ownerId: string;
+  title: string;
+}) {
+  const { checklist, users, error, setChecklist } = useStageChecklist(ownerType, ownerId);
+
   if (error) {
     return (
       <div className="mt-4 rounded-md border border-border p-4">
@@ -59,16 +102,11 @@ export function StageChecklistPanel({
 
   return (
     <Disclosure title={title} hint={hint}>
-      <TaskChecklistList
-        items={checklist.items}
-        progress={checklist.progress}
-        nextAction={checklist.next_action}
+      <StageChecklistBody
+        ownerType={ownerType}
+        ownerId={ownerId}
+        checklist={checklist}
         users={users}
-        updateItem={(itemId, patch) => api.updateStageChecklistItem(itemId, patch)}
-        addItem={(title, assignedUserId) => api.addStageChecklistItem(ownerType, ownerId, { title, assigned_user_id: assignedUserId })}
-        reorderItems={(items) => api.reorderStageChecklistItems(ownerType, ownerId, { items })}
-        removeItem={(itemId) => api.removeStageChecklistItem(itemId)}
-        fetchHistory={(itemId) => api.listActivity({ entity_type: "stage_checklist_item", entity_id: itemId })}
         onUpdated={setChecklist}
       />
     </Disclosure>

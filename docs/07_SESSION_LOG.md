@@ -17,16 +17,21 @@ is purely "what did an agent do in this coding session."
 **Scope touched:** new `components/LeadScheduleCard.tsx`, `lib/leadSchedule.ts`
 (+ `.test.ts`); `components/TaskScheduleCalendar.tsx` (new optional
 `taskLabel` / `clientLabel` props — defaults unchanged, so the task-detail
-widget is untouched); `dashboard/discovered-businesses/[id]/page.tsx` (overview
-layout only). The full Calendar page, its routes and the backend are untouched.
+widget is untouched); `dashboard/discovered-businesses/[id]/page.tsx` (top overview
+wrapper only), `components/discovery/ReviewSummaryStrip.tsx` (`compact` prop).
+The full Calendar page, its routes and the backend are untouched.
 
-**Layout:** the overview row is now `lg:grid-cols-[1fr_17rem]` — Contact and
-Opportunity-score cards stacked on the left, the Schedule card in a fixed 17rem
-right column (`lg:items-start`, so it hugs its ~300px content instead of being
-stretched to the ~430px stack and leaving dead space). Below `lg` it's one
-column in DOM order Contact → Score → Schedule → Missing information, i.e.
-directly after the summary. Measured at 1440×900, 1280×720 and 1024×768: card
-fully visible at first load (below the pinned header) without scrolling.
+**Layout (re-done after `main` redesigned this page mid-task):** the top area is
+now `lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start` — the glance strip
+(`ReviewSummaryStrip`: score, priority, audit, reviews) and the Detailed Review
+strip stacked on the left, the Schedule card in the fixed 17rem right column.
+`ReviewSummaryStrip` got a `compact` prop (two tiles across at every width, default
+unchanged) so the pair stacks to about the calendar's height: measured 296px
+calendar beside a 316px left stack at 1440×900. Below `lg` it's one column in
+DOM order summary → detailed review → Schedule → decision cards, i.e. directly
+after the summary. Measured at 1440×900, 1280×720 and 1024×768: card fully
+visible at first load (below the pinned header) without scrolling; at 375px the
+audit/decision cards start right after the calendar, no horizontal overflow.
 
 **Data — the important caveat:** a review-queue business is normally *not in
 the CRM yet*, so it has no lead, tasks, meetings or client and the card just
@@ -44,8 +49,9 @@ only on leads in this app — there is no free-standing reminder record. The
 review-queue dates themselves (queued/reviewed at) are deliberately *not*
 plotted: they're history, not schedule.
 
-**Verified:** vitest 339 pass (7 new), eslint 0 errors, `next build`. Playwright
-on the real page (throwaway user; second API :8001 / web :3001; tagged
+**Verified:** vitest 354 pass on the merged tree (7 new here; the rest include the
+upstream review-brief tests), eslint 0 errors, `next build`. Playwright
+on the real page — first on my original layout, then again after merging the redesign (throwaway user; second API :8001 / web :3001; tagged
 `QA-CAL` records and a *temporary* `duplicate_of_business_id` on one real
 discovered business — all reverted/deleted, checked) for: unlinked business,
 imported lead (task/reminder/meeting/follow-up markers, cancelled meeting
@@ -56,6 +62,49 @@ hangs in this environment even at 45s, so all visual checks were DOM
 measurements. **Not exercised:** a single day carrying both a lead and a
 client marker on this page (covered on the task-detail widget and by unit
 tests), and the loading/error notes.
+
+---
+
+## 2026-09-19 (review brief) — Discovered-business review page: accordion stack → compact review brief
+
+**Mode:** background job, worktree branch `worktree-review-brief-overview`.
+**Scope touched:** `dashboard/discovered-businesses/[id]/page.tsx` (render rewritten;
+all data loading, run-detailed-review pipeline, decisions and confirms untouched);
+new `components/discovery/` (`ReviewCard`, `ReviewDetailPanel`, `ReviewSummaryStrip`,
+`DetailedReviewStrip`, `ReviewSections`, `ScreenshotPreview`); new `lib/reviewBrief.ts`
+(+ test); `StageChecklistPanel` split into `useStageChecklist` + `StageChecklistBody`
+(the collapsible panel every other stage page uses is unchanged); `globals.css`
+`.side-panel--wide`. No backend change.
+
+**Layout:** summary strip (score, priority, audit count/severity, Google rating) →
+slim "Detailed review" run strip → two prominent cards (Website quality audit,
+Opportunity score) → "Supporting evidence" 2-col grid of dense cards (Google reviews,
+research, contact, missing info, Instagram, screenshots, sources, checklist). One column
+below `lg`. Nothing expands by default.
+
+**Progressive detail:** a card opens its full content in the existing `.side-panel`
+(chosen over inline expansion, which would rebuild the tall page, and a centred modal,
+too narrow for findings). Cards use the stretched-button pattern — the title is the single
+tab stop, its `::after` covers the card, and per-card actions (Refresh/Analyze reviews,
+Check for website, View all findings) sit above it. Panel reuses `useDismissableOverlay`
+(Escape, focus trap, focus restored to the opener). The audit card surfaces the top two
+high/critical findings (falls back to the single top finding if none are high).
+
+**Decisions worth knowing:** "Priority" is *derived* from the score category (hot→High,
+warm→Medium, cold→Low, review→Needs review) — there is no priority field. Screenshots:
+discovery research captures none; the thumbnail resolves business → `imported_lead_id`
+→ `Lead.planning_id` → `api.planningScreenshotUrl`, so only imported businesses can have
+one (nothing is fetched otherwise; a 404 falls back to the one-line "not captured yet").
+Findings in the panel are sorted by severity (previously stored order); all data kept.
+"Open research →/Open score →" checklist links point at the same page (no anchors), as before.
+
+**Verified:** vitest 347 pass (new `reviewBrief.test.ts`), eslint 0 errors, `next build
+--webpack`, and Playwright on a second API (:8002, origin :3002) + web (:3002) against real
+data with a throwaway user (deleted afterwards): at 1440×900 the summary, both decision
+cards and the header decision buttons fit without scrolling (943px page height only in the
+fullest case — imported, Instagram + missing info present); panel open/Escape/focus
+restore, keyboard Enter on a card, checklist editor in the panel, 390px single column with
+no horizontal overflow, dark theme, screenshot thumbnail on an imported business.
 
 ---
 
