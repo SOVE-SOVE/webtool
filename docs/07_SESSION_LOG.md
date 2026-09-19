@@ -11,6 +11,184 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (review queue follow-up) — Sidebar badge no longer downloads the whole queue
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** `apps/web/src/lib/navCounts.ts` (+`navCounts.test.ts`), `lib/api.ts`.
+
+**What happened.** The sidebar's Review badge was the last caller of the
+unpaged list, so every page load fetched the entire queue just to count
+it. It now requests a one-row page from the paged endpoint and sums
+`tab_counts.needs_review + approved` (same meaning as before: queued and
+not yet imported/rejected/archived). Removed the unused
+`api.listReviewItems` client wrapper; the backend unpaged route is left
+in place. tsc clean, web 337/337, API review-queue/analysis/scoring
+suites 75/75 (one transient setup error from the shared test DB on the
+first run, passed on rerun).
+**Blockers/issues:** Not checked live in the browser. Docker/Postgres had
+to be started to run API tests.
+**Next up:** Decide whether bulk "Approve N" (which also imports) stays.
+
+---
+
+## 2026-09-19 (sidebar redesign) — Simpler, flat five-item sidebar with collapse
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** new `components/nav/Sidebar.tsx` (replaces the old
+inline `SidebarContent`/`NavLink` in `app/dashboard/layout.tsx`, which
+shrank from 377 to ~250 lines); `lib/nav.ts` (+3 derived exports,
++tests); `app/globals.css` (`--accent-soft` token, `.app-sidebar`,
+`.sidebar-tooltip`); one line in `components/DiscoveryMap.tsx`
+(ResizeObserver).
+
+**What happened.** Replaced the six-section, always-expanded sidebar
+with a flat list of exactly five destinations — Today, Discovery,
+Sales, Build, Clients, in that order, no section headings — plus a
+"More" popover for Tasks/Calendar (previously nested, indented
+sub-links under Today) and Settings + a compact account control
+(avatar, name, menu indicator) pinned in a footer. No Help destination
+exists anywhere in this app (grepped for it) — per the task's own
+instruction not to invent placeholder destinations, it isn't in the
+footer either. `lib/nav.ts` gained `PRIMARY_NAV_LINKS`/
+`SECONDARY_NAV_LINKS`/`FOOTER_NAV_LINKS`, derived from the existing
+`NAV_SECTIONS` (unchanged) rather than hand-listed, so they can't drift
+from it; a new test asserts the three groups partition `ALL_NAV_HREFS`
+exactly. Active state changed from a solid `bg-accent`/`accent-fg`
+block to a soft tint (new `--accent-soft` token, `color-mix(accent
+10%, transparent)` — one definition works in both themes since it
+just references the existing `--accent` var) with the icon in
+`text-accent` and the label at `font-medium` — restrained rather than
+a heavy fill, per the visual-direction ask.
+
+Added an explicit collapse toggle (chevron in the brand header),
+defaulting expanded, persisted to `localStorage`
+(`wdos-sidebar-collapsed`). The collapsed-state hook lives inside
+`Sidebar` itself, not the dashboard layout — that component only ever
+mounts client-side after `me` has loaded (the layout shows a loading
+placeholder until then, so there's no server-rendered version of this
+subtree to hydration-mismatch against), which is what makes reading
+`localStorage` in a lazy `useState` initializer safe here without the
+usual blocking-script dance `ThemeProvider` needs for the same problem.
+Collapsed rows show icon + a small dot instead of the count pill, plus
+a hover/keyboard-focus tooltip.
+
+Two real layout bugs surfaced while testing the collapse (both fixed,
+neither present before this session since the old sidebar's shorter
+content never exposed them): (1) `<aside>` had no height cap, so
+flexbox's default cross-axis stretch grew it to match `<main>`'s full
+(often much taller) scrollable content — pushed the footer far below
+the viewport and left a large dead gap in the nav list. Fixed with
+`sticky top-0 h-screen self-start` on the aside, without touching
+`<main>`'s own overflow (deliberately left to the window — see the
+existing comment above `<main>` about why a nested scroll container
+there breaks `position: sticky` for page-level content). (2) The
+collapsed-row tooltip, first built as `absolute` + `group-hover`, was
+invisible despite `opacity: 1` — the nav list's `overflow-y-auto`
+triggers CSS's asymmetric-overflow rule (one axis non-`visible` forces
+the other to `auto` too), silently clipping anything poking out past
+the collapsed rail's right edge. Rewrote it as `position: fixed`,
+measured from the trigger's `getBoundingClientRect()` on
+hover/focus — the same pattern already used for the "More"/account
+popovers (confirmed working before the tooltip fix), which escape both
+that clipping and the sticky aside's stacking context because `fixed`
+doesn't nest inside an ancestor's overflow box the way `absolute` does.
+
+Also added a `ResizeObserver` on `DiscoveryMap`'s container calling
+`invalidateSize()` — Leaflet caches its container size and never
+noticed a sidebar-collapse-driven width change on its own (it already
+had a *visibility*-driven re-fit for the Discovery/Review tab switch,
+but nothing for a plain resize); confirmed necessary and sufficient by
+watching the map redraw correctly through an actual collapse/expand
+cycle live, not just by reading Leaflet's docs.
+
+**Verified live in the browser** (localhost:3000, real seeded data):
+Today/Discovery/Sales/Build/Clients and detail pages under each
+(a lead, a client, Build's own Planning/Projects tabs) — active state
+follows nested routes correctly in every case; "More" popover
+(Tasks/Calendar, lights up itself on either route); account popover
+(name/email/workspace/role, theme switch incl. dark mode, sign-out
+button present); collapse toggle persists across a real full-page
+navigation (not just client-side routing); collapsed tooltip after the
+fix; mobile drawer (same component, `allowCollapse` off) opens, shows
+the same More popover un-clipped, closes on navigate; mobile bottom
+nav unchanged. Short-viewport case (1100×317, well under a typical
+laptop height) confirmed the nav list scrolls internally while
+Settings/account stay pinned at the bottom, per the requirement that
+short windows must not make the footer unreachable.
+**Not verified live:** `prefers-reduced-motion` — no emulation control
+was available in this session's browser tools, so the reduced-motion
+rules (`.app-sidebar`'s width transition, the collapse chevron's
+rotation) were confirmed by reading the CSS/Tailwind
+(`motion-reduce:transition-none`, a matching `@media` block) rather
+than by forcing the OS setting and watching it live.
+**Blockers/issues:** none outstanding. A second session was
+concurrently editing `ReviewQueueWorkspace.tsx`/`lib/reviewQueue.ts`
+(unrelated Discovery/Review work, see the entry below) while this one
+ran — caused two transient whole-project `tsc` failures mid-session
+that had nothing to do with these changes and resolved themselves
+once that other session's edits settled; not a sidebar bug.
+**Next up:** nothing pending for this task.
+**Later change:** the "More" popover described above was removed when Tasks and Calendar were folded into Today as tabs (nothing was left to put in it).
+
+---
+
+## 2026-09-19 (review queue pagination) — 10-per-page, server-side paginated Review Queue
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** API: new `GET /api/v1/discovered-businesses/review-queue`
+(`modules/discovery/{routes,service,schemas}.py`), `tests/test_review_queue_page.py`.
+Web: `ReviewQueueWorkspace.tsx`, `review/ReviewQueueRow.tsx`, `lib/api.ts`,
+`lib/reviewQueue.ts` (+tests), `discovered-businesses/[id]/page.tsx`.
+
+**What happened.** The old list endpoint returned the whole queue (with
+per-row queries), so paging in the browser would have meant fetching all
+of it. Added a paged endpoint: tab/search/website/analysis/score/sort are
+SQL filters applied to the whole queue before `LIMIT/OFFSET`, ordering
+always ends in `id` (stable across pages), a page past the end is clamped
+to the last valid page, and `tab_counts` gives whole-queue counts per
+review state. The UI shows 10 rows per page (`?page=`, URL is the single
+source of truth), "Showing 11–20 of 506 · Page 2 of 51", Previous/Next
+disabled at the ends, a fixed 10-row-high results area (old rows dimmed,
+not blanked, while the next page loads), scroll-to-list-top on page
+change only if the list is off-screen, and selection cleared on any
+page/criteria change. Any criterion change resets to page 1. The review
+page's Previous/Next now cross page boundaries by fetching the adjacent
+page with the list's own query. Client-side filtering
+(`reviewItemMatchesFilters`) was removed — the SQL is the single
+implementation now.
+**Blockers/issues:** Live removal/import not exercised against real data
+(clamping after removal is covered by the API test). Old unpaged
+`GET /discovered-businesses` is left as-is for other callers.
+**Next up:** Consider dropping the unused unpaged list call if nothing
+else needs it.
+
+---
+
+## 2026-09-19 (review queue) — Compact, scannable Discovery → Review Queue
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** `apps/web/src/components/ReviewQueueWorkspace.tsx`
+(rewritten), new `components/review/ReviewQueueRow.tsx` + `RowMenu.tsx`,
+`lib/reviewQueue.ts` (+tests), `app/dashboard/discovered-businesses/[id]/page.tsx`.
+
+**What happened.** One-line dense rows (name / category · suburb /
+website / analysis / score / Review / menu), one toolbar (search, review
+state, website, sort, More filters, count + Clear), 50-row bounded paging
+(`?limit=`), compact skeletons. Detail page gained Previous/Next (queue
+order saved to sessionStorage by the list), an explicit post-import
+banner with "Review next", and "Add to CRM" is now labelled "Add to
+Leads". Remove-from-queue (row menu + selection bar) goes through
+ConfirmProvider and only clears `review_queued_at`. Failed analysis
+shows a short reason + inline Retry (existing research endpoint; row
+order pinned so a refresh never reshuffles).
+**Blockers/issues:** Existing bulk "Approve N" (which also imports) was
+left untouched, not extended. List payload has no in-flight analysis
+marker, so "running" only shows for a Retry started in this tab.
+Successful Add to Leads not exercised live (would create a real Lead).
+**Next up:** Decide whether bulk Approve should stay given it imports.
+
+---
+
 ## 2026-09-19 (lead review calendar) — Schedule card in the review page's top overview
 
 **Mode:** interactive session, worktree branch `worktree-lead-review-calendar`.
