@@ -16,16 +16,19 @@ import {
   type TaskTab,
   type TaskUrgency,
 } from "@/lib/tasks";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect } from "@/components/ui/CompactSelect";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { FilterChips } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
-import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { TabBar } from "@/components/ui/Tabs";
 
@@ -196,33 +199,51 @@ export default function TasksPage() {
         }
       />
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <TabBar className="border-b-0" tabs={TASK_TABS} active={tab} onChange={(id) => setTab(id as TaskTab)} />
+      <TabBar className="mt-4" tabs={TASK_TABS} active={tab} onChange={(id) => setTab(id as TaskTab)} />
 
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">
-          <Input
+      <CommandBar
+        className="mt-4"
+        search={
+          <SearchInput
             placeholder="Search tasks or projects…"
+            aria-label="Search tasks"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input w-full sm:w-56"
+            onValueChange={setSearch}
           />
-          {filterOptions.length > 1 && (
-            <Select
-              value={filterKey}
-              onChange={(e) => setFilterKey(e.target.value)}
-              className="input w-auto"
-              aria-label="Filter by project or lead"
-            >
-              <option value="">All projects &amp; leads</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.key} value={opt.key}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          )}
-        </div>
-      </div>
+        }
+        filters={
+          filterOptions.length > 1 ? (
+            <FilterPopover activeCount={filterKey ? 1 : 0} onClearAll={() => setFilterKey("")}>
+              <FilterField label="Project or lead">
+                <CompactSelect
+                  aria-label="Filter by project or lead"
+                  value={filterKey}
+                  onValueChange={setFilterKey}
+                  options={[
+                    { value: "", label: "All projects & leads" },
+                    ...filterOptions.map((opt) => ({ value: opt.key, label: opt.label })),
+                  ]}
+                />
+              </FilterField>
+            </FilterPopover>
+          ) : undefined
+        }
+        chips={
+          filterKey ? (
+            <FilterChips
+              chips={[
+                {
+                  id: "project",
+                  label: "Project or lead",
+                  value: filterOptions.find((o) => o.key === filterKey)?.label ?? filterKey,
+                  onRemove: () => setFilterKey(""),
+                },
+              ]}
+              onClearAll={() => setFilterKey("")}
+            />
+          ) : undefined
+        }
+      />
 
       {error && (
         <div className="mt-4">

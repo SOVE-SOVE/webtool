@@ -6,7 +6,11 @@ import { api, type HostingPlan, type NextPaymentObligation, type WebsiteAgreemen
 import { formatMoney } from "@/lib/format";
 import { NEXT_PAYMENT_KIND_LABEL, obligationKey } from "@/lib/billing";
 import { withParam } from "@/lib/url";
+import { CompactSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
+import type { FilterChip } from "@/components/ui/FilterChips";
+import { FilterField } from "@/components/ui/FilterPopover";
+import type { RevenueFilterUi } from "./revenueFilterUi";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RecordPaymentModal } from "@/components/billing/RecordPaymentModal";
@@ -38,51 +42,41 @@ function obligationStatus(o: NextPaymentObligation): CalendarEntryStatus {
   return "upcoming";
 }
 
-/** The Upcoming view's own secondary filters — type, client — kept in
- * the shared "More filters" popover. No currency filter: see
- * PaymentsFilterPanel's identical note (one workspace currency, nothing
- * to separate). No status/sort: the calendar itself is the grouping now. */
-export function UpcomingFilterPanel({ clients }: { clients: { id: string; business_name: string }[] }) {
+/** The Upcoming view's own secondary filters — type, client — returned
+ * as the body of the shared Filters popover plus the matching chips. No
+ * currency filter: see usePaymentsFilters' identical note (one workspace
+ * currency, nothing to separate). No status/sort: the calendar itself is
+ * the grouping now. */
+export function useUpcomingFilters(clients: { id: string; business_name: string }[]): RevenueFilterUi {
   const { searchParams, setParam } = useUrlParam();
   const typeFilter = (searchParams.get("type") as TypeFilter | null) ?? "";
   const clientFilter = searchParams.get("client") ?? "";
-  const activeCount = [typeFilter, clientFilter].filter(Boolean).length;
 
-  return (
-    <div className="space-y-2.5">
-      <label className="block text-xs text-fg-muted">
-        Type
-        <select value={typeFilter} onChange={(e) => setParam("type", e.target.value)} className="input mt-1 w-full">
-          <option value="">Website &amp; hosting</option>
-          <option value="website">Website only</option>
-          <option value="hosting">Hosting only</option>
-        </select>
-      </label>
-      <label className="block text-xs text-fg-muted">
-        Client
-        <select value={clientFilter} onChange={(e) => setParam("client", e.target.value)} className="input mt-1 w-full">
-          <option value="">Any client</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.business_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {activeCount > 0 && (
-        <button
-          type="button"
-          onClick={() => {
-            setParam("type", null);
-            setParam("client", null);
-          }}
-          className="block w-full rounded px-1 py-1 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg"
-        >
-          Clear filters
-        </button>
-      )}
-    </div>
+  const typeOptions = [
+    { value: "", label: "Website & hosting" },
+    { value: "website", label: "Website only" },
+    { value: "hosting", label: "Hosting only" },
+  ];
+  const clientOptions = [
+    { value: "", label: "Any client" },
+    ...clients.map((c) => ({ value: c.id, label: c.business_name })),
+  ];
+
+  const chips: FilterChip[] = [];
+  if (typeFilter) chips.push({ id: "type", label: "Type", value: typeOptions.find((o) => o.value === typeFilter)?.label ?? typeFilter, onRemove: () => setParam("type", null) });
+  if (clientFilter) chips.push({ id: "client", label: "Client", value: clients.find((c) => c.id === clientFilter)?.business_name ?? "Unknown", onRemove: () => setParam("client", null) });
+
+  const panel = (
+    <>
+      <FilterField label="Type">
+        <CompactSelect aria-label="Filter by payment type" value={typeFilter} onValueChange={(v) => setParam("type", v)} options={typeOptions} />
+      </FilterField>
+      <FilterField label="Client">
+        <CompactSelect aria-label="Filter by client" value={clientFilter} onValueChange={(v) => setParam("client", v)} options={clientOptions} />
+      </FilterField>
+    </>
   );
+  return { panel, chips };
 }
 
 /** Compact strip above the calendar — every overdue obligation stays

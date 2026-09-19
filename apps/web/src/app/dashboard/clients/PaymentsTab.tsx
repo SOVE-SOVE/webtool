@@ -4,7 +4,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import type { RevenueReport, RevenueTransaction } from "@/lib/api";
 import { withParam } from "@/lib/url";
+import { CompactSelect } from "@/components/ui/CompactSelect";
 import { ErrorState } from "@/components/ui/ErrorState";
+import type { FilterChip } from "@/components/ui/FilterChips";
+import { FilterField } from "@/components/ui/FilterPopover";
+import type { RevenueFilterUi } from "./revenueFilterUi";
 import { PaymentDetailPanel } from "@/components/billing/PaymentDetailPanel";
 import { DayDetailPanel, type DayDetailItem } from "./DayDetailPanel";
 import { RevenueCalendar, type CalendarEntry, type CalendarEntryStatus, type CalendarGridMode } from "./RevenueCalendar";
@@ -26,65 +30,54 @@ function transactionStatus(tx: RevenueTransaction): CalendarEntryStatus {
 }
 
 /** The Payments view's own secondary filters — type, status, client —
- * kept inside the shared "More filters" popover the parent renders,
- * rather than a second row of selects competing with the main toolbar.
- * No currency filter: this workspace has exactly one currency
- * (Workspace.currency — no RevenueTransaction ever carries its own), so
- * every amount here is already in the one currency with nothing to
- * separate. Sort no longer applies now that the calendar (not a table)
- * is the main view — date is the calendar's own axis. */
-export function PaymentsFilterPanel({ clients }: { clients: { id: string; business_name: string }[] }) {
+ * returned as the body of the shared Filters popover plus the matching
+ * removable chips, for the parent's command bar to place. No currency
+ * filter: this workspace has exactly one currency (Workspace.currency —
+ * no RevenueTransaction ever carries its own), so every amount here is
+ * already in the one currency with nothing to separate. Sort no longer
+ * applies now that the calendar (not a table) is the main view — date
+ * is the calendar's own axis. */
+export function usePaymentsFilters(clients: { id: string; business_name: string }[]): RevenueFilterUi {
   const { searchParams, setParam } = useUrlParam();
   const kindFilter = (searchParams.get("kind") as "" | "website" | "hosting" | null) ?? "";
   const statusFilter = (searchParams.get("status") as "" | "payments" | "refunded" | "reversed" | null) ?? "";
   const clientFilter = searchParams.get("client") ?? "";
-  const activeCount = [kindFilter, statusFilter, clientFilter].filter(Boolean).length;
 
-  return (
-    <div className="space-y-2.5">
-      <label className="block text-xs text-fg-muted">
-        Type
-        <select value={kindFilter} onChange={(e) => setParam("kind", e.target.value)} className="input mt-1 w-full">
-          <option value="">Website &amp; hosting</option>
-          <option value="website">Website only</option>
-          <option value="hosting">Hosting only</option>
-        </select>
-      </label>
-      <label className="block text-xs text-fg-muted">
-        Status
-        <select value={statusFilter} onChange={(e) => setParam("status", e.target.value)} className="input mt-1 w-full">
-          <option value="">All statuses</option>
-          <option value="payments">Payments only</option>
-          <option value="refunded">Refunded</option>
-          <option value="reversed">Reversed</option>
-        </select>
-      </label>
-      <label className="block text-xs text-fg-muted">
-        Client
-        <select value={clientFilter} onChange={(e) => setParam("client", e.target.value)} className="input mt-1 w-full">
-          <option value="">Any client</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.business_name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {activeCount > 0 && (
-        <button
-          type="button"
-          onClick={() => {
-            setParam("kind", null);
-            setParam("status", null);
-            setParam("client", null);
-          }}
-          className="block w-full rounded px-1 py-1 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg"
-        >
-          Clear filters
-        </button>
-      )}
-    </div>
+  const kindOptions = [
+    { value: "", label: "Website & hosting" },
+    { value: "website", label: "Website only" },
+    { value: "hosting", label: "Hosting only" },
+  ];
+  const statusOptions = [
+    { value: "", label: "All statuses" },
+    { value: "payments", label: "Payments only" },
+    { value: "refunded", label: "Refunded" },
+    { value: "reversed", label: "Reversed" },
+  ];
+  const clientOptions = [
+    { value: "", label: "Any client" },
+    ...clients.map((c) => ({ value: c.id, label: c.business_name })),
+  ];
+
+  const chips: FilterChip[] = [];
+  if (kindFilter) chips.push({ id: "kind", label: "Type", value: kindOptions.find((o) => o.value === kindFilter)?.label ?? kindFilter, onRemove: () => setParam("kind", null) });
+  if (statusFilter) chips.push({ id: "status", label: "Status", value: statusOptions.find((o) => o.value === statusFilter)?.label ?? statusFilter, onRemove: () => setParam("status", null) });
+  if (clientFilter) chips.push({ id: "client", label: "Client", value: clients.find((c) => c.id === clientFilter)?.business_name ?? "Unknown", onRemove: () => setParam("client", null) });
+
+  const panel = (
+    <>
+      <FilterField label="Type">
+        <CompactSelect aria-label="Filter by payment type" value={kindFilter} onValueChange={(v) => setParam("kind", v)} options={kindOptions} />
+      </FilterField>
+      <FilterField label="Status">
+        <CompactSelect aria-label="Filter by payment status" value={statusFilter} onValueChange={(v) => setParam("status", v)} options={statusOptions} />
+      </FilterField>
+      <FilterField label="Client">
+        <CompactSelect aria-label="Filter by client" value={clientFilter} onValueChange={(v) => setParam("client", v)} options={clientOptions} />
+      </FilterField>
+    </>
   );
+  return { panel, chips };
 }
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   api,
@@ -18,16 +18,20 @@ import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useToast } from "@/components/ui/ToastProvider";
+import { CommandBar } from "@/components/ui/CommandBar";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { FilterChips } from "@/components/ui/FilterChips";
+import { FilterPopover } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Metric } from "@/components/ui/Metric";
 import { RecordPaymentLauncher } from "@/components/billing/RecordPaymentLauncher";
 import { RecordPaymentModal } from "@/components/billing/RecordPaymentModal";
 import { useRevenueSubTab, type RevenueSubTabId } from "./useRevenueSubTab";
 import { DayDetailPanel, type DayDetailItem } from "./DayDetailPanel";
-import { PaymentsTab, PaymentsFilterPanel } from "./PaymentsTab";
-import { UpcomingOverdueTab, UpcomingFilterPanel } from "./UpcomingOverdueTab";
-import { HostingPlansTab, HostingFilterPanel } from "./HostingPlansTab";
+import { PaymentsTab, usePaymentsFilters } from "./PaymentsTab";
+import { UpcomingOverdueTab, useUpcomingFilters } from "./UpcomingOverdueTab";
+import { HostingPlansTab, useHostingFilters } from "./HostingPlansTab";
 import { ReceiptsTrendChart } from "./ReceiptsTrendChart";
 
 function todayLocal(): Date {
@@ -226,32 +230,6 @@ function SummaryRow({
         </div>
       </details>
     </div>
-  );
-}
-
-/** Shared "More filters" popover shell — same shape as Clients Overview's
- * own MoreFiltersMenu (relative + fixed overlay + absolute panel) —
- * content is supplied by whichever Revenue sub-view is active. */
-function MoreFiltersMenu({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="true"
-        aria-expanded={open}
-        className="btn btn-secondary btn-sm"
-      >
-        More filters
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-border bg-surface p-3 shadow-lg">{children}</div>
-        </>
-      )}
-    </span>
   );
 }
 
@@ -585,10 +563,15 @@ export function ClientsRevenueTab() {
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
 
-  const hasSecondaryFilter = Boolean(searchParams.get("kind") || searchParams.get("status") || searchParams.get("type") || searchParams.get("client"));
+  const clientOptions = useMemo(() => clients.map((c) => ({ id: c.id, business_name: c.business_name })), [clients]);
+  // Each sub-view supplies its own popover fields + chips; all three hooks
+  // run every render (hooks can't be conditional), the active tab's is used.
+  const paymentsFilters = usePaymentsFilters(clientOptions);
+  const upcomingFilters = useUpcomingFilters(clientOptions);
+  const hostingFilters = useHostingFilters();
+  const filterUi = activeTab === "payments" ? paymentsFilters : activeTab === "upcoming" ? upcomingFilters : hostingFilters;
 
   const currency = workspace?.currency ?? "AUD";
-  const clientOptions = useMemo(() => clients.map((c) => ({ id: c.id, business_name: c.business_name })), [clients]);
   let upcomingHrefQuery = withParam(searchParams, "tab", "revenue");
   upcomingHrefQuery = withParam(new URLSearchParams(upcomingHrefQuery), "revenueTab", "upcoming");
   const upcomingTabHref = `${pathname}?${upcomingHrefQuery}`;
@@ -742,27 +725,25 @@ export function ClientsRevenueTab() {
           the next ("→") arrow, alongside that calendar's own Today
           (navigation) button — moved, not duplicated. */}
       <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
-        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <div className="space-y-3 sm:col-span-2">
           <RevenueSubTabBar active={activeTab} onChange={setTab} />
 
-          <input
-            placeholder={SEARCH_PLACEHOLDER[activeTab]}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input w-64 shrink-0"
+          <CommandBar
+            search={
+              <SearchInput
+                placeholder={SEARCH_PLACEHOLDER[activeTab]}
+                aria-label={SEARCH_PLACEHOLDER[activeTab]}
+                value={search}
+                onValueChange={setSearch}
+              />
+            }
+            filters={
+              <FilterPopover activeCount={filterUi.chips.length} onClearAll={clearFilters}>
+                {filterUi.panel}
+              </FilterPopover>
+            }
+            chips={filterUi.chips.length > 0 ? <FilterChips chips={filterUi.chips} onClearAll={clearFilters} /> : undefined}
           />
-
-          <MoreFiltersMenu>
-            {activeTab === "payments" && <PaymentsFilterPanel clients={clientOptions} />}
-            {activeTab === "upcoming" && <UpcomingFilterPanel clients={clientOptions} />}
-            {activeTab === "hosting" && <HostingFilterPanel />}
-          </MoreFiltersMenu>
-
-          {(search || hasSecondaryFilter) && (
-            <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-              Clear filters
-            </button>
-          )}
         </div>
 
         <TodayBox

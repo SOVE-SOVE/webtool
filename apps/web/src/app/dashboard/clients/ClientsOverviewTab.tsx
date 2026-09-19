@@ -33,7 +33,11 @@ import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -73,152 +77,6 @@ function ViewSwitch({ active, onChange }: { active: ClientView; onChange: (next:
         Needs attention
       </button>
     </div>
-  );
-}
-
-/** Secondary filters, sort, and assignee — kept out of the main toolbar
- * row so the primary controls (search, view switch, Add Client) stay
- * aligned and uncluttered. Client has no archive concept anywhere in
- * this codebase (no `archived_at`, no archive endpoint), so unlike
- * Leads/Planning this panel has nothing to show for "archived" — every
- * client `listClients()` returns is already the complete, current set. */
-function MoreFiltersMenu({
-  statusFilter,
-  onStatusChange,
-  hostingFilter,
-  onHostingChange,
-  paymentFilter,
-  onPaymentChange,
-  attentionFilter,
-  onAttentionChange,
-  assigneeFilter,
-  onAssigneeChange,
-  users,
-  sortBy,
-  onSortChange,
-  activeCount,
-  onClear,
-}: {
-  statusFilter: ClientTone | "";
-  onStatusChange: (v: ClientTone | "") => void;
-  hostingFilter: OverviewFilters["hosting"];
-  onHostingChange: (v: OverviewFilters["hosting"]) => void;
-  paymentFilter: OverviewFilters["payment"];
-  onPaymentChange: (v: OverviewFilters["payment"]) => void;
-  attentionFilter: OverviewFilters["attention"];
-  onAttentionChange: (v: OverviewFilters["attention"]) => void;
-  assigneeFilter: string;
-  onAssigneeChange: (v: string) => void;
-  users: User[];
-  sortBy: SortBy;
-  onSortChange: (v: SortBy) => void;
-  activeCount: number;
-  onClear: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="true"
-        aria-expanded={open}
-        className="btn btn-secondary btn-sm"
-      >
-        More filters{activeCount > 0 ? ` (${activeCount})` : ""}
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-border bg-surface p-3 shadow-lg">
-            <div className="space-y-2.5">
-              <label className="block text-xs text-fg-muted">
-                Status
-                <Select
-                  value={statusFilter}
-                  onChange={(e) => onStatusChange(e.target.value as ClientTone | "")}
-                  className="input mt-1 w-full"
-                >
-                  <option value="">Any status</option>
-                  {(Object.keys(CLIENT_STATUS_LABEL) as ClientTone[]).map((t) => (
-                    <option key={t} value={t}>
-                      {CLIENT_STATUS_LABEL[t]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="block text-xs text-fg-muted">
-                Hosting
-                <Select
-                  value={hostingFilter}
-                  onChange={(e) => onHostingChange(e.target.value as OverviewFilters["hosting"])}
-                  className="input mt-1 w-full"
-                >
-                  <option value="">Any hosting</option>
-                  <option value="active">Active hosting</option>
-                </Select>
-              </label>
-              <label className="block text-xs text-fg-muted">
-                Payment status
-                <Select
-                  value={paymentFilter}
-                  onChange={(e) => onPaymentChange(e.target.value as OverviewFilters["payment"])}
-                  className="input mt-1 w-full"
-                >
-                  <option value="">Any payment status</option>
-                  <option value="overdue">Overdue payment</option>
-                </Select>
-              </label>
-              <label className="block text-xs text-fg-muted">
-                Tasks
-                <Select
-                  value={attentionFilter}
-                  onChange={(e) => onAttentionChange(e.target.value as OverviewFilters["attention"])}
-                  className="input mt-1 w-full"
-                >
-                  <option value="">Any tasks</option>
-                  <option value="required_tasks">Required tasks outstanding</option>
-                </Select>
-              </label>
-              <label className="block text-xs text-fg-muted">
-                Assigned to
-                <Select value={assigneeFilter} onChange={(e) => onAssigneeChange(e.target.value)} className="input mt-1 w-full">
-                  <option value="">Anyone assigned</option>
-                  <option value={UNASSIGNED}>Unassigned</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="block text-xs text-fg-muted">
-                Sort by
-                <Select value={sortBy} onChange={(e) => onSortChange(e.target.value as SortBy)} className="input mt-1 w-full">
-                  {(Object.keys(SORT_LABEL) as SortBy[]).map((s) => (
-                    <option key={s} value={s}>
-                      {SORT_LABEL[s]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-            {activeCount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClear();
-                  setOpen(false);
-                }}
-                className="mt-3 block w-full rounded px-1 py-1 text-left text-xs text-fg-muted hover:bg-surface-hover hover:text-fg"
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </span>
   );
 }
 
@@ -381,9 +239,41 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   );
   const attentionClientCount = attentionByClientId.size;
 
-  const activeFilterCount = [statusFilter, hostingFilter, paymentFilter, attentionFilter, assigneeFilter, sortBy !== "recent"].filter(
-    Boolean,
-  ).length;
+  // Sort is a visible control now, not a filter — it neither counts
+  // toward the Filters badge nor gets reset by Clear all.
+  const activeFilterCount = [statusFilter, hostingFilter, paymentFilter, attentionFilter, assigneeFilter].filter(Boolean).length;
+
+  // Writes a filter into local state and the URL from one call site.
+  function changeFilter<T extends string>(setter: (v: T) => void, param: string, value: T) {
+    setter(value);
+    updateParam(param, value || null);
+  }
+
+  // The criteria in the Filters popover, as removable chips.
+  const filterChips: FilterChip[] = [];
+  function pushChip(id: string, label: string, value: string, onRemove: () => void) {
+    filterChips.push({ id, label, value, onRemove });
+  }
+  if (statusFilter) {
+    pushChip("clientStatus", "Status", CLIENT_STATUS_LABEL[statusFilter], () => changeFilter(setStatusFilter, "clientStatus", ""));
+  }
+  if (hostingFilter) {
+    pushChip("hosting", "Hosting", "Active hosting", () => changeFilter(setHostingFilter, "hosting", ""));
+  }
+  if (paymentFilter) {
+    pushChip("payment", "Payment", "Overdue", () => changeFilter(setPaymentFilter, "payment", ""));
+  }
+  if (attentionFilter) {
+    pushChip("attention", "Tasks", "Required outstanding", () => changeFilter(setAttentionFilter, "attention", ""));
+  }
+  if (assigneeFilter) {
+    pushChip(
+      "assignee",
+      "Assigned to",
+      assigneeFilter === UNASSIGNED ? "Unassigned" : (users.find((u) => u.id === assigneeFilter)?.name ?? "Unknown"),
+      () => changeFilter(setAssigneeFilter, "assignee", ""),
+    );
+  }
 
   function clearFilters() {
     setSearch("");
@@ -392,12 +282,11 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
     setPaymentFilter("");
     setAttentionFilter("");
     setAssigneeFilter("");
-    setSortByState("recent");
     // Clearing filters is about the *filters*, not the view switch or
-    // display preferences — `view`/`preview` (if a panel happens to be
-    // open) are preserved too, only the filter/search/sort params go.
+    // display preferences — `view`/`sort`/`preview` (if a panel happens
+    // to be open) are preserved too, only the filter/search params go.
     let query = searchParams.toString();
-    for (const key of ["search", "clientStatus", "hosting", "payment", "attention", "assignee", "sort"]) {
+    for (const key of ["search", "clientStatus", "hosting", "payment", "attention", "assignee"]) {
       query = withParam(new URLSearchParams(query), key, null);
     }
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
@@ -508,56 +397,93 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
           More filters, and Add Client — aligned in a single row, no
           second filter bar underneath. */}
       {clients && clients.length > 0 && (
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="Search clients…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input w-56"
-          />
-          <ViewSwitch active={view} onChange={setView} />
-          <MoreFiltersMenu
-            statusFilter={statusFilter}
-            onStatusChange={(v) => {
-              setStatusFilter(v);
-              updateParam("clientStatus", v || null);
-            }}
-            hostingFilter={hostingFilter}
-            onHostingChange={(v) => {
-              setHostingFilter(v);
-              updateParam("hosting", v || null);
-            }}
-            paymentFilter={paymentFilter}
-            onPaymentChange={(v) => {
-              setPaymentFilter(v);
-              updateParam("payment", v || null);
-            }}
-            attentionFilter={attentionFilter}
-            onAttentionChange={(v) => {
-              setAttentionFilter(v);
-              updateParam("attention", v || null);
-            }}
-            assigneeFilter={assigneeFilter}
-            onAssigneeChange={(v) => {
-              setAssigneeFilter(v);
-              updateParam("assignee", v || null);
-            }}
-            users={users}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            activeCount={activeFilterCount}
-            onClear={clearFilters}
-          />
-          {(search || activeFilterCount > 0) && (
-            <button onClick={clearFilters} className="text-sm text-fg-muted hover:text-fg hover:underline">
-              Clear filters
-            </button>
-          )}
-
-          <button onClick={() => setShowAdd((v) => !v)} className="btn btn-primary btn-sm ml-auto">
-            {showAdd ? "Cancel" : "+ Add Client"}
-          </button>
-        </div>
+        <CommandBar
+          className="mt-6"
+          search={
+            <SearchInput
+              placeholder="Search clients…"
+              aria-label="Search clients"
+              value={search}
+              onValueChange={setSearch}
+            />
+          }
+          filters={
+            <FilterPopover activeCount={filterChips.length} onClearAll={clearFilters}>
+              <FilterField label="Status">
+                <CompactSelect
+                  aria-label="Filter by client status"
+                  value={statusFilter}
+                  onValueChange={(v) => changeFilter(setStatusFilter, "clientStatus", v)}
+                  options={[
+                    { value: "", label: "Any status" },
+                    ...(Object.keys(CLIENT_STATUS_LABEL) as ClientTone[]).map((t) => ({ value: t, label: CLIENT_STATUS_LABEL[t] })),
+                  ]}
+                />
+              </FilterField>
+              <FilterField label="Hosting">
+                <CompactSelect
+                  aria-label="Filter by hosting"
+                  value={hostingFilter}
+                  onValueChange={(v) => changeFilter(setHostingFilter, "hosting", v)}
+                  options={[
+                    { value: "", label: "Any hosting" },
+                    { value: "active", label: "Active hosting" },
+                  ]}
+                />
+              </FilterField>
+              <FilterField label="Payment status">
+                <CompactSelect
+                  aria-label="Filter by payment status"
+                  value={paymentFilter}
+                  onValueChange={(v) => changeFilter(setPaymentFilter, "payment", v)}
+                  options={[
+                    { value: "", label: "Any payment status" },
+                    { value: "overdue", label: "Overdue payment" },
+                  ]}
+                />
+              </FilterField>
+              <FilterField label="Tasks">
+                <CompactSelect
+                  aria-label="Filter by tasks"
+                  value={attentionFilter}
+                  onValueChange={(v) => changeFilter(setAttentionFilter, "attention", v)}
+                  options={[
+                    { value: "", label: "Any tasks" },
+                    { value: "required_tasks", label: "Required tasks outstanding" },
+                  ]}
+                />
+              </FilterField>
+              <FilterField label="Assigned to">
+                <CompactSelect
+                  aria-label="Filter by assignee"
+                  value={assigneeFilter}
+                  onValueChange={(v) => changeFilter(setAssigneeFilter, "assignee", v)}
+                  options={[
+                    { value: "", label: "Anyone assigned" },
+                    { value: UNASSIGNED, label: "Unassigned" },
+                    ...users.map((u) => ({ value: u.id, label: u.name })),
+                  ]}
+                />
+              </FilterField>
+            </FilterPopover>
+          }
+          sort={
+            <SortSelect
+              value={sortBy}
+              onValueChange={setSortBy}
+              options={(Object.keys(SORT_LABEL) as SortBy[]).map((s) => ({ value: s, label: SORT_LABEL[s] }))}
+            />
+          }
+          end={
+            <>
+              <ViewSwitch active={view} onChange={setView} />
+              <button onClick={() => setShowAdd((v) => !v)} className="btn btn-primary btn-sm">
+                {showAdd ? "Cancel" : "+ Add Client"}
+              </button>
+            </>
+          }
+          chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearFilters} /> : undefined}
+        />
       )}
 
       {clients && clients.length > 0 && visibleRows && (
