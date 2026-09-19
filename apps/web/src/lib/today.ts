@@ -134,8 +134,8 @@ const ENTITY_HREF: Record<string, (id: string) => string> = {
   lead: (id) => `/dashboard/leads/${id}`,
   project: (id) => `/dashboard/projects/${id}`,
   client: (id) => `/dashboard/clients/${id}`,
-  task: () => "/dashboard/tasks",
-  meeting: () => "/dashboard/calendar",
+  task: () => "/dashboard?tab=tasks",
+  meeting: () => "/dashboard?tab=calendar",
   discovered_business: (id) => `/dashboard/discovered-businesses/${id}`,
   discovery_search: (id) => `/dashboard/discovery/map/${id}`,
   // No dedicated detail page per payment/plan/agreement row — same

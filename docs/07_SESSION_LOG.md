@@ -373,6 +373,67 @@ a throwaway harness page driven in Playwright at 1280px and 375px in
 light and dark (keyboard open/close, Escape, click-outside, Tab-out,
 chip removal, search Escape-to-clear, invalid/disabled states). Harness
 deleted.
+## 2026-09-19 (today workspace) — Tasks and Calendar folded into Today as tabs
+
+**Mode:** interactive session, direct to main (not yet committed).
+**Scope touched:** `app/dashboard/page.tsx` (Overview/Tasks/Calendar
+`TabBar`), `useTodayTab.ts`, `TodayOverviewTab.tsx`, `tasks/TasksView.tsx`,
+`calendar/CalendarView.tsx`, `lib/nav.ts` (+tests), `components/nav/
+Sidebar.tsx`, `lib/today.ts`, three in-app calendar links.
+
+**What happened.** Finished the merge: Today is now one workspace with
+Overview / Tasks / Calendar tabs (`?tab=tasks`, `?tab=calendar`; bare
+`/dashboard` = Overview). Tasks and Calendar are removed from the
+sidebar (they were the only occupants of the sidebar's "More" popover,
+so `MoreMenu` and `SECONDARY_NAV_LINKS` were deleted with them);
+`/dashboard/tasks` and `/dashboard/calendar` now redirect to the
+matching tab, like the earlier Sales/Clients/Discovery merges. Today's
+activity-feed links and the calendar links on the pipeline, lead and
+project pages point straight at the tabs. Typecheck, lint, vitest clean.
+Not browser-verified this session.
+
+**Follow-up (same day, after a crash recovery).** Tab switching used to
+remount each tab (`key={activeTab}`), discarding Tasks search/filter/
+sub-tab, the calendar month, and open forms. Tabs now mount on first
+visit and stay mounted, hidden. To keep them current with each other,
+new `lib/todaySync.ts` (a window event, no store): Tasks (toggle,
+create, detail edit) and Calendar (schedule, status change) call
+`notifyTodayDataChanged()`, and all three tabs reload on it. Also:
+`MoreMenu`/`SECONDARY_NAV_LINKS` were deleted from the sidebar since
+Tasks/Calendar were its only items — the sidebar-redesign entry below
+still describes that More popover, which no longer exists. Still not
+browser-verified (dev servers weren't running); sync is untested beyond
+typecheck.
+
+**Browser verification pass.** Checked live on `/dashboard` (desktop, plus
+a true 390px viewport via iframe): tab state survives switching; sync
+works for task create/complete and meeting create/status change;
+30 rapid tab switches made 0 API requests and left the listener count
+flat. Found and fixed two things: (1) a tab reloaded itself after its
+own change (Tasks fetched tasks twice per create) — notifications now
+carry their source tab and the sender ignores its own, and a Tasks sync
+reloads only tasks, not leads/projects/users; (2) tab switches used
+`router.replace`, so Back left Today instead of stepping through tabs —
+`useTodayTab` now pushes history entries (Clients still replaces).
+`lib/todaySync.test.ts` covers the notify/subscribe/cleanup logic in
+node; the hook/component behaviour is browser-verified only (no DOM
+test environment in this repo). Test records were removed afterwards.
+
+**Navigation and URL state (Task 3).** Tasks search/filter/sub-tab and
+the Calendar month now live in the URL (`tq`, `tf`, `tt`, `cm`;
+`lib/todayState.ts`, written with `history.replaceState`, re-read on
+`popstate`), so leaving for a linked Lead/Client/Project page and
+pressing Back restores the same Today view, and Back/Forward re-syncs
+the still-mounted tabs. Unknown `tab`/sub-tab/month values fall back to
+the defaults. `/dashboard/tasks` and `/dashboard/calendar` redirects now
+forward their query params. Verified live (narrow and wide windows):
+redirects with params, direct and malformed URLs, Back/Forward incl. a
+changed-search case, project round trip (sidebar: Build on the project,
+Today on return), Calendar month round trip, 30-switch stress (0 API
+requests, listeners flat, grid width constant). Dev-only note: React
+StrictMode makes a first Overview mount fetch twice. Not verified live:
+returning from a Client page specifically (Lead/Client pages share the
+same URL-restore path), and a touch device.
 
 ---
 

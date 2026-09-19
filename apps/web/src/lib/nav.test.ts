@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ALL_NAV_HREFS, MOBILE_PRIMARY_HREFS, NAV_SECTIONS, isNavLinkActive } from "./nav";
+import {
+  ALL_NAV_HREFS,
+  FOOTER_NAV_LINKS,
+  MOBILE_PRIMARY_HREFS,
+  NAV_SECTIONS,
+  PRIMARY_NAV_LINKS,
+  isNavLinkActive,
+} from "./nav";
 
 function link(href: string) {
   const found = NAV_SECTIONS.flatMap((s) => s.links).find((l) => l.href === href);
@@ -20,10 +27,17 @@ describe("nav config", () => {
     expect(new Set(ALL_NAV_HREFS).size).toBe(ALL_NAV_HREFS.length);
   });
 
-  it("keeps Discovery, Sales, Tasks and Calendar in the sidebar", () => {
-    for (const href of ["/dashboard/discovery", "/dashboard/sales", "/dashboard/tasks", "/dashboard/calendar"]) {
+  it("keeps Discovery and Sales in the sidebar", () => {
+    for (const href of ["/dashboard/discovery", "/dashboard/sales"]) {
       expect(ALL_NAV_HREFS).toContain(href);
     }
+  });
+
+  it("folds Tasks and Calendar into Today — no separate sidebar links", () => {
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/tasks");
+    expect(ALL_NAV_HREFS).not.toContain("/dashboard/calendar");
+    const workspace = NAV_SECTIONS.find((s) => s.id === "workspace")!;
+    expect(workspace.links.map((l) => l.label)).toEqual(["Today"]);
   });
 
   it("folds Map Discovery and Review Queue into a single Discovery entry — no separate landing-page links", () => {
@@ -66,6 +80,23 @@ describe("nav config", () => {
   it("the mobile bottom nav's four primary hrefs all resolve to a real nav link", () => {
     for (const href of MOBILE_PRIMARY_HREFS) expect(ALL_NAV_HREFS).toContain(href);
     expect(MOBILE_PRIMARY_HREFS).toHaveLength(4);
+  });
+});
+
+describe("sidebar redesign link groups", () => {
+  it("shows exactly the five primary destinations, in workflow order", () => {
+    expect(PRIMARY_NAV_LINKS.map((l) => l.label)).toEqual(["Today", "Discovery", "Sales", "Build", "Clients"]);
+  });
+
+  it("puts Settings in the footer group, not the primary or secondary list", () => {
+    expect(FOOTER_NAV_LINKS.map((l) => l.label)).toEqual(["Settings"]);
+    expect(PRIMARY_NAV_LINKS.map((l) => l.href)).not.toContain("/dashboard/settings");
+  });
+
+  it("primary + footer together account for every nav href exactly once", () => {
+    const combined = [...PRIMARY_NAV_LINKS, ...FOOTER_NAV_LINKS].map((l) => l.href);
+    expect(new Set(combined).size).toBe(combined.length);
+    expect(combined.sort()).toEqual([...ALL_NAV_HREFS].sort());
   });
 });
 

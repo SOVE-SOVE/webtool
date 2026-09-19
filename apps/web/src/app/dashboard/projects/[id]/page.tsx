@@ -975,7 +975,7 @@ export default function ProjectDetailPage() {
               </li>
             ))}
           </ul>
-          <Link href="/dashboard/calendar" className="mt-2 inline-block text-xs text-fg-muted hover:underline">
+          <Link href="/dashboard?tab=calendar" className="mt-2 inline-block text-xs text-fg-muted hover:underline">
             Schedule on calendar →
           </Link>
         </Disclosure>

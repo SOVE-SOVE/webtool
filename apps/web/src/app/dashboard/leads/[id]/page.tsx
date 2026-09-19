@@ -1350,7 +1350,7 @@ export default function LeadDetailPage() {
           <section>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-fg">Meetings</h3>
-              <Link href="/dashboard/calendar" className="text-xs text-fg-muted hover:underline">
+              <Link href="/dashboard?tab=calendar" className="text-xs text-fg-muted hover:underline">
                 Schedule on calendar →
               </Link>
             </div>

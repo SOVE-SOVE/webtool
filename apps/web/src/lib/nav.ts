@@ -6,9 +6,14 @@
  * Grouped into the six stages of the real operating workflow — WORKSPACE,
  * DISCOVER, SALES, BUILD, MANAGE, SYSTEM — so the sidebar reads as "where
  * am I in the business", not a CRM feature list (docs/05_DECISIONS.md UX
- * pass). Nothing is deleted: Tasks and Calendar are still first-class
- * routes, surfaced as `secondary` links under the primary concept they
- * belong to.
+ * pass).
+ *
+ * Workspace has a single entry, Today (`/dashboard`) — the old separate
+ * Tasks and Calendar destinations were folded into it as tabs
+ * (Overview/Tasks/Calendar, `?tab=tasks` / `?tab=calendar`), the same
+ * pattern Clients/Sales/Discovery use (see docs/07_SESSION_LOG.md). The
+ * old `/dashboard/tasks` and `/dashboard/calendar` routes still work —
+ * each redirects into the corresponding Today tab.
  *
  * Discover has a single entry, Discovery (`/dashboard/discovery`) — the
  * old separate Map Discovery and Review queue destinations were folded
@@ -83,8 +88,6 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workspace",
     links: [
       { href: "/dashboard", label: "Today", icon: "home" },
-      { href: "/dashboard/tasks", label: "Tasks", icon: "tasks", secondary: true },
-      { href: "/dashboard/calendar", label: "Calendar", icon: "calendar", secondary: true },
     ],
   },
   {
@@ -170,10 +173,26 @@ export const NAV_SECTIONS: NavSection[] = [
 export const ALL_NAV_HREFS: string[] = NAV_SECTIONS.flatMap((s) => s.links.map((l) => l.href));
 
 /**
+ * The five primary destinations the redesigned sidebar shows as its
+ * flat top-level list (no section headings, no nesting) — one per
+ * workflow section, in workflow order: Today, Discovery, Sales, Build,
+ * Clients. Derived from NAV_SECTIONS rather than hand-listed so it can
+ * never drift from the section data above: excludes the System section
+ * (Settings — rendered in the sidebar footer, see FOOTER_NAV_LINKS) and
+ * any `secondary` link (none today).
+ */
+export const PRIMARY_NAV_LINKS: NavLink[] = NAV_SECTIONS.filter((s) => s.id !== "system").flatMap((s) =>
+  s.links.filter((l) => !l.secondary),
+);
+
+/** The System section's links — rendered in the sidebar footer. */
+export const FOOTER_NAV_LINKS: NavLink[] = NAV_SECTIONS.find((s) => s.id === "system")?.links ?? [];
+
+/**
  * The four primary destinations for the mobile bottom nav — the
  * workflow's main line (Today, Discover, Sales, Build). Everything else
- * (Clients, Tasks, Calendar, Settings, Review queue) lives behind
- * "More".
+ * (Clients, Settings) lives behind
+ * the drawer's "More" button.
  */
 export const MOBILE_PRIMARY_HREFS = [
   "/dashboard",

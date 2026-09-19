@@ -294,7 +294,7 @@ export default function SalesPipelinePage() {
                   {data.upcoming_meetings.map((m) => (
                     <li key={m.id}>
                       <ItemRow
-                        href="/dashboard/calendar"
+                        href="/dashboard?tab=calendar"
                         primary={m.business_name}
                         secondary={m.title}
                         right={meetingFmt(m.scheduled_at)}

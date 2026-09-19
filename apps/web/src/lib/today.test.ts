@@ -209,7 +209,7 @@ describe("todaysScheduleEvents", () => {
       at: "2026-09-13T10:00:00Z",
       detail: "",
       done: false,
-      href: "/dashboard/calendar",
+      href: "/dashboard?tab=calendar",
       ...overrides,
     };
   }
