@@ -396,6 +396,12 @@ body {
   .side-panel {
     @apply flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-xl;
   }
+  /* Wider variant for panels that hold reading-length detail (e.g. the
+     discovered-business review brief's audit findings). Still full-width
+     on phones, where max-w-* never bites. */
+  .side-panel--wide {
+    @apply max-w-xl;
+  }
   @media (prefers-reduced-motion: no-preference) {
     .side-panel-overlay {
       animation: fade-in var(--duration-fast) var(--ease-standard);

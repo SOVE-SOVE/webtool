@@ -11,6 +11,49 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (review brief) — Discovered-business review page: accordion stack → compact review brief
+
+**Mode:** background job, worktree branch `worktree-review-brief-overview`.
+**Scope touched:** `dashboard/discovered-businesses/[id]/page.tsx` (render rewritten;
+all data loading, run-detailed-review pipeline, decisions and confirms untouched);
+new `components/discovery/` (`ReviewCard`, `ReviewDetailPanel`, `ReviewSummaryStrip`,
+`DetailedReviewStrip`, `ReviewSections`, `ScreenshotPreview`); new `lib/reviewBrief.ts`
+(+ test); `StageChecklistPanel` split into `useStageChecklist` + `StageChecklistBody`
+(the collapsible panel every other stage page uses is unchanged); `globals.css`
+`.side-panel--wide`. No backend change.
+
+**Layout:** summary strip (score, priority, audit count/severity, Google rating) →
+slim "Detailed review" run strip → two prominent cards (Website quality audit,
+Opportunity score) → "Supporting evidence" 2-col grid of dense cards (Google reviews,
+research, contact, missing info, Instagram, screenshots, sources, checklist). One column
+below `lg`. Nothing expands by default.
+
+**Progressive detail:** a card opens its full content in the existing `.side-panel`
+(chosen over inline expansion, which would rebuild the tall page, and a centred modal,
+too narrow for findings). Cards use the stretched-button pattern — the title is the single
+tab stop, its `::after` covers the card, and per-card actions (Refresh/Analyze reviews,
+Check for website, View all findings) sit above it. Panel reuses `useDismissableOverlay`
+(Escape, focus trap, focus restored to the opener). The audit card surfaces the top two
+high/critical findings (falls back to the single top finding if none are high).
+
+**Decisions worth knowing:** "Priority" is *derived* from the score category (hot→High,
+warm→Medium, cold→Low, review→Needs review) — there is no priority field. Screenshots:
+discovery research captures none; the thumbnail resolves business → `imported_lead_id`
+→ `Lead.planning_id` → `api.planningScreenshotUrl`, so only imported businesses can have
+one (nothing is fetched otherwise; a 404 falls back to the one-line "not captured yet").
+Findings in the panel are sorted by severity (previously stored order); all data kept.
+"Open research →/Open score →" checklist links point at the same page (no anchors), as before.
+
+**Verified:** vitest 347 pass (new `reviewBrief.test.ts`), eslint 0 errors, `next build
+--webpack`, and Playwright on a second API (:8002, origin :3002) + web (:3002) against real
+data with a throwaway user (deleted afterwards): at 1440×900 the summary, both decision
+cards and the header decision buttons fit without scrolling (943px page height only in the
+fullest case — imported, Instagram + missing info present); panel open/Escape/focus
+restore, keyboard Enter on a card, checklist editor in the panel, 390px single column with
+no horizontal overflow, dark theme, screenshot thumbnail on an imported business.
+
+---
+
 ## 2026-09-19 (review page header bug) — Sticky header overhung the sidebar and made the page scroll sideways
 
 **Mode:** interactive session, worktree branch `worktree-fix-review-header-overflow`.
