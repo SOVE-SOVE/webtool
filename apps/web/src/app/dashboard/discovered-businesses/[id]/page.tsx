@@ -25,7 +25,6 @@ import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatus
 import { CardLinkButton, ReviewCard } from "@/components/discovery/ReviewCard";
 import { ReviewDetailPanel } from "@/components/discovery/ReviewDetailPanel";
 import { ReviewSummaryStrip } from "@/components/discovery/ReviewSummaryStrip";
-import { LeadScheduleCard } from "@/components/LeadScheduleCard";
 import {
   CheckStatusBadge,
   DetailedReviewStrip,
@@ -609,44 +608,26 @@ export default function DiscoveredBusinessDetailPage() {
 
         {business && (
           <div className="space-y-3">
-            {/* Top overview: the glance strip (score, priority, audit, reviews)
-                and the detailed-review row on the left, the Schedule calendar
-                in a fixed-width right column so it's visible on first load.
-                The summary tiles go two-across here (`compact`) so the pair
-                stacks to about the calendar's own height. Below `lg` this is
-                one column — summary, detailed review, then the calendar —
-                so it still comes straight after the summary. */}
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-              <div className="min-w-0 space-y-3">
-                <ReviewSummaryStrip
-                  compact
-                  score={latestScore}
-                  audit={latestAudit}
-                  auditNote={auditNote}
-                  reviews={latestReviewIntel}
-                />
+            <ReviewSummaryStrip score={latestScore} audit={latestAudit} auditNote={auditNote} reviews={latestReviewIntel} />
 
-                {/* Run Detailed Review — one action orchestrating the
-                    existing research/audit/score endpoints in sequence,
-                    with real per-step status instead of three separate
-                    buttons. Audit is skipped (marked "Not applicable") for
-                    a business confirmed to have no reachable website,
-                    rather than showing a misleading failed audit. */}
-                <DetailedReviewStrip
-                  rows={[
-                    { step: "research", label: "Website research", status: researchStatus, at: latest?.researched_at ?? null },
-                    { step: "audit", label: "Website quality audit", status: auditStatus, at: latestAudit?.audited_at ?? null },
-                    { step: "score", label: "Opportunity score", status: scoreStatus, at: latestScore?.scored_at ?? null },
-                  ]}
-                  pipelineStep={pipelineStep}
-                  hasRun={latest !== null}
-                  knownNoWebsite={knownNoWebsite === true}
-                  onRun={handleRunDetailedReview}
-                  onRetry={retryPipelineStep}
-                />
-              </div>
-              <LeadScheduleCard key={`${business.id}:${business.imported_lead_id ?? ""}`} business={business} />
-            </div>
+            {/* Run Detailed Review — one action orchestrating the
+                existing research/audit/score endpoints in sequence,
+                with real per-step status instead of three separate
+                buttons. Audit is skipped (marked "Not applicable") for
+                a business confirmed to have no reachable website,
+                rather than showing a misleading failed audit. */}
+            <DetailedReviewStrip
+              rows={[
+                { step: "research", label: "Website research", status: researchStatus, at: latest?.researched_at ?? null },
+                { step: "audit", label: "Website quality audit", status: auditStatus, at: latestAudit?.audited_at ?? null },
+                { step: "score", label: "Opportunity score", status: scoreStatus, at: latestScore?.scored_at ?? null },
+              ]}
+              pipelineStep={pipelineStep}
+              hasRun={latest !== null}
+              knownNoWebsite={knownNoWebsite === true}
+              onRun={handleRunDetailedReview}
+              onRetry={retryPipelineStep}
+            />
 
             {/* Decision-critical: the two sections a reviewer weighs before
                 approving. Larger, and first in reading and tab order. */}

@@ -28,22 +28,19 @@ export function ReviewSummaryStrip({
   audit,
   auditNote,
   reviews,
-  compact = false,
 }: {
   score: OpportunityScoreResult | null;
   audit: WebsiteQualityAudit | null;
   /** Shown instead of a count when there is no audit ("Not applicable — no website", "Not run yet"). */
   auditNote: string;
   reviews: ReviewIntelligenceResult | null;
-  /** Two tiles across at every width, for when the strip shares its row with another column. */
-  compact?: boolean;
 }) {
   const priority = reviewPriority(score?.category);
   const counts = audit ? findingCounts(audit.findings) : null;
   const hasRating = reviews?.data_status === "ok";
 
   return (
-    <section aria-label="Review summary" className={`grid grid-cols-2 gap-3 ${compact ? "" : "lg:grid-cols-4"}`}>
+    <section aria-label="Review summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Tile
         label="Opportunity score"
         hint={
