@@ -11,6 +11,38 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (task schedule calendar, step 1) — Compact monthly calendar component (not yet wired)
+
+**Mode:** interactive session, worktree branch `worktree-task-schedule-calendar`.
+**Scope touched (new files only):** `components/TaskScheduleCalendar.tsx`,
+`lib/taskSchedule.ts` (+ `.test.ts`). The full Calendar page, `calendarGrid.ts`
+and the calendar API are untouched (only `toDateKey`/`monthGrid`/`addMonths`
+are imported).
+
+**Findings that shape the wiring step:** there is no task detail *page* —
+the only task detail is `TaskDetailModal` (max-w-sm). Tasks have only
+`due_at` (no reminders; `MeetingReminder` is meetings-only). A task's client
+is `project.client_id`, or for a converted lead-owned task the project with
+`source_lead_id === task.lead_id`. No API returns "a client's calendar":
+client events = meetings on that client's projects + other tasks on them.
+`GET /api/v1/calendar` is workspace-wide and already includes open tasks, so
+it must not be used as the client feed. The same item can arrive from both
+sources (the task's own due date) — `indexScheduleByDay` dedupes on event
+`id`, task source wins.
+
+**Component:** props `taskEvents`, `clientEvents` (`{id,title,at}`),
+optional `initialMonth`. Draws only the weeks a month touches (4–6 rows),
+today as a filled circle, amber dot = task, blue dot = client, both dots
+when both. Adjacent-month days are dimmed and never carry markers.
+
+**Verified:** vitest (325 pass, incl. new grid/dedupe tests), eslint on the
+new files, `next build --webpack`, and a throwaway scratch page in Playwright
+(dark + light, 420px and 320px, month navigation) — scratch page removed.
+Note: Turbopack rejects a symlinked `node_modules` in a worktree, so use
+`next dev --webpack` / `next build --webpack` there.
+
+---
+
 ## 2026-09-19 (command-bar migration) — Leads, Planning and Projects on the new command bar
 
 **Mode:** interactive session, feature branch
