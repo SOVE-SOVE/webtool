@@ -49,7 +49,14 @@ def run_research(
         return None
 
     latest = get_latest_research_result(db, discovered_business_id)
-    if latest is not None and datetime.now(timezone.utc) - latest.researched_at < RESEARCH_FRESHNESS:
+    # Only a *successful* result is reusable. A failed analysis says nothing
+    # about the business's web presence, so caching it for a week would
+    # make the explicit "Retry" return the stored failure instead of trying.
+    if (
+        latest is not None
+        and not latest.research_error
+        and datetime.now(timezone.utc) - latest.researched_at < RESEARCH_FRESHNESS
+    ):
         return BusinessResearchResultRead.from_model(latest)
 
     result = business_research_agent.run(BusinessResearchAgentInput(website_url=business.website_url))

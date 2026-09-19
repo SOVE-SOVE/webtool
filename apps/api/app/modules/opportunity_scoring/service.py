@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.agents import opportunity_score as opportunity_score_agent
 from app.agents.opportunity_score import OpportunityScoreInput
 from app.integrations.discovery.base import INSTAGRAM_NO_OWNED_SITE_STATUSES
+from app.integrations.website_kind import social_platform
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research.models import BusinessResearchResult
 from app.modules.discovery.models import (
@@ -81,7 +82,7 @@ def _split(items: list[str]) -> str | None:
 
 
 def run_opportunity_score(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, discovered_business_id: uuid.UUID
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID | None, discovered_business_id: uuid.UUID
 ) -> OpportunityScoreResultRead | None:
     """Returns None (route 404s) when the business doesn't exist in this
     workspace; raises NoResearchAvailableError (route 400s) when it
@@ -100,6 +101,7 @@ def run_opportunity_score(
             has_website_on_record=bool(business.website_url),
             website_reachable=research.website_reachable,
             research_error=research.research_error,
+            website_is_social_profile=social_platform(business.website_url) is not None,
             https=research.https,
             mobile_viewport_present=research.mobile_viewport_present,
             load_time_ms=research.load_time_ms,
@@ -142,7 +144,10 @@ def run_opportunity_score(
         entity_type="discovered_business",
         entity_id=business.id,
         action="scored",
-        summary=f"Opportunity score for {business.name}: {output.overall_score} ({output.category.upper()})",
+        summary=(
+            f"Opportunity score for {business.name}: "
+            + (f"{output.overall_score} ({output.category.upper()})" if output.overall_score is not None else "unavailable")
+        ),
     )
 
     db.commit()

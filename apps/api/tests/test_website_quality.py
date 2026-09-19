@@ -64,17 +64,19 @@ def _make_research(db_session, business, **overrides) -> BusinessResearchResult:
 # --- Agent: findings ---------------------------------------------------------
 
 
-def test_unreachable_site_produces_only_availability_finding():
+def test_failed_analysis_produces_no_website_defect_findings():
     result = website_quality_agent.run(
-        WebsiteQualityInput(website_reachable=False, research_error="Timeout")
+        WebsiteQualityInput(website_reachable=None, research_error="Timeout")
     )
 
-    assert len(result.output.findings) == 1
-    finding = result.output.findings[0]
-    assert finding.category == "availability"
-    assert finding.severity == "critical"
-    assert finding.evidence == "Timeout"
+    assert result.output.findings == []  # never a "critical availability" defect
+    assert "not evidence the site is broken" in result.output.summary
     assert result.flagged_for_review is True
+
+
+def test_legacy_unreachable_research_row_is_also_treated_as_analysis_failure():
+    result = website_quality_agent.run(WebsiteQualityInput(website_reachable=False, research_error="Timeout"))
+    assert result.output.findings == []
 
 
 def test_no_website_on_record_produces_no_findings_and_no_spurious_missing_field_claims():
@@ -201,7 +203,7 @@ def test_audit_persists_and_advances_status(authed_client, db_session, workspace
     assert business.status == DiscoveredBusinessStatus.AUDITED
 
 
-def test_audit_critical_count_reflects_unreachable_site(authed_client, db_session, workspace):
+def test_failed_analysis_does_not_count_as_a_critical_issue(authed_client, db_session, workspace):
     search = _make_search(db_session, workspace)
     business = _make_discovered_business(db_session, search)
     _make_research(db_session, business, website_reachable=False, research_error="DNS error", https=None)
@@ -209,8 +211,8 @@ def test_audit_critical_count_reflects_unreachable_site(authed_client, db_sessio
     res = authed_client.post(f"/api/v1/discovered-businesses/{business.id}/quality-audits")
 
     body = res.json()
-    assert body["critical_count"] == 1
-    assert body["issue_count"] == 1
+    assert body["critical_count"] == 0
+    assert body["issue_count"] == 0
 
 
 def test_list_quality_audits_workspace_scoped(authed_client, other_authed_client, db_session, workspace):

@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
+from app.integrations.website_kind import WebsiteKind, classify_website_url, social_platform
 from app.integrations.discovery.base import InstagramWebsiteStatus, LocationConfidence, WebsiteStatus
 from app.modules.discovery.models import DiscoveredBusinessStatus, DiscoverySearchStatus, OpportunityScoreCategory
 from app.modules.review_intelligence.models import ReviewActivityLevel
@@ -89,7 +90,25 @@ class DiscoverySearchRead(BaseModel):
     completed_at: datetime | None
 
 
-class DiscoveredBusinessRead(BaseModel):
+class _WebsiteKindMixin(BaseModel):
+    """Derives what the listed `website_url` actually is, from the one shared
+    classifier — so a Facebook page is never presented as an owned website."""
+
+    website_url: str | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def website_kind(self) -> WebsiteKind | None:
+        return classify_website_url(self.website_url)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def website_platform(self) -> str | None:
+        return social_platform(self.website_url)
+
+
+
+class DiscoveredBusinessRead(_WebsiteKindMixin):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -147,7 +166,7 @@ class DiscoveredBusinessRead(BaseModel):
     instagram_website_checked_at: datetime | None
 
 
-class DiscoveredBusinessReviewRead(BaseModel):
+class DiscoveredBusinessReviewRead(_WebsiteKindMixin):
     """
     One row of the human-review interface (docs/04_ROADMAP.md Lead
     Intelligence stage 5) — DiscoveredBusinessRead's fields plus the
@@ -262,3 +281,19 @@ class InstagramImportResult(BaseModel):
     duplicate_count: int
     skipped_rows: list[InstagramImportRowError]
     truncated: bool
+
+
+class ReviewQueuePage(BaseModel):
+    """One page of the Review Queue plus the numbers the UI needs to draw
+    its pagination without ever loading the whole queue: `total` is the
+    count matching the current tab/search/filters, `page` is the page
+    actually returned (clamped to the last valid page when the requested
+    one is past the end), and `tab_counts` is per review-state across the
+    whole queue, ignoring search/filters."""
+
+    items: list[DiscoveredBusinessReviewRead]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    tab_counts: dict[str, int]

@@ -5,8 +5,10 @@
  * sidebar is mounted on every page, so without a shared short-lived
  * cache these two list endpoints would refire on every navigation.
  *
- * Both counts are derived client-side from existing list endpoints
- * (no new backend routes) — real workspace data, not invented metrics.
+ * The review count comes from the paged Review Queue endpoint's
+ * whole-queue `tab_counts` (a one-row page, so the queue itself is never
+ * downloaded); the planning count is derived client-side from its list
+ * endpoint — real workspace data, not invented metrics.
  *
  * The raw `listPlanning()` array behind `planningNeedsReview` is also
  * cached here (via `peekPlanningItems`) so the background activity
@@ -24,9 +26,11 @@ export type NavCounts = {
   planningNeedsReview: number;
 };
 
-// A discovered business that has already been decided on isn't "waiting
-// in the queue" any more, whether or not it's archived.
-const DECIDED_STATUSES = new Set(["imported", "rejected", "archived"]);
+/** "Waiting in the queue" = still to decide (needs review) or approved
+ * but not yet imported; imported/rejected/archived are already decided. */
+export function waitingInReviewQueue(tabCounts: Record<string, number>): number {
+  return (tabCounts.needs_review ?? 0) + (tabCounts.approved ?? 0);
+}
 
 const FRESH_MS = 30_000;
 
@@ -35,13 +39,13 @@ let planningItemsCache: PlanningListItem[] | null = null;
 let inflight: Promise<NavCounts> | null = null;
 
 async function fetchNavCounts(): Promise<NavCounts> {
-  const [reviewItems, planningItems] = await Promise.all([
-    api.listReviewItems({ queuedOnly: true }),
+  const [reviewPage, planningItems] = await Promise.all([
+    api.listReviewQueuePage({ tab: "all", page: 1, pageSize: 1 }),
     api.listPlanning(),
   ]);
   planningItemsCache = planningItems;
   return {
-    reviewQueue: reviewItems.filter((item) => !DECIDED_STATUSES.has(item.status)).length,
+    reviewQueue: waitingInReviewQueue(reviewPage.tab_counts),
     planningNeedsReview: planningItems.filter((item) => item.status === "needs_review").length,
   };
 }

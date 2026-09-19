@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.integrations import search as search_integration
@@ -19,6 +19,7 @@ from app.integrations.discovery.base import (
 from app.integrations.discovery.result_classifier import ResultCategory
 from app.modules.activity_log import service as activity_service
 from app.modules.business_research import service as business_research_service
+from app.modules.business_research.models import BusinessResearchResult
 from app.modules.businesses.models import Business
 from app.modules.discovery import dedup
 from app.modules.discovery.instagram_import import parse_instagram_csv
@@ -35,6 +36,7 @@ from app.modules.discovery.schemas import (
     BulkApproveResult,
     DiscoveredBusinessRead,
     DiscoveredBusinessReviewRead,
+    ReviewQueuePage,
     DiscoverySearchCreate,
     DiscoverySearchRead,
     InstagramImportRequest,
@@ -738,50 +740,190 @@ def list_review_items(
     if queued_only:
         query = query.where(DiscoveredBusiness.review_queued_at.is_not(None))
     businesses = list(db.scalars(query.order_by(DiscoveredBusiness.discovered_at.desc())))
+    return [_review_item(db, business) for business in businesses]
 
-    items: list[DiscoveredBusinessReviewRead] = []
-    for business in businesses:
-        research = business_research_service.get_latest_research_result(db, business.id)
-        quality_audit = _latest_quality_audit(db, business.id)
-        score = _latest_score(db, business.id)
-        key_problems = [f["message"] for f in (quality_audit.findings if quality_audit else [])][:3]
 
-        items.append(
-            DiscoveredBusinessReviewRead(
-                id=business.id,
-                name=business.name,
-                industry=business.industry,
-                business_category=business.business_category,
-                suburb=business.suburb,
-                state=business.state,
-                website_url=business.website_url,
-                website_status=business.website_status,
-                status=business.status,
-                source_provider=business.source_provider,
-                discovered_at=business.discovered_at,
-                imported_lead_id=business.imported_lead_id,
-                instagram_handle=business.instagram_handle,
-                instagram_website_status=business.instagram_website_status,
-                instagram_website_checked_at=business.instagram_website_checked_at,
-                raw_snippet=business.raw_snippet,
-                reviewed_by_user_name=business.reviewed_by_user.name if business.reviewed_by_user else None,
-                reviewed_at=business.reviewed_at,
-                review_queued_at=business.review_queued_at,
-                researched_at=research.researched_at if research else None,
-                research_error=research.research_error if research else None,
-                quality_summary=quality_audit.summary if quality_audit else None,
-                key_problems=key_problems,
-                opportunity_score=business.opportunity_score,
-                score_category=business.score_category,
-                confidence=score.confidence if score else None,
-                recommended_sales_angle=score.recommendation_reason if score else None,
-                google_rating=business.google_rating,
-                google_review_count=business.google_review_count,
-                review_health_score=business.review_health_score,
-                review_activity_level=business.review_activity_level,
-            )
+def _review_item(db: Session, business: DiscoveredBusiness) -> DiscoveredBusinessReviewRead:
+    research = business_research_service.get_latest_research_result(db, business.id)
+    quality_audit = _latest_quality_audit(db, business.id)
+    score = _latest_score(db, business.id)
+    key_problems = [f["message"] for f in (quality_audit.findings if quality_audit else [])][:3]
+    return DiscoveredBusinessReviewRead(
+        id=business.id,
+        name=business.name,
+        industry=business.industry,
+        business_category=business.business_category,
+        suburb=business.suburb,
+        state=business.state,
+        website_url=business.website_url,
+        website_status=business.website_status,
+        status=business.status,
+        source_provider=business.source_provider,
+        discovered_at=business.discovered_at,
+        imported_lead_id=business.imported_lead_id,
+        instagram_handle=business.instagram_handle,
+        instagram_website_status=business.instagram_website_status,
+        instagram_website_checked_at=business.instagram_website_checked_at,
+        raw_snippet=business.raw_snippet,
+        reviewed_by_user_name=business.reviewed_by_user.name if business.reviewed_by_user else None,
+        reviewed_at=business.reviewed_at,
+        review_queued_at=business.review_queued_at,
+        researched_at=research.researched_at if research else None,
+        research_error=research.research_error if research else None,
+        quality_summary=quality_audit.summary if quality_audit else None,
+        key_problems=key_problems,
+        opportunity_score=business.opportunity_score,
+        score_category=business.score_category,
+        confidence=score.confidence if score else None,
+        recommended_sales_angle=score.recommendation_reason if score else None,
+        google_rating=business.google_rating,
+        google_review_count=business.google_review_count,
+        review_health_score=business.review_health_score,
+        review_activity_level=business.review_activity_level,
+    )
+
+
+# Plain-language review-state tabs over DiscoveredBusinessStatus — kept in
+# lockstep with REVIEW_TABS in apps/web/src/lib/reviewQueue.ts. `None`
+# means "every status except archived" (the "all" tab).
+_S = DiscoveredBusinessStatus
+REVIEW_TAB_STATUSES: dict[str, list[DiscoveredBusinessStatus] | None] = {
+    "all": None,
+    "needs_review": [_S.NEW, _S.RESEARCHED, _S.AUDITED, _S.SCORED],
+    "approved": [_S.APPROVED],
+    "imported": [_S.IMPORTED],
+    "rejected": [_S.REJECTED],
+    "archived": [_S.ARCHIVED],
+}
+
+REVIEW_MAX_PAGE_SIZE = 100
+
+
+def _tab_condition(tab: str):
+    statuses = REVIEW_TAB_STATUSES[tab]
+    if statuses is None:
+        return DiscoveredBusiness.status != _S.ARCHIVED
+    return DiscoveredBusiness.status.in_(statuses)
+
+
+def _queue_base(workspace_id: uuid.UUID) -> Select:
+    """Queued businesses in this workspace (every status — tabs narrow it)."""
+    return (
+        select(DiscoveredBusiness.id)
+        .join(DiscoverySearch, DiscoveredBusiness.discovery_search_id == DiscoverySearch.id)
+        .where(DiscoverySearch.workspace_id == workspace_id)
+        .where(DiscoveredBusiness.review_queued_at.is_not(None))
+    )
+
+
+def list_review_queue_page(
+    db: Session,
+    workspace_id: uuid.UUID,
+    *,
+    page: int = 1,
+    page_size: int = 10,
+    tab: str = "needs_review",
+    search: str | None = None,
+    website: str | None = None,
+    analysis: str | None = None,
+    score: str | None = None,
+    sort: str = "score",
+) -> ReviewQueuePage:
+    """
+    One page of the Review Queue. Search/filters/sort are applied in SQL to
+    the *whole* queue before the page is cut, so the browser never needs
+    the full list. Ordering always ends in `id` so equal scores/names/dates
+    can't duplicate or skip rows between pages. Filter semantics mirror
+    lib/reviewQueue.ts (`reviewItemMatchesFilters`) exactly.
+    """
+    page_size = max(1, min(page_size, REVIEW_MAX_PAGE_SIZE))
+    page = max(1, page)
+    tab = tab if tab in REVIEW_TAB_STATUSES else "needs_review"
+    D = DiscoveredBusiness
+
+    # Latest research row per business (Postgres DISTINCT ON), for the
+    # analysis filter — same "latest wins" rule as get_latest_research_result.
+    latest = (
+        select(
+            BusinessResearchResult.discovered_business_id.label("bid"),
+            BusinessResearchResult.researched_at.label("researched_at"),
+            BusinessResearchResult.research_error.label("research_error"),
         )
-    return items
+        .distinct(BusinessResearchResult.discovered_business_id)
+        .order_by(BusinessResearchResult.discovered_business_id, BusinessResearchResult.researched_at.desc())
+        .subquery()
+    )
+
+    def filtered(base: Select) -> Select:
+        q = base.outerjoin(latest, latest.c.bid == D.id).where(_tab_condition(tab))
+        term = (search or "").strip().lower()
+        if term:
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            q = q.where(or_(*[col.ilike(f"%{escaped}%", escape="\\") for col in (D.name, D.industry, D.suburb, D.state)]))
+        if website == "has":
+            q = q.where(D.website_status == WebsiteStatus.FOUND)
+        elif website == "no":
+            q = q.where(D.website_status == WebsiteStatus.NONE)
+        elif website == "check":
+            ig = D.instagram_website_status
+            ig_resolved = or_(
+                ig.in_([InstagramWebsiteStatus.LINK_IN_BIO_ONLY, InstagramWebsiteStatus.NO_WEBSITE]),
+                and_(ig == InstagramWebsiteStatus.PROPER_WEBSITE, D.website_status == WebsiteStatus.FOUND),
+            )
+            q = q.where(
+                or_(
+                    D.website_status == WebsiteStatus.UNKNOWN,
+                    and_(D.instagram_handle.is_not(None), D.instagram_handle != "", or_(ig.is_(None), ~ig_resolved)),
+                )
+            )
+        has_error = and_(latest.c.research_error.is_not(None), latest.c.research_error != "")
+        if analysis == "failed":
+            q = q.where(has_error)
+        elif analysis == "done":
+            q = q.where(latest.c.researched_at.is_not(None), ~has_error)
+        elif analysis == "not_run":
+            q = q.where(latest.c.researched_at.is_(None))
+        if score == "unscored":
+            q = q.where(D.opportunity_score.is_(None))
+        elif score in {c.value for c in OpportunityScoreCategory}:
+            q = q.where(D.score_category == OpportunityScoreCategory(score))
+        return q
+
+    total = db.scalar(filtered(_queue_base(workspace_id).with_only_columns(func.count(D.id)))) or 0
+    total_pages = max(1, -(-total // page_size))
+    page = min(page, total_pages)  # nearest valid page if the requested one is past the end
+
+    if sort == "name":
+        order = [func.lower(D.name).asc(), D.id.asc()]
+    elif sort == "newest":
+        order = [D.discovered_at.desc(), D.id.asc()]
+    else:  # "score": unscored last, ties newest-first
+        order = [D.opportunity_score.desc().nulls_last(), D.discovered_at.desc(), D.id.asc()]
+
+    ids = list(db.scalars(filtered(_queue_base(workspace_id)).order_by(*order).limit(page_size).offset((page - 1) * page_size)))
+    by_id = {
+        b.id: b
+        for b in db.scalars(select(D).where(D.id.in_(ids)).options(joinedload(D.reviewed_by_user)))
+    }
+    items = [_review_item(db, by_id[i]) for i in ids if i in by_id]
+
+    # Per-tab totals over the whole queue (ignoring search/filters), so the
+    # review-state dropdown can show honest counts without a full fetch.
+    by_status = dict(
+        db.execute(
+            select(D.status, func.count(D.id))
+            .join(DiscoverySearch, D.discovery_search_id == DiscoverySearch.id)
+            .where(DiscoverySearch.workspace_id == workspace_id, D.review_queued_at.is_not(None))
+            .group_by(D.status)
+        ).all()
+    )
+    tab_counts = {
+        name: sum(n for st, n in by_status.items() if (statuses is None and st != _S.ARCHIVED) or (statuses and st in statuses))
+        for name, statuses in REVIEW_TAB_STATUSES.items()
+    }
+    return ReviewQueuePage(
+        items=items, total=total, page=page, page_size=page_size, total_pages=total_pages, tab_counts=tab_counts
+    )
 
 
 def add_to_review_queue(
@@ -1034,8 +1176,12 @@ def _build_import_notes(
         parts.append(f"Website quality audit: {quality_audit.summary}")
     if score is not None:
         parts.append(
-            f"Opportunity score: {score.overall_score}/100 ({score.category.value.upper()}, "
-            f"{score.confidence:.0%} confidence) — {score.recommendation_reason}"
+            (
+                f"Opportunity score: {score.overall_score}/100 ({score.category.value.upper()}, "
+                f"{score.confidence:.0%} confidence) — {score.recommendation_reason}"
+                if score.overall_score is not None
+                else f"Opportunity score: unavailable — {score.recommendation_reason}"
+            )
         )
         if score.positive_signals:
             parts.append(f"Positive signals: {_split(score.positive_signals)}")

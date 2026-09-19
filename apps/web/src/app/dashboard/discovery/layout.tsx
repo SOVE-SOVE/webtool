@@ -64,7 +64,11 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
     <div className="p-4 sm:p-6">
       <PageHeader
         title="Discovery"
-        description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
+        description={
+          active === "review"
+            ? "Choose which businesses to pursue."
+            : "Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
+        }
       />
       <DiscoverySwitch active={active} reviewCount={reviewCount} className="mt-4" />
       <div className="mt-6">

@@ -2283,7 +2283,9 @@ export const DISCOVERED_WEBSITE_STATUSES = ["found", "none", "unknown"] as const
 export type DiscoveredWebsiteStatus = (typeof DISCOVERED_WEBSITE_STATUSES)[number];
 
 export const DISCOVERED_WEBSITE_STATUS_LABEL: Record<DiscoveredWebsiteStatus, string> = {
-  found: "Website found",
+  // A URL is on record; that is all "found" means. It has not been loaded
+  // or verified here, and it may be a social profile (see `website_kind`).
+  found: "Website listed",
   none: "No website found",
   unknown: "Website status unknown",
 };
@@ -2443,6 +2445,10 @@ export type DiscoveredBusiness = {
   business_type: string | null;
   website_url: string | null;
   website_status: DiscoveredWebsiteStatus;
+  // What the listed website_url actually is — "social_profile" for a
+  // Facebook/Instagram/link-hub page, which is not an owned website.
+  website_kind: "website" | "social_profile" | null;
+  website_platform: string | null;
   phone: string | null;
   email: string | null;
   address: string | null;
@@ -2508,6 +2514,10 @@ export type DiscoveredBusinessReviewItem = {
   business_category: string | null;
   website_url: string | null;
   website_status: DiscoveredWebsiteStatus;
+  // What the listed website_url actually is — "social_profile" for a
+  // Facebook/Instagram/link-hub page, which is not an owned website.
+  website_kind: "website" | "social_profile" | null;
+  website_platform: string | null;
   status: DiscoveredBusinessStatus;
   source_provider: string;
   discovered_at: string;
@@ -2531,6 +2541,28 @@ export type DiscoveredBusinessReviewItem = {
   google_review_count: number | null;
   review_health_score: number | null;
   review_activity_level: ReviewActivityLevel | null;
+};
+
+export type ReviewQueuePageQuery = {
+  page?: number;
+  pageSize?: number;
+  tab?: string;
+  search?: string;
+  website?: string;
+  analysis?: string;
+  score?: string;
+  sort?: string;
+};
+
+export type ReviewQueuePage = {
+  items: DiscoveredBusinessReviewItem[];
+  /** Businesses matching the current tab/search/filters, across all pages. */
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  /** Whole-queue count per review state (ignores search/filters). */
+  tab_counts: Record<string, number>;
 };
 
 // Approving a discovered business also adds it to the CRM in the same
@@ -2624,7 +2656,8 @@ export type ScoreFactor = {
 export type OpportunityScoreResult = {
   id: string;
   discovered_business_id: string;
-  overall_score: number;
+  /** null = unavailable (e.g. the website analysis failed) — never 0. */
+  overall_score: number | null;
   category: OpportunityScoreCategory;
   confidence: number;
   positive_signals: string[];
@@ -3329,12 +3362,15 @@ export const api = {
       { method: "POST" },
     ),
 
-  listReviewItems: (opts?: { includeArchived?: boolean; queuedOnly?: boolean }) => {
+  // One server-side page of the Review Queue: search/filters/sort are
+  // applied to the whole queue before the page is cut, so the browser
+  // never downloads the full list. `page` in the response is the page
+  // actually returned (clamped to the last valid page if `page` was past
+  // the end, e.g. after the last row of a page was removed).
+  listReviewQueuePage: (q: ReviewQueuePageQuery) => {
     const params = new URLSearchParams();
-    if (opts?.includeArchived) params.set("include_archived", "true");
-    if (opts?.queuedOnly) params.set("queued_only", "true");
-    const qs = params.toString();
-    return request<DiscoveredBusinessReviewItem[]>(`/api/v1/discovered-businesses${qs ? `?${qs}` : ""}`);
+    for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k === "pageSize" ? "page_size" : k, String(v));
+    return request<ReviewQueuePage>(`/api/v1/discovered-businesses/review-queue?${params.toString()}`);
   },
   // Explicit "Add to Review Queue" (Map Discovery rows/popups) and its
   // reverse. Both are idempotent on the backend — safe to call again on

@@ -31,7 +31,6 @@ Direction = Literal["positive", "negative"]
 
 BASELINE = 30
 NO_WEBSITE_SCORE = 85
-UNREACHABLE_WEBSITE_SCORE = 90
 REACHABLE_SITE_CAP = 80
 SLOW_LOAD_MS = 4000
 MODERATE_LOAD_MS = 2000
@@ -68,8 +67,14 @@ class ScoreFactor(BaseModel):
 
 class OpportunityScoreInput(BaseModel):
     has_website_on_record: bool
+    # True/False only when a page load actually succeeded/was refused with a
+    # real answer; None means "not determined". A failed *analysis* is NOT
+    # evidence about the site — see `analysis_failed`.
     website_reachable: bool | None = None
     research_error: str | None = None
+    # The listed URL is a Facebook/Instagram/link-hub profile, not an owned
+    # website (integrations/website_kind.py) — nothing to score as a site.
+    website_is_social_profile: bool = False
     https: bool | None = None
     mobile_viewport_present: bool | None = None
     load_time_ms: int | None = None
@@ -97,7 +102,9 @@ class OpportunityScoreInput(BaseModel):
 
 
 class OpportunityScoreOutput(BaseModel):
-    overall_score: int
+    # None = unavailable (the score could not be built from real evidence).
+    # Deliberately not 0: zero is a legitimate low score.
+    overall_score: int | None
     category: Category
     confidence: float
     positive_signals: list[str]
@@ -173,26 +180,39 @@ def _no_website_result(input: OpportunityScoreInput) -> OpportunityScoreOutput:
     )
 
 
-def _unreachable_website_result(input: OpportunityScoreInput) -> OpportunityScoreOutput:
-    factor = ScoreFactor(
-        factor="site_unreachable",
-        points=UNREACHABLE_WEBSITE_SCORE - BASELINE,
-        direction="positive",
-        explanation=f"The existing website could not be loaded during research ({input.research_error or 'no response'}).",
-    )
-    bonus_factors, bonus_signals = _phase1_bonus_factors(input)
-    score = min(UNREACHABLE_WEBSITE_SCORE + sum(f.points for f in bonus_factors), OVERALL_CAP)
+def _unavailable_result(*, reason: str, factor: str) -> OpportunityScoreOutput:
+    """No score at all. Awards no website-quality points and takes none
+    away — the absence of evidence is reported as absence, never as a
+    number. `factor` is recorded (0 points) so the breakdown still says why."""
     return OpportunityScoreOutput(
-        overall_score=score,
-        category=_category(score, 0.9),
-        confidence=0.9,
-        positive_signals=bonus_signals,
-        negative_signals=["Existing website appears to be down or broken"],
-        factors=[factor, *bonus_factors],
-        recommendation_reason=(
-            "The business has a website on record, but it did not load during research — a broken or "
-            "inaccessible site is a strong, concrete opportunity, though worth a quick manual recheck first "
-            "in case it was a transient outage."
+        overall_score=None,
+        category="review",
+        confidence=0.0,
+        positive_signals=[],
+        negative_signals=[],
+        factors=[ScoreFactor(factor=factor, points=0, direction="negative", explanation=reason)],
+        recommendation_reason=reason,
+    )
+
+
+def _analysis_failed_result(input: OpportunityScoreInput) -> OpportunityScoreOutput:
+    detail = f" ({input.research_error.splitlines()[0][:160]})" if input.research_error else ""
+    return _unavailable_result(
+        factor="analysis_failed",
+        reason=(
+            f"The website analysis could not complete{detail}. That is a failure of the check, not a finding "
+            "about the website — no website-quality points are awarded. Retry the analysis or look at the "
+            "site manually."
+        ),
+    )
+
+
+def _social_profile_result(input: OpportunityScoreInput) -> OpportunityScoreOutput:
+    return _unavailable_result(
+        factor="social_profile_only",
+        reason=(
+            "The listed URL is a social/link-hub profile, not an owned website, so there is no site to "
+            "score. Whether the business has its own website hasn't been confirmed."
         ),
     )
 
@@ -292,13 +312,24 @@ def run(input: OpportunityScoreInput) -> AgentResult[OpportunityScoreOutput]:
         output = _no_website_result(input)
         return AgentResult(output=output, confidence=output.confidence)
 
-    if input.website_reachable is False:
-        output = _unreachable_website_result(input)
+    if input.website_is_social_profile:
+        output = _social_profile_result(input)
         return AgentResult(
             output=output,
             confidence=output.confidence,
             flagged_for_review=True,
-            notes="Website was unreachable during research — recommend a quick manual recheck before outreach.",
+            notes="Only a social profile is listed — no owned website was scored.",
+        )
+
+    # `website_reachable is False` is how older research rows recorded a
+    # failed load; either signal means the analysis failed, not the site.
+    if input.research_error or input.website_reachable is False:
+        output = _analysis_failed_result(input)
+        return AgentResult(
+            output=output,
+            confidence=output.confidence,
+            flagged_for_review=True,
+            notes="Website analysis failed — retry it or check the site manually; no score was awarded.",
         )
 
     output = _reachable_website_result(input)

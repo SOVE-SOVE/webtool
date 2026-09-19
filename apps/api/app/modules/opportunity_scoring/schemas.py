@@ -29,7 +29,7 @@ def _split(text: str | None) -> list[str]:
 class OpportunityScoreResultRead(BaseModel):
     id: uuid.UUID
     discovered_business_id: uuid.UUID
-    overall_score: int
+    overall_score: int | None
     category: OpportunityScoreCategory
     confidence: float
     positive_signals: list[str]

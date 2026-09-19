@@ -1,6 +1,7 @@
 import uuid
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,7 @@ from app.db.session import get_db
 from app.integrations.discovery.registry import UnknownProviderError
 from app.modules.discovery import service
 from app.modules.discovery.schemas import (
+    ReviewQueuePage,
     ApproveResult,
     BulkApproveRequest,
     BulkApproveResult,
@@ -165,6 +167,35 @@ def list_review_items(
     businesses explicitly added via POST .../queue."""
     return service.list_review_items(
         db, current_user.workspace_id, include_archived=include_archived, queued_only=queued_only
+    )
+
+
+@discovered_businesses_router.get("/review-queue", response_model=ReviewQueuePage)
+def list_review_queue_page(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=service.REVIEW_MAX_PAGE_SIZE),
+    tab: str = "needs_review",
+    search: str | None = Query(None, max_length=200),
+    website: Literal["has", "no", "check"] | None = None,
+    analysis: Literal["done", "failed", "not_run"] | None = None,
+    score: Literal["hot", "warm", "cold", "review", "unscored"] | None = None,
+    sort: Literal["score", "newest", "name"] = "score",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReviewQueuePage:
+    """One page of the Review Queue with search/filters/sort applied to the
+    whole queue first. Declared before `/{business_id}` so it isn't parsed as an id."""
+    return service.list_review_queue_page(
+        db,
+        current_user.workspace_id,
+        page=page,
+        page_size=page_size,
+        tab=tab,
+        search=search,
+        website=website,
+        analysis=analysis,
+        score=score,
+        sort=sort,
     )
 
 
