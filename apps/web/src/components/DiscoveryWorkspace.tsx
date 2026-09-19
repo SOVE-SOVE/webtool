@@ -32,7 +32,11 @@ import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 
 // Leaflet touches `window` on import — client-only, no SSR.
@@ -264,6 +268,57 @@ export function DiscoveryWorkspace({
     if (!activeResults) return [];
     return sortDiscoveredBusinesses(filterDiscoveredBusinesses(activeResults, filters), sort);
   }, [activeResults, filters, sort]);
+
+  const hasInstagramResults = activeResults?.some((b) => b.instagram_handle) ?? false;
+
+  // The criteria in the Filters popover, as removable chips (search has
+  // its own clear button, so it isn't one).
+  const filterChips: FilterChip[] = [];
+  if (filters.website) {
+    filterChips.push({
+      id: "website",
+      label: "Website",
+      value: filters.website === "has" ? "Has website" : "No website",
+      onRemove: () => setFilters((f) => ({ ...f, website: "" })),
+    });
+  }
+  if (filters.mappedOnly) {
+    filterChips.push({ id: "mapped", label: "Map", value: "On map only", onRemove: () => setFilters((f) => ({ ...f, mappedOnly: false })) });
+  }
+  if (filters.showImported) {
+    filterChips.push({ id: "imported", label: "Imported", value: "Included", onRemove: () => setFilters((f) => ({ ...f, showImported: false })) });
+  }
+  if (filters.instagramStatus) {
+    filterChips.push({
+      id: "ig-status",
+      label: "Instagram",
+      value: INSTAGRAM_WEBSITE_STATUS_LABEL[filters.instagramStatus],
+      onRemove: () => setFilters((f) => ({ ...f, instagramStatus: "" })),
+    });
+  }
+  if (filters.contactableOnly) {
+    filterChips.push({ id: "contactable", label: "Contact", value: "Contactable only", onRemove: () => setFilters((f) => ({ ...f, contactableOnly: false })) });
+  }
+  if (filters.activeRecentlyOnly) {
+    filterChips.push({
+      id: "active",
+      label: "Activity",
+      value: `Last ${ACTIVE_RECENTLY_DAYS} days`,
+      onRemove: () => setFilters((f) => ({ ...f, activeRecentlyOnly: false })),
+    });
+  }
+  if (filters.minFollowers !== null) {
+    filterChips.push({
+      id: "followers",
+      label: "Followers",
+      value: `${filters.minFollowers.toLocaleString()}+`,
+      onRemove: () => setFilters((f) => ({ ...f, minFollowers: null })),
+    });
+  }
+
+  function clearResultFilters() {
+    setFilters(NO_FILTERS);
+  }
 
   const activeSelectionId =
     selectedId && visible.some((b) => b.id === selectedId) ? selectedId : null;
@@ -623,108 +678,103 @@ export function DiscoveryWorkspace({
 
       {activeResults && activeResults.length > 0 && (
         <>
-          {/* Subordinate to the search panel above: no card chrome, tighter
-              gap, and muted text — a refinement bar over the results, not
-              a second panel competing with the search itself. */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-            <Input
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              placeholder="Filter by name, category, address…"
-              className="input w-56"
-            />
-            <Select
-              value={filters.website}
-              onChange={(e) =>
-                setFilters((f) => ({
-                  ...f,
-                  website: e.target.value as DiscoveredBusinessFilters["website"],
-                }))
-              }
-              className="input w-auto"
-              aria-label="Filter by website"
-            >
-              <option value="">Any website status</option>
-              <option value="has">Has website</option>
-              <option value="no">No website</option>
-            </Select>
-            <Select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as DiscoverySort)}
-              className="input w-auto"
-              aria-label="Sort results"
-            >
-              <option value="discovered">Sort: relevance</option>
-              <option value="no-website">Sort: no website first</option>
-              <option value="score">Sort: best score first</option>
-            </Select>
-            <label className="flex items-center gap-1.5">
-              <Checkbox
-                checked={filters.mappedOnly}
-                onChange={(e) => setFilters((f) => ({ ...f, mappedOnly: e.target.checked }))}
+          {/* Command bar over the results: Search + Filters + Sort, active
+              filters as chips. The Instagram-only criteria appear in the
+              popover only once there's at least one Instagram-sourced
+              result to filter, so an ordinary Places/Brave search doesn't
+              offer controls that could never match anything. */}
+          <CommandBar
+            className="mt-3"
+            search={
+              <SearchInput
+                value={filters.search}
+                onValueChange={(search) => setFilters((f) => ({ ...f, search }))}
+                placeholder="Filter by name, category, address…"
+                aria-label="Filter results by name, category or address"
               />
-              On map only
-            </label>
-            <label className="flex items-center gap-1.5">
-              <Checkbox
-                checked={filters.showImported}
-                onChange={(e) => setFilters((f) => ({ ...f, showImported: e.target.checked }))}
-              />
-              Already imported
-            </label>
-          </div>
-
-          {/* Instagram-only filters — shown only once there's at least one
-              Instagram-sourced result to filter, so an ordinary Places/Brave
-              search doesn't clutter its filter row with controls that would
-              never match anything. */}
-          {activeResults.some((b) => b.instagram_handle) && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-              <Select
-                value={filters.instagramStatus}
-                onChange={(e) =>
-                  setFilters((f) => ({
-                    ...f,
-                    instagramStatus: e.target.value as DiscoveredBusinessFilters["instagramStatus"],
-                  }))
-                }
-                className="input w-auto"
-                aria-label="Filter by Instagram website status"
-              >
-                <option value="">Any Instagram status</option>
-                {INSTAGRAM_WEBSITE_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {INSTAGRAM_WEBSITE_STATUS_LABEL[status]}
-                  </option>
-                ))}
-              </Select>
-              <label className="flex items-center gap-1.5">
-                <Checkbox
-                  checked={filters.contactableOnly}
-                  onChange={(e) => setFilters((f) => ({ ...f, contactableOnly: e.target.checked }))}
+            }
+            filters={
+              <FilterPopover activeCount={filterChips.length} onClearAll={clearResultFilters}>
+                <FilterField label="Website">
+                  <CompactSelect
+                    aria-label="Filter by website"
+                    value={filters.website}
+                    onValueChange={(website) => setFilters((f) => ({ ...f, website }))}
+                    options={[
+                      { value: "", label: "Any website status" },
+                      { value: "has", label: "Has website" },
+                      { value: "no", label: "No website" },
+                    ]}
+                  />
+                </FilterField>
+                <FilterToggle
+                  label="On map only"
+                  checked={filters.mappedOnly}
+                  onChange={(mappedOnly) => setFilters((f) => ({ ...f, mappedOnly }))}
                 />
-                Contactable only
-              </label>
-              <label className="flex items-center gap-1.5">
-                <Checkbox
-                  checked={filters.activeRecentlyOnly}
-                  onChange={(e) => setFilters((f) => ({ ...f, activeRecentlyOnly: e.target.checked }))}
+                <FilterToggle
+                  label="Already imported"
+                  checked={filters.showImported}
+                  onChange={(showImported) => setFilters((f) => ({ ...f, showImported }))}
                 />
-                Active in last {ACTIVE_RECENTLY_DAYS} days
-              </label>
-              <Input
-                type="number"
-                min={0}
-                value={filters.minFollowers ?? ""}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, minFollowers: e.target.value === "" ? null : Number(e.target.value) }))
-                }
-                placeholder="Min followers"
-                className="input w-32"
-                aria-label="Minimum follower count"
+                {hasInstagramResults && (
+                  <div className="space-y-3 border-t border-border pt-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">Instagram</p>
+                    <FilterField label="Website status">
+                      <CompactSelect
+                        aria-label="Filter by Instagram website status"
+                        value={filters.instagramStatus}
+                        onValueChange={(instagramStatus) => setFilters((f) => ({ ...f, instagramStatus }))}
+                        options={[
+                          { value: "", label: "Any Instagram status" },
+                          ...INSTAGRAM_WEBSITE_STATUSES.map((status) => ({
+                            value: status,
+                            label: INSTAGRAM_WEBSITE_STATUS_LABEL[status],
+                          })),
+                        ]}
+                      />
+                    </FilterField>
+                    <FilterToggle
+                      label="Contactable only"
+                      checked={filters.contactableOnly}
+                      onChange={(contactableOnly) => setFilters((f) => ({ ...f, contactableOnly }))}
+                    />
+                    <FilterToggle
+                      label={`Active in last ${ACTIVE_RECENTLY_DAYS} days`}
+                      checked={filters.activeRecentlyOnly}
+                      onChange={(activeRecentlyOnly) => setFilters((f) => ({ ...f, activeRecentlyOnly }))}
+                    />
+                    <FilterField label="Minimum followers">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={filters.minFollowers ?? ""}
+                        onChange={(e) =>
+                          setFilters((f) => ({ ...f, minFollowers: e.target.value === "" ? null : Number(e.target.value) }))
+                        }
+                        placeholder="Min followers"
+                        className="control"
+                        aria-label="Minimum follower count"
+                      />
+                    </FilterField>
+                  </div>
+                )}
+              </FilterPopover>
+            }
+            sort={
+              <SortSelect
+                aria-label="Sort results"
+                value={sort}
+                onValueChange={setSort}
+                options={[
+                  { value: "discovered", label: "Relevance" },
+                  { value: "no-website", label: "No website first" },
+                  { value: "score", label: "Best score first" },
+                ]}
               />
-            </div>
-          )}
+            }
+            chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearResultFilters} /> : undefined}
+          />
 
           {visible.length === 0 ? (
             <div className="mt-4 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">

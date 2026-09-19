@@ -10,9 +10,12 @@ import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Metric, MetricGrid } from "@/components/ui/Metric";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { timeAgo } from "@/lib/format";
-import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
+import { FilterChips } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { TabBar } from "@/components/ui/Tabs";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 import { withParam } from "@/lib/url";
@@ -249,8 +252,6 @@ function ReviewQueueWorkspaceInner({
     return items.filter((i) => reviewItemMatchesTab(i, tab));
   }, [items, tab]);
 
-  const filtersActive = search.trim() !== "" || websiteFilter !== "";
-
   const visibleItems = useMemo(() => {
     if (!tabItems) return null;
     const filtered = tabItems.filter((i) => {
@@ -261,9 +262,18 @@ function ReviewQueueWorkspaceInner({
     return sortReviewItems(filtered, sort);
   }, [tabItems, websiteFilter, search, sort]);
 
-  function clearFilters() {
+  // One replace() for everything (`extra` lets the empty-state button also
+  // reset the tab) — separate updateParam() calls would each start from the
+  // same stale searchParams and undo one another.
+  function clearFilters(extra?: { tab: string }) {
     setSearch("");
-    updateParam("website", null);
+    setWebsiteFilter("");
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("search");
+    params.delete("website");
+    if (extra) params.set("tab", extra.tab);
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
 
   const selectableIds = useMemo(
@@ -310,41 +320,58 @@ function ReviewQueueWorkspaceInner({
         onChange={(id) => updateParam("tab", id === "needs_review" ? null : id)}
       />
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search business, industry, suburb…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input w-64"
-        />
-        <Select
-          value={websiteFilter}
-          onChange={(e) => updateParam("website", e.target.value || null)}
-          className="input w-auto"
-          aria-label="Filter by website"
-        >
-          <option value="">Any website status</option>
-          <option value="has">Has website</option>
-          <option value="no">No website</option>
-        </Select>
-        <Select
-          value={sort}
-          onChange={(e) => updateParam("sort", e.target.value === "score" ? null : e.target.value)}
-          className="input w-auto"
-          aria-label="Sort"
-        >
-          {Object.entries(REVIEW_SORT_LABEL).map(([key, label]) => (
-            <option key={key} value={key}>
-              Sort: {label}
-            </option>
-          ))}
-        </Select>
-        {filtersActive && (
-          <button onClick={clearFilters} className="text-xs text-fg-muted hover:text-fg hover:underline">
-            Clear filters
-          </button>
-        )}
-      </div>
+      <CommandBar
+        className="mt-4"
+        search={
+          <SearchInput
+            placeholder="Search business, industry, suburb…"
+            aria-label="Search the review queue"
+            value={search}
+            onValueChange={setSearch}
+          />
+        }
+        filters={
+          <FilterPopover activeCount={websiteFilter ? 1 : 0} onClearAll={() => clearFilters()}>
+            <FilterField label="Website">
+              <CompactSelect
+                aria-label="Filter by website"
+                value={websiteFilter}
+                onValueChange={(next) => updateParam("website", next || null)}
+                options={[
+                  { value: "", label: "Any website status" },
+                  { value: "has", label: "Has website" },
+                  { value: "no", label: "No website" },
+                ]}
+              />
+            </FilterField>
+          </FilterPopover>
+        }
+        sort={
+          <SortSelect
+            value={sort}
+            onValueChange={(next) => updateParam("sort", next === "score" ? null : next)}
+            options={(Object.keys(REVIEW_SORT_LABEL) as ReviewSortKey[]).map((key) => ({
+              value: key,
+              label: REVIEW_SORT_LABEL[key],
+            }))}
+          />
+        }
+        chips={
+          websiteFilter ? (
+            <FilterChips
+              chips={[
+                {
+                  id: "website",
+                  label: "Website",
+                  value: websiteFilter === "has" ? "Has website" : "No website",
+                  onRemove: () => updateParam("website", null),
+                },
+              ]}
+              onClearAll={() => clearFilters()}
+            />
+          ) : undefined
+        }
+      />
 
       {selected.size > 0 && (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border-strong bg-surface-subtle px-3 py-2 text-sm">
@@ -393,10 +420,7 @@ function ReviewQueueWorkspaceInner({
             description="Try a different tab, or clear the search and filters above."
             action={
               <button
-                onClick={() => {
-                  clearFilters();
-                  updateParam("tab", "all");
-                }}
+                onClick={() => clearFilters({ tab: "all" })}
                 className="btn btn-secondary btn-sm"
               >
                 Clear filters

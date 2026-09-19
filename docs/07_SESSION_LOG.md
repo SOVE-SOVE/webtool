@@ -11,6 +11,54 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (command-bar rollout) — Remaining filter rows moved to the command bar
+
+**Mode:** interactive session, feature branch `command-bar-remaining-pages`,
+merged to main.
+**Scope touched (toolbars only):** `ReviewQueueWorkspace.tsx`,
+`DiscoveryWorkspace.tsx` (results filter rows; the search *form* above
+them is data entry, left alone), `dashboard/tasks/page.tsx`, and in
+`dashboard/clients/`: `ClientsOverviewTab`, `ClientsWebsitesTab`,
+`ClientsRevenueTab`, `PaymentsTab`, `UpcomingOverdueTab`,
+`HostingPlansTab`, plus new `revenueFilterUi.ts`.
+
+**What changed per page:** Search + Filters (count) + Sort visible, chips
+beneath, Clear all only with chips — same as Leads/Planning/Projects.
+- Review queue: Website under Filters; Sort visible.
+- Discovery results: Website, On map only, Already imported under
+  Filters, plus an "Instagram" section (status, contactable, active in 30
+  days, min followers) that still appears only when the results contain
+  Instagram businesses.
+- Clients Overview: Status/Hosting/Payment/Tasks/Assigned-to under
+  Filters. **Sort moved out of the old "More filters" menu to a visible
+  control**, and the All clients / Needs attention switch and Add Client
+  sit in the bar's right-hand slot.
+- Clients Websites: Assigned to. Tasks: Project or lead (Tasks tabs now
+  sit on their own row above the bar).
+- Revenue: the three old `*FilterPanel` components became
+  `usePaymentsFilters` / `useUpcomingFilters` / `useHostingFilters`,
+  each returning the popover fields **and** the chips; the parent builds
+  one bar for whichever sub-tab is active. Hosting's default "Active"
+  isn't a chip. The old bespoke `MoreFiltersMenu` (two copies, no Escape
+  or focus handling) is gone.
+
+**Behaviour changes to know about:** Clear all no longer resets Sort on
+Clients Overview (Sort is a visible control now, not a filter). Review
+queue's empty-state "Clear filters" now resets search, website and tab in
+one `replace()` — it used two back-to-back `updateParam` calls that
+undid each other.
+
+**Verified:** `next build`, `eslint` (0 errors), vitest (316 pass), and
+Playwright against the live app (throwaway user, deleted): result counts
+add up per filter (Review website 71+70=141; Discovery 16+4=20; Clients
+status/owner; Websites; Revenue's three sub-views), chips/URL/Clear all
+round-trip, no horizontal overflow at 375px. **Not exercised with real
+data:** Discovery's Instagram section (no Instagram results exist),
+Tasks' per-project filtering against a non-empty list (the list was
+empty), and non-default sort *orderings* (wiring only).
+
+---
+
 ## 2026-09-19 (command-bar migration) — Leads, Planning and Projects on the new command bar
 
 **Mode:** interactive session, feature branch

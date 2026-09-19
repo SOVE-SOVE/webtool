@@ -9,7 +9,11 @@ import { withParam } from "@/lib/url";
 import { HOSTING_STATUS_CLASS } from "@/components/billing/ClientBillingSection";
 import { ChangeFeeModal } from "@/components/billing/ChangeFeeModal";
 import { HostingPlanEffectiveActionModal } from "@/components/billing/HostingPlanEffectiveActionModal";
+import { CompactSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
+import type { FilterChip } from "@/components/ui/FilterChips";
+import { FilterField } from "@/components/ui/FilterPopover";
+import type { RevenueFilterUi } from "./revenueFilterUi";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
@@ -18,10 +22,10 @@ type StatusFilter = "active" | "paused" | "cancelled" | "all";
 type PlanModal = { type: "pause" | "resume" | "cancel"; plan: HostingPlan } | { type: "fee"; plan: HostingPlan };
 
 /** The Hosting view's own secondary filter — plan status, including
- * "All" so historical (cancelled) plans stay reachable — kept inside
- * the shared "More filters" popover rather than a bare select sitting
- * alone in the toolbar. */
-export function HostingFilterPanel() {
+ * "All" so historical (cancelled) plans stay reachable — returned as the
+ * body of the shared Filters popover plus its chip. "Active" is the
+ * default view, so it isn't a chip; only a non-default status is. */
+export function useHostingFilters(): RevenueFilterUi {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -33,17 +37,24 @@ export function HostingFilterPanel() {
     });
   }
 
-  return (
-    <label className="block text-xs text-fg-muted">
-      Status
-      <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="input mt-1 w-full">
-        <option value="active">Active</option>
-        <option value="paused">Paused</option>
-        <option value="cancelled">Cancelled</option>
-        <option value="all">All (includes historical)</option>
-      </select>
-    </label>
+  const options: { value: StatusFilter; label: string }[] = [
+    { value: "active", label: "Active" },
+    { value: "paused", label: "Paused" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "all", label: "All (includes historical)" },
+  ];
+
+  const chips: FilterChip[] =
+    status === "active"
+      ? []
+      : [{ id: "status", label: "Status", value: options.find((o) => o.value === status)?.label ?? status, onRemove: () => setStatus("active") }];
+
+  const panel = (
+    <FilterField label="Status">
+      <CompactSelect aria-label="Filter by plan status" value={status} onValueChange={setStatus} options={options} />
+    </FilterField>
   );
+  return { panel, chips };
 }
 
 /** Row-level "⋯" menu — collapses Change fee/Pause/Resume/Cancel into one discoverable control instead of a button cluster in every row. */

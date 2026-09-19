@@ -8,8 +8,13 @@ import { nextOpenTask } from "@/lib/projects";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { CommandBar } from "@/components/ui/CommandBar";
+import { CompactSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { FilterChips } from "@/components/ui/FilterChips";
+import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
+import { SearchInput } from "@/components/ui/SearchInput";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { WebsiteCard } from "@/components/websites/WebsiteCard";
 
@@ -47,6 +52,17 @@ export function ClientsWebsitesTab({ currency }: { currency: string }) {
     router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
   }
 
+  // One replace() for search + assignee, so neither is left behind in the URL.
+  function clearFilters() {
+    setSearch("");
+    setAssigneeFilter("");
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("search");
+    params.delete("assignee");
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
+
   function load() {
     api
       .listProjects()
@@ -73,31 +89,54 @@ export function ClientsWebsitesTab({ currency }: { currency: string }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          placeholder="Search website, client, package…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input w-60"
-        />
-        <select
-          value={assigneeFilter}
-          onChange={(e) => {
-            setAssigneeFilter(e.target.value);
-            updateParam("assignee", e.target.value || null);
-          }}
-          className="input w-auto"
-          aria-label="Filter by assignee"
-        >
-          <option value="">Anyone assigned</option>
-          <option value={UNASSIGNED}>Unassigned</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <CommandBar
+        search={
+          <SearchInput
+            placeholder="Search website, client, package…"
+            aria-label="Search websites"
+            value={search}
+            onValueChange={setSearch}
+          />
+        }
+        filters={
+          <FilterPopover activeCount={assigneeFilter ? 1 : 0} onClearAll={clearFilters}>
+            <FilterField label="Assigned to">
+              <CompactSelect
+                aria-label="Filter by assignee"
+                value={assigneeFilter}
+                onValueChange={(next) => {
+                  setAssigneeFilter(next);
+                  updateParam("assignee", next || null);
+                }}
+                options={[
+                  { value: "", label: "Anyone assigned" },
+                  { value: UNASSIGNED, label: "Unassigned" },
+                  ...users.map((user) => ({ value: user.id, label: user.name })),
+                ]}
+              />
+            </FilterField>
+          </FilterPopover>
+        }
+        chips={
+          assigneeFilter ? (
+            <FilterChips
+              chips={[
+                {
+                  id: "assignee",
+                  label: "Assigned to",
+                  value:
+                    assigneeFilter === UNASSIGNED ? "Unassigned" : (users.find((u) => u.id === assigneeFilter)?.name ?? "Unknown"),
+                  onRemove: () => {
+                    setAssigneeFilter("");
+                    updateParam("assignee", null);
+                  },
+                },
+              ]}
+              onClearAll={clearFilters}
+            />
+          ) : undefined
+        }
+      />
 
       {error && (
         <div className="mt-4">
