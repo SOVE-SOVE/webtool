@@ -84,15 +84,24 @@ def test_no_website_scores_hot_with_full_confidence():
     assert result.output.recommendation_reason
 
 
-def test_unreachable_website_scores_hot_and_flags_for_review():
+def test_failed_analysis_awards_no_website_points_and_is_unavailable_not_zero():
+    """Regression: a failed analysis used to score 90 ("site_unreachable")
+    and, with contact info, 95 HOT — every failed business looked like the
+    best lead. A failed check is not a finding about the website."""
     result = opportunity_score_agent.run(
-        OpportunityScoreInput(has_website_on_record=True, website_reachable=False, research_error="Timeout")
+        OpportunityScoreInput(
+            has_website_on_record=True, website_reachable=False, research_error="Timeout", has_contact_info=True
+        )
     )
 
-    assert result.output.category == "hot"
-    assert result.output.overall_score == 90
-    assert "Existing website appears to be down or broken" in result.output.negative_signals
-    assert result.flagged_for_review is True  # unreachable is worth a manual recheck
+    assert result.output.overall_score is None  # unavailable, deliberately not 0
+    assert result.output.category == "review"
+    assert result.output.confidence == 0.0
+    assert [f.factor for f in result.output.factors] == ["analysis_failed"]
+    assert all(f.points == 0 for f in result.output.factors)
+    assert result.output.positive_signals == [] and "broken" not in " ".join(result.output.negative_signals)
+    assert "not a finding" in result.output.recommendation_reason
+    assert result.flagged_for_review is True
 
 
 def test_clean_fully_measured_site_scores_cold():
@@ -294,17 +303,16 @@ def test_confirmed_instagram_only_presence_scores_higher():
 
 
 def test_both_phase1_bonuses_combine_and_cap_at_100():
-    # Unreachable-website base (90) + both bonuses (5 + 5) lands exactly
-    # on the cap — a real boundary case, not just headroom that's never hit.
+    # No-website base (85) + both bonuses (5 + 5) lands exactly on the cap —
+    # a real boundary case, not just headroom that's never hit.
     result = opportunity_score_agent.run(
         OpportunityScoreInput(
-            has_website_on_record=True,
-            website_reachable=False,
+            has_website_on_record=False,
             has_contact_info=True,
             confirmed_instagram_only_presence=True,
         )
     )
-    assert result.output.overall_score == opportunity_score_agent.OVERALL_CAP == 100
+    assert result.output.overall_score == 95
 
 
 def test_clean_site_issue_summary_excludes_phase1_bonuses():

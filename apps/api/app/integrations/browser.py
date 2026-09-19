@@ -10,6 +10,7 @@ import ipaddress
 import json
 import re
 import socket
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urlparse
@@ -86,6 +87,30 @@ def _reject_if_not_public(hostname: str, ip: ipaddress.IPv4Address | ipaddress.I
         )
 
 
+# A single failed lookup is weak evidence: in a burst of analyses the local
+# resolver intermittently answers "not found" for hosts that resolve fine
+# a moment later (see docs/07_SESSION_LOG.md, 2026-09-19 — 72 of 113
+# lookups failed in one minute, 63 of the 70 failing hostnames, facebook.com
+# among them, resolve today). Retry with a short backoff before giving up,
+# so a resolver hiccup isn't recorded as a failed analysis.
+DNS_ATTEMPTS = 3
+DNS_RETRY_DELAY_SECONDS = 0.5
+
+
+def _resolve_with_retry(hostname: str):
+    last_error: socket.gaierror | None = None
+    for attempt in range(DNS_ATTEMPTS):
+        try:
+            return socket.getaddrinfo(hostname, None)
+        except socket.gaierror as exc:
+            last_error = exc
+            if attempt < DNS_ATTEMPTS - 1:
+                time.sleep(DNS_RETRY_DELAY_SECONDS * (attempt + 1))
+    raise UrlNotAllowedError(
+        f"Could not resolve hostname {hostname!r} after {DNS_ATTEMPTS} attempts: {last_error}"
+    ) from last_error
+
+
 def _check_url_is_public(url: str) -> None:
     """
     SSRF guard, docs/06_SECURITY.md — `website_url` is operator-entered
@@ -115,10 +140,7 @@ def _check_url_is_public(url: str) -> None:
         _reject_if_not_public(hostname, literal)
         return
 
-    try:
-        resolved = socket.getaddrinfo(hostname, None)
-    except socket.gaierror as exc:
-        raise UrlNotAllowedError(f"Could not resolve hostname {hostname!r}: {exc}") from exc
+    resolved = _resolve_with_retry(hostname)
 
     for _, _, _, _, sockaddr in resolved:
         _reject_if_not_public(hostname, ipaddress.ip_address(sockaddr[0]))

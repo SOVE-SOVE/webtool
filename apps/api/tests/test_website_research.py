@@ -61,7 +61,8 @@ def test_research_unreachable_site_flags_for_review(monkeypatch):
 
     result = business_research_agent.run(BusinessResearchAgentInput(website_url="https://down.example"))
 
-    assert result.output.website_reachable is False
+    # The analysis failed; that is not a finding that the site is down.
+    assert result.output.website_reachable is None
     assert result.output.research_error == "net::ERR_CONNECTION_REFUSED"
     assert result.flagged_for_review is True
 

@@ -34,7 +34,9 @@ class OpportunityScoreResult(Base):
         ForeignKey("discovered_businesses.id", ondelete="CASCADE")
     )
 
-    overall_score: Mapped[int] = mapped_column(Integer)
+    # NULL = the score was unavailable (e.g. the website analysis failed) —
+    # never stored as 0, which would read as a real, low score.
+    overall_score: Mapped[int | None] = mapped_column(Integer)
     category: Mapped[OpportunityScoreCategory] = mapped_column(
         Enum(OpportunityScoreCategory, name="opportunity_score_category")
     )

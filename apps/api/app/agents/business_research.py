@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.agents.base import AgentResult
 from app.integrations.browser import fetch_research_signals
+from app.integrations.website_kind import social_platform
 
 _PLACEHOLDER_NEEDLES = (
     "lorem ipsum",
@@ -110,20 +111,43 @@ def run(input: BusinessResearchAgentInput) -> AgentResult[BusinessResearchAgentO
             notes="No website URL on record — nothing to research.",
         )
 
-    signals = asyncio.run(fetch_research_signals(input.website_url))
-
-    if signals.error:
+    # A Facebook/Instagram/link-hub URL is a social profile, not an owned
+    # website: it can't be meaningfully audited (login walls, bot
+    # defences) and loading it only produces misleading failures. Say so
+    # and stop — no browser launch, no error, no invented findings.
+    platform = social_platform(input.website_url)
+    if platform:
         return AgentResult(
             output=BusinessResearchAgentOutput(
                 official_website_url=input.website_url,
-                website_reachable=False,
+                confirmed_facts=[
+                    f"The listed URL is a {platform} profile, not an owned website — it was not analysed"
+                ],
+                unavailable_fields=list(_NO_WEBSITE_UNAVAILABLE),
+            ),
+            confidence=1.0,
+            notes=f"Listed URL is a {platform} profile — no owned website to analyse.",
+        )
+
+    signals = asyncio.run(fetch_research_signals(input.website_url))
+
+    if signals.error:
+        # The analysis could not load the page. That is a failure of the
+        # *analysis* (resolver hiccup, timeout, missing browser, blocked
+        # request…), not a finding about the website: reachability stays
+        # unknown (None), never False, so nothing downstream can mistake it
+        # for "the site is down".
+        return AgentResult(
+            output=BusinessResearchAgentOutput(
+                official_website_url=input.website_url,
+                website_reachable=None,
                 research_error=signals.error,
-                confirmed_facts=[f"Website could not be loaded: {signals.error}"],
-                unavailable_fields=[f for f in _NO_WEBSITE_UNAVAILABLE if f != "Website reachability"],
+                confirmed_facts=[f"Analysis could not load the website: {signals.error}"],
+                unavailable_fields=list(_NO_WEBSITE_UNAVAILABLE),
             ),
             confidence=0.4,
             flagged_for_review=True,
-            notes=f"Could not load {input.website_url}: {signals.error}",
+            notes=f"Analysis could not load {input.website_url}: {signals.error} — the site itself was not assessed.",
         )
 
     confirmed: list[str] = [f"Website reachable at {signals.final_url or input.website_url}"]

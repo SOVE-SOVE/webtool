@@ -68,23 +68,22 @@ def _summarize(findings: list[Finding]) -> str:
 
 
 def run(input: WebsiteQualityInput) -> AgentResult[WebsiteQualityOutput]:
-    if input.website_reachable is False:
-        findings = [
-            Finding(
-                category="availability",
-                severity="critical",
-                message="The website did not load during research — visitors likely hit the same failure.",
-                evidence=input.research_error or "Website did not load",
-                confidence=1.0,
-            )
-        ]
-        # A page that never loaded can't honestly be assessed for
-        # anything else — HTTPS, mobile, contact paths, all unknown.
+    # `website_reachable is False` is how older research rows recorded a
+    # failed page load. Either way it's the *analysis* that failed — a
+    # resolver hiccup, timeout or missing browser proves nothing about the
+    # site — so report no findings, not a "critical availability" defect.
+    if input.research_error or input.website_reachable is False:
         return AgentResult(
-            output=WebsiteQualityOutput(findings=findings, summary=_summarize(findings)),
-            confidence=1.0,
+            output=WebsiteQualityOutput(
+                findings=[],
+                summary=(
+                    "Website analysis could not complete — the page was not assessed, so there are no findings "
+                    "(this is not evidence the site is broken). Retry the analysis or check the site manually."
+                ),
+            ),
+            confidence=0.0,
             flagged_for_review=True,
-            notes="Website was unreachable during research — audit limited to availability.",
+            notes=f"Analysis failed ({(input.research_error or 'no response').splitlines()[0][:160]}) — site not assessed.",
         )
 
     if input.website_reachable is None:
