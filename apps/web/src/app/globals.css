@@ -188,17 +188,76 @@ html[data-font="mono"] {
      --duration-fast/--duration-base (below, in :root) are referenced via
      Tailwind's arbitrary-value syntax instead: duration-[var(--duration-fast)]. */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Calm decelerating curves for things that arrive or leave. Enter
+     with ease-out-calm (fast start, long soft settle — no overshoot,
+     no bounce); leave with ease-in-calm, its mirror, so an element
+     exits along the path it came in on. */
+  --ease-out-calm: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-calm: cubic-bezier(0.32, 0, 0.67, 0);
 }
 
 :root {
-  /* Shared motion vocabulary. Most UI transitions should use one of
-     these two durations (with ease-standard above) rather than picking
-     their own — see docs/05_DECISIONS.md for the rationale.
-     ProgressBar's existing duration-500 is intentionally left outside
-     this scale (a slower fill reads correctly for a progress bar
-     specifically). */
+  /* Shared motion vocabulary — three tiers, one calm curve family.
+     Pick the tier by what is moving, not by taste:
+       --duration-fast   quick feedback on a control (hover, press,
+                         focus, check) — 120–160ms
+       --duration-base   a standard UI state change (tab/chip selection,
+                         expand/collapse, row highlight) — 180–220ms
+       --duration-panel  a surface arriving or leaving (popover,
+                         dropdown, modal, side panel) — 220–280ms
+     Pair them with --ease-standard (state changes), --ease-out-calm
+     (entrances) or --ease-in-calm (exits). Reach for them through the
+     `duration-fast|base|panel` / `motion-fast|base|panel` utilities
+     below; the arbitrary form `duration-[var(--duration-fast)]` still
+     works. ProgressBar's duration-500 is intentionally outside this
+     scale (a slower fill reads correctly for a progress bar).
+     Reduced motion is handled once, globally — see the
+     `prefers-reduced-motion` block at the end of this file. */
   --duration-fast: 150ms;
   --duration-base: 200ms;
+  --duration-panel: 250ms;
+  /* How far an arriving popover/dropdown rises from. Small on purpose:
+     it should read as "settling into place", never as travel. */
+  --rise-distance: 6px;
+}
+
+/* Named duration utilities. Tailwind has no theme namespace for
+   durations (see docs/05_DECISIONS.md), so these are plain utilities
+   that set the same `--tw-duration` variable Tailwind's own
+   `duration-*` does — so they compose with `transition`,
+   `transition-colors`, etc. in either order. */
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--duration-base);
+  transition-duration: var(--duration-base);
+}
+@utility duration-panel {
+  --tw-duration: var(--duration-panel);
+  transition-duration: var(--duration-panel);
+}
+
+/* One-class transitions for the properties UI state actually changes
+   (colour, border, shadow, opacity, transform — all cheap or
+   compositor-friendly; never layout properties). `motion-fast` is the
+   default for interactive controls, `motion-base` for selection/state
+   changes, `motion-panel` for surfaces. */
+@utility motion-fast {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--duration-fast);
+}
+@utility motion-base {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--duration-base);
+}
+@utility motion-panel {
+  transition-property: opacity, transform;
+  transition-timing-function: var(--ease-out-calm);
+  transition-duration: var(--duration-panel);
 }
 
 html {
@@ -451,6 +510,15 @@ body {
     animation: fade-in var(--duration-base) var(--ease-standard);
   }
 
+  /* A surface that appears anchored to a trigger (dropdown, popover,
+     menu) fades in while rising a few px into place. Movement is tiny
+     and stays under the pointer's travel, so it never shifts a control
+     away from the cursor. */
+  .animate-rise-in {
+    @apply motion-reduce:animate-none;
+    animation: rise-in var(--duration-panel) var(--ease-out-calm);
+  }
+
   /* Applied to a completion glyph (checkbox tick, status icon) on the
      frame it newly matches/mounts — a brief acknowledgement, not a
      decorative loop. */
@@ -499,6 +567,17 @@ body {
   }
 }
 
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-distance));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes checkbox-pop {
   0% {
     transform: scale(0.85);
@@ -526,4 +605,29 @@ body {
    OS default, which can be invisible against a dark panel. */
 * {
   scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ---------------------------------------------------------------------
+ * Reduced motion
+ *
+ * The one global switch. When the user asks for less motion, every CSS
+ * transition and animation collapses to (near-)instant — including any
+ * hard-coded duration a component picked for itself — so state changes
+ * still *happen* (colour, opacity, visibility all land immediately) but
+ * nothing slides, scales, pulses or loops. 0.01ms rather than 0 keeps
+ * `transitionend` / `animationend` events firing for code that waits on
+ * them. Components that also add `motion-reduce:*` utilities keep
+ * working; this is the backstop for everything that doesn't.
+ * ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }

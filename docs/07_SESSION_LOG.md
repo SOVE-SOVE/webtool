@@ -11,6 +11,19 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (UI motion, T1 foundation) — Shared motion tokens + global reduced motion
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**Scope touched:** `apps/web/src/app/globals.css` only (+ `docs/05_DECISIONS.md`).
+**Done:** `--duration-panel`, `--ease-out-calm`/`--ease-in-calm`, `--rise-distance`;
+`duration-*` / `motion-*` utilities; `.animate-rise-in`; global
+`prefers-reduced-motion` rule. No component, layout or logic changes.
+**Verified:** `next build` OK, eslint 0 errors, vitest 373/373, compiled CSS
+contains the keyframes/tokens/reduced-motion block.
+**Next:** T2 (apply to shared controls), T3 (workflow data/nav transitions).
+
+---
+
 ## 2026-09-19 (lead review calendar) — Schedule card in the review page's top overview
 
 **Mode:** interactive session, worktree branch `worktree-lead-review-calendar`.

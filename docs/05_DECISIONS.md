@@ -255,6 +255,37 @@ auto-animate) was ruled out per the task's own instruction to avoid a
 new dependency — the CSS-only approach already covers every requested
 transition at the specified 150–250ms scale.
 
+## 2026-09-19 — UI motion foundation: three duration tiers, calm curves, one global reduced-motion rule
+
+**Decision:** Extended the 2026-09-14 motion vocabulary in `globals.css`
+rather than replacing it. Tokens: `--duration-fast` (150ms, quick control
+feedback), `--duration-base` (200ms, state changes), new
+`--duration-panel` (250ms, popovers/dropdowns/modals/side panels);
+`--ease-standard` kept for state changes, new `--ease-out-calm`
+(entrances) and `--ease-in-calm` (exits, its mirror). Utilities:
+`duration-fast|base|panel` (via Tailwind `@utility`, setting
+`--tw-duration` so they compose with `transition-*`), one-class
+`motion-fast|base|panel` transitions (colour/border/shadow/opacity/
+transform only), and `.animate-rise-in` (fade + `--rise-distance` 6px).
+Reduced motion is now handled once, globally: under
+`prefers-reduced-motion: reduce` every animation/transition collapses to
+0.01ms with iteration-count 1.
+
+**Why:** Existing motion had two tiers and no panel tier, and reduced
+motion was opt-in per component (`motion-reduce:*`), so any component
+that forgot it — or a hard-coded duration — still animated. A blanket
+`!important` rule makes the guarantee structural. 0.01ms (not 0) keeps
+`transitionend`/`animationend` firing for code waiting on them
+(`AnimatedHeight`). The earlier note that named duration classes were
+impossible only ruled out the *theme namespace*; `@utility` is the
+supported route to named classes, and the arbitrary-value form still
+works so no existing class was touched.
+
+**Alternatives considered:** A motion library (springs) — rejected again:
+everything here is a short, non-gesture state change where CSS is
+enough. Zeroing the duration tokens under reduced motion — rejected as
+it wouldn't catch hard-coded durations.
+
 ## 2026-09-14 — Checklist ownership/blocked/next-action: shared logic and UI, not a merged table
 
 **Decision:** Extended both checklist systems (`checklists/` — Client
