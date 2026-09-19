@@ -155,7 +155,18 @@ export default function DiscoveryMap({
     }
     map.on("popupopen", handlePopupOpen);
 
+    // Leaflet caches its container size and only re-measures on an
+    // explicit invalidateSize() call — it has no way to notice the
+    // container itself getting wider/narrower (e.g. the sidebar
+    // collapse toggle resizing <main>, or a browser window resize).
+    // Without this the map keeps rendering at its stale size until the
+    // next full page reload. ResizeObserver catches every such change,
+    // not just the sidebar's.
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(containerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       map.off("popupopen", handlePopupOpen);
       map.remove();
       mapRef.current = null;
