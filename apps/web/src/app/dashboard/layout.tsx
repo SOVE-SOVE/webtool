@@ -307,7 +307,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileNavOpen(false)}
             >
               <aside
-                className="flex h-full w-64 flex-col border-r border-border bg-surface"
+                className="animate-slide-in-left flex h-full w-64 flex-col border-r border-border bg-surface"
                 onClick={(e) => e.stopPropagation()}
               >
                 <SidebarContent

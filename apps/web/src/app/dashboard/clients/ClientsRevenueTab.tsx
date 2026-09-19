@@ -110,7 +110,7 @@ function RevenueSubTabBar({ active, onChange }: { active: RevenueSubTabId; onCha
           role="tab"
           aria-selected={active === tab.id}
           onClick={() => onChange(tab.id)}
-          className={`rounded px-3 py-1.5 transition-colors duration-[var(--duration-fast)] ${
+          className={`toggle-pill rounded px-3 py-1.5 ${
             active === tab.id ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
           }`}
         >

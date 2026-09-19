@@ -75,7 +75,7 @@ export function CorrectPaymentModal({
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`flex-1 rounded px-2 py-1 ${mode === m ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+              className={`toggle-pill flex-1 rounded px-2 py-1 ${mode === m ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
             >
               {m === "refund" ? "Refund" : "Void (entered in error)"}
             </button>

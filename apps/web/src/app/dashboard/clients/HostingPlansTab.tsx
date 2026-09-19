@@ -73,7 +73,7 @@ function PlanActionsMenu({ plan, onAction }: { plan: RevenueHostingPlan; onActio
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <span className="absolute right-0 z-20 mt-1 block w-36 rounded-md border border-border bg-surface py-1 shadow-lg">
+          <span className="menu-panel absolute right-0 z-20 mt-1 block w-36 rounded-md border border-border bg-surface py-1 shadow-lg">
             <button
               type="button"
               onClick={() => {

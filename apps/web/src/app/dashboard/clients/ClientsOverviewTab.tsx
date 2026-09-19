@@ -64,7 +64,7 @@ function ViewSwitch({ active, onChange }: { active: ClientView; onChange: (next:
         type="button"
         onClick={() => onChange("all")}
         aria-current={active === "all" ? "true" : undefined}
-        className={`rounded px-2 py-1 ${active === "all" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${active === "all" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         All clients
       </button>
@@ -72,7 +72,7 @@ function ViewSwitch({ active, onChange }: { active: ClientView; onChange: (next:
         type="button"
         onClick={() => onChange("attention")}
         aria-current={active === "attention" ? "true" : undefined}
-        className={`rounded px-2 py-1 ${active === "attention" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${active === "attention" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Needs attention
       </button>

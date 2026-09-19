@@ -11,6 +11,26 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-19 (UI motion, T2 shared controls) — Subtle motion on reusable controls
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**Scope touched:** `globals.css` (`.btn` press 0.98 + eased focus ring, `.input`
+hover/focus easing, `.chip`, new `.toggle-pill` / `.card-interactive` / `.menu-panel`,
+modal + side-panel + drawer entrances, checkbox focus ring, softer checkbox-pop);
+`Tabs`, `Disclosure`, `AnimatedHeight` (content fades with height),
+`FilterPopover`, `ToastProvider`, `CommandMenuProvider`; `menu-panel` on the 7 bespoke
+`⋯` menus; `toggle-pill` on the selectable pill groups; `card-interactive` on
+Client/Planning/Project cards. No logic changes.
+**Deliberate limits:** modals/menus animate *in* only (they unmount on close);
+cards never scale/lift; checkboxes stay native (only the focus ring eases).
+**Caught in self-review:** `focus-visible:outline-none` on Tabs/Disclosure left only a
+colour change as the keyboard focus indicator — removed, default outline kept.
+**Verified:** build, eslint 0 errors, vitest 373/373; in-browser: popover 250ms rise
+6px + focus moves inside, modal scrim 200ms / panel 250ms, menu rise, mobile drawer
+slides from left with no h-scroll, reduced motion → 0.01ms and final state in <50ms.
+
+---
+
 ## 2026-09-19 (UI motion, T1 foundation) — Shared motion tokens + global reduced motion
 
 **Mode:** background job, worktree branch `worktree-ui-motion-system`.

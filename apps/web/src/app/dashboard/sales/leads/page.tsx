@@ -504,7 +504,7 @@ function LeadsPageInner() {
           setView("table");
           updateParam("view", null);
         }}
-        className={`rounded px-2 py-1 ${view === "table" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${view === "table" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         List
       </button>
@@ -513,7 +513,7 @@ function LeadsPageInner() {
           setView("board");
           updateParam("view", "board");
         }}
-        className={`rounded px-2 py-1 ${view === "board" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${view === "board" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Board
       </button>

@@ -18,7 +18,7 @@ function ProjectPickerMenu({ projects }: { projects: Project[] }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-border bg-surface py-1 shadow-lg">
+          <div className="menu-panel absolute right-0 z-20 mt-1 w-64 rounded-md border border-border bg-surface py-1 shadow-lg">
             {sorted.map((project) => (
               <Link
                 key={project.id}
@@ -55,7 +55,7 @@ function SecondaryActionMenu({ onEdit }: { onEdit: () => void }) {
           {/* Edit only — Client/Business has no archive concept anywhere in
               this codebase (no archived_at column, no archive endpoint),
               unlike Lead. Not fabricated here. */}
-          <div className="absolute right-0 z-20 mt-1 w-36 rounded-md border border-border bg-surface py-1 shadow-lg">
+          <div className="menu-panel absolute right-0 z-20 mt-1 w-36 rounded-md border border-border bg-surface py-1 shadow-lg">
             <button
               type="button"
               onClick={() => {

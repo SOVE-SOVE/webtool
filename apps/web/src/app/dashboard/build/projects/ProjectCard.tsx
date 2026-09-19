@@ -64,7 +64,7 @@ function CardMenu({ project }: { project: Project }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-border bg-surface py-1 shadow-lg">
+          <div className="menu-panel absolute right-0 z-20 mt-1 w-44 rounded-md border border-border bg-surface py-1 shadow-lg">
             <Link href={`/dashboard/projects/${project.id}`} className="block px-3 py-1.5 text-left text-sm text-fg hover:bg-surface-hover">
               Open Project
             </Link>
@@ -132,7 +132,7 @@ export function ProjectCard({
   const href = `/dashboard/projects/${project.id}`;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-md border border-border bg-surface transition-colors hover:border-border-strong">
+    <div className="card-interactive flex flex-col overflow-hidden rounded-md border border-border bg-surface hover:border-border-strong">
       <Link href={href} tabIndex={-1} aria-hidden="true">
         <ProjectPreview project={project} liveUrl={liveDeployment?.url ?? null} />
       </Link>

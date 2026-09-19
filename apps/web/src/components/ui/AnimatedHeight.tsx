@@ -38,7 +38,11 @@ export function AnimatedHeight({ open, children }: { open: boolean; children: Re
       }}
       aria-hidden={!open}
     >
-      <div className="overflow-hidden">{mounted && children}</div>
+      <div
+        className={`overflow-hidden transition-opacity duration-base ease-standard motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}
+      >
+        {mounted && children}
+      </div>
     </div>
   );
 }

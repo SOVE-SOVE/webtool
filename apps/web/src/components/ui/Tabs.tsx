@@ -65,8 +65,8 @@ export function TabBar({
     >
       {tabs.map((tab) => {
         const isActive = tab.id === active;
-        const tabClassName = `shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)] ${
-          isActive ? "text-fg" : "text-fg-muted hover:text-fg"
+        const tabClassName = `shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-fast ease-standard motion-reduce:transition-none ${
+          isActive ? "text-fg" : "text-fg-muted hover:border-border-strong hover:text-fg"
         }`;
         const setRef = (el: HTMLElement | null) => {
           if (el) tabRefs.current.set(tab.id, el);

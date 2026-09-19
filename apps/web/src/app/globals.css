@@ -245,17 +245,17 @@ html[data-font="mono"] {
    default for interactive controls, `motion-base` for selection/state
    changes, `motion-panel` for surfaces. */
 @utility motion-fast {
-  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale, translate;
   transition-timing-function: var(--ease-standard);
   transition-duration: var(--duration-fast);
 }
 @utility motion-base {
-  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale, translate;
   transition-timing-function: var(--ease-standard);
   transition-duration: var(--duration-base);
 }
 @utility motion-panel {
-  transition-property: opacity, transform;
+  transition-property: opacity, transform, scale, translate;
   transition-timing-function: var(--ease-out-calm);
   transition-duration: var(--duration-panel);
 }
@@ -297,6 +297,21 @@ body {
   textarea::placeholder {
     color: var(--color-fg-subtle);
   }
+  /* Native checkbox/radio keep their rendering; only the keyboard focus
+     ring eases in (its offset opens from 0 to 2px). */
+  input[type="checkbox"],
+  input[type="radio"] {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    transition:
+      outline-color var(--duration-fast) var(--ease-standard),
+      outline-offset var(--duration-fast) var(--ease-standard);
+  }
+  input[type="checkbox"]:focus-visible,
+  input[type="radio"]:focus-visible {
+    outline-color: var(--focus-ring);
+    outline-offset: 2px;
+  }
   option {
     background-color: var(--color-surface);
     color: var(--color-fg);
@@ -315,7 +330,11 @@ body {
   /* Buttons. `.btn` carries shape/sizing; combine with a color modifier,
      e.g. className="btn btn-primary". */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-[var(--duration-fast)] ease-standard active:scale-[0.97] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /* A disabled button must not react to the pointer. */
+  .btn:disabled {
+    scale: none;
   }
   .btn-primary {
     @apply bg-accent text-accent-fg hover:opacity-90;
@@ -338,7 +357,7 @@ body {
     @apply text-sm font-medium text-fg;
   }
   .input {
-    @apply w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-fg focus:outline-none focus:ring-1 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50;
+    @apply w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-fg transition-[border-color,box-shadow] duration-fast ease-standard placeholder:text-fg-subtle hover:border-fg-subtle focus:border-fg focus:outline-none focus:ring-1 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border-strong motion-reduce:transition-none;
   }
   select.input {
     @apply pr-8;
@@ -396,12 +415,27 @@ body {
   }
   /* A removable active-filter chip. */
   .chip {
-    @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg;
+    @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg transition-colors duration-fast ease-standard hover:border-border-strong motion-reduce:transition-none;
+  }
+  /* A pill that can be switched on/off or picked from a set (a filter
+     scope, a view toggle). Selection changes colour smoothly instead of
+     snapping; pair with aria-pressed / aria-current on the element. */
+  .toggle-pill {
+    @apply transition-colors duration-fast ease-standard motion-reduce:transition-none;
   }
 
   /* Surfaces */
   .card {
     @apply rounded-md border border-border bg-surface;
+  }
+  /* A card that is itself a target (opens something on click). Only
+     supplies the *transition* — colour changes ease instead of
+     snapping. Nothing lifts, scales or gains a shadow, so controls
+     inside never move under the pointer. The hover colour itself
+     stays with the element (`hover:border-border-strong`): a utility
+     like `border-border` outranks anything in this layer. */
+  .card-interactive {
+    @apply transition-[border-color,background-color] duration-fast ease-standard motion-reduce:transition-none;
   }
   .panel {
     @apply rounded-md border border-border bg-surface p-4;
@@ -445,6 +479,26 @@ body {
   .modal-panel {
     @apply w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-xl;
   }
+  /* Modals materialise: the scrim fades, the panel fades while
+     settling up a few px. Enter only — dialogs unmount on close, so
+     there is no lingering exit to interrupt. */
+  @media (prefers-reduced-motion: no-preference) {
+    .modal-overlay {
+      animation: fade-in var(--duration-base) var(--ease-standard);
+    }
+    .modal-panel {
+      animation: rise-in var(--duration-panel) var(--ease-out-calm);
+    }
+  }
+
+  /* A small dropdown menu anchored to a trigger (row/card "⋯" menus).
+     Rises into place; its items ease their hover fill. */
+  .menu-panel {
+    animation: rise-in var(--duration-panel) var(--ease-out-calm);
+  }
+  .menu-panel :is(a, button) {
+    @apply transition-colors duration-fast ease-standard;
+  }
 
   /* Right-side slide-in panel (Lead quick preview, background
      activity) — same backdrop convention as .modal-overlay, but
@@ -463,10 +517,14 @@ body {
   }
   @media (prefers-reduced-motion: no-preference) {
     .side-panel-overlay {
-      animation: fade-in var(--duration-fast) var(--ease-standard);
+      animation: fade-in var(--duration-base) var(--ease-standard);
     }
     .side-panel {
-      animation: slide-in-right var(--duration-base) var(--ease-standard);
+      animation: slide-in-right var(--duration-panel) var(--ease-out-calm);
+    }
+    /* The mobile nav drawer enters from the left, the edge it lives on. */
+    .animate-slide-in-left {
+      animation: slide-in-left var(--duration-panel) var(--ease-out-calm);
     }
   }
 
@@ -580,13 +638,24 @@ body {
 
 @keyframes checkbox-pop {
   0% {
-    transform: scale(0.85);
+    transform: scale(0.92);
   }
-  50% {
-    transform: scale(1.15);
+  60% {
+    transform: scale(1.06);
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 

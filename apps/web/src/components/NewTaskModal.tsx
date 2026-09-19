@@ -92,7 +92,7 @@ export function NewTaskModal({
                   setLinkType(t);
                   setLinkId("");
                 }}
-                className={`flex-1 rounded px-2 py-1 ${
+                className={`toggle-pill flex-1 rounded px-2 py-1 ${
                   linkType === t ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
                 }`}
               >
