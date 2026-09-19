@@ -349,6 +349,7 @@ export default function TasksPage() {
         <TaskDetailModal
           task={detailTask}
           users={users}
+          tasks={tasks ?? []}
           onClose={() => setDetailTask(null)}
           onChanged={updateTaskInState}
         />

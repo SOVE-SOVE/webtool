@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
+import { TaskScheduleSection } from "@/components/TaskScheduleSection";
 
 /**
  * Secondary task detail, opened by clicking a row on the Tasks page. The
@@ -24,11 +25,14 @@ import { Badge } from "@/components/ui/Badge";
 export function TaskDetailModal({
   task,
   users,
+  tasks = [],
   onClose,
   onChanged,
 }: {
   task: Task;
   users: User[];
+  /** Every task on the page — lets the schedule show the linked client's other due dates. */
+  tasks?: Task[];
   onClose: () => void;
   onChanged: (updated: Task) => void;
 }) {
@@ -71,7 +75,7 @@ export function TaskDetailModal({
   return (
     <div className="modal-overlay" onClick={onClose} role="presentation">
       <div
-        className="modal-panel max-w-sm"
+        className="modal-panel max-h-[calc(100dvh-2rem)] max-w-sm overflow-y-auto"
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-detail-title"
@@ -125,6 +129,8 @@ export function TaskDetailModal({
             <dd className="text-fg-subtle">{timeAgo(task.created_at)}</dd>
           </div>
         </dl>
+
+        <TaskScheduleSection key={task.id} task={task} tasks={tasks} />
 
         {error && <p className="text-error mt-3">{error}</p>}
 

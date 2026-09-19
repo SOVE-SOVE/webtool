@@ -11,13 +11,31 @@ is purely "what did an agent do in this coding session."
 
 ---
 
-## 2026-09-19 (task schedule calendar, step 1) — Compact monthly calendar component (not yet wired)
+## 2026-09-19 (task schedule calendar) — Compact monthly calendar on the task detail
 
-**Mode:** interactive session, worktree branch `worktree-task-schedule-calendar`.
-**Scope touched (new files only):** `components/TaskScheduleCalendar.tsx`,
-`lib/taskSchedule.ts` (+ `.test.ts`). The full Calendar page, `calendarGrid.ts`
-and the calendar API are untouched (only `toDateKey`/`monthGrid`/`addMonths`
-are imported).
+**Mode:** interactive session, worktree branch `worktree-task-schedule-calendar`
+(two commits: the component, then wiring it into the task detail).
+**Scope touched:** new `components/TaskScheduleCalendar.tsx`,
+`components/TaskScheduleSection.tsx`, `lib/taskSchedule.ts` (+ `.test.ts`);
+`components/TaskDetailModal.tsx` (renders the section, new optional `tasks`
+prop, panel now scrolls if taller than the viewport); `dashboard/tasks/page.tsx`
+(passes `tasks`). The full Calendar page, `calendarGrid.ts`, the calendar API
+and every route are untouched (only `toDateKey`/`monthGrid`/`addMonths` are
+imported). No backend change.
+
+**Wiring (step 2):** `TaskScheduleSection` loads `listProjects` → resolves the
+client (`resolveTaskClientId`) → fetches meetings per client project and per
+originating lead (`listMeetings`), and takes the client's other open task due
+dates from the page's `tasks`. Cancelled meetings are dropped. The task's own
+due date is deliberately in both feeds; `indexScheduleByDay` keeps it once.
+No client / no due date / load failure each show a one-line note instead of
+an empty widget; the legend hides "Client calendar" when there is no client.
+Marked days are buttons: hover/focus shows a popover, click pins it, Escape
+closes only the popover (needs `nativeEvent.stopImmediatePropagation()` — in
+the app router React's root and the modal's Escape listener are both on
+`document`), month change clears it. Popover position is measured from the
+cell and clamped so it stays inside the ~250px content width at 320px.
+Mount the section with `key={task.id}`.
 
 **Findings that shape the wiring step:** there is no task detail *page* —
 the only task detail is `TaskDetailModal` (max-w-sm). Tasks have only
@@ -35,11 +53,21 @@ optional `initialMonth`. Draws only the weeks a month touches (4–6 rows),
 today as a filled circle, amber dot = task, blue dot = client, both dots
 when both. Adjacent-month days are dimmed and never carry markers.
 
-**Verified:** vitest (325 pass, incl. new grid/dedupe tests), eslint on the
-new files, `next build --webpack`, and a throwaway scratch page in Playwright
-(dark + light, 420px and 320px, month navigation) — scratch page removed.
+**Verified:** vitest (332 pass, incl. grid/dedupe/client-resolution tests),
+eslint (0 errors), `next build --webpack`, and Playwright against the real app
+(second API on :8001 allowing origin :3001, web on :3001, throwaway user and
+tagged `QA-CAL` meetings/tasks — all deleted afterwards, DB back to baseline):
+both-source day, client-only days, cancelled meeting hidden, dedupe of the
+current task, prospect (no client) task, undated task, month navigation,
+click-pin + Escape-then-Escape, popover geometry at 320px, and Mark
+complete / Reopen / reassign still working. Dark + light checked on an
+isolated scratch page (removed). `browser_take_screenshot` timed out on the
+real app, so structure/geometry there came from snapshots + DOM measurements.
 Note: Turbopack rejects a symlinked `node_modules` in a worktree, so use
-`next dev --webpack` / `next build --webpack` there.
+`next dev --webpack` / `next build --webpack` there. A 1px horizontal scroll
+at 375px exists on the Tasks page without the modal too (pre-existing).
+
+**Not done:** merging to `main` — the branch is pushed for the owner to merge.
 
 ---
 
