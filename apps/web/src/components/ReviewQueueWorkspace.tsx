@@ -2,110 +2,36 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { api, ApiError, type DiscoveredBusinessReviewItem } from "@/lib/api";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError, type ReviewQueuePage } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
-import { Metric, MetricGrid } from "@/components/ui/Metric";
-import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
-import { timeAgo } from "@/lib/format";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
-import { FilterChips } from "@/components/ui/FilterChips";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { TabBar } from "@/components/ui/Tabs";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/ToastProvider";
+import { ReviewQueueHeader, ReviewQueueRow, ReviewQueueRowSkeleton } from "@/components/review/ReviewQueueRow";
+import type { DiscoveredBusinessReviewItem } from "@/lib/api";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 import { withParam } from "@/lib/url";
-import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import {
-  countReviewItemsByTab,
-  isReviewTab,
+  hasActiveReviewFilters,
+  pageRange,
+  parseReviewQuery,
+  quickFilterFor,
+  REVIEW_QUICK_FILTERS,
+  REVIEW_PAGE_SIZE,
   REVIEW_SORT_LABEL,
   REVIEW_TABS,
-  reviewItemMatchesQuery,
-  reviewItemMatchesTab,
-  reviewItemNeedsAttention,
-  reviewQueueSummary,
-  sortReviewItems,
-  type ReviewSortKey,
-  type ReviewTab,
+  saveReviewOrder,
+  type ReviewFilters,
 } from "@/lib/reviewQueue";
 
-const REVIEW_SORTS = Object.keys(REVIEW_SORT_LABEL) as ReviewSortKey[];
-function isReviewSort(value: string | null): value is ReviewSortKey {
-  return value !== null && (REVIEW_SORTS as string[]).includes(value);
-}
-
-function ReviewQueueRow({
-  item,
-  href,
-  selected,
-  selectable,
-  needsAttention,
-  onToggleSelect,
-  onOpen,
-}: {
-  item: DiscoveredBusinessReviewItem;
-  href: string;
-  selected: boolean;
-  selectable: boolean;
-  needsAttention: boolean;
-  onToggleSelect: () => void;
-  onOpen: () => void;
-}) {
-  const location = [item.suburb, item.state].filter(Boolean).join(", ");
-  const whatNeedsReview =
-    item.research_error ?? item.quality_summary ?? (item.researched_at ? null : "Not researched yet");
-
-  return (
-    <div
-      onClick={onOpen}
-      className="flex cursor-pointer flex-col gap-2 px-3 py-3 hover:bg-surface-hover sm:flex-row sm:items-center sm:gap-4"
-    >
-      <div className="flex shrink-0 items-center pt-0.5 sm:pt-0" onClick={(e) => e.stopPropagation()}>
-        {selectable ? (
-          <Checkbox checked={selected} onChange={onToggleSelect} aria-label={`Select ${item.name}`} />
-        ) : (
-          <span className="block h-4 w-4" />
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="truncate font-medium text-fg">{item.name}</span>
-          {needsAttention && (
-            <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Needs attention</span>
-          )}
-        </div>
-        <p className="truncate text-xs text-fg-muted">
-          {[item.industry, location].filter(Boolean).join(" · ") || "No details on record"}
-        </p>
-        {whatNeedsReview && <p className="mt-1 line-clamp-1 text-sm text-fg-muted">{whatNeedsReview}</p>}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <ReviewStatusBadge status={item.status} />
-          {item.score_category && <ScoreCategoryBadge category={item.score_category} score={item.opportunity_score} />}
-          <span className="text-xs text-fg-subtle">{timeAgo(item.discovered_at)}</span>
-        </div>
-      </div>
-
-      <div className="shrink-0 self-start sm:self-center" onClick={(e) => e.stopPropagation()}>
-        {item.status === "imported" && item.imported_lead_id ? (
-          <Link href={`/dashboard/leads/${item.imported_lead_id}`} className="text-sm text-fg-muted hover:underline">
-            View lead →
-          </Link>
-        ) : (
-          <Link href={href} className="btn btn-secondary btn-sm">
-            Review
-          </Link>
-        )}
-      </div>
-    </div>
-  );
-}
+const LAST_OPEN_KEY = "wdos-review-last-open";
 
 /**
  * The Review Queue tab's content — moved out of the old standalone
@@ -143,95 +69,195 @@ function ReviewQueueWorkspaceInner({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const confirm = useConfirm();
+  const toast = useToast();
 
-  const [items, setItems] = useState<DiscoveredBusinessReviewItem[] | null>(null);
+  // The URL is the single source of truth for tab/filters/sort/search/page
+  // — derived, never copied into state, so Back/Forward and the review
+  // page's "Back to Review Queue" always land on exactly this view.
+  const query = useMemo(() => parseReviewQuery(new URLSearchParams(searchParams.toString())), [searchParams]);
+  const { tab, website: websiteFilter, analysis: analysisFilter, score: scoreFilter, sort, page: requestedPage } = query;
+  const queryString = searchParams.toString();
+
+  const [data, setData] = useState<ReviewQueuePage | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
-  const [tab, setTab] = useState<ReviewTab>("needs_review");
-  // Seeded once from the URL, then only ever written back to it
-  // one-directionally via useDebouncedUrlSync — same convention as
-  // Leads' own free-text search field, for the same reason (a slow/
-  // out-of-order `replace` must never "correct" the field mid-keystroke).
+  // Seeded once from the URL, then only written back to it (debounced,
+  // and resetting to page 1) — a slow `replace` must never "correct" the
+  // field mid-keystroke.
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
-  const [websiteFilter, setWebsiteFilter] = useState<"" | "has" | "no">("");
-  const [sort, setSort] = useState<ReviewSortKey>("score");
+  const listTopRef = useRef<HTMLDivElement>(null);
+  // Latest-request marker so a superseded response is ignored.
+  const requestSeq = useRef(0);
 
-  useDebouncedUrlSync("search", search);
-
-  function updateParam(key: string, value: string | null) {
-    router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
+  function navigate(params: URLSearchParams) {
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  // Read the rest of the filters back from the URL on every change —
-  // covers the initial load, a direct link, and browser Back/Forward.
+  /** Change a criterion: always returns to page 1. */
+  function updateParam(key: string, value: string | null) {
+    const next = new URLSearchParams(withParam(searchParams, key, value));
+    next.delete("page");
+    navigate(next);
+  }
+
+  useEffect(() => {
+    if (search === (searchParams.get("search") ?? "")) return;
+    const id = setTimeout(() => updateParam("search", search.trim() === "" ? null : search), 400);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // A new result set invalidates page-specific state.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const t = searchParams.get("tab");
-    setTab(isReviewTab(t) ? t : "needs_review");
-    const w = searchParams.get("website");
-    setWebsiteFilter(w === "has" || w === "no" ? w : "");
-    const s = searchParams.get("sort");
-    setSort(isReviewSort(s) ? s : "score");
-  }, [searchParams]);
+    setSelected(new Set());
+  }, [queryString]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Lets the detail page's "Back to Review Queue" link return to this
-  // exact list state (tab/filters/sort/search/scroll) instead of a bare
-  // URL — same convention as every other list→detail pair in this app.
+  // exact list state (tab/filters/sort/search/page/scroll) instead of a
+  // bare URL — same convention as every other list→detail pair here.
   useEffect(() => {
-    sessionStorage.setItem("wdos-list-return:discovery-review", `${pathname}?${searchParams.toString()}`);
-  }, [pathname, searchParams]);
+    sessionStorage.setItem("wdos-list-return:discovery-review", `${pathname}?${queryString}`);
+  }, [pathname, queryString]);
 
-  useScrollRestoration(items !== null);
+  useScrollRestoration(data !== null);
 
-  function load() {
-    api
-      .listReviewItems({ includeArchived: true, queuedOnly: true })
-      .then((rows) => {
-        setError(null);
-        setItems(rows);
-        setSelected((prev) => new Set([...prev].filter((id) => rows.some((r) => r.id === id))));
-      })
-      .catch(() => setError("Couldn't load the review queue."));
-  }
+  // Fetches exactly one page. Old rows stay on screen until the new page
+  // arrives (no blank flash or height jump), and a stale response from a
+  // superseded request is ignored.
+  const load = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setLoading(true);
+    try {
+      const res = await api.listReviewQueuePage({
+        page: query.page,
+        pageSize: REVIEW_PAGE_SIZE,
+        tab: query.tab,
+        search: query.search,
+        website: query.website,
+        analysis: query.analysis,
+        score: query.score,
+        sort: query.sort,
+      });
+      if (seq !== requestSeq.current) return;
+      setError(null);
+      setData(res);
+      setSelected((prev) => new Set([...prev].filter((id) => res.items.some((r) => r.id === id))));
+      // The server clamps a page past the end (e.g. after the last row of
+      // the last page was removed) — follow it so the URL stays valid.
+      if (res.page !== query.page) {
+        const next = new URLSearchParams(queryString);
+        if (res.page <= 1) next.delete("page");
+        else next.set("page", String(res.page));
+        navigate(next);
+      }
+    } catch {
+      if (seq === requestSeq.current) setError("Couldn't load the review queue.");
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryString]);
 
-  useEffect(load, []);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    void load();
+  }, [load]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   // A business was queued/unqueued from Map Discovery — refetch so it
   // appears/disappears here without the operator switching tabs twice.
+  const firstRefresh = useRef(true);
   useEffect(() => {
-    if (refreshToken !== undefined) load();
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (refreshToken !== undefined) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshToken]);
 
-  // (Returning from the full review page after approve/reject/import
-  // needs no special refetch here: navigating to `/dashboard/
-  // discovered-businesses/{id}` is a real route change out of the
-  // Discovery segment, so this component fully unmounts and its
-  // `useEffect(load, [])` above runs fresh on the way back.)
-
-  // Lift the "still needs a decision" count up for the tab-label badge —
-  // same shape as the sidebar's own reviewQueue count (lib/navCounts.ts),
-  // derived here from the list this view already has loaded.
+  // Lift the "still needs a decision" count up for the tab-label badge.
+  const needsReviewCount = data?.tab_counts.needs_review;
   useEffect(() => {
-    if (items) onActionableCountChange?.(reviewQueueSummary(items).pending);
+    if (needsReviewCount !== undefined) onActionableCountChange?.(needsReviewCount);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [needsReviewCount]);
+
+  const rows = useMemo(() => data?.items ?? [], [data]);
+
+  // Share the current page's position with the review page so its
+  // Previous/Next follow this exact order.
+  useEffect(() => {
+    if (!data) return;
+    saveReviewOrder({
+      ids: data.items.map((i) => i.id),
+      page: data.page,
+      pageSize: data.page_size,
+      total: data.total,
+      totalPages: data.total_pages,
+      query: queryString,
+    });
+  }, [data, queryString]);
+
+  function refreshCounts() {
+    invalidateNavCounts();
+    loadNavCounts({ force: true }).catch(() => {});
+  }
 
   async function handleBulkApprove() {
     if (selected.size === 0) return;
     setBulkApproving(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.bulkApproveDiscoveredBusinesses([...selected]);
       setSelected(new Set());
-      load();
-      invalidateNavCounts();
-      loadNavCounts({ force: true }).catch(() => {});
+      await load();
+      refreshCounts();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Bulk approve failed.");
+      setActionError(err instanceof ApiError ? err.message : "Bulk approve failed.");
     } finally {
       setBulkApproving(false);
+    }
+  }
+
+  // Un-queues only: the discovered-business record, its research and any
+  // approval stay exactly as they are (DELETE …/queue just clears
+  // `review_queued_at`), and it can be re-added from Map Discovery.
+  async function removeFromQueue(ids: string[]) {
+    const targets = rows.filter((i) => ids.includes(i.id) && i.status !== "imported");
+    if (targets.length === 0) return;
+    const ok = await confirm({
+      title: targets.length === 1 ? "Remove from Review Queue?" : `Remove ${targets.length} businesses from the Review Queue?`,
+      description:
+        (targets.length === 1 ? `${targets[0].name} will leave` : "They will leave") +
+        " the queue. The discovered-business record and its research are kept, and you can add it back from Map Discovery.",
+      confirmLabel: "Remove from queue",
+      danger: true,
+    });
+    if (!ok) return;
+    setRemoving(true);
+    setActionError(null);
+    const results = await Promise.allSettled(targets.map((r) => api.removeFromReviewQueue(r.id)));
+    const failed = targets.filter((_, i) => results[i].status === "rejected");
+    setSelected(new Set(failed.map((r) => r.id)));
+    // Refetch the current page: rows from the next page slide up to fill
+    // it, and the server steps back a page if this one is now empty.
+    await load();
+    refreshCounts();
+    setRemoving(false);
+    if (failed.length > 0) {
+      setActionError(`Couldn't remove ${failed.map((f) => f.name).join(", ")} from the queue.`);
+    } else {
+      toast(targets.length === 1 ? "Removed from the Review Queue" : `Removed ${targets.length} from the Review Queue`);
     }
   }
 
@@ -244,217 +270,322 @@ function ReviewQueueWorkspaceInner({
     });
   }
 
-  const tabCounts = useMemo(() => (items ? countReviewItemsByTab(items) : null), [items]);
-  const summary = useMemo(() => (items ? reviewQueueSummary(items) : null), [items]);
+  const filters: ReviewFilters = useMemo(
+    () => ({ search: query.search, website: websiteFilter, analysis: analysisFilter, score: scoreFilter }),
+    [query.search, websiteFilter, analysisFilter, scoreFilter],
+  );
+  const filtersActive = hasActiveReviewFilters(filters) || search.trim() !== "";
 
-  const tabItems = useMemo(() => {
-    if (!items) return null;
-    return items.filter((i) => reviewItemMatchesTab(i, tab));
-  }, [items, tab]);
-
-  const visibleItems = useMemo(() => {
-    if (!tabItems) return null;
-    const filtered = tabItems.filter((i) => {
-      if (websiteFilter === "has" && i.website_status !== "found") return false;
-      if (websiteFilter === "no" && i.website_status !== "none") return false;
-      return reviewItemMatchesQuery(i, search);
-    });
-    return sortReviewItems(filtered, sort);
-  }, [tabItems, websiteFilter, search, sort]);
-
-  // One replace() for everything (`extra` lets the empty-state button also
-  // reset the tab) — separate updateParam() calls would each start from the
-  // same stale searchParams and undo one another.
-  function clearFilters(extra?: { tab: string }) {
+  function clearFilters() {
     setSearch("");
-    setWebsiteFilter("");
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("search");
-    params.delete("website");
-    if (extra) params.set("tab", extra.tab);
-    const query = params.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+    const next = new URLSearchParams(searchParams.toString());
+    for (const k of ["search", "website", "analysis", "score", "page"]) next.delete(k);
+    navigate(next);
   }
 
-  const selectableIds = useMemo(
-    () => (visibleItems ?? []).filter((i) => i.status !== "imported").map((i) => i.id),
-    [visibleItems],
-  );
+  // Everything inside the Filters popover (and its chips): the criteria
+  // plus the review state. Search and the All/Ready/Needs attention quick
+  // filters live outside it and are left alone.
+  function clearPopoverFilters() {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const k of ["website", "score", "tab", "page"]) next.delete(k);
+    if (next.get("analysis") === "not_run") next.delete("analysis");
+    navigate(next);
+  }
+
+  function goToPage(target: number) {
+    if (!data || target < 1 || target > data.total_pages || target === data.page) return;
+    const next = new URLSearchParams(searchParams.toString());
+    if (target === 1) next.delete("page");
+    else next.set("page", String(target));
+    // A fresh page opens at its top, not at a scroll offset remembered
+    // from an earlier visit to the same URL.
+    try {
+      const qs = next.toString();
+      sessionStorage.removeItem(`wdos-scroll:${pathname}?${qs}`);
+    } catch {
+      /* ignore */
+    }
+    navigate(next);
+    // Bring the start of the list into view only if it has scrolled away.
+    const top = listTopRef.current;
+    if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
+  }
+
+  const selectableIds = useMemo(() => rows.filter((i) => i.status !== "imported").map((i) => i.id), [rows]);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   function toggleSelectAll() {
     setSelected(allSelected ? new Set() : new Set(selectableIds));
   }
 
+  // Put keyboard focus back on the row the operator just came from.
+  const ready = data !== null;
+  useEffect(() => {
+    if (!ready) return;
+    let id: string | null = null;
+    try {
+      id = sessionStorage.getItem(LAST_OPEN_KEY);
+      sessionStorage.removeItem(LAST_OPEN_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (!id) return;
+    document
+      .querySelector<HTMLElement>(`[data-review-id="${CSS.escape(id)}"] a[href^="/dashboard/discovered-businesses/"]`)
+      ?.focus({ preventScroll: true });
+  }, [ready]);
+
+  function openReview(id: string) {
+    try {
+      sessionStorage.setItem(LAST_OPEN_KEY, id);
+    } catch {
+      /* ignore */
+    }
+    router.push(`/dashboard/discovered-businesses/${id}`);
+  }
+
+  const total = data?.total ?? 0;
+  const page = data?.page ?? requestedPage;
+  const totalPages = data?.total_pages ?? 1;
+  const range = pageRange(page, REVIEW_PAGE_SIZE, rows.length);
+  const tabCounts = data?.tab_counts;
+  const queueEmpty = data !== null && (tabCounts ? Object.entries(tabCounts).every(([k, n]) => k === "archived" || n === 0) : false) && !filtersActive && tab === "needs_review" && (tabCounts?.archived ?? 0) === 0;
+  const tabLabel = REVIEW_TABS.find((t) => t.id === tab)?.label ?? "";
+  const activeQuick = quickFilterFor(analysisFilter);
+
+  const tabOptions = REVIEW_TABS.map((t) => ({
+    value: t.id,
+    label: `${t.label}${tabCounts ? ` (${tabCounts[t.id] ?? 0})` : ""}`,
+  }));
+  const websiteOptions = [
+    { value: "", label: "Any website" },
+    { value: "has", label: "Website listed" },
+    { value: "no", label: "No website found" },
+    { value: "check", label: "Needs checking" },
+  ];
+  const checkOptions = [
+    { value: "", label: "Any check status" },
+    { value: "done", label: "Ready to review" },
+    { value: "not_run", label: "Not checked" },
+    { value: "failed", label: "Check unavailable" },
+  ];
+  const scoreOptions = [
+    { value: "", label: "Any score" },
+    { value: "hot", label: "Hot" },
+    { value: "warm", label: "Warm" },
+    { value: "cold", label: "Cold" },
+    { value: "review", label: "Needs review (low evidence)" },
+    { value: "unscored", label: "Not assessed" },
+  ];
+  const sortOptions = Object.entries(REVIEW_SORT_LABEL).map(([value, label]) => ({ value, label }));
+  const labelOf = (opts: { value: string; label: string }[], v: string) => opts.find((o) => o.value === v)?.label ?? v;
+
+  // One chip per active criterion inside the popover. The quick filters
+  // (Ready / Needs attention) already show their state, so they get no chip.
+  const chips: FilterChip[] = [];
+  if (tab !== "needs_review")
+    chips.push({ id: "tab", label: "Review state", value: REVIEW_TABS.find((t) => t.id === tab)?.label ?? tab, onRemove: () => updateParam("tab", null) });
+  if (websiteFilter)
+    chips.push({ id: "website", label: "Website", value: labelOf(websiteOptions, websiteFilter), onRemove: () => updateParam("website", null) });
+  if (analysisFilter === "not_run")
+    chips.push({ id: "analysis", label: "Check", value: labelOf(checkOptions, analysisFilter), onRemove: () => updateParam("analysis", null) });
+  if (scoreFilter)
+    chips.push({ id: "score", label: "Score", value: labelOf(scoreOptions, scoreFilter), onRemove: () => updateParam("score", null) });
+
   return (
     <div>
-      {summary ? (
-        <MetricGrid>
-          <Metric
-            label="Needs review"
-            value={summary.pending}
-            hint={summary.pending === 0 ? "All caught up" : "Awaiting a decision"}
-          />
-          <Metric label="Approved" value={summary.approved} />
-          <Metric label="Rejected" value={summary.rejected} />
-          <Metric
-            label="Needs attention"
-            value={summary.needsAttention}
-            hint="Failed research or thin evidence"
-          />
-        </MetricGrid>
-      ) : (
-        !error && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
-          </div>
-        )
-      )}
-
-      <TabBar
-        className="mt-5"
-        tabs={REVIEW_TABS.map((t) => ({ id: t.id, label: t.label, count: tabCounts?.[t.id] ?? 0 }))}
-        active={tab}
-        onChange={(id) => updateParam("tab", id === "needs_review" ? null : id)}
-      />
-
       <CommandBar
-        className="mt-4"
         search={
           <SearchInput
-            placeholder="Search business, industry, suburb…"
-            aria-label="Search the review queue"
             value={search}
             onValueChange={setSearch}
+            placeholder="Search businesses…"
+            aria-label="Search by business name, category or suburb"
           />
         }
         filters={
-          <FilterPopover activeCount={websiteFilter ? 1 : 0} onClearAll={() => clearFilters()}>
-            <FilterField label="Website">
-              <CompactSelect
-                aria-label="Filter by website"
-                value={websiteFilter}
-                onValueChange={(next) => updateParam("website", next || null)}
-                options={[
-                  { value: "", label: "Any website status" },
-                  { value: "has", label: "Has website" },
-                  { value: "no", label: "No website" },
-                ]}
-              />
-            </FilterField>
-          </FilterPopover>
+          <>
+            <div role="group" aria-label="Quick filter" className="flex items-center gap-1">
+              {REVIEW_QUICK_FILTERS.map((q) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  aria-pressed={activeQuick === q.id}
+                  onClick={() => updateParam("analysis", q.analysis || null)}
+                  className={`btn btn-sm min-h-8 ${activeQuick === q.id ? "btn-secondary" : "btn-ghost"}`}
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
+            <FilterPopover activeCount={chips.length} onClearAll={clearPopoverFilters}>
+              <FilterField label="Review state">
+                <CompactSelect value={tab} onValueChange={(v) => updateParam("tab", v === "needs_review" ? null : v)} options={tabOptions} />
+              </FilterField>
+              <FilterField label="Website">
+                <CompactSelect value={websiteFilter} onValueChange={(v) => updateParam("website", v || null)} options={websiteOptions} />
+              </FilterField>
+              <FilterField label="Check status">
+                <CompactSelect value={analysisFilter} onValueChange={(v) => updateParam("analysis", v || null)} options={checkOptions} />
+              </FilterField>
+              <FilterField label="Opportunity score">
+                <CompactSelect value={scoreFilter} onValueChange={(v) => updateParam("score", v || null)} options={scoreOptions} />
+              </FilterField>
+            </FilterPopover>
+          </>
         }
         sort={
-          <SortSelect
-            value={sort}
-            onValueChange={(next) => updateParam("sort", next === "score" ? null : next)}
-            options={(Object.keys(REVIEW_SORT_LABEL) as ReviewSortKey[]).map((key) => ({
-              value: key,
-              label: REVIEW_SORT_LABEL[key],
-            }))}
-          />
+          <SortSelect value={sort} onValueChange={(v) => updateParam("sort", v === "score" ? null : v)} options={sortOptions} />
         }
-        chips={
-          websiteFilter ? (
-            <FilterChips
-              chips={[
-                {
-                  id: "website",
-                  label: "Website",
-                  value: websiteFilter === "has" ? "Has website" : "No website",
-                  onRemove: () => updateParam("website", null),
-                },
-              ]}
-              onClearAll={() => clearFilters()}
-            />
-          ) : undefined
-        }
+        chips={chips.length > 0 ? <FilterChips chips={chips} onClearAll={clearPopoverFilters} /> : undefined}
       />
 
-      {selected.size > 0 && (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border-strong bg-surface-subtle px-3 py-2 text-sm">
-          <span className="text-fg">{selected.size} selected</span>
+      {/* No count here: the range under the list ("1–10 of 506") is the one place it appears. */}
+      <div
+        ref={listTopRef}
+        className={`flex scroll-mt-16 flex-wrap items-center justify-end gap-2 text-xs text-fg-muted ${
+          selected.size > 0 ? "mt-2 min-h-8" : ""
+        }`}
+      >
+        {selected.size > 0 ? (
           <div className="flex items-center gap-3">
-            <button onClick={() => setSelected(new Set())} className="text-fg-muted hover:underline">
+            <span className="font-medium text-fg">{selected.size} selected</span>
+            <button type="button" onClick={() => setSelected(new Set())} className="hover:text-fg hover:underline">
               Clear
             </button>
-            <button onClick={handleBulkApprove} disabled={bulkApproving} className="btn btn-primary btn-sm">
+            <button
+              type="button"
+              onClick={() => void removeFromQueue([...selected])}
+              disabled={removing}
+              className="btn btn-secondary btn-sm min-h-8"
+            >
+              {removing ? "Removing…" : "Remove from queue"}
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkApprove}
+              disabled={bulkApproving}
+              className="btn btn-primary btn-sm min-h-8"
+            >
               {bulkApproving ? "Approving…" : `Approve ${selected.size}`}
             </button>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
 
       {error && (
-        <div className="mt-4">
-          <ErrorState message={error} onRetry={load} compact />
+        <div className="mt-3">
+          <ErrorState message={error} onRetry={() => void load()} compact />
+        </div>
+      )}
+      {actionError && (
+        <div className="mt-3">
+          <ErrorState message={actionError} onRetry={() => setActionError(null)} compact />
         </div>
       )}
 
-      {!items && !error && (
-        <div className="mt-4">
-          <TableSkeleton rows={6} cols={5} />
+      {data === null && !error && (
+        <div className="mt-2 divide-y divide-border rounded-md border border-border" role="status" aria-label="Loading review queue">
+          <div className="h-7 bg-surface-subtle" />
+          {Array.from({ length: REVIEW_PAGE_SIZE }).map((_, i) => (
+            <ReviewQueueRowSkeleton key={i} />
+          ))}
         </div>
       )}
 
-      {items && items.length === 0 && !error && (
-        <div className="mt-4">
-          <EmptyState
-            title="Nothing in the review queue yet"
-            description="Run a Map Discovery search, then use its 'Add to Review Queue' action to bring candidates here to approve, reject, or bring the good ones into the CRM."
-            action={
-              <Link href="/dashboard/discovery/map" className="btn btn-primary">
-                Go to Map Discovery
-              </Link>
-            }
+      {data && total === 0 && (
+        <div className="mt-2">
+          {queueEmpty ? (
+            <EmptyState
+              title="Nothing in the review queue yet"
+              description="Run a Map Discovery search, then use its 'Add to Review Queue' action to bring candidates here to approve, reject, or bring the good ones into the CRM."
+              action={
+                <Link href="/dashboard/discovery/map" className="btn btn-primary">
+                  Go to Map Discovery
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              title={filtersActive ? "No businesses match these filters" : `Nothing in ${tabLabel}`}
+              description={
+                filtersActive
+                  ? "Try a broader search, or clear the filters."
+                  : "Pick a different review state above to see other businesses."
+              }
+              action={
+                filtersActive ? (
+                  <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                    Clear filters
+                  </button>
+                ) : (
+                  <button onClick={() => updateParam("tab", "all")} className="btn btn-secondary btn-sm">
+                    Show all
+                  </button>
+                )
+              }
+            />
+          )}
+        </div>
+      )}
+
+      {data && total > 0 && (
+        <div className="mt-2 rounded-md border border-border">
+          <ReviewQueueHeader
+            allSelected={allSelected}
+            someSelected={selected.size > 0}
+            onToggleAll={toggleSelectAll}
+            disabled={selectableIds.length === 0}
           />
-        </div>
-      )}
-
-      {items && items.length > 0 && visibleItems && visibleItems.length === 0 && (
-        <div className="mt-4">
-          <EmptyState
-            title="No items in this view"
-            description="Try a different tab, or clear the search and filters above."
-            action={
-              <button
-                onClick={() => clearFilters({ tab: "all" })}
-                className="btn btn-secondary btn-sm"
-              >
-                Clear filters
-              </button>
-            }
-          />
-        </div>
-      )}
-
-      {visibleItems && visibleItems.length > 0 && (
-        <div className="mt-4 rounded-md border border-border">
-          <div className="flex items-center gap-2 border-b border-border bg-surface-subtle px-3 py-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
-            <Checkbox checked={allSelected} onChange={toggleSelectAll} aria-label="Select all" />
-            <span>
-              {visibleItems.length} of {tabItems?.length ?? visibleItems.length} shown
-            </span>
-          </div>
-          <div className="divide-y divide-border">
-            {visibleItems.map((item) => {
-              const href = `/dashboard/discovered-businesses/${item.id}`;
-              return (
+          {/* Reserves ten rows of height so a short last page or a page
+              change doesn't make the controls below jump; dimmed (not
+              emptied) while the next page loads. */}
+          <div
+            aria-busy={loading}
+            className={`min-h-[32.5rem] divide-y divide-border transition-opacity motion-reduce:transition-none ${loading ? "opacity-60" : ""}`}
+          >
+            {rows.map((item) => (
+              <div key={item.id} data-review-id={item.id}>
                 <ReviewQueueRow
-                  key={item.id}
                   item={item}
-                  href={href}
+                  href={`/dashboard/discovered-businesses/${item.id}`}
                   selected={selected.has(item.id)}
-                  selectable={item.status !== "imported"}
-                  needsAttention={reviewItemNeedsAttention(item)}
+                  removing={removing}
+                  onRemove={() => void removeFromQueue([item.id])}
                   onToggleSelect={() => toggleSelected(item.id)}
-                  onOpen={() => router.push(href)}
+                  onOpen={() => openReview(item.id)}
                 />
-              );
-            })}
+              </div>
+            ))}
           </div>
+          <nav
+            aria-label="Review queue pagination"
+            className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-subtle px-3 py-2 text-xs text-fg-muted"
+          >
+            <p aria-live="polite">
+              {range ? `Showing ${range.from}–${range.to} of ${total}` : `0 of ${total}`}
+              <span className="text-fg-subtle"> · Page {page} of {totalPages}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => goToPage(page - 1)}
+                disabled={loading || page <= 1}
+                className="btn btn-secondary btn-sm min-h-8"
+              >
+                &larr; Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => goToPage(page + 1)}
+                disabled={loading || page >= totalPages}
+                className="btn btn-secondary btn-sm min-h-8"
+              >
+                Next &rarr;
+              </button>
+            </div>
+          </nav>
         </div>
       )}
     </div>

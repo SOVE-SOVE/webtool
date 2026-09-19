@@ -353,7 +353,11 @@ export function ScoreBody({ score }: { score: OpportunityScoreResult | null }) {
     <div>
       <div className="flex flex-wrap items-center gap-3">
         <ScoreCategoryBadge category={score.category} />
-        <span className="text-2xl font-semibold tabular-nums text-fg">{score.overall_score}</span>
+        <span
+          className={`text-2xl font-semibold tabular-nums ${score.overall_score === null ? "text-fg-subtle" : "text-fg"}`}
+        >
+          {score.overall_score ?? "Not assessed"}
+        </span>
         <span className="text-xs text-fg-muted">{Math.round(score.confidence * 100)}% confidence</span>
       </div>
       <p className="mt-2 text-sm text-fg-muted">{score.recommendation_reason}</p>

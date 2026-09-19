@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   api,
   ApiError,
@@ -19,6 +19,14 @@ import { StageChecklistBody, useStageChecklist } from "@/components/checklists/S
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Badge } from "@/components/ui/Badge";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
+import {
+  describeAnalysisError,
+  loadReviewOrder,
+  parseReviewQuery,
+  reviewNeighbours,
+  saveReviewOrder,
+  type ReviewOrderContext,
+} from "@/lib/reviewQueue";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 import { timeAgo } from "@/lib/format";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
@@ -109,6 +117,56 @@ export default function DiscoveredBusinessDetailPage() {
   const [checkingWebsite, setCheckingWebsite] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Set only by a successful, explicit Add to Leads — drives the result
+  // banner that offers "Review next" (never navigates on its own).
+  const [imported, setImported] = useState<{ businessId: string; leadId: string } | null>(null);
+  // Only meaningful for the business it was set on — navigating to another
+  // business (Previous/Next) must not carry the banner along.
+  const importedLeadId = imported?.businessId === params.id ? imported.leadId : null;
+  const router = useRouter();
+  const [pageLoading, setPageLoading] = useState(false);
+  // The queue's order as it was when this review was opened, so Previous/
+  // Next follow the operator's current sort/filters. Empty when this page
+  // was reached from somewhere other than the queue.
+  const [queueOrder, setQueueOrder] = useState<ReviewOrderContext | null>(() =>
+    typeof window !== "undefined" ? loadReviewOrder() : null,
+  );
+  const neighbours = reviewNeighbours(queueOrder, params.id);
+
+  // Previous/Next at the edge of a queue page: fetch the adjacent page
+  // with the list's own criteria (one page, never the whole queue), make
+  // it the list's current page so "Back to Review Queue" lands there, and
+  // open its first (Next) or last (Previous) business.
+  async function goAdjacentPage(direction: 1 | -1) {
+    if (!queueOrder || pageLoading) return;
+    setPageLoading(true);
+    setActionError(null);
+    try {
+      const q = parseReviewQuery(new URLSearchParams(queueOrder.query));
+      const res = await api.listReviewQueuePage({ ...q, page: queueOrder.page + direction, pageSize: queueOrder.pageSize });
+      const target = direction === 1 ? res.items[0] : res.items[res.items.length - 1];
+      if (!target) return;
+      const sp = new URLSearchParams(queueOrder.query);
+      if (res.page <= 1) sp.delete("page");
+      else sp.set("page", String(res.page));
+      const ctx: ReviewOrderContext = {
+        ids: res.items.map((i) => i.id),
+        page: res.page,
+        pageSize: res.page_size,
+        total: res.total,
+        totalPages: res.total_pages,
+        query: sp.toString(),
+      };
+      saveReviewOrder(ctx);
+      sessionStorage.setItem("wdos-list-return:discovery-review", `/dashboard/discovery/review?${ctx.query}`);
+      setQueueOrder(ctx);
+      router.push(`/dashboard/discovered-businesses/${target.id}`);
+    } catch {
+      setActionError("Couldn't load the next page of the queue.");
+    } finally {
+      setPageLoading(false);
+    }
+  }
 
   // "Run Detailed Review" — sequences research → audit → score using
   // the exact same endpoints the old three-button UI called, just
@@ -311,13 +369,17 @@ export default function DiscoveredBusinessDetailPage() {
   async function handleImport() {
     if (!params.id || !business) return;
     const ok = await confirm({
-      title: "Add to CRM?",
+      title: "Add to Leads?",
       description: `Creates a business and lead record for ${business.name}.`,
-      confirmLabel: "Add to CRM",
+      confirmLabel: "Add to Leads",
     });
     if (!ok) return;
     setImporting(true);
-    await runDecision(() => api.importDiscoveredBusiness(params.id));
+    setImported(null);
+    await runDecision(async () => {
+      const result = await api.importDiscoveredBusiness(params.id);
+      setImported({ businessId: params.id, leadId: result.imported_lead_id ?? "" });
+    });
     setImporting(false);
   }
 
@@ -328,7 +390,7 @@ export default function DiscoveredBusinessDetailPage() {
 
   // Same gating as the old ReviewItemDrawer's canDecide/canImport —
   // approve/reject/archive only make sense before a decision is
-  // already made; Add to CRM stays available for a not-yet-decided or
+  // already made; Add to Leads stays available for a not-yet-decided or
   // already-approved business, just not a rejected/archived one.
   const canDecide = business ? !["approved", "rejected", "archived", "imported"].includes(business.status) : false;
   const canImport = business ? !["rejected", "archived", "imported"].includes(business.status) : false;
@@ -387,7 +449,17 @@ export default function DiscoveredBusinessDetailPage() {
   const auditNote = knownNoWebsite ? "Not applicable — no website" : "Not run yet";
 
   const contactSummary =
-    [business?.phone, business?.email, business?.website_url ?? (business ? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status] : null)]
+    [
+      business?.phone,
+      business?.email,
+      business?.website_url
+        ? business.website_kind === "social_profile"
+          ? `${business.website_platform ?? "Social"} profile (not an owned website)`
+          : business.website_url
+        : business
+          ? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]
+          : null,
+    ]
       .filter(Boolean)
       .join(" · ") || "No contact details on record";
 
@@ -407,7 +479,7 @@ export default function DiscoveredBusinessDetailPage() {
   const researchSummary: ReactNode = !latest
     ? "Not researched yet"
     : latest.research_error
-      ? `Could not load website: ${latest.research_error}`
+      ? `The check couldn't complete — ${describeAnalysisError(latest.research_error)}`
       : [
           latest.website_reachable === false ? "Unreachable" : "Reachable",
           latest.https === null ? null : latest.https ? "HTTPS" : "No HTTPS",
@@ -537,6 +609,41 @@ export default function DiscoveredBusinessDetailPage() {
               >
                 Back to search results
               </Link>
+              {neighbours && (
+                <nav aria-label="Queue navigation" className="ml-auto flex items-center gap-1">
+                  <span className="mr-1 text-xs tabular-nums text-fg-subtle">
+                    {neighbours.position} of {neighbours.total}
+                  </span>
+                  {neighbours.previous ? (
+                    <Link href={`/dashboard/discovered-businesses/${neighbours.previous}`} className="btn btn-secondary btn-sm min-h-8">
+                      &larr; Previous
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void goAdjacentPage(-1)}
+                      disabled={!neighbours.hasPreviousPage || pageLoading}
+                      className="btn btn-secondary btn-sm min-h-8"
+                    >
+                      &larr; Previous
+                    </button>
+                  )}
+                  {neighbours.next ? (
+                    <Link href={`/dashboard/discovered-businesses/${neighbours.next}`} className="btn btn-secondary btn-sm min-h-8">
+                      Next &rarr;
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void goAdjacentPage(1)}
+                      disabled={!neighbours.hasNextPage || pageLoading}
+                      className="btn btn-secondary btn-sm min-h-8"
+                    >
+                      Next &rarr;
+                    </button>
+                  )}
+                </nav>
+              )}
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -568,7 +675,7 @@ export default function DiscoveredBusinessDetailPage() {
                     )}
                     {canImport && (
                       <button onClick={handleImport} disabled={deciding || importing} className="btn btn-secondary btn-sm">
-                        Add to CRM
+                        Add to Leads
                       </button>
                     )}
                     {canDecide && (
@@ -602,6 +709,35 @@ export default function DiscoveredBusinessDetailPage() {
         {actionError && (
           <div className="mb-3">
             <ErrorState message={actionError} onRetry={() => setActionError(null)} compact />
+          </div>
+        )}
+
+        {importedLeadId !== null && business?.status === "imported" && (
+          <div
+            role="status"
+            className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-strong bg-surface-subtle px-3 py-2 text-sm"
+          >
+            <span className="text-fg">
+              <strong className="font-semibold">{business.name}</strong> was added to Leads.
+            </span>
+            <span className="flex items-center gap-2">
+              {(importedLeadId || business.imported_lead_id) && (
+                <Link href={`/dashboard/leads/${importedLeadId || business.imported_lead_id}`} className="btn btn-secondary btn-sm min-h-8">
+                  Open Lead
+                </Link>
+              )}
+              {neighbours && (neighbours.next || neighbours.hasNextPage) && (
+                neighbours.next ? (
+                  <Link href={`/dashboard/discovered-businesses/${neighbours.next}`} className="btn btn-primary btn-sm min-h-8">
+                    Review next &rarr;
+                  </Link>
+                ) : (
+                  <button type="button" onClick={() => void goAdjacentPage(1)} disabled={pageLoading} className="btn btn-primary btn-sm min-h-8">
+                    Review next &rarr;
+                  </button>
+                )
+              )}
+            </span>
           </div>
         )}
 
@@ -644,6 +780,18 @@ export default function DiscoveredBusinessDetailPage() {
                   onRun={handleRunDetailedReview}
                   onRetry={retryPipelineStep}
                 />
+                {researchStatus === "failed" && latest?.research_error && (
+                  <div className="rounded-md border border-border bg-surface-subtle px-3 py-2 text-xs text-fg-muted">
+                    <p>
+                      The website check couldn&apos;t complete — {describeAnalysisError(latest.research_error)}. This is not a
+                      finding about the website.
+                    </p>
+                    <details className="mt-1">
+                      <summary className="cursor-pointer">Technical detail</summary>
+                      <p className="mt-1 break-words font-mono">{latest.research_error}</p>
+                    </details>
+                  </div>
+                )}
               </div>
               <LeadScheduleCard key={`${business.id}:${business.imported_lead_id ?? ""}`} business={business} />
             </div>

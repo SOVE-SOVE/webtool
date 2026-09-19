@@ -57,11 +57,14 @@ export function ReviewSummaryStrip({
           )
         }
       >
-        {score ? (
+        {score && score.overall_score !== null ? (
           <>
             <span className={BIG}>{score.overall_score}</span>
             <span className="text-sm text-fg-muted">/ 100</span>
           </>
+        ) : score ? (
+          // The check couldn't complete: no score, which is not a zero.
+          <span className={BIG_MUTED} title="The website check couldn't complete, so there is no score">Not assessed</span>
         ) : (
           <span className={BIG_MUTED}>—</span>
         )}
