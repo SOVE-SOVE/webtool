@@ -62,11 +62,16 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader
-        title="Discovery"
-        description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
-      />
-      <DiscoverySwitch active={active} reviewCount={reviewCount} className="mt-4" />
+      {/* relative z-10 lifts the header/tabs above Map Discovery's
+          fixed full-viewport map (DiscoveryMap), which would otherwise
+          paint over these non-positioned elements. */}
+      <div className="relative z-10">
+        <PageHeader
+          title="Discovery"
+          description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
+        />
+        <DiscoverySwitch active={active} reviewCount={reviewCount} className="mt-4" />
+      </div>
       <div className="mt-6">
         <div hidden={active !== "map"}>
           <DiscoveryWorkspace

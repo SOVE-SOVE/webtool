@@ -471,7 +471,26 @@ export function DiscoveryWorkspace({
   const noWebsiteCount = visible.filter((b) => b.website_status === "none").length;
 
   return (
-    <div>
+    <>
+      {/* Full-viewport base layer (fixed; see DiscoveryMap). Always
+          mounted — not only once a search has results — so the page
+          opens on the map. */}
+      <DiscoveryMap
+        businesses={visible}
+        selectedId={activeSelectionId}
+        onSelect={setSelectedId}
+        mapVisible={mapVisible}
+        onQueue={(id) => {
+          const business = visible.find((b) => b.id === id);
+          if (business) handleQueue(business);
+        }}
+        onUnqueue={(id) => {
+          const business = visible.find((b) => b.id === id);
+          if (business) handleUnqueue(business);
+        }}
+        queuingId={queuingId}
+      />
+    <div className="relative z-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-fg-muted">
           Find businesses that might be a good fit for a website redesign, then queue and review the best ones
@@ -481,24 +500,6 @@ export function DiscoveryWorkspace({
           Import from Instagram
         </button>
       </div>
-
-      {activeResults && activeResults.length > 0 && (
-        <DiscoveryMap
-          businesses={visible}
-          selectedId={activeSelectionId}
-          onSelect={setSelectedId}
-          mapVisible={mapVisible}
-          onQueue={(id) => {
-            const business = visible.find((b) => b.id === id);
-            if (business) handleQueue(business);
-          }}
-          onUnqueue={(id) => {
-            const business = visible.find((b) => b.id === id);
-            if (business) handleUnqueue(business);
-          }}
-          queuingId={queuingId}
-        />
-      )}
 
       {/* Search controls — always visible: this is where discovery starts.
           One panel, one visual unit: the five criteria fields share a grid
@@ -946,9 +947,12 @@ export function DiscoveryWorkspace({
         </>
       )}
 
+    </div>
+      {/* Outside the z-10 page wrapper so the modal's own stacking isn't
+          trapped beneath the dashboard header. */}
       {showImportModal && (
         <InstagramImportModal onClose={() => setShowImportModal(false)} onImported={handleImported} />
       )}
-    </div>
+    </>
   );
 }

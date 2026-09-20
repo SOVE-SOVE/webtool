@@ -11,6 +11,27 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-20 (Discovery map redesign, T1) — Full-viewport map as the base layer
+
+**Mode:** background job, worktree branch `worktree-discovery-fullscreen-map`.
+**Changed:** `DiscoveryMap` root is now `fixed` + `z-0`, filling everything the dashboard
+chrome leaves free (below the mobile top bar / desktop header strip, above the mobile bottom
+nav, right of the desktop sidebar — offsets mirror `dashboard/layout.tsx`), so navigation stays
+usable. The `h-72 sm:h-80` bordered box is gone. `DiscoveryWorkspace` now renders the map
+unconditionally (it used to mount only once a search had results) and its page content sits in a
+`relative z-10` wrapper above the map; the Instagram import modal is rendered outside that
+wrapper so its stacking isn't trapped under the z-30 header. `DiscoveryLayout` wraps the page
+header + tabs in `relative z-10` (found in browser QA: the fixed map otherwise painted over
+them). The "No mapped locations" banner now only shows when there are results but none mapped.
+**Not changed:** search/filter/data logic. Controls are temporarily stacked over the map; T2/T3
+reposition them. `scrollWheelZoom` is still off.
+**Verified (real browser, temp user, worktree dev on :3100 with a Playwright CORS shim since the
+API only allows :3000):** map 1216x856 at 1440x900, no search needed; tabs/sidebar/Run search
+clickable over it; hidden on Review Queue and full-size again on return; 390px has no horizontal
+overflow; 0 console errors. Build, eslint, vitest 381/381.
+
+---
+
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
 
 **Mode:** background job, worktree branch `worktree-ui-motion-system`.

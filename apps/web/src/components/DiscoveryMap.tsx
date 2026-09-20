@@ -239,14 +239,18 @@ export default function DiscoveryMap({
   }, [selectedId, located]);
 
   return (
-    <div className="relative mt-4">
+    // Full-viewport base layer: pinned to everything the dashboard chrome
+    // leaves free — below the mobile top bar / desktop header strip,
+    // above the mobile bottom nav, right of the desktop sidebar — so the
+    // app navigation stays reachable. Offsets mirror dashboard/layout.tsx.
+    <div className="fixed inset-x-0 bottom-14 top-12 z-0 lg:bottom-0 lg:left-56 lg:top-11">
       <div
         ref={containerRef}
-        className="h-72 w-full overflow-hidden rounded-md border border-border sm:h-80"
+        className="h-full w-full"
         aria-label="Map of discovered business locations"
       />
-      {located.length === 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-border bg-surface-subtle px-3 py-1.5 text-center text-xs text-fg-muted">
+      {businesses.length > 0 && located.length === 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1000] border-t border-border bg-surface-subtle px-3 py-1.5 text-center text-xs text-fg-muted">
           No mapped locations in view — a business is pinned once its own site publishes map coordinates.
         </div>
       )}
