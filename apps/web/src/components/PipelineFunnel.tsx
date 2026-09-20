@@ -47,7 +47,9 @@ export function PipelineFunnel({
   const filled = segments.filter((s) => s.count > 0);
 
   return (
-    <div className="card p-4">
+    // `@container`: the legend picks its column count from this card's own width, not the
+    // viewport — the card sits beside the calendar, so its width varies independently of the screen.
+    <div className="card @container flex flex-1 flex-col p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm text-fg-muted">
           <span className="text-2xl font-semibold tabular-nums text-fg">{total}</span>{" "}
@@ -62,7 +64,7 @@ export function PipelineFunnel({
       </div>
 
       {total === 0 ? (
-        <div className="mt-3 flex h-9 items-center justify-center rounded-md border border-dashed border-border-strong px-3 text-sm text-fg-subtle">
+        <div className="mt-3 flex min-h-9 flex-1 items-center justify-center rounded-md border border-dashed border-border-strong px-3 text-sm text-fg-subtle">
           No leads in the pipeline yet
           {emptyAction && <span className="ml-2">{emptyAction}</span>}
         </div>
@@ -85,7 +87,7 @@ export function PipelineFunnel({
             })}
           </div>
 
-          <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-0.5 sm:grid-cols-3 xl:grid-cols-5">
+          <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-0.5 @md:grid-cols-3 @3xl:grid-cols-5">
             {segments.map((segment) => {
               const body = (
                 <>
@@ -115,6 +117,8 @@ export function PipelineFunnel({
               );
             })}
           </ul>
+          {/* Takes any spare height (the card stretches to match the calendar beside it), so the footer links sit at the bottom. */}
+          <div className="flex-1" aria-hidden="true" />
         </>
       )}
 

@@ -10,7 +10,7 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
-## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring
+## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring, T5 polish
 
 **Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
 **Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
@@ -75,6 +75,17 @@ whole-percent number inside and "N won · M lost" next to it. The calculation is
 length (clamped 0–100). 0% / null draw no arc (a round-capped zero-length arc paints a stray dot); no decided deals →
 empty track, "—", "No closed deals yet". Same single token colour as the revenue line, `role="img"` with a spoken
 description. Verified in the browser at 62% (8 won / 5 lost), 100% and no data; 416 web tests (+5 in `winRate.test.ts`).
+
+**T5 — polish pass (Today → Overview):** reviewed funnel + revenue chart + ring together at 1440/1280/1024/768/390, light
+and dark, with zero / two-deal / realistic (77 leads, 8 won) data on a throwaway QA workspace (deleted after). Found and fixed
+(layout only, no behaviour change): (1) at ≤1280 the funnel legend's five viewport-driven columns truncated "Meeting booked" —
+legend and revenue split now key off their own card width (`@container` queries) so they can't disagree with the layout beside
+them; (2) the tall Revenue card sat under only the left column, leaving a ~300px void beneath the calendar — Pipeline + Calendar
+are now one row and Revenue spans the full width below (wider chart, right edges line up); (3) with an empty pipeline the short
+funnel card left a gap beside the calendar — the Pipeline card now stretches to the row height (empty-state box grows, footer
+links pin to the bottom; calendar stays `self-start`). Card bottoms measured equal (524/524) across all three data levels.
+Colours are existing tokens only in both themes; 390/768/1024 have no horizontal overflow. 416 web tests, eslint 0 errors,
+`next build --webpack` passes.
 
 ---
 

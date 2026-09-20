@@ -141,71 +141,49 @@ export function TodayOverviewTab() {
 
       {error && <ErrorState message={error} onRetry={load} compact />}
 
-      {/* Overview row: the primary Pipeline + Revenue figures on the left,
-          and the compact month calendar as a secondary column on the right
-          (stacked below them on narrow screens). The full Calendar page stays
-          the place for detail — this is an at-a-glance month view. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-        <div className="min-w-0 space-y-6">
-          {/* Pipeline — where every lead sits right now: one segment per
-              stage, sized by lead count; each segment opens the Leads list
-              filtered to that stage. The two links underneath aren't
-              pipeline stages but were on the old stat boxes, so they stay
-              one click away. */}
-          <section>
-            <h2 className="section-title">Pipeline</h2>
-            <div className="mt-2">
-              {!data || !funnel ? (
-                <div className="card p-4">
-                  <Skeleton className="h-7 w-40" />
-                  <Skeleton className="mt-3 h-9 w-full" />
-                  <Skeleton className="mt-3 h-4 w-3/4" />
-                </div>
-              ) : (
-                <PipelineFunnel
-                  funnel={funnel}
-                  emptyAction={
-                    <Link href="/dashboard/discovery" className="text-fg underline underline-offset-2 hover:no-underline">
-                      Open Map Discovery
-                    </Link>
-                  }
-                >
-                  <Link href="/dashboard/build/planning" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
-                    Planning/build needing review{" "}
-                    <span className="font-semibold tabular-nums text-fg">{planningNeedsReviewCount ?? 0}</span>
+      {/* Overview row: the Pipeline funnel, with the compact month calendar
+          as a secondary column on the right (stacked below on narrow
+          screens). Revenue then spans the full width beneath. The full
+          Calendar page stays the place for detail — this is an at-a-glance
+          month view. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        {/* Pipeline — where every lead sits right now: one segment per
+            stage, sized by lead count; each segment opens the Leads list
+            filtered to that stage. The two links underneath aren't
+            pipeline stages but were on the old stat boxes, so they stay
+            one click away. */}
+        <section className="flex flex-col">
+          <h2 className="section-title">Pipeline</h2>
+          <div className="mt-2 flex flex-1 flex-col">
+            {!data || !funnel ? (
+              <div className="card p-4">
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="mt-3 h-9 w-full" />
+                <Skeleton className="mt-3 h-4 w-3/4" />
+              </div>
+            ) : (
+              <PipelineFunnel
+                funnel={funnel}
+                emptyAction={
+                  <Link href="/dashboard/discovery" className="text-fg underline underline-offset-2 hover:no-underline">
+                    Open Map Discovery
                   </Link>
-                  <Link href="/dashboard/build/projects" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
-                    Projects in progress{" "}
-                    <span className="font-semibold tabular-nums text-fg">{data.overview.active_projects}</span>
-                  </Link>
-                </PipelineFunnel>
-              )}
-            </div>
-          </section>
+                }
+              >
+                <Link href="/dashboard/build/planning" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  Planning/build needing review{" "}
+                  <span className="font-semibold tabular-nums text-fg">{planningNeedsReviewCount ?? 0}</span>
+                </Link>
+                <Link href="/dashboard/build/projects" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  Projects in progress{" "}
+                  <span className="font-semibold tabular-nums text-fg">{data.overview.active_projects}</span>
+                </Link>
+              </PipelineFunnel>
+            )}
+          </div>
+        </section>
 
-          {/* Revenue — "Revenue won" as a plain large number beside a
-              cumulative revenue line (won deals over time). The other
-              money figures the old boxes showed (proposals out, potential
-              value, win rate) sit under the number. */}
-          <section>
-            <h2 className="section-title">Revenue</h2>
-            <div className="mt-2">
-              {salesError ? (
-                <ErrorState message={salesError} onRetry={load} compact />
-              ) : !sales ? (
-                <div className="card p-4">
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="mt-3 h-10 w-48" />
-                  <Skeleton className="mt-6 h-40 w-full" />
-                </div>
-              ) : (
-                <RevenueOverview sales={sales} />
-              )}
-            </div>
-          </section>
-        </div>
-
-        <section className="card min-w-0" aria-labelledby="today-calendar-heading">
+        <section className="card min-w-0 lg:self-start" aria-labelledby="today-calendar-heading">
           <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-2.5">
             <h2 id="today-calendar-heading" className="text-sm font-semibold text-fg">
               Calendar
@@ -233,6 +211,27 @@ export function TodayOverviewTab() {
           </div>
         </section>
       </div>
+
+      {/* Revenue — "Revenue won" as a plain large number beside a
+          cumulative revenue line (won deals over time). The other money
+          figures the old boxes showed (proposals out, potential value,
+          win rate) sit under the number. */}
+      <section>
+        <h2 className="section-title">Revenue</h2>
+        <div className="mt-2">
+          {salesError ? (
+            <ErrorState message={salesError} onRetry={load} compact />
+          ) : !sales ? (
+            <div className="card p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="mt-3 h-10 w-48" />
+              <Skeleton className="mt-6 h-40 w-full" />
+            </div>
+          ) : (
+            <RevenueOverview sales={sales} />
+          )}
+        </div>
+      </section>
 
       {/* Three equal panels, side by side — today's work, split by kind
           rather than stacked as one long page. */}

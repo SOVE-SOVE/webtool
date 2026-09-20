@@ -57,8 +57,9 @@ export function RevenueOverview({ sales }: { sales: SalesDashboard }) {
   const emptyMessage = !data || anyInRange ? null : data.prior_deals_count > 0 ? "No deals won in this period" : "No deals won yet";
 
   return (
-    <div className="card p-4">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(12rem,auto)_minmax(0,1fr)]">
+    // `@container`: the two-column split follows this card's width, not the viewport.
+    <div className="card @container p-4">
+      <div className="grid grid-cols-1 gap-5 @2xl:grid-cols-[minmax(12rem,auto)_minmax(0,1fr)]">
         <div className="min-w-0">
           <p className="text-xs text-fg-muted">Revenue won</p>
           <p className="mt-1 break-words text-4xl font-semibold leading-none text-fg xl:text-5xl">
