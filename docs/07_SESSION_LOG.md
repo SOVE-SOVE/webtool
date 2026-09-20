@@ -50,6 +50,21 @@ default (a failed run keeps it open, so its error stays visible).
 Verified: collapsed with an existing search, expand/collapse, expanded with a mocked empty
 search list, expanded-then-switch-search re-collapses.
 
+**T4 — Header + tabs float.** In `DiscoveryLayout`, on the Map view only, the header (title,
+description, tabs) is a `fixed` `z-20` layer over the top of the map: a frosted 70%-opacity card
+(`max-w-2xl`, left) and the Import from Instagram button (right; "Import" on mobile). The layer is
+`pointer-events-none` so the map stays draggable around the card/button. Review Queue keeps the
+ordinary in-flow header (`floating = active === "map"`), tabs/links unchanged. The import modal's
+open state moved from `DiscoveryWorkspace` to the layout (`importOpen`/`onImportOpenChange`
+props; `handleImported` untouched). The workspace's own intro paragraph was dropped — it duplicated
+the header description. The layer publishes its measured height as `--discovery-layer-h` on the
+layout root (ResizeObserver), and the T2 panel's `top` is `chrome + var(--discovery-layer-h)`, so
+the panel always sits just under the header however the description wraps; the in-flow results
+get the same var as a top margin to stay below it.
+Verified: layer 1216x161 at 1440 (card 672x137, translucent), panel at y=205 directly beneath,
+Import opens/closes the modal (Esc), tab switching + Review view unchanged, 0 console errors,
+390px clean (layer 181px, panel clears it).
+
 ---
 
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion

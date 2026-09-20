@@ -100,10 +100,17 @@ export function DiscoveryWorkspace({
   initialSearchId,
   mapVisible = true,
   onQueueChanged,
+  importOpen = false,
+  onImportOpenChange,
 }: {
   initialSearchId?: string;
   mapVisible?: boolean;
   onQueueChanged?: () => void;
+  /** Whether the Instagram import modal is open. Owned by
+   * DiscoveryLayout, whose floating header layer holds the button that
+   * opens it. */
+  importOpen?: boolean;
+  onImportOpenChange?: (open: boolean) => void;
 }) {
   const [searches, setSearches] = useState<DiscoverySearch[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(initialSearchId ?? null);
@@ -117,7 +124,6 @@ export function DiscoveryWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
-  const [showImportModal, setShowImportModal] = useState(false);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   // Tracks which result ids have already been shown, so a poll/filter/
@@ -517,15 +523,8 @@ export function DiscoveryWorkspace({
         queuingId={queuingId}
       />
     <div className="relative z-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-fg-muted">
-          Find businesses that might be a good fit for a website redesign, then queue and review the best ones
-          before bringing them into the CRM.
-        </p>
-        <button onClick={() => setShowImportModal(true)} className="btn btn-secondary btn-sm">
-          Import from Instagram
-        </button>
-      </div>
+      {/* The intro copy and the "Import from Instagram" button now live in
+          DiscoveryLayout's floating header layer. */}
 
       {/* Search controls — always visible: this is where discovery starts.
           A frosted panel floating over the map's top-left corner (fixed,
@@ -533,11 +532,14 @@ export function DiscoveryWorkspace({
           fields stack in one column, then a divider sets the
           website-status refinement + the primary Run search action apart
           as their own block, then a second divider sets the quiet helper
-          copy apart from both. The top offset clears the page header +
-          tabs above it (and the mobile top bar / desktop header strip). */}
+          copy apart from both. It sits just below the floating header
+          layer: `--discovery-layer-h` is that layer's measured height,
+          published by DiscoveryLayout (the fallback only applies if the
+          layout hasn't measured yet), on top of the mobile top bar /
+          desktop header strip. */}
       <form
         onSubmit={handleCreate}
-        className="fixed inset-x-4 top-[calc(3rem+11rem)] z-20 max-h-[calc(100dvh-3rem-11rem-3.5rem-1rem)] overflow-y-auto rounded-lg border border-border bg-surface/80 p-4 shadow-lg backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+1rem)] lg:top-[calc(2.75rem+11rem)] lg:max-h-[calc(100dvh-2.75rem-11rem-1rem)]"
+        className="fixed inset-x-3 top-[calc(3rem+var(--discovery-layer-h,7rem))] z-20 max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-0.75rem)] overflow-y-auto rounded-lg border border-border bg-surface/80 p-4 shadow-lg backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem)]"
       >
         <button
           type="button"
@@ -1018,8 +1020,8 @@ export function DiscoveryWorkspace({
     </div>
       {/* Outside the z-10 page wrapper so the modal's own stacking isn't
           trapped beneath the dashboard header. */}
-      {showImportModal && (
-        <InstagramImportModal onClose={() => setShowImportModal(false)} onImported={handleImported} />
+      {importOpen && (
+        <InstagramImportModal onClose={() => onImportOpenChange?.(false)} onImported={handleImported} />
       )}
     </>
   );
