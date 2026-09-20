@@ -40,7 +40,9 @@ export default function SalesLayout({ children }: { children: React.ReactNode })
     <div className="p-4 sm:p-6">
       <PageHeader title="Sales" />
       <SalesSwitch active={active} className="mt-4" />
-      <div className="mt-6">{children}</div>
+      <div key={pathname} className="animate-fade-in mt-6">
+        {children}
+      </div>
     </div>
   );
 }

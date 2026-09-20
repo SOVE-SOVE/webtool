@@ -452,7 +452,7 @@ function SettingsPageInner() {
                         type="button"
                         onClick={() => setTheme(opt.mode)}
                         aria-pressed={theme === opt.mode}
-                        className={`flex-1 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm ${
+                        className={`toggle-pill flex-1 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm ${
                           theme === opt.mode
                             ? "border-accent bg-accent text-accent-fg"
                             : "border-border-strong text-fg hover:bg-surface-hover"

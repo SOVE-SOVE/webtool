@@ -199,6 +199,7 @@ export default function SalesPipelinePage() {
 
           <Panel
             title="Recent sales activity"
+            swapKey={activityTab}
             subtitle={`${data.outreach_activity.sent_last_7_days} sent · ${data.outreach_activity.replied_last_7_days} replied in the last 7 days${
               data.outreach_activity.reply_rate_pct !== null
                 ? ` · ${pct(data.outreach_activity.reply_rate_pct)} reply rate`

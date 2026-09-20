@@ -4,7 +4,13 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
-import { MOBILE_PRIMARY_HREFS, NAV_SECTIONS, isNavLinkActive, type NavLink as NavLinkType } from "@/lib/nav";
+import {
+  MOBILE_PRIMARY_HREFS,
+  NAV_SECTIONS,
+  isNavLinkActive,
+  pageFadeKey,
+  type NavLink as NavLinkType,
+} from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
 import { ActivityIndicatorButton } from "@/components/activity/ActivityIndicatorButton";
 import { Sidebar } from "@/components/nav/Sidebar";
@@ -186,7 +192,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileNavOpen(false)}
             >
               <aside
-                className="flex h-full w-64 flex-col border-r border-border bg-surface"
+                className="animate-slide-in-left flex h-full w-64 flex-col border-r border-border bg-surface"
                 onClick={(e) => e.stopPropagation()}
               >
                 <Sidebar
@@ -228,7 +234,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             <CommandMenuButton />
             <ActivityIndicatorButton />
           </div>
-          <div className="min-w-0 flex-1">{children}</div>
+          {/* Keyed so a real page change replays a short opacity fade (no
+              movement, so no layout shift); see pageFadeKey. */}
+          <div key={pageFadeKey(pathname)} className="animate-fade-in min-w-0 flex-1">
+            {children}
+          </div>
         </main>
 
         <BottomNav pathname={pathname} search={searchParams} onOpenMore={() => setMobileNavOpen(true)} />

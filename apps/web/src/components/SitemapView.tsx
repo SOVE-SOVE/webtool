@@ -16,6 +16,7 @@ import {
   type SitemapPageCreate,
   type SitemapPageUpdate,
 } from "@/lib/api";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 
 function slugify(title: string): string {
   return title
@@ -425,7 +426,7 @@ function PageRow({
         )}
       </div>
 
-      {expanded && !editing && (
+      <AnimatedHeight open={expanded && !editing}>
         <div className="mt-2 space-y-1.5 pl-1 text-sm text-fg-muted">
           <p>{page.purpose}</p>
           <p>
@@ -457,7 +458,7 @@ function PageRow({
             </div>
           )}
         </div>
-      )}
+      </AnimatedHeight>
 
       {editing && (
         <div className="mt-2">

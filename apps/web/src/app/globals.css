@@ -33,6 +33,20 @@
   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
   --focus-ring: #171717;
   --overlay: rgb(0 0 0 / 0.4); /* modal/drawer backdrop */
+
+  /* Frosted-glass panels floating over the Discovery map (.map-glass).
+     Values sit against the worst OSM tile colours (light land / water /
+     orange roads): light glass 55% white -> primary 12.5:1, muted 5.4:1,
+     faint 4.7:1; dark glass 72% (the map stays light under it, so it
+     can't go more transparent) -> 7:1 / 5.2:1 / 4.2:1. The muted/faint
+     text colours are scoped overrides of --fg-muted/--fg-subtle inside
+     the panel, because the app-wide ones are too pale on glass. */
+  --glass-bg: color-mix(in srgb, #ffffff 55%, transparent);
+  --glass-border: rgb(255 255 255 / 0.6);
+  --glass-shadow:
+    0 8px 32px rgb(15 23 42 / 0.14), 0 1px 2px rgb(15 23 42 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.5);
+  --glass-fg-muted: #525252;
+  --glass-fg-subtle: #5c5c5c;
   --danger: #dc2626;
   --danger-fg: #ffffff;
 
@@ -83,6 +97,12 @@
   --accent-fg: #171717;
   --focus-ring: #f5f5f5;
   --overlay: rgb(0 0 0 / 0.6);
+  --glass-bg: color-mix(in srgb, #171717 72%, transparent);
+  --glass-border: rgb(255 255 255 / 0.14);
+  --glass-shadow:
+    0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --glass-fg-muted: #d4d4d4;
+  --glass-fg-subtle: #c8c8c8;
   --danger: #f87171;
   --danger-fg: #171717;
 
@@ -118,6 +138,12 @@
     --accent-fg: #171717;
     --focus-ring: #f5f5f5;
     --overlay: rgb(0 0 0 / 0.6);
+    --glass-bg: color-mix(in srgb, #171717 72%, transparent);
+    --glass-border: rgb(255 255 255 / 0.14);
+    --glass-shadow:
+      0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
+    --glass-fg-muted: #d4d4d4;
+    --glass-fg-subtle: #c8c8c8;
     --danger: #f87171;
     --danger-fg: #171717;
 
@@ -194,17 +220,79 @@ html[data-font="mono"] {
      --duration-fast/--duration-base (below, in :root) are referenced via
      Tailwind's arbitrary-value syntax instead: duration-[var(--duration-fast)]. */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Calm decelerating curves for things that arrive or leave. Enter
+     with ease-out-calm (fast start, long soft settle — no overshoot,
+     no bounce); leave with ease-in-calm, its mirror, so an element
+     exits along the path it came in on. */
+  --ease-out-calm: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-calm: cubic-bezier(0.32, 0, 0.67, 0);
 }
 
 :root {
-  /* Shared motion vocabulary. Most UI transitions should use one of
-     these two durations (with ease-standard above) rather than picking
-     their own — see docs/05_DECISIONS.md for the rationale.
-     ProgressBar's existing duration-500 is intentionally left outside
-     this scale (a slower fill reads correctly for a progress bar
-     specifically). */
+  /* Shared motion vocabulary — three tiers, one calm curve family.
+     Pick the tier by what is moving, not by taste:
+       --duration-fast   quick feedback on a control (hover, press,
+                         focus, check) — 120–160ms
+       --duration-base   a standard UI state change (tab/chip selection,
+                         expand/collapse, row highlight) — 180–220ms
+       --duration-panel  a surface arriving or leaving (popover,
+                         dropdown, modal, side panel) — 220–280ms
+     Pair them with --ease-standard (state changes), --ease-out-calm
+     (entrances) or --ease-in-calm (exits). Reach for them through the
+     `duration-fast|base|panel` / `motion-fast|base|panel` utilities
+     below; the arbitrary form `duration-[var(--duration-fast)]` still
+     works. ProgressBar's duration-500 is intentionally outside this
+     scale (a slower fill reads correctly for a progress bar).
+     Reduced motion is handled once, globally — see the
+     `prefers-reduced-motion` block at the end of this file. */
   --duration-fast: 150ms;
   --duration-base: 200ms;
+  --duration-panel: 250ms;
+  /* A "this just changed" highlight is a deliberate exception to the
+     scale: long enough to notice, then it settles without a trace. */
+  --duration-highlight: 1400ms;
+  /* How far an arriving popover/dropdown rises from. Small on purpose:
+     it should read as "settling into place", never as travel. */
+  --rise-distance: 6px;
+}
+
+/* Named duration utilities. Tailwind has no theme namespace for
+   durations (see docs/05_DECISIONS.md), so these are plain utilities
+   that set the same `--tw-duration` variable Tailwind's own
+   `duration-*` does — so they compose with `transition`,
+   `transition-colors`, etc. in either order. */
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--duration-base);
+  transition-duration: var(--duration-base);
+}
+@utility duration-panel {
+  --tw-duration: var(--duration-panel);
+  transition-duration: var(--duration-panel);
+}
+
+/* One-class transitions for the properties UI state actually changes
+   (colour, border, shadow, opacity, transform — all cheap or
+   compositor-friendly; never layout properties). `motion-fast` is the
+   default for interactive controls, `motion-base` for selection/state
+   changes, `motion-panel` for surfaces. */
+@utility motion-fast {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale, translate;
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--duration-fast);
+}
+@utility motion-base {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale, translate;
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--duration-base);
+}
+@utility motion-panel {
+  transition-property: opacity, transform, scale, translate;
+  transition-timing-function: var(--ease-out-calm);
+  transition-duration: var(--duration-panel);
 }
 
 html {
@@ -244,6 +332,21 @@ body {
   textarea::placeholder {
     color: var(--color-fg-subtle);
   }
+  /* Native checkbox/radio keep their rendering; only the keyboard focus
+     ring eases in (its offset opens from 0 to 2px). */
+  input[type="checkbox"],
+  input[type="radio"] {
+    outline: 2px solid transparent;
+    outline-offset: 0;
+    transition:
+      outline-color var(--duration-fast) var(--ease-standard),
+      outline-offset var(--duration-fast) var(--ease-standard);
+  }
+  input[type="checkbox"]:focus-visible,
+  input[type="radio"]:focus-visible {
+    outline-color: var(--focus-ring);
+    outline-offset: 2px;
+  }
   option {
     background-color: var(--color-surface);
     color: var(--color-fg);
@@ -262,7 +365,11 @@ body {
   /* Buttons. `.btn` carries shape/sizing; combine with a color modifier,
      e.g. className="btn btn-primary". */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-[var(--duration-fast)] ease-standard active:scale-[0.97] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /* A disabled button must not react to the pointer. */
+  .btn:disabled {
+    scale: none;
   }
   .btn-primary {
     @apply bg-accent text-accent-fg hover:opacity-90;
@@ -285,7 +392,7 @@ body {
     @apply text-sm font-medium text-fg;
   }
   .input {
-    @apply w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-fg placeholder:text-fg-subtle focus:border-fg focus:outline-none focus:ring-1 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50;
+    @apply w-full rounded-md border border-border-strong bg-surface px-3 py-1.5 text-sm text-fg transition-[border-color,box-shadow] duration-fast ease-standard placeholder:text-fg-subtle hover:border-fg-subtle focus:border-fg focus:outline-none focus:ring-1 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border-strong motion-reduce:transition-none;
   }
   select.input {
     @apply pr-8;
@@ -345,13 +452,39 @@ body {
   .chip {
     @apply inline-flex h-7 max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle pl-2.5 pr-1 text-xs text-fg;
   }
+  /* A pill that can be switched on/off or picked from a set (a filter
+     scope, a view toggle). Selection changes colour smoothly instead of
+     snapping; pair with aria-pressed / aria-current on the element. */
+  .toggle-pill {
+    @apply transition-colors duration-fast ease-standard motion-reduce:transition-none;
+  }
 
   /* Surfaces */
   .card {
     @apply rounded-md border border-border bg-surface;
   }
+  /* A card that is itself a target (opens something on click). Only
+     supplies the *transition* — colour changes ease instead of
+     snapping. Nothing lifts, scales or gains a shadow, so controls
+     inside never move under the pointer. The hover colour itself
+     stays with the element (`hover:border-border-strong`): a utility
+     like `border-border` outranks anything in this layer. */
+  .card-interactive {
+    @apply transition-[border-color,background-color] duration-fast ease-standard motion-reduce:transition-none;
+  }
   .panel {
     @apply rounded-md border border-border bg-surface p-4;
+  }
+  /* Frosted-glass overlay floating over the Discovery map (header bar,
+     search panel, results bar, notes). Shape only — padding/position stay
+     with the element. Colours come from the --glass-* tokens above. */
+  .map-glass {
+    @apply rounded-lg border backdrop-blur-xl backdrop-saturate-150;
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    --fg-muted: var(--glass-fg-muted);
+    --fg-subtle: var(--glass-fg-subtle);
   }
 
   /* Tables */
@@ -392,6 +525,26 @@ body {
   .modal-panel {
     @apply w-full max-w-md rounded-lg border border-border bg-surface p-5 shadow-xl;
   }
+  /* Modals materialise: the scrim fades, the panel fades while
+     settling up a few px. Enter only — dialogs unmount on close, so
+     there is no lingering exit to interrupt. */
+  @media (prefers-reduced-motion: no-preference) {
+    .modal-overlay {
+      animation: fade-in var(--duration-base) var(--ease-standard);
+    }
+    .modal-panel {
+      animation: rise-in var(--duration-panel) var(--ease-out-calm);
+    }
+  }
+
+  /* A small dropdown menu anchored to a trigger (row/card "⋯" menus).
+     Rises into place; its items ease their hover fill. */
+  .menu-panel {
+    animation: rise-in var(--duration-panel) var(--ease-out-calm);
+  }
+  .menu-panel :is(a, button) {
+    @apply transition-colors duration-fast ease-standard;
+  }
 
   /* Right-side slide-in panel (Lead quick preview, background
      activity) — same backdrop convention as .modal-overlay, but
@@ -410,10 +563,14 @@ body {
   }
   @media (prefers-reduced-motion: no-preference) {
     .side-panel-overlay {
-      animation: fade-in var(--duration-fast) var(--ease-standard);
+      animation: fade-in var(--duration-base) var(--ease-standard);
     }
     .side-panel {
-      animation: slide-in-right var(--duration-base) var(--ease-standard);
+      animation: slide-in-right var(--duration-panel) var(--ease-out-calm);
+    }
+    /* The mobile nav drawer enters from the left, the edge it lives on. */
+    .animate-slide-in-left {
+      animation: slide-in-left var(--duration-panel) var(--ease-out-calm);
     }
   }
 
@@ -485,6 +642,30 @@ body {
     animation: fade-in var(--duration-base) var(--ease-standard);
   }
 
+  /* A surface that appears anchored to a trigger (dropdown, popover,
+     menu) fades in while rising a few px into place. Movement is tiny
+     and stays under the pointer's travel, so it never shifts a control
+     away from the cursor. */
+  .animate-rise-in {
+    @apply motion-reduce:animate-none;
+    animation: rise-in var(--duration-panel) var(--ease-out-calm);
+  }
+
+  /* A results list that just re-queried (filter/sort/tab). Two names,
+     one keyframe — see SoftSwap. Opacity only, so layout never moves. */
+  .soft-swap-a {
+    animation: soft-swap-a var(--duration-fast) var(--ease-out-calm);
+  }
+  .soft-swap-b {
+    animation: soft-swap-b var(--duration-fast) var(--ease-out-calm);
+  }
+
+  /* A row/card that was just created or updated: a faint accent tint
+     that fades back to the row's own surface. Nothing moves or resizes. */
+  .row-flash {
+    animation: row-flash var(--duration-highlight) var(--ease-out-calm);
+  }
+
   /* Applied to a completion glyph (checkbox tick, status icon) on the
      frame it newly matches/mounts — a brief acknowledgement, not a
      decorative loop. */
@@ -533,15 +714,57 @@ body {
   }
 }
 
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-distance));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-swap-a {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes soft-swap-b {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes row-flash {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  }
+}
+
 @keyframes checkbox-pop {
   0% {
-    transform: scale(0.85);
-  }
-  50% {
-    transform: scale(1.15);
+    transform: scale(0.92);
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -560,4 +783,29 @@ body {
    OS default, which can be invisible against a dark panel. */
 * {
   scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ---------------------------------------------------------------------
+ * Reduced motion
+ *
+ * The one global switch. When the user asks for less motion, every CSS
+ * transition and animation collapses to (near-)instant — including any
+ * hard-coded duration a component picked for itself — so state changes
+ * still *happen* (colour, opacity, visibility all land immediately) but
+ * nothing slides, scales, pulses or loops. 0.01ms rather than 0 keeps
+ * `transitionend` / `animationend` events firing for code that waits on
+ * them. Components that also add `motion-reduce:*` utilities keep
+ * working; this is the backstop for everything that doesn't.
+ * ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }

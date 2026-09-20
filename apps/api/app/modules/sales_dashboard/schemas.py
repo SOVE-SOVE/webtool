@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -119,3 +120,40 @@ class SalesDashboard(BaseModel):
     # Ranked "what do I do right now" queue — most urgent/highest-
     # opportunity first. See service.py's _build_do_this_next.
     do_this_next: list[AttentionItem]
+
+
+class WonDealsPoint(BaseModel):
+    """One period of the won-deals series. `period_start` is the day
+    itself (group_by=day) or that week's Monday (group_by=week)."""
+
+    period_start: date
+    deals_count: int
+    revenue_cents: int
+    # Won deals closed with no price logged — counted in `deals_count`
+    # (so the count is accurate) but contributing 0 to `revenue_cents`.
+    unpriced_deals_count: int
+
+
+class WonDealsSeries(BaseModel):
+    """Won deals over a requested date range, for the dashboard revenue
+    chart. See service.py's get_won_deals_series for the definitions."""
+
+    start_date: date
+    end_date: date
+    group_by: Literal["day", "week"]
+    # Every period in the range, in order, zero-filled — a quiet day/week
+    # is a real 0, not a gap the chart has to guess at.
+    points: list[WonDealsPoint]
+    total_deals_count: int
+    total_revenue_cents: int
+    total_unpriced_deals_count: int
+    # Won deals closed before `start_date` — the opening balance a
+    # cumulative line needs so it starts at what was already won rather
+    # than at zero.
+    prior_deals_count: int
+    prior_revenue_cents: int
+    # Won deals with no closed_at, so they can't be placed on the
+    # timeline. Reported (not silently dropped) so this series can be
+    # reconciled against the all-time actual_revenue_cents.
+    undated_deals_count: int
+    undated_revenue_cents: int

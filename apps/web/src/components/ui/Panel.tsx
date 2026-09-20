@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SoftSwap } from "./SoftSwap";
 
 /**
  * A compact module: title + optional right slot, then a fixed-height,
@@ -14,7 +15,10 @@ export function Panel({
   right,
   children,
   bodyClassName = "max-h-80",
+  swapKey,
 }: {
+  /** Set when the body switches between views (a tab inside `right`) — the body eases instead of snapping. */
+  swapKey?: string;
   title: string;
   subtitle?: string;
   right?: ReactNode;
@@ -30,7 +34,13 @@ export function Panel({
         </div>
         {right && <div className="shrink-0 text-xs text-fg-muted">{right}</div>}
       </div>
-      <div className={`overflow-y-auto overscroll-contain ${bodyClassName}`}>{children}</div>
+      {swapKey === undefined ? (
+        <div className={`overflow-y-auto overscroll-contain ${bodyClassName}`}>{children}</div>
+      ) : (
+        <SoftSwap signature={swapKey} className={`overflow-y-auto overscroll-contain ${bodyClassName}`}>
+          {children}
+        </SoftSwap>
+      )}
     </section>
   );
 }

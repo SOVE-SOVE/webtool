@@ -255,7 +255,64 @@ auto-animate) was ruled out per the task's own instruction to avoid a
 new dependency — the CSS-only approach already covers every requested
 transition at the specified 150–250ms scale.
 
-## 2026-09-14 — Checklist ownership/blocked/next-action: shared logic and UI, not a merged table
+## 2026-09-19 — UI motion foundation: three duration tiers, calm curves, one global reduced-motion rule
+
+**Decision:** Extended the 2026-09-14 motion vocabulary in `globals.css`
+rather than replacing it. Tokens: `--duration-fast` (150ms, quick control
+feedback), `--duration-base` (200ms, state changes), new
+`--duration-panel` (250ms, popovers/dropdowns/modals/side panels);
+`--ease-standard` kept for state changes, new `--ease-out-calm`
+(entrances) and `--ease-in-calm` (exits, its mirror). Utilities:
+`duration-fast|base|panel` (via Tailwind `@utility`, setting
+`--tw-duration` so they compose with `transition-*`), one-class
+`motion-fast|base|panel` transitions (colour/border/shadow/opacity/
+transform only), and `.animate-rise-in` (fade + `--rise-distance` 6px).
+Reduced motion is now handled once, globally: under
+`prefers-reduced-motion: reduce` every animation/transition collapses to
+0.01ms with iteration-count 1.
+
+**Why:** Existing motion had two tiers and no panel tier, and reduced
+motion was opt-in per component (`motion-reduce:*`), so any component
+that forgot it — or a hard-coded duration — still animated. A blanket
+`!important` rule makes the guarantee structural. 0.01ms (not 0) keeps
+`transitionend`/`animationend` firing for code waiting on them
+(`AnimatedHeight`). The earlier note that named duration classes were
+impossible only ruled out the *theme namespace*; `@utility` is the
+supported route to named classes, and the arbitrary-value form still
+works so no existing class was touched.
+
+**Alternatives considered:** A motion library (springs) — rejected again:
+everything here is a short, non-gesture state change where CSS is
+enough. Zeroing the duration tokens under reduced motion — rejected as
+it wouldn't catch hard-coded durations.
+
+## 2026-09-19 — Workflow motion: settle on query change, tint on change, never on load
+
+**Decision:** Data/navigation motion follows three rules. (1) A results list
+*settles* (150ms opacity 0.6→1, `SoftSwap`) when the user's query changes
+(tab/filter/sort), keyed on those choices only — never on search text (typing
+must stay immediate) and never on data (polls must not pulse). (2) A row that
+was created or updated tints briefly (`useRecentChanges` + `.row-flash`,
+1.4s) — diffed against the *unfiltered* dataset so revealing already-loaded
+rows via a filter is never mistaken for a new row, with nothing on first load.
+(3) Page changes fade the content wrapper (200ms, opacity only) via a
+`pageFadeKey`-keyed element in the dashboard layout.
+
+**Why:** Motion should explain a change, not decorate a load. Opacity-only
+avoids layout shift; alternating two identical keyframe names restarts the
+animation without remounting (focus, scroll, row state survive). A
+`template.tsx` was rejected for the page fade: per the Next docs a template
+only remounts when *its own* segment changes, so `dashboard/template.tsx`
+would never re-fade between `/dashboard/leads` and `/dashboard/clients`.
+Sales and Discovery keep a persistent header/tab strip in their own layouts,
+so `pageFadeKey` collapses them to one key.
+
+**Alternatives considered:** Per-row enter/exit animation and FLIP list
+reordering — rejected (animates every item, needs mount/unmount lifecycle
+changes, risks jumpiness); a motion library — rejected again, CSS suffices.
+Modals/menus stay enter-only (they unmount on close).
+
+: shared logic and UI, not a merged table
 
 **Decision:** Extended both checklist systems (`checklists/` — Client
 Setup & Delivery, and `stage_checklists/` — Discovery/Lead/Planning/

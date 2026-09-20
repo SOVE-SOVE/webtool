@@ -102,7 +102,7 @@ export function FilterPopover({
           role="dialog"
           aria-label={label}
           tabIndex={-1}
-          className={`animate-fade-in absolute top-full z-30 mt-2 scroll-mb-24 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl outline-none ${
+          className={`animate-rise-in absolute top-full z-30 mt-2 scroll-mb-24 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl outline-none ${
             align === "end" ? "right-0" : "left-0"
           }`}
         >
@@ -162,7 +162,7 @@ export function FilterToggle({
   return (
     <label
       className={`flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm ${
-        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface-hover"
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer transition-colors duration-fast ease-standard hover:bg-surface-hover"
       }`}
     >
       <Checkbox

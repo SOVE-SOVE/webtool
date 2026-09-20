@@ -6,6 +6,7 @@ import {
   NAV_SECTIONS,
   PRIMARY_NAV_LINKS,
   isNavLinkActive,
+  pageFadeKey,
 } from "./nav";
 
 function link(href: string) {
@@ -161,5 +162,22 @@ describe("isNavLinkActive", () => {
 
   it("Settings is a standalone link", () => {
     expect(isNavLinkActive("/dashboard/settings", q(), link("/dashboard/settings"))).toBe(true);
+  });
+});
+
+describe("pageFadeKey", () => {
+  it("is the pathname for ordinary pages", () => {
+    expect(pageFadeKey("/dashboard")).toBe("/dashboard");
+    expect(pageFadeKey("/dashboard/clients/abc")).toBe("/dashboard/clients/abc");
+    expect(pageFadeKey("/dashboard/build/planning")).toBe("/dashboard/build/planning");
+  });
+
+  it("holds one key across a workspace whose layout keeps its own header", () => {
+    expect(pageFadeKey("/dashboard/sales/leads")).toBe(pageFadeKey("/dashboard/sales/pipeline"));
+    expect(pageFadeKey("/dashboard/discovery/map")).toBe(pageFadeKey("/dashboard/discovery/review"));
+  });
+
+  it("does not swallow look-alike prefixes", () => {
+    expect(pageFadeKey("/dashboard/salesforce")).toBe("/dashboard/salesforce");
   });
 });

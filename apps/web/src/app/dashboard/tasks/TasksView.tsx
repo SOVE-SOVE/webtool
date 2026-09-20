@@ -26,6 +26,8 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
+import { SoftSwap } from "@/components/ui/SoftSwap";
+import { useRecentChanges } from "@/lib/useRecentChanges";
 import { useToast } from "@/components/ui/ToastProvider";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
@@ -66,7 +68,7 @@ function dueLabel(task: Task, urgency: TaskUrgency): string | null {
   return `Due ${date}`;
 }
 
-function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: () => void; onOpen: () => void }) {
+function TaskRow({ task, onToggle, onOpen, flash }: { task: Task; onToggle: () => void; onOpen: () => void; flash?: boolean }) {
   const urgency = taskUrgency(task);
   const label = dueLabel(task, urgency);
   return (
@@ -80,7 +82,7 @@ function TaskRow({ task, onToggle, onOpen }: { task: Task; onToggle: () => void;
           onOpen();
         }
       }}
-      className="flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
+      className={`flex items-start gap-3 px-4 py-2.5 transition-colors duration-fast ease-standard hover:bg-surface-hover motion-reduce:transition-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${flash ? "row-flash" : ""}`}
     >
       <Checkbox
         checked={task.done}
@@ -183,6 +185,9 @@ export function TasksView() {
       showToast(err instanceof ApiError ? err.message : "Couldn't update this task.", "error");
     }
   }
+
+  // Tasks created/edited/completed since the last load flash briefly.
+  const recentIds = useRecentChanges(tasks, (t) => t.id, (t) => `${t.done}|${t.assigned_user_id}|${t.due_at}|${t.title}`);
 
   const filterOptions = useMemo(() => listTaskFilterOptions(tasks ?? []), [tasks]);
 
@@ -312,7 +317,7 @@ export function TasksView() {
       )}
 
       {tasks && tasks.length > 0 && filteredTasks && filteredTasks.length > 0 && (
-        <div className="mt-4 space-y-4">
+        <SoftSwap signature={`${tab}|${filterKey}`} className="animate-fade-in mt-4 space-y-4">
           {tab !== "done" && (
             <div className="card overflow-hidden">
               {!hasOpenWork && (
@@ -330,6 +335,7 @@ export function TasksView() {
                     {groups[key].map((task) => (
                       <TaskRow
                         key={task.id}
+                        flash={recentIds.has(task.id)}
                         task={task}
                         onToggle={() => handleToggle(task)}
                         onOpen={() => setDetailTask(task)}
@@ -350,6 +356,7 @@ export function TasksView() {
                 {completedTasks.map((task) => (
                   <TaskRow
                     key={task.id}
+                    flash={recentIds.has(task.id)}
                     task={task}
                     onToggle={() => handleToggle(task)}
                     onOpen={() => setDetailTask(task)}
@@ -365,6 +372,7 @@ export function TasksView() {
                 {completedTasks.map((task) => (
                   <TaskRow
                     key={task.id}
+                    flash={recentIds.has(task.id)}
                     task={task}
                     onToggle={() => handleToggle(task)}
                     onOpen={() => setDetailTask(task)}
@@ -373,7 +381,7 @@ export function TasksView() {
               </ul>
             </div>
           )}
-        </div>
+        </SoftSwap>
       )}
 
       {showNewTask && (

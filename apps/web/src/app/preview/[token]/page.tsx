@@ -94,7 +94,7 @@ export default function PublicPreviewPage() {
               <button
                 key={d}
                 onClick={() => setDevice(d)}
-                className={`rounded px-2.5 py-1 capitalize ${device === d ? "bg-accent text-accent-fg" : "text-fg-muted hover:bg-surface-subtle"}`}
+                className={`toggle-pill rounded px-2.5 py-1 capitalize ${device === d ? "bg-accent text-accent-fg" : "text-fg-muted hover:bg-surface-subtle"}`}
               >
                 {d}
               </button>

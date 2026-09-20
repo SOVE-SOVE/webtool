@@ -52,8 +52,11 @@ doesn't spell out on its own:
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Literal
+from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -72,14 +75,18 @@ from app.modules.sales_dashboard.schemas import (
     OutreachActivityItem,
     ProposalSummary,
     SalesDashboard,
+    WonDealsPoint,
+    WonDealsSeries,
 )
 from app.modules.sales_opportunities.models import OpportunityStatus, SalesOpportunity
+from app.modules.workspaces.models import Workspace
 
 HOT_LEAD_SCORE_THRESHOLD = 70
 IMMINENT_MEETING_WINDOW = timedelta(hours=48)
 NEW_LEAD_STALE_AFTER = timedelta(days=2)
 PROPOSAL_STALE_AFTER = timedelta(days=5)
 RECENT_LIST_LIMIT = 10
+WON_DEALS_MAX_RANGE_DAYS = 731  # two years — bounds the zero-filled series
 OUTREACH_RECENT_LIMIT = 15
 OUTREACH_WINDOW = timedelta(days=7)
 DO_THIS_NEXT_LIMIT = 30
@@ -521,3 +528,98 @@ def _build_do_this_next(
 
     scored.sort(key=lambda row: (row[0], row[1]))
     return [item for _, _, item in scored[:DO_THIS_NEXT_LIMIT]]
+
+
+def _workspace_tz(db: Session, workspace_id: uuid.UUID) -> ZoneInfo:
+    workspace = db.get(Workspace, workspace_id)
+    try:
+        return ZoneInfo(workspace.timezone if workspace else "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def get_won_deals_series(
+    db: Session,
+    workspace_id: uuid.UUID,
+    *,
+    start_date: date,
+    end_date: date,
+    group_by: Literal["day", "week"],
+) -> WonDealsSeries:
+    """
+    Won deals over time, for the dashboard revenue chart.
+
+    A "won deal" is a WON SalesOpportunity — the same rows (and the same
+    `proposed_price_cents`) actual_revenue_cents sums, so the two always
+    agree. Each is placed on the day it was closed (`closed_at`) in the
+    *workspace's* timezone, the way billing already dates payments, so a
+    late-evening close doesn't land on the wrong day.
+
+    The range is inclusive of both dates. Weeks start on Monday (ISO); a
+    week that straddles `start_date` is labelled by its Monday and only
+    counts the deals inside the range. Deals with no price are counted
+    but add 0 revenue. The series is zero-filled, and everything closed
+    before `start_date` is summarised in prior_* so a cumulative line can
+    start from the right opening balance.
+    """
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="end must be on or after start")
+    if (end_date - start_date).days >= WON_DEALS_MAX_RANGE_DAYS:
+        raise HTTPException(status_code=400, detail=f"Range can be at most {WON_DEALS_MAX_RANGE_DAYS} days")
+
+    tz = _workspace_tz(db, workspace_id)
+    range_start = datetime.combine(start_date, time.min, tzinfo=tz)
+    range_end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz)
+
+    lead_in_workspace = (
+        select(Lead.id).join(Business, Lead.business_id == Business.id).where(Business.workspace_id == workspace_id)
+    )
+    # One row per won deal (a workspace only has as many as it has
+    # closed sales), split into prior / in-range / undated in Python so
+    # the local-day bucketing doesn't have to be done in SQL.
+    rows = db.execute(
+        select(SalesOpportunity.closed_at, SalesOpportunity.proposed_price_cents).where(
+            SalesOpportunity.status == OpportunityStatus.WON, SalesOpportunity.lead_id.in_(lead_in_workspace)
+        )
+    ).all()
+
+    def period_of(day: date) -> date:
+        return day - timedelta(days=day.weekday()) if group_by == "week" else day
+
+    step = timedelta(days=7 if group_by == "week" else 1)
+    buckets: dict[date, WonDealsPoint] = {}
+    period = period_of(start_date)
+    while period <= end_date:
+        buckets[period] = WonDealsPoint(period_start=period, deals_count=0, revenue_cents=0, unpriced_deals_count=0)
+        period += step
+
+    prior_count = prior_cents = undated_count = undated_cents = 0
+    for closed_at, price in rows:
+        cents = price or 0
+        if closed_at is None:
+            undated_count += 1
+            undated_cents += cents
+        elif closed_at < range_start:
+            prior_count += 1
+            prior_cents += cents
+        elif closed_at < range_end:
+            point = buckets[period_of(closed_at.astimezone(tz).date())]
+            point.deals_count += 1
+            point.revenue_cents += cents
+            if price is None:
+                point.unpriced_deals_count += 1
+
+    points = list(buckets.values())
+    return WonDealsSeries(
+        start_date=start_date,
+        end_date=end_date,
+        group_by=group_by,
+        points=points,
+        total_deals_count=sum(p.deals_count for p in points),
+        total_revenue_cents=sum(p.revenue_cents for p in points),
+        total_unpriced_deals_count=sum(p.unpriced_deals_count for p in points),
+        prior_deals_count=prior_count,
+        prior_revenue_cents=prior_cents,
+        undated_deals_count=undated_count,
+        undated_revenue_cents=undated_cents,
+    )

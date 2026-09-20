@@ -90,6 +90,10 @@ export default function DiscoveryMap({
   const mapRef = useRef<L.Map | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  // Live auto-pan padding shared by every popup (Leaflet reads the Point
+  // when a popup opens, so mutating it is enough) — keeps popups clear of
+  // the floating header layer and search panel drawn over the map.
+  const popupPaddingRef = useRef<L.Point>(L.point(16, 16));
   const fittedSignatureRef = useRef<string>("");
   const wasVisibleRef = useRef(mapVisible);
   const onSelectRef = useRef(onSelect);
@@ -109,7 +113,16 @@ export default function DiscoveryMap({
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
     const markers = markersRef.current;
-    const map = L.map(containerRef.current, { scrollWheelZoom: false }).setView([-25.3, 133.8], 3);
+    // Zoom buttons top-right, not Leaflet's default top-left — that corner
+    // is under the floating header card and search panel. (Offset below
+    // the Import button via the container's className — `!` because
+    // leaflet.css is unlayered and would otherwise outrank the utility.) Attribution keeps
+    // its default bottom-right spot.
+    const map = L.map(containerRef.current, { scrollWheelZoom: false, zoomControl: false }).setView(
+      [-25.3, 133.8],
+      3,
+    );
+    L.control.zoom({ position: "topright" }).addTo(map);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19,
@@ -119,6 +132,18 @@ export default function DiscoveryMap({
     // density is.
     const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45 });
     map.addLayer(cluster);
+    // Top: the header layer's height (`--discovery-layer-h`, published by
+    // DiscoveryLayout) + a gutter. Left: from `sm` up the search panel
+    // (20rem + 0.75rem inset) occupies that column, so popups pan clear of it.
+    const popupPadding = popupPaddingRef.current;
+    const container = containerRef.current;
+    function syncPopupPadding() {
+      const layerH = parseFloat(getComputedStyle(container).getPropertyValue("--discovery-layer-h")) || 0;
+      popupPadding.x = window.innerWidth >= 640 ? 348 : 16;
+      popupPadding.y = layerH + 16;
+    }
+    syncPopupPadding();
+    map.on("resize", syncPopupPadding);
     mapRef.current = map;
     clusterRef.current = cluster;
     setTimeout(() => map.invalidateSize(), 0);
@@ -211,7 +236,7 @@ export default function DiscoveryMap({
       let marker = markersRef.current.get(b.id);
       if (!marker) {
         marker = L.marker([b.latitude, b.longitude], { icon: pinIcon(false, noWebsite(b)) });
-        marker.bindPopup(popupHtml(b, busy));
+        marker.bindPopup(popupHtml(b, busy), { autoPanPaddingTopLeft: popupPaddingRef.current });
         marker.on("click", () => onSelectRef.current(b.id));
         markersRef.current.set(b.id, marker);
         cluster.addLayer(marker);
@@ -250,14 +275,20 @@ export default function DiscoveryMap({
   }, [selectedId, located]);
 
   return (
-    <div className="relative mt-4">
+    // Full-viewport base layer: pinned to everything the dashboard chrome
+    // leaves free — below the mobile top bar / desktop header strip,
+    // above the mobile bottom nav, right of the desktop sidebar — so the
+    // app navigation stays reachable. Offsets mirror dashboard/layout.tsx.
+    <div className="fixed inset-x-0 bottom-14 top-12 z-0 lg:bottom-0 lg:left-56 lg:top-11">
       <div
         ref={containerRef}
-        className="h-72 w-full overflow-hidden rounded-md border border-border sm:h-80"
+        className="h-full w-full [&_.leaflet-top.leaflet-right]:top-10!"
         aria-label="Map of discovered business locations"
       />
-      {located.length === 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-border bg-surface-subtle px-3 py-1.5 text-center text-xs text-fg-muted">
+      {/* A small frosted note, kept clear of the attribution (bottom-right)
+          and — on narrow screens — of the bottom-left results panel. */}
+      {businesses.length > 0 && located.length === 0 && (
+        <div className="pointer-events-none absolute bottom-24 right-3 z-[1000] max-w-xs map-glass px-3 py-2 text-xs text-fg-muted lg:bottom-9">
           No mapped locations in view — a business is pinned once its own site publishes map coordinates.
         </div>
       )}

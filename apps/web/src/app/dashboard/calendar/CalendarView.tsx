@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Badge } from "@/components/ui/Badge";
+import { SoftSwap } from "@/components/ui/SoftSwap";
 import { monthGrid, toDateKey } from "@/lib/calendarGrid";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -435,7 +436,7 @@ export function CalendarView() {
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 border-l border-t border-border text-xs">
+      <SoftSwap signature={monthParam} className="mt-3 grid grid-cols-7 border-l border-t border-border text-xs">
         {WEEKDAY_LABELS.map((label) => (
           <div key={label} className="border-b border-r border-border bg-surface-subtle px-2 py-1 font-medium text-fg-muted">
             {label}
@@ -492,10 +493,10 @@ export function CalendarView() {
             </div>
           );
         })}
-      </div>
+      </SoftSwap>
 
       {selectedMeeting && (
-        <section className="mt-6 max-w-2xl border border-border p-4">
+        <section className="animate-fade-in mt-6 max-w-2xl border border-border p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">{selectedMeeting.title}</h2>
             <button onClick={() => setSelectedMeeting(null)} className="text-xs text-fg-muted hover:underline">

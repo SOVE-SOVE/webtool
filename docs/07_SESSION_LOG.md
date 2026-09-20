@@ -186,6 +186,295 @@ left untouched, not extended. List payload has no in-flight analysis
 marker, so "running" only shows for a Retry started in this tab.
 Successful Add to Leads not exercised live (would create a real Lead).
 **Next up:** Decide whether bulk Approve should stay given it imports.
+## 2026-09-20 (Discovery overlay refinements) — A slim header bar
+
+**Mode:** background job, worktree branch `worktree-discovery-overlay-trim`. Follows the six-task
+Discovery map redesign (entry "Discovery map redesign" below).
+
+**A — Slim header bar.** `DiscoveryLayout`: the description paragraph is removed everywhere (the
+`PageHeader` `description` prop is gone, so Review Queue's in-flow header loses it too). On the Map
+view the floating card is now a single slim row — a compact `text-sm` "Discovery" label (hidden
+below `sm`, where the tabs carry it) beside the unchanged `DiscoverySwitch` tabs + review count
+badge. `DiscoverySwitch` stays in the same tree slot in both modes so it isn't remounted (its
+sliding underline keeps working); its own bottom border is transparent inside the bar so it
+doesn't double the bar's border. Card 672x137 → 349x45, layer 161 → 69px at 1440; the search panel
+(which reads `--discovery-layer-h`) moved up with it. Verified in a real browser (temp user):
+tabs + "133" badge intact, tab switching Map↔Review both ways, no overflow at 390/320.
+
+**B — Simpler search panel.** `DiscoveryWorkspace`: by default the panel shows the source
+dropdown, Industry, Location, website status and Run search. Business type + Keywords sit behind a
+"More options" toggle (`moreOptionsOpen`, presentational only; `aria-expanded`/`aria-controls`),
+shown as "· n set" while collapsed and filled so hidden values aren't forgotten. The two inputs
+stay mounted inside a `hidden` wrapper, bound to the same `businessType`/`keywords` state, so
+`handleCreate` and the request payload are untouched. Helper text follows what's visible: the
+short default wording (web and Instagram) while collapsed, the original full text once open.
+Verified in a real browser with the POST intercepted (fake 422, no real search): payload with
+More options collapsed was `{industry, location, business_type, keywords, query_label}`; default
+visible fields exactly as specified; panel 464 → 392px.
+
+**C — Frosted-glass overlays.** Visual only. New `--glass-*` tokens (bg, border, shadow, and
+scoped muted/faint text colours) in all three theme blocks of `globals.css` + one shared
+`.map-glass` class (`rounded-lg border backdrop-blur-xl backdrop-saturate-150`, tokens for
+colour/border/shadow) now used by the header bar, search panel, bottom results bar and the
+"No mapped locations" note; the Import button takes the same tokens via utilities. Light glass is
+55% white (was 80%) with a light 60% border, soft 32px shadow and inner highlight; dark is 72%
+`#171717` (was 80%) with a 14% white border. **Why the text tokens:** opacity alone wasn't
+readable — computed against worst-case OSM tiles, the app-wide `--fg-muted` was already 4.1:1 at
+80% light glass (3.4:1 at 60%) and `--fg-subtle` ~2:1, and dark glass over the (always light) map
+can't go far below ~70% (60% → primary text 4.7:1, muted 2:1). `.map-glass` therefore re-scopes
+`--fg-muted`/`--fg-subtle` inside the panel (`@theme inline` makes utilities read the var
+directly): light 12.5 / 5.4 / 4.7:1, dark 7.0 / 5.2 / 4.2:1 (primary / muted / faint, worst
+tile). Inputs stay opaque. Verified (real browser): identical computed glass on all four
+elements in light and dark, text colours switch with the theme, geometry unchanged. Not
+verified visually (screenshots time out headless); ratios are computed, not sampled.
+Note: dark-theme colour reads right after a theme switch lag one transition in this headless
+browser (`.btn`/tab `transition-colors`) — wait, then re-read.
+
+---
+## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring, T5 polish
+
+**Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
+**Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
+
+**Endpoint:** `GET /api/v1/dashboard/sales/won-deals?start=YYYY-MM-DD&end=YYYY-MM-DD&group_by=day|week`
+(same prefix/auth/`start`/`end` convention as `/billing/reports/revenue`). Returns a **zero-filled**
+`points[]` (`period_start`, `deals_count`, `revenue_cents`, `unpriced_deals_count`), range totals, and
+`prior_deals_count`/`prior_revenue_cents` (won before `start` — the opening balance a cumulative line needs),
+plus `undated_deals_count`/`undated_revenue_cents` (WON with no `closed_at`, can't be placed on a timeline).
+So `prior + range + undated + after-range` reconciles with the all-time `actual_revenue_cents`.
+
+**Definitions:** a "won deal" is a WON `SalesOpportunity` — exactly what `actual_revenue_cents` sums (not
+`Lead.status=WON`, which can be set with no opportunity/price/date). Dated by `closed_at` in the
+**workspace timezone**. Unpriced deals count but add 0. Weeks start Monday; a straddling first week is
+labelled by its Monday and only counts in-range deals. Range inclusive, capped at 731 days (400 beyond;
+400 if `end < start`; bad `group_by` → 422). Not limited to the last 10.
+
+**Not built (as instructed):** any stage-transition-history endpoint.
+
+**Verified:** 10 new tests in `test_sales_dashboard.py` (auth, empty zero-fill, per-day bucketing + prior/
+undated/unpriced + reconciliation with all-time revenue, >10 deals, Monday weeks, workspace timezone edge
+cases, open/lost excluded, single day, validation, workspace scoping); full API suite 1366 passed.
+
+**T2 — pipeline funnel (Today → Overview):** the four Pipeline stat boxes are replaced by one horizontal
+segmented bar (`components/PipelineFunnel.tsx`, pure builder `lib/pipelineFunnel.ts`). One segment per
+pipeline stage from `listPipelineStages` (workspace labels + `sort_order`), width ∝ lead count from `listLeads`
+(archived excluded, converted leads **included** — a converted deal is still a won deal). Segments are too narrow
+for text, so labels/counts are a legend beneath, which is also the keyboard path (the bar's own links are
+`tabIndex=-1`/`aria-hidden`). Zero-lead stages draw no segment and show as a muted non-link "0"; no leads at all →
+dashed "No leads in the pipeline yet" bar + link to Discovery. Colours are existing tokens only (info ramp for
+active stages, success/danger for won/lost, `--fg-subtle` for nurture). If the stages request fails, the funnel
+falls back to the raw status order. "Planning/build needing review" and "Projects in progress" weren't pipeline
+stages but were on the old boxes, so they stay as two links in the funnel card's footer.
+**Click-through needed a new filter:** the Leads page only filtered by `?tab=` (which groups statuses and hides
+converted leads), so it gained an exact `?status=` filter (`isLeadStatus` in `lib/leads.ts`, a removable
+"Stage" chip, cleared by "Clear all"). It replaces the tab grouping when set, so the list matches the count that
+linked to it. Verified in a browser on a throwaway QA workspace (deleted after): empty, realistic (77 leads),
+segment → list showed exactly the 12 contacted leads. 392 web tests pass (+ `pipelineFunnel.test.ts`, `isLeadStatus`).
+
+**T3 — cumulative revenue chart (Today → Overview):** the five Revenue stat boxes are replaced by
+`components/RevenueOverview.tsx`: "Revenue won" as a plain large number (`actual_revenue_cents`, unchanged) on the
+left with the other figures the boxes carried (won deals, proposals out, potential value, win rate) as a slim list
+under it, and a cumulative revenue line on the right (`components/RevenueChart.tsx`, pure logic in
+`lib/revenueChart.ts`). Series comes from T1's `GET /dashboard/sales/won-deals` via `api.salesWonDeals`; ranges
+30 days / **90 days (default)** / 12 months (weekly). The line starts at `prior_revenue_cents` (what was won before the
+range), not at 0, so it agrees with the big number. Hand-rolled SVG (no chart library in the project, none added):
+step-after line (a running total only changes when a deal lands — this is also what makes 1–2 deals read as a
+deliberate shape), 10%-wash fill, dots on deal days, endpoint the only direct label, hairline solid grid, y-axis with
+10% headroom and a $1k floor, crosshair tooltip (pointer + arrow keys/Home/End on the focused chart), "Table" view of the
+same numbers, single existing token colour (`--pill-info-fg`, same hue as the funnel ramp). Zero data keeps the axes and a
+flat $0 baseline with "No deals won yet"; unpriced deals count but add $0 (tooltip says so, footnote explains); undated won
+deals are footnoted. Refetch (range change, or the page reloading `sales`) keeps the previous render at reduced opacity.
+Verified in a browser on the throwaway QA workspace: realistic (77 leads / 8 won), 2 deals, and empty; keyboard/hover/tooltip,
+12-month weekly + table, 390px (324px chart, 3 axis labels, no overflow). 411 web tests pass (+19 in `revenueChart.test.ts`).
+**Tooling note:** Playwright's screenshot call times out after the first capture in a browser session here; closing and
+reopening the browser (login persists) before each screenshot is the workaround.
+
+**T4 — win rate ring:** the plain "Win rate NN%" text row in the revenue block is replaced by a 64px SVG progress ring
+(`components/WinRateRing.tsx`, helpers in `lib/winRate.ts`) in the left column, directly beside the chart, with the
+whole-percent number inside and "N won · M lost" next to it. The calculation is untouched — `conversion_rate_pct` from
+`/dashboard/sales`, formatted exactly as before (`toFixed(0)`, "—" for null); the ring only maps it to a stroke-dash
+length (clamped 0–100). 0% / null draw no arc (a round-capped zero-length arc paints a stray dot); no decided deals →
+empty track, "—", "No closed deals yet". Same single token colour as the revenue line, `role="img"` with a spoken
+description. Verified in the browser at 62% (8 won / 5 lost), 100% and no data; 416 web tests (+5 in `winRate.test.ts`).
+
+**T5 — polish pass (Today → Overview):** reviewed funnel + revenue chart + ring together at 1440/1280/1024/768/390, light
+and dark, with zero / two-deal / realistic (77 leads, 8 won) data on a throwaway QA workspace (deleted after). Found and fixed
+(layout only, no behaviour change): (1) at ≤1280 the funnel legend's five viewport-driven columns truncated "Meeting booked" —
+legend and revenue split now key off their own card width (`@container` queries) so they can't disagree with the layout beside
+them; (2) the tall Revenue card sat under only the left column, leaving a ~300px void beneath the calendar — Pipeline + Calendar
+are now one row and Revenue spans the full width below (wider chart, right edges line up); (3) with an empty pipeline the short
+funnel card left a gap beside the calendar — the Pipeline card now stretches to the row height (empty-state box grows, footer
+links pin to the bottom; calendar stays `self-start`). Card bottoms measured equal (524/524) across all three data levels.
+Colours are existing tokens only in both themes; 390/768/1024 have no horizontal overflow. 416 web tests, eslint 0 errors,
+`next build --webpack` passes.
+
+---
+
+
+## 2026-09-20 (Discovery map redesign, T1) — Full-viewport map as the base layer
+
+**Mode:** background job, worktree branch `worktree-discovery-fullscreen-map`.
+**Changed:** `DiscoveryMap` root is now `fixed` + `z-0`, filling everything the dashboard
+chrome leaves free (below the mobile top bar / desktop header strip, above the mobile bottom
+nav, right of the desktop sidebar — offsets mirror `dashboard/layout.tsx`), so navigation stays
+usable. The `h-72 sm:h-80` bordered box is gone. `DiscoveryWorkspace` now renders the map
+unconditionally (it used to mount only once a search had results) and its page content sits in a
+`relative z-10` wrapper above the map; the Instagram import modal is rendered outside that
+wrapper so its stacking isn't trapped under the z-30 header. `DiscoveryLayout` wraps the page
+header + tabs in `relative z-10` (found in browser QA: the fixed map otherwise painted over
+them). The "No mapped locations" banner now only shows when there are results but none mapped.
+**Not changed:** search/filter/data logic. Controls are temporarily stacked over the map; T2/T3
+reposition them. `scrollWheelZoom` is still off.
+**Verified (real browser, temp user, worktree dev on :3100 with a Playwright CORS shim since the
+API only allows :3000):** map 1216x856 at 1440x900, no search needed; tabs/sidebar/Run search
+clickable over it; hidden on Review Queue and full-size again on return; 390px has no horizontal
+overflow; 0 console errors. Build, eslint, vitest 381/381.
+
+**T2 — Search/filter panel floats top-left.** The search `<form>` in `DiscoveryWorkspace` is now
+`fixed` at the map's top-left (`left` = sidebar + 1rem), `z-20`, frosted (`bg-surface/80
+backdrop-blur-md`, border, shadow), 20rem wide (full width minus gutters on mobile), scrolls
+internally if taller than the space. Fields stack in one column; website-status select and Run
+search are full-width. Same fields, handlers, helper text and validation. Its top offset
+(`11rem` + chrome) clears the in-flow header/tabs and is a placeholder until T4 moves them.
+Verified: 320px panel at (240,220)/1440, stacked fields, empty submit shows the same
+API validation message, Review tab still clickable, no viewport overflow at 390px.
+
+**T3 — Collapsible search panel.** UI state only (`filtersOpenOverride` + a reset-on-`activeId`-change
+in `DiscoveryWorkspace`; no search logic touched). A toggle bar (`aria-expanded`/`aria-controls`)
+tops the panel; the field stack is a `hidden` wrapper, so inputs keep their state while collapsed.
+Collapsed: search label + result count + "Edit" chevron (~70px tall). Default: expanded only when
+the list has loaded and no search is active; collapsed whenever a search is active — including
+while its results load, so a returning visitor never sees a flash of the open panel. A manual
+toggle sticks until the active search changes (new run / dropdown pick), which re-applies the
+default (a failed run keeps it open, so its error stays visible).
+Verified: collapsed with an existing search, expand/collapse, expanded with a mocked empty
+search list, expanded-then-switch-search re-collapses.
+
+**T4 — Header + tabs float.** In `DiscoveryLayout`, on the Map view only, the header (title,
+description, tabs) is a `fixed` `z-20` layer over the top of the map: a frosted 70%-opacity card
+(`max-w-2xl`, left) and the Import from Instagram button (right; "Import" on mobile). The layer is
+`pointer-events-none` so the map stays draggable around the card/button. Review Queue keeps the
+ordinary in-flow header (`floating = active === "map"`), tabs/links unchanged. The import modal's
+open state moved from `DiscoveryWorkspace` to the layout (`importOpen`/`onImportOpenChange`
+props; `handleImported` untouched). The workspace's own intro paragraph was dropped — it duplicated
+the header description. The layer publishes its measured height as `--discovery-layer-h` on the
+layout root (ResizeObserver), and the T2 panel's `top` is `chrome + var(--discovery-layer-h)`, so
+the panel always sits just under the header however the description wraps; the in-flow results
+get the same var as a top margin to stay below it.
+Verified: layer 1216x161 at 1440 (card 672x137, translucent), panel at y=205 directly beneath,
+Import opens/closes the modal (Esc), tab switching + Review view unchanged, 0 console errors,
+390px clean (layer 181px, panel clears it).
+
+**T5 — "Showing" picker floats bottom-left.** The recent-searches row (label, `<select>`,
+"Review queue →" link) is now its own `fixed` `z-20` frosted panel (same `bg-surface/80
+backdrop-blur-md` border/shadow as the search panel) at the map's bottom-left, above the mobile
+bottom nav. Options, handler and link untouched; only sizing classes changed (`min-w-0 flex-1` on
+the select instead of `max-w-md`, `shrink-0` on label/link) so a long option label can't push the
+page wider — this also fixed the 320px horizontal overflow the old in-flow row caused.
+Verified: 448x60 panel bottom-left at 1440 (attribution bottom-right, clear), dropdown switch
+updates selection + URL, link goes to /dashboard/discovery/review, no horizontal scroll at
+390/320. Known: on mobile the panel's bottom edge overlaps Leaflet's attribution by ~5px (T6).
+
+**T6 — Polish pass (fixed what a geometry + hit-test audit at 1440/1024/768/390/320 found).**
+- *Map unusable behind the list:* the opaque in-flow results list covered the whole map at scroll 0
+  (every probe point hit the table). The list now starts just below the first screen
+  (`mt-[calc(100dvh-…)]` in `DiscoveryLayout`, mirroring the map's box) and slides up over the fixed
+  map when scrolled; panels/header stay above it. Marker selection used to `scrollIntoView` the
+  table row, which yanked the page off the map on every pin click — it now only scrolls when the
+  list is already on screen. **Side effect to know:** the results list, active-search summary, error
+  and empty states are now below the fold until a later task relocates them.
+- *Leaflet controls:* zoom moved top-right (`zoomControl:false` + `L.control.zoom`), 12px below the
+  Import button (`top-10!` — `!` because unlayered leaflet.css outranks layered utilities; without it
+  zoom sat under Import). Attribution untouched bottom-right; mobile/tablet picker raised
+  (`bottom-[calc(3.5rem+1.75rem)]`) so it no longer overlaps it; the "No mapped locations" bar is now
+  a small frosted note that doesn't cover attribution/controls.
+- *Popups under overlays:* popups now use a live auto-pan padding (`--discovery-layer-h` + gutter
+  top; 348px left from `sm` up) so they pan clear of the header and search panel.
+- *Consistency:* all overlays share `rounded-lg border bg-surface/80 shadow-md backdrop-blur-md`,
+  `px-4 py-3`-style padding, and a 0.75rem inset from the map edges; header card was 70%/shadow-sm.
+  Filter panel keeps a `right-14` gutter on phones so the zoom column stays clear; its max-height
+  now also stops above the bottom-left panel. Header description is hidden below `sm` (the layer was
+  ~a third of a 320px screen).
+- *z-order:* map z-0 (own stacking context) < in-flow content z-10 < panels/header z-20 < dashboard
+  chrome z-30 < drawer z-40; the import modal renders outside the z-10 wrapper.
+Verified (real browser): no overlay overlaps and every overlay hit-testable at all five viewports,
+collapsed and expanded; zoom + attribution reachable; popups clear of overlays (desktop/mobile);
+list slides over the map on scroll with panels/header/app chrome on top; no horizontal scroll;
+0 console errors. Not verified visually — screenshots time out in this headless environment.
+Not done: `fitBounds` doesn't account for the overlays (pins can sit under a panel until panned).
+
+---
+
+## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**New shared pieces:** `components/ui/SoftSwap.tsx` (150ms opacity settle when a
+tab/filter/sort changes; never on first mount, never on search text or data
+refresh; restarts by alternating two identical keyframe names so nothing
+remounts), `lib/recentChanges.ts` (+ test) and `lib/useRecentChanges.ts`
+(+ `.row-flash`: 1.4s faint accent tint on rows created/updated since the last
+load; nothing on first load; `resetKey` re-baselines, e.g. "show archived"),
+`pageFadeKey()` in `lib/nav.ts` (+ test).
+**Applied to:** Leads (cards + board), Review Queue, Tasks, Planning, Projects,
+Calendar month grid, Pipeline activity panel (`Panel` gained `swapKey`).
+Badge eases colour on status/priority change; EmptyState fades in; dashboard
+content is keyed by `pageFadeKey(pathname)` → 200ms opacity-only page fade
+(Sales/Discovery collapse to one key so their persistent header/tabs don't
+re-fade; Sales layout fades its own content); project/planning/sitemap inline
+expanders now use `AnimatedHeight`; board drag-over column + moving-card dim ease.
+**Stamps:** Review items and Tasks have no `updated_at`, so their highlight stamp
+is built from status/reviewed_at/researched_at and done/assignee/due/title.
+**Verified (real browser, temp user):** SoftSwap inert on load and on search
+typing, fires on sort/tab change; a manually created lead flashed one card
+~0.25–1.6s then settled (test lead + business deleted); Sales tab bar persists
+across Leads→Pipeline while page changes fade 200ms opacity-only; reduced motion
+→ 0.01ms and final state within a few frames; 7 routes at 390px with no
+horizontal overflow; project detail accordions open with 0 console errors.
+Build, eslint (0 errors), vitest 381/381.
+**Design-review fixes folded in:** Planning highlight re-baselines on "show
+transferred" (`resetKey`); `useRecentChanges` merges flags so a refetch inside the
+window can't cut a running highlight short; `AnimatedHeight` ignores bubbled
+`transitionend` from nested instances and is `inert` while closed; SoftSwap dip
+0.6→0.75. Earlier T2 review fixes: checkbox-pop overshoot removed, command-menu
+rows no longer ease their selection, `.chip` no longer hovers.
+**Not done (nice-to-have):** SitemapView details collapse over 200ms as the edit form
+appears; the flash background overrides row hover for 1.4s.
+**Testing gotcha:** in the headless browser, timer-based waits don't guarantee
+rendered frames — transition/height reads lag one step. Drive waits with
+`requestAnimationFrame` when measuring transitions.
+
+---
+
+## 2026-09-19 (UI motion, T2 shared controls) — Subtle motion on reusable controls
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**Scope touched:** `globals.css` (`.btn` press 0.98 + eased focus ring, `.input`
+hover/focus easing, `.chip`, new `.toggle-pill` / `.card-interactive` / `.menu-panel`,
+modal + side-panel + drawer entrances, checkbox focus ring, softer checkbox-pop);
+`Tabs`, `Disclosure`, `AnimatedHeight` (content fades with height),
+`FilterPopover`, `ToastProvider`, `CommandMenuProvider`; `menu-panel` on the 7 bespoke
+`⋯` menus; `toggle-pill` on the selectable pill groups; `card-interactive` on
+Client/Planning/Project cards. No logic changes.
+**Deliberate limits:** modals/menus animate *in* only (they unmount on close);
+cards never scale/lift; checkboxes stay native (only the focus ring eases).
+**Caught in self-review:** `focus-visible:outline-none` on Tabs/Disclosure left only a
+colour change as the keyboard focus indicator — removed, default outline kept.
+**Verified:** build, eslint 0 errors, vitest 373/373; in-browser: popover 250ms rise
+6px + focus moves inside, modal scrim 200ms / panel 250ms, menu rise, mobile drawer
+slides from left with no h-scroll, reduced motion → 0.01ms and final state in <50ms.
+
+---
+
+## 2026-09-19 (UI motion, T1 foundation) — Shared motion tokens + global reduced motion
+
+**Mode:** background job, worktree branch `worktree-ui-motion-system`.
+**Scope touched:** `apps/web/src/app/globals.css` only (+ `docs/05_DECISIONS.md`).
+**Done:** `--duration-panel`, `--ease-out-calm`/`--ease-in-calm`, `--rise-distance`;
+`duration-*` / `motion-*` utilities; `.animate-rise-in`; global
+`prefers-reduced-motion` rule. No component, layout or logic changes.
+**Verified:** `next build` OK, eslint 0 errors, vitest 373/373, compiled CSS
+contains the keyframes/tokens/reduced-motion block.
+**Next:** T2 (apply to shared controls), T3 (workflow data/nav transitions).
 
 ---
 

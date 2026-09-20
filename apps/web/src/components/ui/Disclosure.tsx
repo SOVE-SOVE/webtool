@@ -28,7 +28,7 @@ export function Disclosure({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-hover"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-fast ease-standard hover:bg-surface-hover motion-reduce:transition-none"
       >
         <span className="min-w-0">
           <span className="flex items-center gap-2 text-sm font-medium text-fg">

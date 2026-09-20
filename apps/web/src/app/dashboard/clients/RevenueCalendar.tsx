@@ -191,7 +191,7 @@ export function RevenueCalendar({
               type="button"
               onClick={() => onGridChange("month")}
               aria-current={grid === "month" ? "true" : undefined}
-              className={`rounded px-2 py-1 ${grid === "month" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+              className={`toggle-pill rounded px-2 py-1 ${grid === "month" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
             >
               Month
             </button>
@@ -199,7 +199,7 @@ export function RevenueCalendar({
               type="button"
               onClick={() => onGridChange("week")}
               aria-current={grid === "week" ? "true" : undefined}
-              className={`rounded px-2 py-1 ${grid === "week" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+              className={`toggle-pill rounded px-2 py-1 ${grid === "week" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
             >
               Week
             </button>

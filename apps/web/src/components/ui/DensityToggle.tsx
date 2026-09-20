@@ -8,14 +8,14 @@ export function DensityToggle({ density, onChange }: { density: Density; onChang
       <button
         type="button"
         onClick={() => onChange("comfortable")}
-        className={`rounded px-2 py-1 ${density === "comfortable" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${density === "comfortable" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Comfortable
       </button>
       <button
         type="button"
         onClick={() => onChange("compact")}
-        className={`rounded px-2 py-1 ${density === "compact" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${density === "compact" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Compact
       </button>

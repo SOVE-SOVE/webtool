@@ -100,10 +100,17 @@ export function DiscoveryWorkspace({
   initialSearchId,
   mapVisible = true,
   onQueueChanged,
+  importOpen = false,
+  onImportOpenChange,
 }: {
   initialSearchId?: string;
   mapVisible?: boolean;
   onQueueChanged?: () => void;
+  /** Whether the Instagram import modal is open. Owned by
+   * DiscoveryLayout, whose floating header layer holds the button that
+   * opens it. */
+  importOpen?: boolean;
+  onImportOpenChange?: (open: boolean) => void;
 }) {
   const [searches, setSearches] = useState<DiscoverySearch[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(initialSearchId ?? null);
@@ -117,7 +124,6 @@ export function DiscoveryWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
-  const [showImportModal, setShowImportModal] = useState(false);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   // Tracks which result ids have already been shown, so a poll/filter/
@@ -161,6 +167,10 @@ export function DiscoveryWorkspace({
   const [location, setLocation] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [keywords, setKeywords] = useState("");
+  // Presentational only: whether the Business type / Keywords inputs are
+  // shown. Their values live in the state above either way.
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const moreOptionsSet = [businessType, keywords].filter((v) => v.trim() !== "").length;
   const [hasWebsite, setHasWebsite] = useState<"" | "true" | "false">("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -264,6 +274,32 @@ export function DiscoveryWorkspace({
   const activeResults = ready ? results : null;
   const activeSearch = ready ? search : null;
 
+  // Search-panel collapse — purely presentational. Defaults to open only
+  // when there's no search to show (the list has loaded and none is
+  // active, so the operator's first job is to run one); collapsed once a
+  // search is active — including while its results are still loading, so
+  // a returning visitor never sees the panel flash open. A manual toggle
+  // overrides that default until the active search changes (a new run or
+  // a different pick), which re-applies it. Adjusted during render — the
+  // same reset-on-change pattern DashboardLayout uses.
+  const [filtersOpenOverride, setFiltersOpenOverride] = useState<boolean | null>(null);
+  const [overrideForId, setOverrideForId] = useState(activeId);
+  if (activeId !== overrideForId) {
+    setOverrideForId(activeId);
+    setFiltersOpenOverride(null);
+  }
+  const filtersOpen = filtersOpenOverride ?? (searches !== null && activeId === null);
+  const filterSummary = activeSearch
+    ? searchLabel(activeSearch)
+    : activeId
+      ? "Loading search…"
+      : searches === null
+        ? "Loading…"
+        : "No search yet";
+  const filterSummarySub = activeSearch
+    ? `${activeSearch.result_count} result${activeSearch.result_count === 1 ? "" : "s"}`
+    : null;
+
   const visible = useMemo(() => {
     if (!activeResults) return [];
     return sortDiscoveredBusinesses(filterDiscoveredBusinesses(activeResults, filters), sort);
@@ -324,8 +360,16 @@ export function DiscoveryWorkspace({
     selectedId && visible.some((b) => b.id === selectedId) ? selectedId : null;
 
   useEffect(() => {
-    if (activeSelectionId)
-      rowRefs.current.get(activeSelectionId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!activeSelectionId) return;
+    const row = rowRefs.current.get(activeSelectionId);
+    // The results list starts below the full-screen map's first screen,
+    // so only bring the row into view once the list is already on screen
+    // — otherwise clicking a pin would scroll the page off the map (and
+    // slide the list over it).
+    const listTop = row?.closest("table")?.getBoundingClientRect().top;
+    if (row && listTop !== undefined && listTop < window.innerHeight) {
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   }, [activeSelectionId]);
 
   // Background website-check progress for this search — only
@@ -471,118 +515,191 @@ export function DiscoveryWorkspace({
   const noWebsiteCount = visible.filter((b) => b.website_status === "none").length;
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-fg-muted">
-          Find businesses that might be a good fit for a website redesign, then queue and review the best ones
-          before bringing them into the CRM.
-        </p>
-        <button onClick={() => setShowImportModal(true)} className="btn btn-secondary btn-sm">
-          Import from Instagram
-        </button>
-      </div>
-
-      {activeResults && activeResults.length > 0 && (
-        <DiscoveryMap
-          businesses={visible}
-          selectedId={activeSelectionId}
-          onSelect={setSelectedId}
-          mapVisible={mapVisible}
-          onQueue={(id) => {
-            const business = visible.find((b) => b.id === id);
-            if (business) handleQueue(business);
-          }}
-          onUnqueue={(id) => {
-            const business = visible.find((b) => b.id === id);
-            if (business) handleUnqueue(business);
-          }}
-          queuingId={queuingId}
-        />
-      )}
+    <>
+      {/* Full-viewport base layer (fixed; see DiscoveryMap). Always
+          mounted — not only once a search has results — so the page
+          opens on the map. */}
+      <DiscoveryMap
+        businesses={visible}
+        selectedId={activeSelectionId}
+        onSelect={setSelectedId}
+        mapVisible={mapVisible}
+        onQueue={(id) => {
+          const business = visible.find((b) => b.id === id);
+          if (business) handleQueue(business);
+        }}
+        onUnqueue={(id) => {
+          const business = visible.find((b) => b.id === id);
+          if (business) handleUnqueue(business);
+        }}
+        queuingId={queuingId}
+      />
+    <div className="relative z-10">
+      {/* The intro copy and the "Import from Instagram" button now live in
+          DiscoveryLayout's floating header layer. */}
 
       {/* Search controls — always visible: this is where discovery starts.
-          One panel, one visual unit: the five criteria fields share a grid
-          so they read as a single search bar rather than loose floating
-          boxes, then a divider sets the website-status refinement + the
-          primary Run search action apart as their own row, then a second
-          divider sets the quiet helper copy apart from both. */}
-      <form onSubmit={handleCreate} className="panel mt-4 space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
-            className="input"
-            aria-label="Discovery source"
-          >
-            <option value="">Web search (default)</option>
-            <option value="instagram_search">Instagram Search Discovery</option>
-          </Select>
-          <Input
-            placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder="Business type"
-            value={businessType}
-            onChange={(e) => setBusinessType(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder="Keywords"
-            value={keywords}
-            onChange={(e) => setKeywords(e.target.value)}
-            className="input"
-          />
-        </div>
+          A frosted panel floating over the map's top-left corner (fixed,
+          so it stays put while the page scrolls). The five criteria
+          fields stack in one column, then a divider sets the
+          website-status refinement + the primary Run search action apart
+          as their own block, then a second divider sets the quiet helper
+          copy apart from both. It sits just below the floating header
+          layer: `--discovery-layer-h` is that layer's measured height,
+          published by DiscoveryLayout (the fallback only applies if the
+          layout hasn't measured yet), on top of the mobile top bar /
+          desktop header strip. */}
+      <form
+        onSubmit={handleCreate}
+        className="fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] z-20 max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] overflow-y-auto map-glass px-4 py-3 sm:right-auto sm:w-80 lg:left-[calc(14rem+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
+      >
+        <button
+          type="button"
+          onClick={() => setFiltersOpenOverride(!filtersOpen)}
+          aria-expanded={filtersOpen}
+          aria-controls="discovery-filter-fields"
+          className="flex w-full items-center justify-between gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <span className="min-w-0 flex-1">
+            {filtersOpen ? (
+              <span className="text-sm font-medium text-fg">Search</span>
+            ) : (
+              <>
+                <span className="block truncate text-sm font-medium text-fg">{filterSummary}</span>
+                {filterSummarySub && (
+                  <span className="block truncate text-xs text-fg-muted">{filterSummarySub}</span>
+                )}
+              </>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+            {filtersOpen ? "Collapse" : "Edit"}
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+              className={`h-4 w-4 transition-transform duration-fast ease-standard motion-reduce:transition-none ${filtersOpen ? "rotate-180" : ""}`}
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+        </button>
+        <div id="discovery-filter-fields" hidden={!filtersOpen} className="mt-3 space-y-3">
+          <div className="grid grid-cols-1 gap-3">
+            <Select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
+              className="input"
+              aria-label="Discovery source"
+            >
+              <option value="">Web search (default)</option>
+              <option value="instagram_search">Instagram Search Discovery</option>
+            </Select>
+            <Input
+              placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+              className="input"
+            />
+            <Input
+              placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="input"
+            />
+            {/* Business type + Keywords are tucked behind this toggle. They
+                stay mounted (just `hidden`) and bound to the same state,
+                so anything typed there still goes into the search request. */}
+            <button
+              type="button"
+              onClick={() => setMoreOptionsOpen((o) => !o)}
+              aria-expanded={moreOptionsOpen}
+              aria-controls="discovery-more-options"
+              className="flex items-center gap-1 self-start rounded text-xs font-medium text-fg-muted transition-colors duration-fast ease-standard hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring motion-reduce:transition-none"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+                className={`h-4 w-4 transition-transform duration-fast ease-standard motion-reduce:transition-none ${moreOptionsOpen ? "rotate-180" : ""}`}
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              More options
+              {!moreOptionsOpen && moreOptionsSet > 0 && (
+                <span className="font-normal text-fg-subtle">· {moreOptionsSet} set</span>
+              )}
+            </button>
+            <div id="discovery-more-options" hidden={!moreOptionsOpen} className="grid grid-cols-1 gap-3">
+              <Input
+                placeholder="Business type"
+                value={businessType}
+                onChange={(e) => setBusinessType(e.target.value)}
+                className="input"
+              />
+              <Input
+                placeholder="Keywords"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                className="input"
+              />
+            </div>
+          </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <Select
-            value={hasWebsite}
-            onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className="input w-auto"
-            aria-label="Website filter"
-          >
-            <option value="">Any website status</option>
-            <option value="true">Has a website</option>
-            <option value="false">No website</option>
-          </Select>
-          <button type="submit" disabled={saving} className="btn btn-primary">
-            {saving ? "Searching…" : "Run search"}
-          </button>
-        </div>
+          <div className="flex flex-col gap-3 border-t border-border pt-3">
+            <Select
+              value={hasWebsite}
+              onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
+              className="input w-full"
+              aria-label="Website filter"
+            >
+              <option value="">Any website status</option>
+              <option value="true">Has a website</option>
+              <option value="false">No website</option>
+            </Select>
+            <button type="submit" disabled={saving} className="btn btn-primary w-full">
+              {saving ? "Searching…" : "Run search"}
+            </button>
+          </div>
 
-        <div className="space-y-1 border-t border-border pt-3 text-xs text-fg-subtle">
-          {isInstagramSearch && (
-            <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
-          )}
-          <p>
-            {isInstagramSearch
-              ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
-              : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
-          </p>
-          {formError && <p className="text-error">{formError}</p>}
+          <div className="space-y-1 border-t border-border pt-3 text-xs text-fg-subtle">
+            {isInstagramSearch && (
+              <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
+            )}
+            {/* Wording follows what's on screen: with More options closed
+                only Industry/Location are visible; opened, all four are. */}
+            <p>
+              {isInstagramSearch
+                ? `${moreOptionsOpen ? "A niche (industry, business type, or keywords) plus a location is required." : "An industry (niche) and a location are required — business type and keywords are under More options."} Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as "no website".`
+                : `${moreOptionsOpen ? "At least one of industry, location, business type, or keywords is required." : "Enter an industry or a location — business type and keywords are under More options."} New results are researched, audited and scored automatically.`}
+            </p>
+            {formError && <p className="text-error">{formError}</p>}
+          </div>
         </div>
       </form>
 
-      {/* Recent searches — switch which one this workspace is showing. */}
+      {/* Recent searches — switch which one this workspace is showing.
+          A frosted panel floating over the map's bottom-left corner
+          (same treatment as the search panel above), clear of the mobile
+          bottom nav. Leaflet's attribution stays visible bottom-right. */}
       {searches && searches.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <label htmlFor="discovery-search-picker" className="text-fg-muted">
+        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 map-glass px-4 py-3 text-sm sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(14rem+0.75rem)]">
+          <label htmlFor="discovery-search-picker" className="shrink-0 text-fg-muted">
             Showing
           </label>
           <Select
             id="discovery-search-picker"
             value={activeId ?? ""}
             onChange={(e) => selectSearch(e.target.value || null)}
-            className="max-w-md rounded-md border border-border-strong px-2 py-1.5 text-sm"
+            className="min-w-0 flex-1 rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             {searches.map((s) => (
               <option key={s.id} value={s.id}>
@@ -591,7 +708,7 @@ export function DiscoveryWorkspace({
               </option>
             ))}
           </Select>
-          <Link href="/dashboard/discovery/review" className="text-fg-muted hover:text-fg hover:underline">
+          <Link href="/dashboard/discovery/review" className="shrink-0 text-fg-muted hover:text-fg hover:underline">
             Review queue →
           </Link>
         </div>
@@ -946,9 +1063,12 @@ export function DiscoveryWorkspace({
         </>
       )}
 
-      {showImportModal && (
-        <InstagramImportModal onClose={() => setShowImportModal(false)} onImported={handleImported} />
-      )}
     </div>
+      {/* Outside the z-10 page wrapper so the modal's own stacking isn't
+          trapped beneath the dashboard header. */}
+      {importOpen && (
+        <InstagramImportModal onClose={() => onImportOpenChange?.(false)} onImported={handleImported} />
+      )}
+    </>
   );
 }

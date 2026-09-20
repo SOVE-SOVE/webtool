@@ -56,7 +56,7 @@ export function CountDisclosure({ label, children }: { label: string; children: 
             aria-hidden="true"
           />
           <span
-            className="absolute left-0 z-20 mt-1 block w-56 rounded-md border border-border bg-surface py-1 text-left shadow-lg"
+            className="menu-panel absolute left-0 z-20 mt-1 block w-56 rounded-md border border-border bg-surface py-1 text-left shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             {children}

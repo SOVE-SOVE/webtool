@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DiscoveryWorkspace } from "@/components/DiscoveryWorkspace";
@@ -55,28 +55,103 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
   const active = viewFromPathname(pathname);
   const [reviewCount, setReviewCount] = useState<number | undefined>(undefined);
   const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  // On the Map view the header/tabs (plus the Import button) float over
+  // the top of Map Discovery's full-viewport map; Review Queue keeps the
+  // ordinary in-flow header.
+  const floating = active === "map";
 
   useEffect(() => {
     setLastDiscoveryView(active);
   }, [active]);
 
+  // Publish the floating layer's height as `--discovery-layer-h` on the
+  // layout root so the search panel (a fixed element inside
+  // DiscoveryWorkspace, which inherits it) can sit just below the layer
+  // however tall the layer is at the current width — no hard-coded
+  // offset to drift out of sync.
+  useEffect(() => {
+    const root = rootRef.current;
+    const layer = layerRef.current;
+    if (!floating || !root || !layer) return;
+    const publish = () => root.style.setProperty("--discovery-layer-h", `${layer.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(layer);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--discovery-layer-h");
+    };
+  }, [floating]);
+
   return (
-    <div className="p-4 sm:p-6">
-      <PageHeader
-        title="Discovery"
-        description={
-          active === "review"
-            ? "Choose which businesses to pursue."
-            : "Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
+    <div ref={rootRef} className="p-4 sm:p-6">
+      {/* Above the map either way (z-20 floating / z-10 in flow): the
+          fixed map (DiscoveryMap) would otherwise paint over these
+          non-positioned elements. Floating, the layer itself ignores
+          pointer events so the map stays draggable around the header
+          card and Import button, which opt back in. Offsets mirror
+          dashboard/layout.tsx's chrome, same as DiscoveryMap's. */}
+      <div
+        ref={layerRef}
+        className={
+          floating
+            ? "pointer-events-none fixed inset-x-0 top-12 z-20 flex items-start justify-between gap-3 p-3 lg:left-56 lg:top-11"
+            : "relative z-10"
         }
-      />
-      <DiscoverySwitch active={active} reviewCount={reviewCount} className="mt-4" />
-      <div className="mt-6">
+      >
+        {/* Floating, this is a slim bar: a compact "Discovery" label (from
+            `sm` up — the tabs alone carry it on phones) beside the tabs.
+            DiscoverySwitch stays in the same slot in both modes so it
+            isn't remounted (and its sliding underline reset) on a tab
+            switch; its own bottom border is made transparent in the bar
+            so it doesn't double up with the bar's border. */}
+        <div
+          className={
+            floating
+              ? "pointer-events-auto flex min-w-0 items-center gap-4 map-glass px-4"
+              : undefined
+          }
+        >
+          {floating ? (
+            <h1 className="hidden shrink-0 text-sm font-semibold text-fg sm:block">Discovery</h1>
+          ) : (
+            <PageHeader title="Discovery" />
+          )}
+          <DiscoverySwitch
+            active={active}
+            reviewCount={reviewCount}
+            className={floating ? "min-w-0 border-b-transparent" : "mt-4"}
+          />
+        </div>
+        {floating && (
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            aria-label="Import from Instagram"
+            className="btn btn-secondary btn-sm pointer-events-auto shrink-0 border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-xl backdrop-saturate-150 hover:bg-surface/75"
+          >
+            <span className="sm:hidden">Import</span>
+            <span className="hidden sm:inline">Import from Instagram</span>
+          </button>
+        )}
+      </div>
+      {/* Floating, the map fills the first screen (height mirrors
+          DiscoveryMap's fixed box: viewport minus the mobile top bar +
+          bottom nav / the desktop header strip) and the in-flow results
+          list starts just below it — scroll down and it slides up over
+          the fixed map. Without this the opaque list covered the whole
+          map, so it couldn't be seen, panned or clicked. */}
+      <div className={floating ? "mt-[calc(100dvh-6.5rem)] lg:mt-[calc(100dvh-2.75rem)]" : "mt-6"}>
         <div hidden={active !== "map"}>
           <DiscoveryWorkspace
             initialSearchId={params.id}
             mapVisible={active === "map"}
             onQueueChanged={() => setReviewRefreshToken((t) => t + 1)}
+            importOpen={importOpen}
+            onImportOpenChange={setImportOpen}
           />
         </div>
         <div hidden={active !== "review"}>

@@ -19,6 +19,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SoftSwap } from "@/components/ui/SoftSwap";
+import { useRecentChanges } from "@/lib/useRecentChanges";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Badge } from "@/components/ui/Badge";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
@@ -35,9 +37,11 @@ import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
 import {
+  isLeadStatus,
   isLeadTab,
   LEAD_SORT_LABEL,
   LEAD_SORTS,
+  LEAD_STATUS_LABEL,
   LEAD_TABS,
   leadMatchesTab,
   leadNextAction,
@@ -111,7 +115,9 @@ function LeadCard({
   onArchive,
   onRestore,
   onPreview,
+  flash,
 }: {
+  flash?: boolean;
   lead: Lead;
   nextAction: string;
   checklistSummary: ClientChecklistSummary | undefined;
@@ -121,7 +127,7 @@ function LeadCard({
   onPreview: (lead: Lead) => void;
 }) {
   return (
-    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""}`}>
+    <div className={`card p-3 ${lead.archived_at ? "opacity-50" : ""} ${flash ? "row-flash" : ""}`}>
       <Link href={`/dashboard/leads/${lead.id}`} className="block">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -213,6 +219,9 @@ function LeadsPageInner() {
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("");
+  // One exact pipeline stage (?status=), e.g. from the Today funnel — unlike
+  // `tab`, which groups several statuses and hides converted leads.
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "">("");
   const [sort, setSort] = useState<LeadSort>("updated");
   const [showArchived, setShowArchived] = useState(false);
 
@@ -267,6 +276,8 @@ function LeadsPageInner() {
     setShowArchived(searchParams.has("archived"));
     const t = searchParams.get("tab");
     setTab(isLeadTab(t) ? t : "all");
+    const st = searchParams.get("status");
+    setStatusFilter(isLeadStatus(st) ? st : "");
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -373,7 +384,11 @@ function LeadsPageInner() {
     if (!leads) return null;
     const q = search.trim().toLowerCase();
     return leads.filter((lead) => {
-      if (view === "table" && !leadMatchesTab(lead, tab)) return false;
+      // An exact stage filter replaces the tab grouping (and shows converted
+      // leads too, so the list matches the count that linked here).
+      if (statusFilter) {
+        if (lead.status !== statusFilter) return false;
+      } else if (view === "table" && !leadMatchesTab(lead, tab)) return false;
       if (websiteFilter === "has" && !lead.website_url) return false;
       if (websiteFilter === "none" && lead.website_url) return false;
       if (priorityFilter && lead.priority !== priorityFilter) return false;
@@ -382,12 +397,16 @@ function LeadsPageInner() {
         .filter(Boolean)
         .some((field) => field!.toLowerCase().includes(q));
     });
-  }, [leads, view, tab, search, websiteFilter, priorityFilter]);
+  }, [leads, view, tab, statusFilter, search, websiteFilter, priorityFilter]);
 
   const visibleLeads = useMemo(() => {
     if (!filteredLeads) return null;
     return sortLeads(filteredLeads, sort, followUpMap);
   }, [filteredLeads, sort, followUpMap]);
+
+  // Cards for leads created/updated since the last load flash briefly.
+  // Watches the unfiltered set; re-baselines when "archived" toggles.
+  const recentLeadIds = useRecentChanges(leads, (l) => l.id, (l) => l.updated_at, showArchived ? "archived" : "active");
 
   const boardLeads = useMemo(
     () => (filteredLeads ?? []).filter((l) => !l.archived_at),
@@ -460,9 +479,10 @@ function LeadsPageInner() {
     setTab("all");
     setWebsiteFilter("");
     setPriorityFilter("");
+    setStatusFilter("");
     setShowArchived(false);
     const params = new URLSearchParams(searchParams.toString());
-    for (const key of ["search", "tab", "website", "archived"]) params.delete(key);
+    for (const key of ["search", "tab", "status", "website", "archived"]) params.delete(key);
     const query = params.toString();
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
@@ -475,6 +495,14 @@ function LeadsPageInner() {
       label: "Status",
       value: LEAD_TABS.find((t) => t.id === tab)?.label ?? tab,
       onRemove: () => changeTab("all"),
+    });
+  }
+  if (statusFilter) {
+    filterChips.push({
+      id: "status",
+      label: "Stage",
+      value: LEAD_STATUS_LABEL[statusFilter],
+      onRemove: () => updateParam("status", null),
     });
   }
   if (priorityFilter) {
@@ -504,7 +532,7 @@ function LeadsPageInner() {
           setView("table");
           updateParam("view", null);
         }}
-        className={`rounded px-2 py-1 ${view === "table" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${view === "table" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         List
       </button>
@@ -513,7 +541,7 @@ function LeadsPageInner() {
           setView("board");
           updateParam("view", "board");
         }}
-        className={`rounded px-2 py-1 ${view === "board" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`toggle-pill rounded px-2 py-1 ${view === "board" ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"}`}
       >
         Board
       </button>
@@ -653,7 +681,7 @@ function LeadsPageInner() {
               ))}
             </div>
           ) : (
-            <LeadsBoard leads={boardLeads} stages={stages} onMove={handleStatusChange} />
+            <LeadsBoard leads={boardLeads} stages={stages} onMove={handleStatusChange} recentIds={recentLeadIds} />
           )}
         </div>
       )}
@@ -674,10 +702,14 @@ function LeadsPageInner() {
       )}
 
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <SoftSwap
+          signature={`${tab}|${statusFilter}|${websiteFilter}|${priorityFilter}|${sort}`}
+          className="animate-fade-in mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+        >
           {visibleLeads.map((lead) => (
             <LeadCard
               key={lead.id}
+              flash={recentLeadIds.has(lead.id)}
               lead={lead}
               nextAction={leadNextAction(lead, followUpMap.get(lead.id))}
               checklistSummary={lead.client_id ? checklistSummaries.get(lead.client_id) : undefined}
@@ -687,7 +719,7 @@ function LeadsPageInner() {
               onPreview={(l) => openPreview(l.id)}
             />
           ))}
-        </div>
+        </SoftSwap>
       )}
 
       {/* Manual entry — secondary */}

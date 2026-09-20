@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError, type Planning, type ReviewTheme } from "@/lib/api";
 import { REVIEW_TREND_LABEL } from "../lib";
 import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 
 function ThemeList({ title, themes }: { title: string; themes: ReviewTheme[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -26,7 +27,7 @@ function ThemeList({ title, themes }: { title: string; themes: ReviewTheme[] }) 
                   {t.occurrences} review{t.occurrences === 1 ? "" : "s"}
                 </span>
               </button>
-              {expanded === t.theme && (
+              <AnimatedHeight open={expanded === t.theme}>
                 <ul className="ml-3 mt-1 space-y-1 border-l border-border pl-3">
                   {t.evidence.length > 0 ? (
                     t.evidence.map((e, i) => (
@@ -38,7 +39,7 @@ function ThemeList({ title, themes }: { title: string; themes: ReviewTheme[] }) 
                     <li className="text-xs text-fg-subtle">No evidence snippet recorded.</li>
                   )}
                 </ul>
-              )}
+              </AnimatedHeight>
             </li>
           ))}
         </ul>

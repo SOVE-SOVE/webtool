@@ -9,6 +9,7 @@ import {
   type DashboardOverview,
   type Lead,
   type Meeting,
+  type PipelineStage,
   type PlanningListItem,
   type Project,
   type SalesDashboard,
@@ -17,14 +18,15 @@ import {
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Metric } from "@/components/ui/Metric";
+import { PipelineFunnel } from "@/components/PipelineFunnel";
+import { RevenueOverview } from "@/components/RevenueOverview";
 import { EmptyRow, Panel } from "@/components/ui/Panel";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TaskScheduleCalendar } from "@/components/TaskScheduleCalendar";
-import { dateKey, formatAud, formatLongDate, formatTime } from "@/lib/format";
-import { leadMatchesTab } from "@/lib/leads";
+import { dateKey, formatLongDate, formatTime } from "@/lib/format";
 import { loadOverview } from "@/lib/overview";
 import { attentionPriority, attentionTag, computeNextActions, todaysScheduleEvents, type AttentionPriority } from "@/lib/today";
+import { buildFunnel } from "@/lib/pipelineFunnel";
 import { todayScheduleFeeds } from "@/lib/todaySchedule";
 
 type TodayData = {
@@ -48,29 +50,11 @@ function RowsSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** Loading placeholder for a row of stat cards. */
-function StatsSkeleton({ count }: { count: number }) {
-  return (
-    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="mt-2 h-6 w-12" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const PRIORITY_BADGE_TONE: Record<AttentionPriority, BadgeTone> = {
   high: "danger",
   medium: "warning",
   low: "muted",
 };
-
-function pct(value: number | null): string {
-  return value === null ? "—" : `${value.toFixed(0)}%`;
-}
 
 /**
  * The Today workspace's Overview tab — this is exactly what
@@ -91,6 +75,10 @@ export function TodayOverviewTab() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [calendarError, setCalendarError] = useState(false);
+  // The workspace's pipeline stages (labels/order). `undefined` = still
+  // loading, `null` = the request failed — the funnel then falls back to
+  // the plain status order rather than never rendering.
+  const [stages, setStages] = useState<PipelineStage[] | null | undefined>(undefined);
 
   function load() {
     Promise.all([api.listLeads(), api.listPlanning(), api.listProjects(), loadOverview()])
@@ -102,6 +90,10 @@ export function TodayOverviewTab() {
 
     const today = dateKey();
     api.listCalendarEvents(today, today).then(setEvents).catch(() => {});
+    api
+      .listPipelineStages()
+      .then(setStages)
+      .catch(() => setStages(null));
     api
       .listTasks()
       .then((t) => {
@@ -137,9 +129,10 @@ export function TodayOverviewTab() {
     [data, tasks, meetings],
   );
 
-  const newLeadsCount = data
-    ? data.leads.filter((l) => !l.archived_at && leadMatchesTab(l, "new")).length
-    : null;
+  const funnel = useMemo(
+    () => (data && stages !== undefined ? buildFunnel(stages, data.leads) : null),
+    [data, stages],
+  );
   const planningNeedsReviewCount = data ? data.planning.filter((p) => p.status === "needs_review").length : null;
 
   return (
@@ -148,56 +141,49 @@ export function TodayOverviewTab() {
 
       {error && <ErrorState message={error} onRetry={load} compact />}
 
-      {/* Overview row: the primary Pipeline + Revenue figures on the left,
-          and the compact month calendar as a secondary column on the right
-          (stacked below them on narrow screens). The full Calendar page stays
-          the place for detail — this is an at-a-glance month view. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-        <div className="min-w-0 space-y-6">
-          {/* Pipeline — where things stand right now, one stat per stage an
-              operator actually acts on day to day. */}
-          <section>
-            <h2 className="section-title">Pipeline</h2>
-            {!data ? (
-              <StatsSkeleton count={4} />
+      {/* Overview row: the Pipeline funnel, with the compact month calendar
+          as a secondary column on the right (stacked below on narrow
+          screens). Revenue then spans the full width beneath. The full
+          Calendar page stays the place for detail — this is an at-a-glance
+          month view. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        {/* Pipeline — where every lead sits right now: one segment per
+            stage, sized by lead count; each segment opens the Leads list
+            filtered to that stage. The two links underneath aren't
+            pipeline stages but were on the old stat boxes, so they stay
+            one click away. */}
+        <section className="flex flex-col">
+          <h2 className="section-title">Pipeline</h2>
+          <div className="mt-2 flex flex-1 flex-col">
+            {!data || !funnel ? (
+              <div className="card p-4">
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="mt-3 h-9 w-full" />
+                <Skeleton className="mt-3 h-4 w-3/4" />
+              </div>
             ) : (
-              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/sales/leads" />
-                <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/sales/leads?tab=new" />
-                <Metric
-                  label="Planning/build needing review"
-                  value={planningNeedsReviewCount ?? 0}
-                  href="/dashboard/build/planning"
-                />
-                <Metric label="Projects in progress" value={data.overview.active_projects} href="/dashboard/build/projects" />
-              </div>
+              <PipelineFunnel
+                funnel={funnel}
+                emptyAction={
+                  <Link href="/dashboard/discovery" className="text-fg underline underline-offset-2 hover:no-underline">
+                    Open Map Discovery
+                  </Link>
+                }
+              >
+                <Link href="/dashboard/build/planning" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  Planning/build needing review{" "}
+                  <span className="font-semibold tabular-nums text-fg">{planningNeedsReviewCount ?? 0}</span>
+                </Link>
+                <Link href="/dashboard/build/projects" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  Projects in progress{" "}
+                  <span className="font-semibold tabular-nums text-fg">{data.overview.active_projects}</span>
+                </Link>
+              </PipelineFunnel>
             )}
-          </section>
+          </div>
+        </section>
 
-          {/* Revenue — the sales funnel's money figures, same data source and
-              stat card as the Sales dashboard's own Potential value / Won
-              deals / Revenue won cards. */}
-          <section>
-            <h2 className="section-title">Revenue</h2>
-            {salesError ? (
-              <div className="mt-2">
-                <ErrorState message={salesError} onRetry={load} compact />
-              </div>
-            ) : !sales ? (
-              <StatsSkeleton count={5} />
-            ) : (
-              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
-                <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales/pipeline" />
-                <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales/pipeline" />
-                <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales/pipeline" />
-                <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales/pipeline" />
-                <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales/pipeline" />
-              </div>
-            )}
-          </section>
-        </div>
-
-        <section className="card min-w-0" aria-labelledby="today-calendar-heading">
+        <section className="card min-w-0 lg:self-start" aria-labelledby="today-calendar-heading">
           <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-2.5">
             <h2 id="today-calendar-heading" className="text-sm font-semibold text-fg">
               Calendar
@@ -225,6 +211,27 @@ export function TodayOverviewTab() {
           </div>
         </section>
       </div>
+
+      {/* Revenue — "Revenue won" as a plain large number beside a
+          cumulative revenue line (won deals over time). The other money
+          figures the old boxes showed (proposals out, potential value,
+          win rate) sit under the number. */}
+      <section>
+        <h2 className="section-title">Revenue</h2>
+        <div className="mt-2">
+          {salesError ? (
+            <ErrorState message={salesError} onRetry={load} compact />
+          ) : !sales ? (
+            <div className="card p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="mt-3 h-10 w-48" />
+              <Skeleton className="mt-6 h-40 w-full" />
+            </div>
+          ) : (
+            <RevenueOverview sales={sales} />
+          )}
+        </div>
+      </section>
 
       {/* Three equal panels, side by side — today's work, split by kind
           rather than stacked as one long page. */}
