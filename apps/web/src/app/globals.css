@@ -28,6 +28,20 @@
   --accent-fg: #ffffff; /* primary action text */
   --focus-ring: #171717;
   --overlay: rgb(0 0 0 / 0.4); /* modal/drawer backdrop */
+
+  /* Frosted-glass panels floating over the Discovery map (.map-glass).
+     Values sit against the worst OSM tile colours (light land / water /
+     orange roads): light glass 55% white -> primary 12.5:1, muted 5.4:1,
+     faint 4.7:1; dark glass 72% (the map stays light under it, so it
+     can't go more transparent) -> 7:1 / 5.2:1 / 4.2:1. The muted/faint
+     text colours are scoped overrides of --fg-muted/--fg-subtle inside
+     the panel, because the app-wide ones are too pale on glass. */
+  --glass-bg: color-mix(in srgb, #ffffff 55%, transparent);
+  --glass-border: rgb(255 255 255 / 0.6);
+  --glass-shadow:
+    0 8px 32px rgb(15 23 42 / 0.14), 0 1px 2px rgb(15 23 42 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.5);
+  --glass-fg-muted: #525252;
+  --glass-fg-subtle: #5c5c5c;
   --danger: #dc2626;
   --danger-fg: #ffffff;
 
@@ -78,6 +92,12 @@
   --accent-fg: #171717;
   --focus-ring: #f5f5f5;
   --overlay: rgb(0 0 0 / 0.6);
+  --glass-bg: color-mix(in srgb, #171717 72%, transparent);
+  --glass-border: rgb(255 255 255 / 0.14);
+  --glass-shadow:
+    0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --glass-fg-muted: #d4d4d4;
+  --glass-fg-subtle: #c8c8c8;
   --danger: #f87171;
   --danger-fg: #171717;
 
@@ -113,6 +133,12 @@
     --accent-fg: #171717;
     --focus-ring: #f5f5f5;
     --overlay: rgb(0 0 0 / 0.6);
+    --glass-bg: color-mix(in srgb, #171717 72%, transparent);
+    --glass-border: rgb(255 255 255 / 0.14);
+    --glass-shadow:
+      0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
+    --glass-fg-muted: #d4d4d4;
+    --glass-fg-subtle: #c8c8c8;
     --danger: #f87171;
     --danger-fg: #171717;
 
@@ -442,6 +468,17 @@ body {
   }
   .panel {
     @apply rounded-md border border-border bg-surface p-4;
+  }
+  /* Frosted-glass overlay floating over the Discovery map (header bar,
+     search panel, results bar, notes). Shape only — padding/position stay
+     with the element. Colours come from the --glass-* tokens above. */
+  .map-glass {
+    @apply rounded-lg border backdrop-blur-xl backdrop-saturate-150;
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    --fg-muted: var(--glass-fg-muted);
+    --fg-subtle: var(--glass-fg-subtle);
   }
 
   /* Tables */

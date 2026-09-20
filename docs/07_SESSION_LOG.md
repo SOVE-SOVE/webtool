@@ -37,6 +37,24 @@ Verified in a real browser with the POST intercepted (fake 422, no real search):
 More options collapsed was `{industry, location, business_type, keywords, query_label}`; default
 visible fields exactly as specified; panel 464 → 392px.
 
+**C — Frosted-glass overlays.** Visual only. New `--glass-*` tokens (bg, border, shadow, and
+scoped muted/faint text colours) in all three theme blocks of `globals.css` + one shared
+`.map-glass` class (`rounded-lg border backdrop-blur-xl backdrop-saturate-150`, tokens for
+colour/border/shadow) now used by the header bar, search panel, bottom results bar and the
+"No mapped locations" note; the Import button takes the same tokens via utilities. Light glass is
+55% white (was 80%) with a light 60% border, soft 32px shadow and inner highlight; dark is 72%
+`#171717` (was 80%) with a 14% white border. **Why the text tokens:** opacity alone wasn't
+readable — computed against worst-case OSM tiles, the app-wide `--fg-muted` was already 4.1:1 at
+80% light glass (3.4:1 at 60%) and `--fg-subtle` ~2:1, and dark glass over the (always light) map
+can't go far below ~70% (60% → primary text 4.7:1, muted 2:1). `.map-glass` therefore re-scopes
+`--fg-muted`/`--fg-subtle` inside the panel (`@theme inline` makes utilities read the var
+directly): light 12.5 / 5.4 / 4.7:1, dark 7.0 / 5.2 / 4.2:1 (primary / muted / faint, worst
+tile). Inputs stay opaque. Verified (real browser): identical computed glass on all four
+elements in light and dark, text colours switch with the theme, geometry unchanged. Not
+verified visually (screenshots time out headless); ratios are computed, not sampled.
+Note: dark-theme colour reads right after a theme switch lag one transition in this headless
+browser (`.btn`/tab `transition-colors`) — wait, then re-read.
+
 ---
 ## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring, T5 polish
 

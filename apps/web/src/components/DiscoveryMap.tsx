@@ -277,7 +277,7 @@ export default function DiscoveryMap({
       {/* A small frosted note, kept clear of the attribution (bottom-right)
           and — on narrow screens — of the bottom-left results panel. */}
       {businesses.length > 0 && located.length === 0 && (
-        <div className="pointer-events-none absolute bottom-24 right-3 z-[1000] max-w-xs rounded-lg border border-border bg-surface/80 px-3 py-2 text-xs text-fg-muted shadow-md backdrop-blur-md lg:bottom-9">
+        <div className="pointer-events-none absolute bottom-24 right-3 z-[1000] max-w-xs map-glass px-3 py-2 text-xs text-fg-muted lg:bottom-9">
           No mapped locations in view — a business is pinned once its own site publishes map coordinates.
         </div>
       )}

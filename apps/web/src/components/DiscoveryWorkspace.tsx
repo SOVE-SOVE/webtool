@@ -551,7 +551,7 @@ export function DiscoveryWorkspace({
           desktop header strip. */}
       <form
         onSubmit={handleCreate}
-        className="fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] z-20 max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] overflow-y-auto rounded-lg border border-border bg-surface/80 px-4 py-3 shadow-md backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
+        className="fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] z-20 max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] overflow-y-auto map-glass px-4 py-3 sm:right-auto sm:w-80 lg:left-[calc(14rem+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
       >
         <button
           type="button"
@@ -691,7 +691,7 @@ export function DiscoveryWorkspace({
           (same treatment as the search panel above), clear of the mobile
           bottom nav. Leaflet's attribution stays visible bottom-right. */}
       {searches && searches.length > 0 && (
-        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 rounded-lg border border-border bg-surface/80 px-4 py-3 text-sm shadow-md backdrop-blur-md sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(14rem+0.75rem)]">
+        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 map-glass px-4 py-3 text-sm sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(14rem+0.75rem)]">
           <label htmlFor="discovery-search-picker" className="shrink-0 text-fg-muted">
             Showing
           </label>

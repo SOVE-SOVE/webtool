@@ -111,7 +111,7 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
         <div
           className={
             floating
-              ? "pointer-events-auto flex min-w-0 items-center gap-4 rounded-lg border border-border bg-surface/80 px-4 shadow-md backdrop-blur-md"
+              ? "pointer-events-auto flex min-w-0 items-center gap-4 map-glass px-4"
               : undefined
           }
         >
@@ -131,7 +131,7 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
             type="button"
             onClick={() => setImportOpen(true)}
             aria-label="Import from Instagram"
-            className="btn btn-secondary btn-sm pointer-events-auto shrink-0 bg-surface/80 shadow-md backdrop-blur-md"
+            className="btn btn-secondary btn-sm pointer-events-auto shrink-0 border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-[var(--glass-shadow)] backdrop-blur-xl backdrop-saturate-150 hover:bg-surface/75"
           >
             <span className="sm:hidden">Import</span>
             <span className="hidden sm:inline">Import from Instagram</span>
