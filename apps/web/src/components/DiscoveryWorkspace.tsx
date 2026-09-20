@@ -264,6 +264,32 @@ export function DiscoveryWorkspace({
   const activeResults = ready ? results : null;
   const activeSearch = ready ? search : null;
 
+  // Search-panel collapse — purely presentational. Defaults to open only
+  // when there's no search to show (the list has loaded and none is
+  // active, so the operator's first job is to run one); collapsed once a
+  // search is active — including while its results are still loading, so
+  // a returning visitor never sees the panel flash open. A manual toggle
+  // overrides that default until the active search changes (a new run or
+  // a different pick), which re-applies it. Adjusted during render — the
+  // same reset-on-change pattern DashboardLayout uses.
+  const [filtersOpenOverride, setFiltersOpenOverride] = useState<boolean | null>(null);
+  const [overrideForId, setOverrideForId] = useState(activeId);
+  if (activeId !== overrideForId) {
+    setOverrideForId(activeId);
+    setFiltersOpenOverride(null);
+  }
+  const filtersOpen = filtersOpenOverride ?? (searches !== null && activeId === null);
+  const filterSummary = activeSearch
+    ? searchLabel(activeSearch)
+    : activeId
+      ? "Loading search…"
+      : searches === null
+        ? "Loading…"
+        : "No search yet";
+  const filterSummarySub = activeSearch
+    ? `${activeSearch.result_count} result${activeSearch.result_count === 1 ? "" : "s"}`
+    : null;
+
   const visible = useMemo(() => {
     if (!activeResults) return [];
     return sortDiscoveredBusinesses(filterDiscoveredBusinesses(activeResults, filters), sort);
@@ -511,70 +537,107 @@ export function DiscoveryWorkspace({
           tabs above it (and the mobile top bar / desktop header strip). */}
       <form
         onSubmit={handleCreate}
-        className="fixed inset-x-4 top-[calc(3rem+11rem)] z-20 max-h-[calc(100dvh-3rem-11rem-3.5rem-1rem)] space-y-3 overflow-y-auto rounded-lg border border-border bg-surface/80 p-4 shadow-lg backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+1rem)] lg:top-[calc(2.75rem+11rem)] lg:max-h-[calc(100dvh-2.75rem-11rem-1rem)]"
+        className="fixed inset-x-4 top-[calc(3rem+11rem)] z-20 max-h-[calc(100dvh-3rem-11rem-3.5rem-1rem)] overflow-y-auto rounded-lg border border-border bg-surface/80 p-4 shadow-lg backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+1rem)] lg:top-[calc(2.75rem+11rem)] lg:max-h-[calc(100dvh-2.75rem-11rem-1rem)]"
       >
-        <div className="grid grid-cols-1 gap-3">
-          <Select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
-            className="input"
-            aria-label="Discovery source"
-          >
-            <option value="">Web search (default)</option>
-            <option value="instagram_search">Instagram Search Discovery</option>
-          </Select>
-          <Input
-            placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
-            value={industry}
-            onChange={(e) => setIndustry(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder="Business type"
-            value={businessType}
-            onChange={(e) => setBusinessType(e.target.value)}
-            className="input"
-          />
-          <Input
-            placeholder="Keywords"
-            value={keywords}
-            onChange={(e) => setKeywords(e.target.value)}
-            className="input"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setFiltersOpenOverride(!filtersOpen)}
+          aria-expanded={filtersOpen}
+          aria-controls="discovery-filter-fields"
+          className="flex w-full items-center justify-between gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        >
+          <span className="min-w-0 flex-1">
+            {filtersOpen ? (
+              <span className="text-sm font-medium text-fg">Search</span>
+            ) : (
+              <>
+                <span className="block truncate text-sm font-medium text-fg">{filterSummary}</span>
+                {filterSummarySub && (
+                  <span className="block truncate text-xs text-fg-muted">{filterSummarySub}</span>
+                )}
+              </>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+            {filtersOpen ? "Collapse" : "Edit"}
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+              className={`h-4 w-4 transition-transform duration-fast ease-standard motion-reduce:transition-none ${filtersOpen ? "rotate-180" : ""}`}
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+        </button>
+        <div id="discovery-filter-fields" hidden={!filtersOpen} className="mt-3 space-y-3">
+          <div className="grid grid-cols-1 gap-3">
+            <Select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
+              className="input"
+              aria-label="Discovery source"
+            >
+              <option value="">Web search (default)</option>
+              <option value="instagram_search">Instagram Search Discovery</option>
+            </Select>
+            <Input
+              placeholder={isInstagramSearch ? "Niche (e.g. Nail Salon)" : "Industry (e.g. Plumbing)"}
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+              className="input"
+            />
+            <Input
+              placeholder={isInstagramSearch ? "Surfers Paradise, Broadbeach" : "Location (e.g. Gold Coast)"}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="input"
+            />
+            <Input
+              placeholder="Business type"
+              value={businessType}
+              onChange={(e) => setBusinessType(e.target.value)}
+              className="input"
+            />
+            <Input
+              placeholder="Keywords"
+              value={keywords}
+              onChange={(e) => setKeywords(e.target.value)}
+              className="input"
+            />
+          </div>
 
-        <div className="flex flex-col gap-3 border-t border-border pt-3">
-          <Select
-            value={hasWebsite}
-            onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className="input w-full"
-            aria-label="Website filter"
-          >
-            <option value="">Any website status</option>
-            <option value="true">Has a website</option>
-            <option value="false">No website</option>
-          </Select>
-          <button type="submit" disabled={saving} className="btn btn-primary w-full">
-            {saving ? "Searching…" : "Run search"}
-          </button>
-        </div>
+          <div className="flex flex-col gap-3 border-t border-border pt-3">
+            <Select
+              value={hasWebsite}
+              onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
+              className="input w-full"
+              aria-label="Website filter"
+            >
+              <option value="">Any website status</option>
+              <option value="true">Has a website</option>
+              <option value="false">No website</option>
+            </Select>
+            <button type="submit" disabled={saving} className="btn btn-primary w-full">
+              {saving ? "Searching…" : "Run search"}
+            </button>
+          </div>
 
-        <div className="space-y-1 border-t border-border pt-3 text-xs text-fg-subtle">
-          {isInstagramSearch && (
-            <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
-          )}
-          <p>
-            {isInstagramSearch
-              ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
-              : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
-          </p>
-          {formError && <p className="text-error">{formError}</p>}
+          <div className="space-y-1 border-t border-border pt-3 text-xs text-fg-subtle">
+            {isInstagramSearch && (
+              <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
+            )}
+            <p>
+              {isInstagramSearch
+                ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
+                : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
+            </p>
+            {formError && <p className="text-error">{formError}</p>}
+          </div>
         </div>
       </form>
 

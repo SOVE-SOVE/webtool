@@ -39,6 +39,17 @@ search are full-width. Same fields, handlers, helper text and validation. Its to
 Verified: 320px panel at (240,220)/1440, stacked fields, empty submit shows the same
 API validation message, Review tab still clickable, no viewport overflow at 390px.
 
+**T3 — Collapsible search panel.** UI state only (`filtersOpenOverride` + a reset-on-`activeId`-change
+in `DiscoveryWorkspace`; no search logic touched). A toggle bar (`aria-expanded`/`aria-controls`)
+tops the panel; the field stack is a `hidden` wrapper, so inputs keep their state while collapsed.
+Collapsed: search label + result count + "Edit" chevron (~70px tall). Default: expanded only when
+the list has loaded and no search is active; collapsed whenever a search is active — including
+while its results load, so a returning visitor never sees a flash of the open panel. A manual
+toggle sticks until the active search changes (new run / dropdown pick), which re-applies the
+default (a failed run keeps it open, so its error stays visible).
+Verified: collapsed with an existing search, expand/collapse, expanded with a mocked empty
+search list, expanded-then-switch-search re-collapses.
+
 ---
 
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
