@@ -10,6 +10,32 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
+## 2026-09-20 (dashboard charts) — T1: won-deals-over-time endpoint
+
+**Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
+**Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
+
+**Endpoint:** `GET /api/v1/dashboard/sales/won-deals?start=YYYY-MM-DD&end=YYYY-MM-DD&group_by=day|week`
+(same prefix/auth/`start`/`end` convention as `/billing/reports/revenue`). Returns a **zero-filled**
+`points[]` (`period_start`, `deals_count`, `revenue_cents`, `unpriced_deals_count`), range totals, and
+`prior_deals_count`/`prior_revenue_cents` (won before `start` — the opening balance a cumulative line needs),
+plus `undated_deals_count`/`undated_revenue_cents` (WON with no `closed_at`, can't be placed on a timeline).
+So `prior + range + undated + after-range` reconciles with the all-time `actual_revenue_cents`.
+
+**Definitions:** a "won deal" is a WON `SalesOpportunity` — exactly what `actual_revenue_cents` sums (not
+`Lead.status=WON`, which can be set with no opportunity/price/date). Dated by `closed_at` in the
+**workspace timezone**. Unpriced deals count but add 0. Weeks start Monday; a straddling first week is
+labelled by its Monday and only counts in-range deals. Range inclusive, capped at 731 days (400 beyond;
+400 if `end < start`; bad `group_by` → 422). Not limited to the last 10.
+
+**Not built (as instructed):** any stage-transition-history endpoint.
+
+**Verified:** 10 new tests in `test_sales_dashboard.py` (auth, empty zero-fill, per-day bucketing + prior/
+undated/unpriced + reconciliation with all-time revenue, >10 deals, Monday weeks, workspace timezone edge
+cases, open/lost excluded, single day, validation, workspace scoping); full API suite 1366 passed.
+
+---
+
 
 ## 2026-09-20 (Discovery map redesign, T1) — Full-viewport map as the base layer
 
