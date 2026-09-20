@@ -18,12 +18,12 @@ import {
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Metric } from "@/components/ui/Metric";
 import { PipelineFunnel } from "@/components/PipelineFunnel";
+import { RevenueOverview } from "@/components/RevenueOverview";
 import { EmptyRow, Panel } from "@/components/ui/Panel";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TaskScheduleCalendar } from "@/components/TaskScheduleCalendar";
-import { dateKey, formatAud, formatLongDate, formatTime } from "@/lib/format";
+import { dateKey, formatLongDate, formatTime } from "@/lib/format";
 import { loadOverview } from "@/lib/overview";
 import { attentionPriority, attentionTag, computeNextActions, todaysScheduleEvents, type AttentionPriority } from "@/lib/today";
 import { buildFunnel } from "@/lib/pipelineFunnel";
@@ -50,29 +50,11 @@ function RowsSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** Loading placeholder for a row of stat cards. */
-function StatsSkeleton({ count }: { count: number }) {
-  return (
-    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-md border border-border bg-surface px-4 py-3">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="mt-2 h-6 w-12" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const PRIORITY_BADGE_TONE: Record<AttentionPriority, BadgeTone> = {
   high: "danger",
   medium: "warning",
   low: "muted",
 };
-
-function pct(value: number | null): string {
-  return value === null ? "—" : `${value.toFixed(0)}%`;
-}
 
 /**
  * The Today workspace's Overview tab — this is exactly what
@@ -201,26 +183,25 @@ export function TodayOverviewTab() {
             </div>
           </section>
 
-          {/* Revenue — the sales funnel's money figures, same data source and
-              stat card as the Sales dashboard's own Potential value / Won
-              deals / Revenue won cards. */}
+          {/* Revenue — "Revenue won" as a plain large number beside a
+              cumulative revenue line (won deals over time). The other
+              money figures the old boxes showed (proposals out, potential
+              value, win rate) sit under the number. */}
           <section>
             <h2 className="section-title">Revenue</h2>
-            {salesError ? (
-              <div className="mt-2">
+            <div className="mt-2">
+              {salesError ? (
                 <ErrorState message={salesError} onRetry={load} compact />
-              </div>
-            ) : !sales ? (
-              <StatsSkeleton count={5} />
-            ) : (
-              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
-                <Metric label="Proposals out" value={sales.proposals_count} href="/dashboard/sales/pipeline" />
-                <Metric label="Potential value" value={formatAud(sales.estimated_revenue_cents)} hint="open proposals" href="/dashboard/sales/pipeline" />
-                <Metric label="Won deals" value={sales.won_deals_count} href="/dashboard/sales/pipeline" />
-                <Metric label="Revenue won" value={formatAud(sales.actual_revenue_cents)} href="/dashboard/sales/pipeline" />
-                <Metric label="Win rate" value={pct(sales.conversion_rate_pct)} href="/dashboard/sales/pipeline" />
-              </div>
-            )}
+              ) : !sales ? (
+                <div className="card p-4">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="mt-3 h-10 w-48" />
+                  <Skeleton className="mt-6 h-40 w-full" />
+                </div>
+              ) : (
+                <RevenueOverview sales={sales} />
+              )}
+            </div>
           </section>
         </div>
 

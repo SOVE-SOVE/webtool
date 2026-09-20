@@ -10,7 +10,7 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
-## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel
+## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart
 
 **Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
 **Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
@@ -49,6 +49,24 @@ converted leads), so it gained an exact `?status=` filter (`isLeadStatus` in `li
 "Stage" chip, cleared by "Clear all"). It replaces the tab grouping when set, so the list matches the count that
 linked to it. Verified in a browser on a throwaway QA workspace (deleted after): empty, realistic (77 leads),
 segment → list showed exactly the 12 contacted leads. 392 web tests pass (+ `pipelineFunnel.test.ts`, `isLeadStatus`).
+
+**T3 — cumulative revenue chart (Today → Overview):** the five Revenue stat boxes are replaced by
+`components/RevenueOverview.tsx`: "Revenue won" as a plain large number (`actual_revenue_cents`, unchanged) on the
+left with the other figures the boxes carried (won deals, proposals out, potential value, win rate) as a slim list
+under it, and a cumulative revenue line on the right (`components/RevenueChart.tsx`, pure logic in
+`lib/revenueChart.ts`). Series comes from T1's `GET /dashboard/sales/won-deals` via `api.salesWonDeals`; ranges
+30 days / **90 days (default)** / 12 months (weekly). The line starts at `prior_revenue_cents` (what was won before the
+range), not at 0, so it agrees with the big number. Hand-rolled SVG (no chart library in the project, none added):
+step-after line (a running total only changes when a deal lands — this is also what makes 1–2 deals read as a
+deliberate shape), 10%-wash fill, dots on deal days, endpoint the only direct label, hairline solid grid, y-axis with
+10% headroom and a $1k floor, crosshair tooltip (pointer + arrow keys/Home/End on the focused chart), "Table" view of the
+same numbers, single existing token colour (`--pill-info-fg`, same hue as the funnel ramp). Zero data keeps the axes and a
+flat $0 baseline with "No deals won yet"; unpriced deals count but add $0 (tooltip says so, footnote explains); undated won
+deals are footnoted. Refetch (range change, or the page reloading `sales`) keeps the previous render at reduced opacity.
+Verified in a browser on the throwaway QA workspace: realistic (77 leads / 8 won), 2 deals, and empty; keyboard/hover/tooltip,
+12-month weekly + table, 390px (324px chart, 3 axis labels, no overflow). 411 web tests pass (+19 in `revenueChart.test.ts`).
+**Tooling note:** Playwright's screenshot call times out after the first capture in a browser session here; closing and
+reopening the browser (login persists) before each screenshot is the workaround.
 
 ---
 

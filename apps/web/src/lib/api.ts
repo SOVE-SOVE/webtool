@@ -2251,6 +2251,33 @@ export type SalesDashboard = {
   do_this_next: AttentionItem[];
 };
 
+// One period of the won-deals series (a day, or a Monday-start week).
+// Deals with no price count in `deals_count` but add 0 revenue.
+export type WonDealsPoint = {
+  period_start: string; // "YYYY-MM-DD"
+  deals_count: number;
+  revenue_cents: number;
+  unpriced_deals_count: number;
+};
+
+// GET /api/v1/dashboard/sales/won-deals — see the API's sales_dashboard
+// service (get_won_deals_series) for the exact definitions.
+export type WonDealsSeries = {
+  start_date: string;
+  end_date: string;
+  group_by: "day" | "week";
+  points: WonDealsPoint[]; // zero-filled, in order
+  total_deals_count: number;
+  total_revenue_cents: number;
+  total_unpriced_deals_count: number;
+  // Won before `start_date` — the opening balance for a cumulative line.
+  prior_deals_count: number;
+  prior_revenue_cents: number;
+  // Won deals with no close date, so not on the timeline.
+  undated_deals_count: number;
+  undated_revenue_cents: number;
+};
+
 // Lead Intelligence (Phase 2) — top-of-funnel pipeline: a DiscoverySearch
 // runs a provider adapter and produces DiscoveredBusiness rows, a
 // reviewable list that is never auto-imported into `businesses`/`leads`.
@@ -2915,6 +2942,8 @@ export const api = {
 
   dashboardOverview: () => request<DashboardOverview>("/api/v1/dashboard/overview"),
   salesDashboard: () => request<SalesDashboard>("/api/v1/dashboard/sales"),
+  salesWonDeals: (start: string, end: string, groupBy: "day" | "week" = "day") =>
+    request<WonDealsSeries>(`/api/v1/dashboard/sales/won-deals?start=${start}&end=${end}&group_by=${groupBy}`),
 
   listMeetings: (opts?: { leadId?: string; projectId?: string }) => {
     const params = new URLSearchParams();
