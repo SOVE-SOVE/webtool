@@ -502,13 +502,18 @@ export function DiscoveryWorkspace({
       </div>
 
       {/* Search controls — always visible: this is where discovery starts.
-          One panel, one visual unit: the five criteria fields share a grid
-          so they read as a single search bar rather than loose floating
-          boxes, then a divider sets the website-status refinement + the
-          primary Run search action apart as their own row, then a second
-          divider sets the quiet helper copy apart from both. */}
-      <form onSubmit={handleCreate} className="panel mt-4 space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          A frosted panel floating over the map's top-left corner (fixed,
+          so it stays put while the page scrolls). The five criteria
+          fields stack in one column, then a divider sets the
+          website-status refinement + the primary Run search action apart
+          as their own block, then a second divider sets the quiet helper
+          copy apart from both. The top offset clears the page header +
+          tabs above it (and the mobile top bar / desktop header strip). */}
+      <form
+        onSubmit={handleCreate}
+        className="fixed inset-x-4 top-[calc(3rem+11rem)] z-20 max-h-[calc(100dvh-3rem-11rem-3.5rem-1rem)] space-y-3 overflow-y-auto rounded-lg border border-border bg-surface/80 p-4 shadow-lg backdrop-blur-md sm:right-auto sm:w-80 lg:left-[calc(14rem+1rem)] lg:top-[calc(2.75rem+11rem)] lg:max-h-[calc(100dvh-2.75rem-11rem-1rem)]"
+      >
+        <div className="grid grid-cols-1 gap-3">
           <Select
             value={provider}
             onChange={(e) => setProvider(e.target.value as "" | "instagram_search")}
@@ -544,18 +549,18 @@ export function DiscoveryWorkspace({
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+        <div className="flex flex-col gap-3 border-t border-border pt-3">
           <Select
             value={hasWebsite}
             onChange={(e) => setHasWebsite(e.target.value as "" | "true" | "false")}
-            className="input w-auto"
+            className="input w-full"
             aria-label="Website filter"
           >
             <option value="">Any website status</option>
             <option value="true">Has a website</option>
             <option value="false">No website</option>
           </Select>
-          <button type="submit" disabled={saving} className="btn btn-primary">
+          <button type="submit" disabled={saving} className="btn btn-primary w-full">
             {saving ? "Searching…" : "Run search"}
           </button>
         </div>

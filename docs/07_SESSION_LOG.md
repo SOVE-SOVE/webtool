@@ -30,6 +30,15 @@ API only allows :3000):** map 1216x856 at 1440x900, no search needed; tabs/sideb
 clickable over it; hidden on Review Queue and full-size again on return; 390px has no horizontal
 overflow; 0 console errors. Build, eslint, vitest 381/381.
 
+**T2 — Search/filter panel floats top-left.** The search `<form>` in `DiscoveryWorkspace` is now
+`fixed` at the map's top-left (`left` = sidebar + 1rem), `z-20`, frosted (`bg-surface/80
+backdrop-blur-md`, border, shadow), 20rem wide (full width minus gutters on mobile), scrolls
+internally if taller than the space. Fields stack in one column; website-status select and Run
+search are full-width. Same fields, handlers, helper text and validation. Its top offset
+(`11rem` + chrome) clears the in-flow header/tabs and is a placeholder until T4 moves them.
+Verified: 320px panel at (240,220)/1440, stacked fields, empty submit shows the same
+API validation message, Review tab still clickable, no viewport overflow at 390px.
+
 ---
 
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
