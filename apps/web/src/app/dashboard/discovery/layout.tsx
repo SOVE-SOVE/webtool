@@ -105,7 +105,7 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
         <div
           className={
             floating
-              ? "pointer-events-auto min-w-0 max-w-2xl rounded-lg border border-border bg-surface/70 px-4 pt-3 shadow-sm backdrop-blur-md"
+              ? "pointer-events-auto min-w-0 max-w-2xl rounded-lg border border-border bg-surface/80 px-4 pt-3 shadow-md backdrop-blur-md [&_.page-subtitle]:hidden sm:[&_.page-subtitle]:block"
               : undefined
           }
         >
@@ -120,16 +120,20 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
             type="button"
             onClick={() => setImportOpen(true)}
             aria-label="Import from Instagram"
-            className="btn btn-secondary btn-sm pointer-events-auto shrink-0 bg-surface/70 shadow-sm backdrop-blur-md"
+            className="btn btn-secondary btn-sm pointer-events-auto shrink-0 bg-surface/80 shadow-md backdrop-blur-md"
           >
             <span className="sm:hidden">Import</span>
             <span className="hidden sm:inline">Import from Instagram</span>
           </button>
         )}
       </div>
-      {/* Floating, the header is out of flow, so reserve its height to
-          keep the in-flow results below it exactly where they were. */}
-      <div className={floating ? "mt-[var(--discovery-layer-h,0px)]" : "mt-6"}>
+      {/* Floating, the map fills the first screen (height mirrors
+          DiscoveryMap's fixed box: viewport minus the mobile top bar +
+          bottom nav / the desktop header strip) and the in-flow results
+          list starts just below it — scroll down and it slides up over
+          the fixed map. Without this the opaque list covered the whole
+          map, so it couldn't be seen, panned or clicked. */}
+      <div className={floating ? "mt-[calc(100dvh-6.5rem)] lg:mt-[calc(100dvh-2.75rem)]" : "mt-6"}>
         <div hidden={active !== "map"}>
           <DiscoveryWorkspace
             initialSearchId={params.id}

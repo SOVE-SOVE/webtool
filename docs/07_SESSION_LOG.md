@@ -117,6 +117,34 @@ Verified: 448x60 panel bottom-left at 1440 (attribution bottom-right, clear), dr
 updates selection + URL, link goes to /dashboard/discovery/review, no horizontal scroll at
 390/320. Known: on mobile the panel's bottom edge overlaps Leaflet's attribution by ~5px (T6).
 
+**T6 — Polish pass (fixed what a geometry + hit-test audit at 1440/1024/768/390/320 found).**
+- *Map unusable behind the list:* the opaque in-flow results list covered the whole map at scroll 0
+  (every probe point hit the table). The list now starts just below the first screen
+  (`mt-[calc(100dvh-…)]` in `DiscoveryLayout`, mirroring the map's box) and slides up over the fixed
+  map when scrolled; panels/header stay above it. Marker selection used to `scrollIntoView` the
+  table row, which yanked the page off the map on every pin click — it now only scrolls when the
+  list is already on screen. **Side effect to know:** the results list, active-search summary, error
+  and empty states are now below the fold until a later task relocates them.
+- *Leaflet controls:* zoom moved top-right (`zoomControl:false` + `L.control.zoom`), 12px below the
+  Import button (`top-10!` — `!` because unlayered leaflet.css outranks layered utilities; without it
+  zoom sat under Import). Attribution untouched bottom-right; mobile/tablet picker raised
+  (`bottom-[calc(3.5rem+1.75rem)]`) so it no longer overlaps it; the "No mapped locations" bar is now
+  a small frosted note that doesn't cover attribution/controls.
+- *Popups under overlays:* popups now use a live auto-pan padding (`--discovery-layer-h` + gutter
+  top; 348px left from `sm` up) so they pan clear of the header and search panel.
+- *Consistency:* all overlays share `rounded-lg border bg-surface/80 shadow-md backdrop-blur-md`,
+  `px-4 py-3`-style padding, and a 0.75rem inset from the map edges; header card was 70%/shadow-sm.
+  Filter panel keeps a `right-14` gutter on phones so the zoom column stays clear; its max-height
+  now also stops above the bottom-left panel. Header description is hidden below `sm` (the layer was
+  ~a third of a 320px screen).
+- *z-order:* map z-0 (own stacking context) < in-flow content z-10 < panels/header z-20 < dashboard
+  chrome z-30 < drawer z-40; the import modal renders outside the z-10 wrapper.
+Verified (real browser): no overlay overlaps and every overlay hit-testable at all five viewports,
+collapsed and expanded; zoom + attribution reachable; popups clear of overlays (desktop/mobile);
+list slides over the map on scroll with panels/header/app chrome on top; no horizontal scroll;
+0 console errors. Not verified visually — screenshots time out in this headless environment.
+Not done: `fitBounds` doesn't account for the overlays (pins can sit under a panel until panned).
+
 ---
 
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion
