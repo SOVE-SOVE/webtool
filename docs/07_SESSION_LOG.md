@@ -26,6 +26,17 @@ doesn't double the bar's border. Card 672x137 → 349x45, layer 161 → 69px at 
 (which reads `--discovery-layer-h`) moved up with it. Verified in a real browser (temp user):
 tabs + "133" badge intact, tab switching Map↔Review both ways, no overflow at 390/320.
 
+**B — Simpler search panel.** `DiscoveryWorkspace`: by default the panel shows the source
+dropdown, Industry, Location, website status and Run search. Business type + Keywords sit behind a
+"More options" toggle (`moreOptionsOpen`, presentational only; `aria-expanded`/`aria-controls`),
+shown as "· n set" while collapsed and filled so hidden values aren't forgotten. The two inputs
+stay mounted inside a `hidden` wrapper, bound to the same `businessType`/`keywords` state, so
+`handleCreate` and the request payload are untouched. Helper text follows what's visible: the
+short default wording (web and Instagram) while collapsed, the original full text once open.
+Verified in a real browser with the POST intercepted (fake 422, no real search): payload with
+More options collapsed was `{industry, location, business_type, keywords, query_label}`; default
+visible fields exactly as specified; panel 464 → 392px.
+
 ---
 ## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring, T5 polish
 

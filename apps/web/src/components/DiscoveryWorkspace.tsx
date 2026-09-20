@@ -167,6 +167,10 @@ export function DiscoveryWorkspace({
   const [location, setLocation] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [keywords, setKeywords] = useState("");
+  // Presentational only: whether the Business type / Keywords inputs are
+  // shown. Their values live in the state above either way.
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const moreOptionsSet = [businessType, keywords].filter((v) => v.trim() !== "").length;
   const [hasWebsite, setHasWebsite] = useState<"" | "true" | "false">("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -607,18 +611,47 @@ export function DiscoveryWorkspace({
               onChange={(e) => setLocation(e.target.value)}
               className="input"
             />
-            <Input
-              placeholder="Business type"
-              value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-              className="input"
-            />
-            <Input
-              placeholder="Keywords"
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-              className="input"
-            />
+            {/* Business type + Keywords are tucked behind this toggle. They
+                stay mounted (just `hidden`) and bound to the same state,
+                so anything typed there still goes into the search request. */}
+            <button
+              type="button"
+              onClick={() => setMoreOptionsOpen((o) => !o)}
+              aria-expanded={moreOptionsOpen}
+              aria-controls="discovery-more-options"
+              className="flex items-center gap-1 self-start rounded text-xs font-medium text-fg-muted transition-colors duration-fast ease-standard hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring motion-reduce:transition-none"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+                className={`h-4 w-4 transition-transform duration-fast ease-standard motion-reduce:transition-none ${moreOptionsOpen ? "rotate-180" : ""}`}
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              More options
+              {!moreOptionsOpen && moreOptionsSet > 0 && (
+                <span className="font-normal text-fg-subtle">· {moreOptionsSet} set</span>
+              )}
+            </button>
+            <div id="discovery-more-options" hidden={!moreOptionsOpen} className="grid grid-cols-1 gap-3">
+              <Input
+                placeholder="Business type"
+                value={businessType}
+                onChange={(e) => setBusinessType(e.target.value)}
+                className="input"
+              />
+              <Input
+                placeholder="Keywords"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                className="input"
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-3 border-t border-border pt-3">
@@ -641,10 +674,12 @@ export function DiscoveryWorkspace({
             {isInstagramSearch && (
               <p>For multiple suburbs, separate each with commas (up to {MAX_SUBURBS_PER_SEARCH}).</p>
             )}
+            {/* Wording follows what's on screen: with More options closed
+                only Industry/Location are visible; opened, all four are. */}
             <p>
               {isInstagramSearch
-                ? "A niche (industry, business type, or keywords) plus a location is required. Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as \"no website\"."
-                : "At least one of industry, location, business type, or keywords is required. New results are researched, audited and scored automatically."}
+                ? `${moreOptionsOpen ? "A niche (industry, business type, or keywords) plus a location is required." : "An industry (niche) and a location are required — business type and keywords are under More options."} Finds publicly-indexed Instagram profiles — never scrapes Instagram, and a search miss is never treated as "no website".`
+                : `${moreOptionsOpen ? "At least one of industry, location, business type, or keywords is required." : "Enter an industry or a location — business type and keywords are under More options."} New results are researched, audited and scored automatically.`}
             </p>
             {formError && <p className="text-error">{formError}</p>}
           </div>
