@@ -12,13 +12,10 @@ import {
   type RevenueRange,
 } from "@/lib/revenueChart";
 import { RevenueChart } from "@/components/RevenueChart";
+import { WinRateRing } from "@/components/WinRateRing";
 
 // `data` is the last series that loaded (kept while a new range loads); `failed` is set when the request for `range` errored.
 type Result = { range: RevenueRange; data: WonDealsSeries | null; failed: boolean };
-
-function pct(value: number | null): string {
-  return value === null ? "—" : `${value.toFixed(0)}%`;
-}
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring";
 
@@ -71,6 +68,10 @@ export function RevenueOverview({ sales }: { sales: SalesDashboard }) {
             from {sales.won_deals_count} won {sales.won_deals_count === 1 ? "deal" : "deals"}
           </p>
 
+          <div className="mt-4">
+            <WinRateRing value={sales.conversion_rate_pct} won={sales.won_deals_count} lost={sales.lost_deals_count} />
+          </div>
+
           <dl className="mt-4 space-y-1.5 text-sm">
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-fg-muted">Proposals out</dt>
@@ -79,10 +80,6 @@ export function RevenueOverview({ sales }: { sales: SalesDashboard }) {
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-fg-muted">Potential value</dt>
               <dd className="tabular-nums text-fg">{formatAud(sales.estimated_revenue_cents)}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-fg-muted">Win rate</dt>
-              <dd className="tabular-nums text-fg">{pct(sales.conversion_rate_pct)}</dd>
             </div>
           </dl>
 

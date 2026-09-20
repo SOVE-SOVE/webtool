@@ -10,7 +10,7 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
-## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart
+## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring
 
 **Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
 **Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
@@ -67,6 +67,14 @@ Verified in a browser on the throwaway QA workspace: realistic (77 leads / 8 won
 12-month weekly + table, 390px (324px chart, 3 axis labels, no overflow). 411 web tests pass (+19 in `revenueChart.test.ts`).
 **Tooling note:** Playwright's screenshot call times out after the first capture in a browser session here; closing and
 reopening the browser (login persists) before each screenshot is the workaround.
+
+**T4 — win rate ring:** the plain "Win rate NN%" text row in the revenue block is replaced by a 64px SVG progress ring
+(`components/WinRateRing.tsx`, helpers in `lib/winRate.ts`) in the left column, directly beside the chart, with the
+whole-percent number inside and "N won · M lost" next to it. The calculation is untouched — `conversion_rate_pct` from
+`/dashboard/sales`, formatted exactly as before (`toFixed(0)`, "—" for null); the ring only maps it to a stroke-dash
+length (clamped 0–100). 0% / null draw no arc (a round-capped zero-length arc paints a stray dot); no decided deals →
+empty track, "—", "No closed deals yet". Same single token colour as the revenue line, `role="img"` with a spoken
+description. Verified in the browser at 62% (8 won / 5 lost), 100% and no data; 416 web tests (+5 in `winRate.test.ts`).
 
 ---
 
