@@ -10,6 +10,23 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
+
+## 2026-09-20 (Discovery overlay refinements) — A slim header bar
+
+**Mode:** background job, worktree branch `worktree-discovery-overlay-trim`. Follows the six-task
+Discovery map redesign (entry "Discovery map redesign" below).
+
+**A — Slim header bar.** `DiscoveryLayout`: the description paragraph is removed everywhere (the
+`PageHeader` `description` prop is gone, so Review Queue's in-flow header loses it too). On the Map
+view the floating card is now a single slim row — a compact `text-sm` "Discovery" label (hidden
+below `sm`, where the tabs carry it) beside the unchanged `DiscoverySwitch` tabs + review count
+badge. `DiscoverySwitch` stays in the same tree slot in both modes so it isn't remounted (its
+sliding underline keeps working); its own bottom border is transparent inside the bar so it
+doesn't double the bar's border. Card 672x137 → 349x45, layer 161 → 69px at 1440; the search panel
+(which reads `--discovery-layer-h`) moved up with it. Verified in a real browser (temp user):
+tabs + "133" badge intact, tab switching Map↔Review both ways, no overflow at 390/320.
+
+---
 ## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel, T3 revenue chart, T4 win rate ring, T5 polish
 
 **Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).

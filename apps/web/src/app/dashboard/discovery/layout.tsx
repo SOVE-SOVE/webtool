@@ -58,9 +58,9 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
   const [importOpen, setImportOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
-  // On the Map view the header/description/tabs (plus the Import button)
-  // float over the top of Map Discovery's full-viewport map; Review Queue
-  // keeps the ordinary in-flow header.
+  // On the Map view the header/tabs (plus the Import button) float over
+  // the top of Map Discovery's full-viewport map; Review Queue keeps the
+  // ordinary in-flow header.
   const floating = active === "map";
 
   useEffect(() => {
@@ -70,8 +70,8 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
   // Publish the floating layer's height as `--discovery-layer-h` on the
   // layout root so the search panel (a fixed element inside
   // DiscoveryWorkspace, which inherits it) can sit just below the layer
-  // however tall the description wraps at the current width — no
-  // hard-coded offset to drift out of sync.
+  // however tall the layer is at the current width — no hard-coded
+  // offset to drift out of sync.
   useEffect(() => {
     const root = rootRef.current;
     const layer = layerRef.current;
@@ -102,18 +102,29 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
             : "relative z-10"
         }
       >
+        {/* Floating, this is a slim bar: a compact "Discovery" label (from
+            `sm` up — the tabs alone carry it on phones) beside the tabs.
+            DiscoverySwitch stays in the same slot in both modes so it
+            isn't remounted (and its sliding underline reset) on a tab
+            switch; its own bottom border is made transparent in the bar
+            so it doesn't double up with the bar's border. */}
         <div
           className={
             floating
-              ? "pointer-events-auto min-w-0 max-w-2xl rounded-lg border border-border bg-surface/80 px-4 pt-3 shadow-md backdrop-blur-md [&_.page-subtitle]:hidden sm:[&_.page-subtitle]:block"
+              ? "pointer-events-auto flex min-w-0 items-center gap-4 rounded-lg border border-border bg-surface/80 px-4 shadow-md backdrop-blur-md"
               : undefined
           }
         >
-          <PageHeader
-            title="Discovery"
-            description="Find businesses that might be a good fit for a website redesign, then review and bring the best ones into the CRM."
+          {floating ? (
+            <h1 className="hidden shrink-0 text-sm font-semibold text-fg sm:block">Discovery</h1>
+          ) : (
+            <PageHeader title="Discovery" />
+          )}
+          <DiscoverySwitch
+            active={active}
+            reviewCount={reviewCount}
+            className={floating ? "min-w-0 border-b-transparent" : "mt-4"}
           />
-          <DiscoverySwitch active={active} reviewCount={reviewCount} className={floating ? "mt-2" : "mt-4"} />
         </div>
         {floating && (
           <button
