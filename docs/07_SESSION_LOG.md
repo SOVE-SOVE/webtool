@@ -65,6 +65,16 @@ Verified: layer 1216x161 at 1440 (card 672x137, translucent), panel at y=205 dir
 Import opens/closes the modal (Esc), tab switching + Review view unchanged, 0 console errors,
 390px clean (layer 181px, panel clears it).
 
+**T5 — "Showing" picker floats bottom-left.** The recent-searches row (label, `<select>`,
+"Review queue →" link) is now its own `fixed` `z-20` frosted panel (same `bg-surface/80
+backdrop-blur-md` border/shadow as the search panel) at the map's bottom-left, above the mobile
+bottom nav. Options, handler and link untouched; only sizing classes changed (`min-w-0 flex-1` on
+the select instead of `max-w-md`, `shrink-0` on label/link) so a long option label can't push the
+page wider — this also fixed the 320px horizontal overflow the old in-flow row caused.
+Verified: 448x60 panel bottom-left at 1440 (attribution bottom-right, clear), dropdown switch
+updates selection + URL, link goes to /dashboard/discovery/review, no horizontal scroll at
+390/320. Known: on mobile the panel's bottom edge overlaps Leaflet's attribution by ~5px (T6).
+
 ---
 
 ## 2026-09-19 (UI motion, T3 workflow transitions) — Data + navigation motion

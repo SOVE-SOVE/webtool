@@ -643,17 +643,20 @@ export function DiscoveryWorkspace({
         </div>
       </form>
 
-      {/* Recent searches — switch which one this workspace is showing. */}
+      {/* Recent searches — switch which one this workspace is showing.
+          A frosted panel floating over the map's bottom-left corner
+          (same treatment as the search panel above), clear of the mobile
+          bottom nav. Leaflet's attribution stays visible bottom-right. */}
       {searches && searches.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <label htmlFor="discovery-search-picker" className="text-fg-muted">
+        <div className="fixed inset-x-3 bottom-[calc(3.5rem+0.75rem)] z-20 flex items-center gap-2 rounded-lg border border-border bg-surface/80 p-3 text-sm shadow-lg backdrop-blur-md sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(14rem+0.75rem)]">
+          <label htmlFor="discovery-search-picker" className="shrink-0 text-fg-muted">
             Showing
           </label>
           <Select
             id="discovery-search-picker"
             value={activeId ?? ""}
             onChange={(e) => selectSearch(e.target.value || null)}
-            className="max-w-md rounded-md border border-border-strong px-2 py-1.5 text-sm"
+            className="min-w-0 flex-1 rounded-md border border-border-strong px-2 py-1.5 text-sm"
           >
             {searches.map((s) => (
               <option key={s.id} value={s.id}>
@@ -662,7 +665,7 @@ export function DiscoveryWorkspace({
               </option>
             ))}
           </Select>
-          <Link href="/dashboard/discovery/review" className="text-fg-muted hover:text-fg hover:underline">
+          <Link href="/dashboard/discovery/review" className="shrink-0 text-fg-muted hover:text-fg hover:underline">
             Review queue →
           </Link>
         </div>
