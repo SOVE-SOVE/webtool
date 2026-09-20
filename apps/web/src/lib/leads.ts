@@ -11,6 +11,7 @@
  */
 
 import type { Lead, LeadPriority, LeadStatus } from "@/lib/api";
+import { LEAD_STATUSES } from "./api";
 
 export type LeadTab =
   | "all"
@@ -136,6 +137,11 @@ const TAB_IDS = new Set(LEAD_TABS.map((t) => t.id));
 
 export function isLeadTab(value: string | null | undefined): value is LeadTab {
   return value != null && TAB_IDS.has(value as LeadTab);
+}
+
+/** A `?status=` URL value that is a real, exact `LeadStatus` (unlike `?tab=`, which groups several). */
+export function isLeadStatus(value: string | null | undefined): value is LeadStatus {
+  return value != null && (LEAD_STATUSES as readonly string[]).includes(value);
 }
 
 export function statusesForTab(tab: LeadTab): LeadStatus[] | null {

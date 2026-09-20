@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countLeadsByTab,
+  isLeadStatus,
   isLeadTab,
   LEAD_STATUS_LABEL,
   LEAD_TABS,
@@ -247,5 +248,17 @@ describe("sortLeads", () => {
       fullLead({ id: "newer", updated_at: "2026-09-05T00:00:00Z" }),
     ];
     expect(sortLeads(leads, "updated").map((l) => l.id)).toEqual(["newer", "older"]);
+  });
+});
+
+describe("isLeadStatus", () => {
+  it("accepts every real status", () => {
+    for (const status of ALL_STATUSES) expect(isLeadStatus(status)).toBe(true);
+  });
+
+  it("rejects tab ids that are not statuses, unknown values and empties", () => {
+    for (const value of ["interested", "converted", "all", "WON", "", null, undefined]) {
+      expect(isLeadStatus(value)).toBe(false);
+    }
   });
 });

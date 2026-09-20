@@ -37,9 +37,11 @@ import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
 import {
+  isLeadStatus,
   isLeadTab,
   LEAD_SORT_LABEL,
   LEAD_SORTS,
+  LEAD_STATUS_LABEL,
   LEAD_TABS,
   leadMatchesTab,
   leadNextAction,
@@ -217,6 +219,9 @@ function LeadsPageInner() {
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("");
+  // One exact pipeline stage (?status=), e.g. from the Today funnel — unlike
+  // `tab`, which groups several statuses and hides converted leads.
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "">("");
   const [sort, setSort] = useState<LeadSort>("updated");
   const [showArchived, setShowArchived] = useState(false);
 
@@ -271,6 +276,8 @@ function LeadsPageInner() {
     setShowArchived(searchParams.has("archived"));
     const t = searchParams.get("tab");
     setTab(isLeadTab(t) ? t : "all");
+    const st = searchParams.get("status");
+    setStatusFilter(isLeadStatus(st) ? st : "");
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -377,7 +384,11 @@ function LeadsPageInner() {
     if (!leads) return null;
     const q = search.trim().toLowerCase();
     return leads.filter((lead) => {
-      if (view === "table" && !leadMatchesTab(lead, tab)) return false;
+      // An exact stage filter replaces the tab grouping (and shows converted
+      // leads too, so the list matches the count that linked here).
+      if (statusFilter) {
+        if (lead.status !== statusFilter) return false;
+      } else if (view === "table" && !leadMatchesTab(lead, tab)) return false;
       if (websiteFilter === "has" && !lead.website_url) return false;
       if (websiteFilter === "none" && lead.website_url) return false;
       if (priorityFilter && lead.priority !== priorityFilter) return false;
@@ -386,7 +397,7 @@ function LeadsPageInner() {
         .filter(Boolean)
         .some((field) => field!.toLowerCase().includes(q));
     });
-  }, [leads, view, tab, search, websiteFilter, priorityFilter]);
+  }, [leads, view, tab, statusFilter, search, websiteFilter, priorityFilter]);
 
   const visibleLeads = useMemo(() => {
     if (!filteredLeads) return null;
@@ -468,9 +479,10 @@ function LeadsPageInner() {
     setTab("all");
     setWebsiteFilter("");
     setPriorityFilter("");
+    setStatusFilter("");
     setShowArchived(false);
     const params = new URLSearchParams(searchParams.toString());
-    for (const key of ["search", "tab", "website", "archived"]) params.delete(key);
+    for (const key of ["search", "tab", "status", "website", "archived"]) params.delete(key);
     const query = params.toString();
     router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
@@ -483,6 +495,14 @@ function LeadsPageInner() {
       label: "Status",
       value: LEAD_TABS.find((t) => t.id === tab)?.label ?? tab,
       onRemove: () => changeTab("all"),
+    });
+  }
+  if (statusFilter) {
+    filterChips.push({
+      id: "status",
+      label: "Stage",
+      value: LEAD_STATUS_LABEL[statusFilter],
+      onRemove: () => updateParam("status", null),
     });
   }
   if (priorityFilter) {
@@ -683,7 +703,7 @@ function LeadsPageInner() {
 
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
         <SoftSwap
-          signature={`${tab}|${websiteFilter}|${priorityFilter}|${sort}`}
+          signature={`${tab}|${statusFilter}|${websiteFilter}|${priorityFilter}|${sort}`}
           className="animate-fade-in mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
         >
           {visibleLeads.map((lead) => (

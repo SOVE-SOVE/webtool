@@ -10,7 +10,7 @@ separate from pipeline/lead state tracking (business data) — this file
 is purely "what did an agent do in this coding session."
 
 ---
-## 2026-09-20 (dashboard charts) — T1: won-deals-over-time endpoint
+## 2026-09-20 (dashboard charts) — T1 won-deals endpoint, T2 pipeline funnel
 
 **Mode:** background job, worktree branch `worktree-dashboard-charts` (one commit per task, T1–T5).
 **Scope touched (T1):** `modules/sales_dashboard/{routes,schemas,service}.py`, `tests/test_sales_dashboard.py`. No migration, no frontend.
@@ -33,6 +33,22 @@ labelled by its Monday and only counts in-range deals. Range inclusive, capped a
 **Verified:** 10 new tests in `test_sales_dashboard.py` (auth, empty zero-fill, per-day bucketing + prior/
 undated/unpriced + reconciliation with all-time revenue, >10 deals, Monday weeks, workspace timezone edge
 cases, open/lost excluded, single day, validation, workspace scoping); full API suite 1366 passed.
+
+**T2 — pipeline funnel (Today → Overview):** the four Pipeline stat boxes are replaced by one horizontal
+segmented bar (`components/PipelineFunnel.tsx`, pure builder `lib/pipelineFunnel.ts`). One segment per
+pipeline stage from `listPipelineStages` (workspace labels + `sort_order`), width ∝ lead count from `listLeads`
+(archived excluded, converted leads **included** — a converted deal is still a won deal). Segments are too narrow
+for text, so labels/counts are a legend beneath, which is also the keyboard path (the bar's own links are
+`tabIndex=-1`/`aria-hidden`). Zero-lead stages draw no segment and show as a muted non-link "0"; no leads at all →
+dashed "No leads in the pipeline yet" bar + link to Discovery. Colours are existing tokens only (info ramp for
+active stages, success/danger for won/lost, `--fg-subtle` for nurture). If the stages request fails, the funnel
+falls back to the raw status order. "Planning/build needing review" and "Projects in progress" weren't pipeline
+stages but were on the old boxes, so they stay as two links in the funnel card's footer.
+**Click-through needed a new filter:** the Leads page only filtered by `?tab=` (which groups statuses and hides
+converted leads), so it gained an exact `?status=` filter (`isLeadStatus` in `lib/leads.ts`, a removable
+"Stage" chip, cleared by "Clear all"). It replaces the tab grouping when set, so the list matches the count that
+linked to it. Verified in a browser on a throwaway QA workspace (deleted after): empty, realistic (77 leads),
+segment → list showed exactly the 12 contacted leads. 392 web tests pass (+ `pipelineFunnel.test.ts`, `isLeadStatus`).
 
 ---
 

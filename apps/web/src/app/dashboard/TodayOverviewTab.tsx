@@ -9,6 +9,7 @@ import {
   type DashboardOverview,
   type Lead,
   type Meeting,
+  type PipelineStage,
   type PlanningListItem,
   type Project,
   type SalesDashboard,
@@ -18,13 +19,14 @@ import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Metric } from "@/components/ui/Metric";
+import { PipelineFunnel } from "@/components/PipelineFunnel";
 import { EmptyRow, Panel } from "@/components/ui/Panel";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TaskScheduleCalendar } from "@/components/TaskScheduleCalendar";
 import { dateKey, formatAud, formatLongDate, formatTime } from "@/lib/format";
-import { leadMatchesTab } from "@/lib/leads";
 import { loadOverview } from "@/lib/overview";
 import { attentionPriority, attentionTag, computeNextActions, todaysScheduleEvents, type AttentionPriority } from "@/lib/today";
+import { buildFunnel } from "@/lib/pipelineFunnel";
 import { todayScheduleFeeds } from "@/lib/todaySchedule";
 
 type TodayData = {
@@ -91,6 +93,10 @@ export function TodayOverviewTab() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
   const [calendarError, setCalendarError] = useState(false);
+  // The workspace's pipeline stages (labels/order). `undefined` = still
+  // loading, `null` = the request failed — the funnel then falls back to
+  // the plain status order rather than never rendering.
+  const [stages, setStages] = useState<PipelineStage[] | null | undefined>(undefined);
 
   function load() {
     Promise.all([api.listLeads(), api.listPlanning(), api.listProjects(), loadOverview()])
@@ -102,6 +108,10 @@ export function TodayOverviewTab() {
 
     const today = dateKey();
     api.listCalendarEvents(today, today).then(setEvents).catch(() => {});
+    api
+      .listPipelineStages()
+      .then(setStages)
+      .catch(() => setStages(null));
     api
       .listTasks()
       .then((t) => {
@@ -137,9 +147,10 @@ export function TodayOverviewTab() {
     [data, tasks, meetings],
   );
 
-  const newLeadsCount = data
-    ? data.leads.filter((l) => !l.archived_at && leadMatchesTab(l, "new")).length
-    : null;
+  const funnel = useMemo(
+    () => (data && stages !== undefined ? buildFunnel(stages, data.leads) : null),
+    [data, stages],
+  );
   const planningNeedsReviewCount = data ? data.planning.filter((p) => p.status === "needs_review").length : null;
 
   return (
@@ -154,24 +165,40 @@ export function TodayOverviewTab() {
           the place for detail — this is an at-a-glance month view. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
         <div className="min-w-0 space-y-6">
-          {/* Pipeline — where things stand right now, one stat per stage an
-              operator actually acts on day to day. */}
+          {/* Pipeline — where every lead sits right now: one segment per
+              stage, sized by lead count; each segment opens the Leads list
+              filtered to that stage. The two links underneath aren't
+              pipeline stages but were on the old stat boxes, so they stay
+              one click away. */}
           <section>
             <h2 className="section-title">Pipeline</h2>
-            {!data ? (
-              <StatsSkeleton count={4} />
-            ) : (
-              <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Metric label="Leads in pipeline" value={data.leads.length} href="/dashboard/sales/leads" />
-                <Metric label="New leads to review" value={newLeadsCount ?? 0} href="/dashboard/sales/leads?tab=new" />
-                <Metric
-                  label="Planning/build needing review"
-                  value={planningNeedsReviewCount ?? 0}
-                  href="/dashboard/build/planning"
-                />
-                <Metric label="Projects in progress" value={data.overview.active_projects} href="/dashboard/build/projects" />
-              </div>
-            )}
+            <div className="mt-2">
+              {!data || !funnel ? (
+                <div className="card p-4">
+                  <Skeleton className="h-7 w-40" />
+                  <Skeleton className="mt-3 h-9 w-full" />
+                  <Skeleton className="mt-3 h-4 w-3/4" />
+                </div>
+              ) : (
+                <PipelineFunnel
+                  funnel={funnel}
+                  emptyAction={
+                    <Link href="/dashboard/discovery" className="text-fg underline underline-offset-2 hover:no-underline">
+                      Open Map Discovery
+                    </Link>
+                  }
+                >
+                  <Link href="/dashboard/build/planning" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                    Planning/build needing review{" "}
+                    <span className="font-semibold tabular-nums text-fg">{planningNeedsReviewCount ?? 0}</span>
+                  </Link>
+                  <Link href="/dashboard/build/projects" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                    Projects in progress{" "}
+                    <span className="font-semibold tabular-nums text-fg">{data.overview.active_projects}</span>
+                  </Link>
+                </PipelineFunnel>
+              )}
+            </div>
           </section>
 
           {/* Revenue — the sales funnel's money figures, same data source and
