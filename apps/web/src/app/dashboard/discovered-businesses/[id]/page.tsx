@@ -31,6 +31,7 @@ import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
 import { timeAgo } from "@/lib/format";
 import { ReviewStatusBadge, ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { CardLinkButton, ReviewCard } from "@/components/discovery/ReviewCard";
+import { isReviewTextUnavailable } from "@/lib/reviewText";
 import { ReviewDetailPanel } from "@/components/discovery/ReviewDetailPanel";
 import { ReviewSummaryStrip } from "@/components/discovery/ReviewSummaryStrip";
 import {
@@ -470,7 +471,10 @@ export default function DiscoveredBusinessDetailPage() {
         ? "Google Places currently unavailable"
         : [
             formatRating(latestReviewIntel.google_rating, latestReviewIntel.google_review_count),
-            latestReviewIntel.review_health_score !== null ? `Health ${latestReviewIntel.review_health_score}/100` : null,
+            latestReviewIntel.review_health_score !== null
+              ? `Health ${latestReviewIntel.review_health_score}/100${isReviewTextUnavailable(latestReviewIntel) ? " (rating and count only)" : ""}`
+              : null,
+            isReviewTextUnavailable(latestReviewIntel) ? "No written reviews returned" : null,
           ]
             .filter(Boolean)
             .join(" · ");

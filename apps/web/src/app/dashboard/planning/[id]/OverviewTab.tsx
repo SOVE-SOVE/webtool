@@ -191,7 +191,8 @@ export function OverviewTab({
         </div>
       )}
       <ResizableSplit
-        storageKey="wdos-split-overview"
+        storageKey="wdos-split-overview-v2"
+        defaultRatio={0.6}
         primary={
           <div className="flex min-w-0 flex-col gap-6">
             <div className="order-1 lg:order-2">{summarySection}</div>

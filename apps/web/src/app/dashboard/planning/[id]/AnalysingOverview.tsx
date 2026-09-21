@@ -18,7 +18,8 @@ import { AnalysingPreviewPanel } from "./SidePanels";
 export function AnalysingOverview({ planning }: { planning: Planning }) {
   return (
     <ResizableSplit
-      storageKey="wdos-split-overview"
+      storageKey="wdos-split-overview-v2"
+        defaultRatio={0.6}
       primary={
         <div className="flex min-w-0 flex-col gap-6">
           <section>

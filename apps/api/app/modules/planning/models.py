@@ -42,6 +42,30 @@ class ComparableResearchStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class ReviewSynthesisStatus(str, enum.Enum):
+    """Outcome of the LATEST attempt at "Google Review Insights"'s
+    synthesis step (agents/planning_review_insights.py) — nullable on
+    LeadPlanning. Null means "no recorded outcome", NOT "never attempted":
+    records from before this column existed were deliberately not
+    backfilled, so a null status alongside a set `review_insights_generated_at`
+    is a previous run whose synthesis outcome is unknown (see
+    service._review_synthesis_interpretation). Success is never inferred
+    from the content lists or timestamps.
+
+    COMPLETED — the step ran and returned a valid result. The lists may
+      legitimately be empty ("nothing to recommend"); that is a success.
+    FAILED    — the AI call failed or returned an unusable response. The
+      previous successful content, if any, is left in place; see
+      `review_synthesis_succeeded_at` for how old it is.
+    SKIPPED   — attempted, but there were no recurring review themes to
+      synthesise from, so the AI was never called.
+    """
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class SocialDataSource(str, enum.Enum):
     """
     Where an Instagram/Facebook field on this Planning row actually came
@@ -214,6 +238,18 @@ class LeadPlanning(Base):
     review_faq_opportunities: Mapped[list] = mapped_column(JSON, default=list)
     review_website_gaps: Mapped[list] = mapped_column(JSON, default=list)
     review_insights_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Latest synthesis attempt (see ReviewSynthesisStatus). The three lists
+    # above are only ever replaced by a COMPLETED attempt, so after a
+    # FAILED one they still hold the last successful content —
+    # `review_synthesis_succeeded_at` says when that was, and
+    # `review_synthesis_error` is a fixed, safe reason (never raw provider
+    # text) for the latest failure.
+    review_synthesis_status: Mapped[ReviewSynthesisStatus | None] = mapped_column(
+        Enum(ReviewSynthesisStatus, name="review_synthesis_status")
+    )
+    review_synthesis_error: Mapped[str | None] = mapped_column(Text)
+    review_synthesis_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_synthesis_succeeded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # "New Website Plan" mode (docs/05_DECISIONS.md) — for a Lead with no
     # website to audit. Reuses website_summary above as its "Planning

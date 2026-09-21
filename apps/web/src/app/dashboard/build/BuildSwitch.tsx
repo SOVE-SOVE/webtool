@@ -51,5 +51,5 @@ export function BuildSwitch({ active, className }: { active: BuildViewId; classN
     href: hrefs[view],
   }));
 
-  return <TabBar tabs={tabs} active={active} ariaLabel="Build view" className={className} />;
+  return <TabBar tabs={tabs} active={active} ariaLabel="Build view" variant="workspace" className={className} />;
 }

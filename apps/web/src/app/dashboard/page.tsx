@@ -42,7 +42,7 @@ function TodayPageInner() {
     <div className="p-4 sm:p-6">
       <PageHeader title="Today" />
 
-      <TabBar tabs={TODAY_TABS} active={activeTab} onChange={(id) => setTab(id as TodayTabId)} className="mt-4" />
+      <TabBar tabs={TODAY_TABS} active={activeTab} onChange={(id) => setTab(id as TodayTabId)} variant="workspace" className="mt-4" />
 
       {TODAY_TABS.map(({ id }) =>
         visited.has(id as TodayTabId) ? (

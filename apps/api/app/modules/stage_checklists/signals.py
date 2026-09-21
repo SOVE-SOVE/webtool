@@ -29,6 +29,7 @@ from app.modules.checklists.models import ChecklistAutoSignal
 from app.modules.checklists.schemas import ChecklistCompletedBy, ChecklistLink
 from app.modules.opportunity_scoring.models import OpportunityScoreResult
 from app.modules.planning.models import LeadPlanning
+from app.modules.review_intelligence.models import ReviewDataStatus
 from app.modules.sales_audits.models import SalesAuditReport
 from app.modules.stage_checklists.models import StageChecklistAutoSignal
 from app.modules.website_audits.models import WebsiteAudit
@@ -111,13 +112,51 @@ def _resolve_planning_audit(db: Session, lead_planning_id: uuid.UUID) -> SignalR
     )
 
 
+def _written_reviews_analysed(planning: LeadPlanning) -> bool:
+    """True only when written reviews were actually fetched AND analysed
+    successfully — a completed fetch is not enough. Read off the Review
+    Intelligence result this workspace is linked to:
+
+    - `data_status == OK` rules out no listing / a failed Google fetch.
+    - `reviews_with_text` / `themes_data_sufficient` rule out zero
+      reviews, ratings-only responses ("written text unavailable"), and
+      samples too small for the theme analysis to run at all.
+    - `review_summary_unavailable_reason` is set when the AI summary of
+      those reviews failed, so a failed analysis doesn't count.
+
+    Deliberately NOT required: non-empty themes or recommendations — a
+    successful analysis can legitimately find no recurring themes.
+
+    Known gap: the Planning synthesis step (opportunities / FAQs / gaps,
+    agents/planning_review_insights.py) swallows an LLM failure without
+    recording it, and an empty result there is also a valid outcome, so
+    a failure of that one step is not distinguishable from "nothing to
+    recommend" with the fields that exist today.
+    """
+    review = planning.review_intelligence
+    return (
+        review is not None
+        and review.data_status == ReviewDataStatus.OK
+        and review.reviews_with_text > 0
+        and review.themes_data_sufficient
+        and review.review_summary_unavailable_reason is None
+    )
+
+
 def _resolve_planning_review_insights(db: Session, lead_planning_id: uuid.UUID) -> SignalResult:
+    """Evidence for the manual "Review Google Review Insights" item. It is
+    only "evidence" once written reviews were analysed successfully;
+    `review_insights_generated_at` alone just means a fetch was attempted.
+    `completed_at` drives the read-time "needs review" flip and the
+    "reviewed … as of" activity note, so it stays None until then — the
+    item itself is manual and remains completable by hand either way."""
     planning = _get_planning(db, lead_planning_id)
-    changed_at = planning.review_insights_generated_at if planning else None
+    generated_at = planning.review_insights_generated_at if planning else None
+    analysed = planning is not None and generated_at is not None and _written_reviews_analysed(planning)
     return SignalResult(
-        done=changed_at is not None,
-        completed_at=changed_at,
-        completed_by=ChecklistCompletedBy(type="system", via="Google Review Insights") if changed_at else None,
+        done=analysed,
+        completed_at=generated_at if analysed else None,
+        completed_by=ChecklistCompletedBy(type="system", via="Google Review Insights") if analysed else None,
         link=ChecklistLink(label="Open Planning", href=f"/dashboard/planning/{lead_planning_id}"),
     )
 

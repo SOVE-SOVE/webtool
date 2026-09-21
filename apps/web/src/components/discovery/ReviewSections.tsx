@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/Badge";
 import { ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { timeAgo } from "@/lib/format";
 import { SEVERITY_TONE, sortFindings } from "@/lib/reviewBrief";
+import { isReviewTextUnavailable } from "@/lib/reviewText";
+import { ReviewTextUnavailable } from "@/components/discovery/ReviewTextUnavailable";
 
 export function Fact({ label, value }: { label: string; value: string | boolean | null }) {
   return (
@@ -67,6 +69,11 @@ export function GoogleReviewsSection({ result }: { result: ReviewIntelligenceRes
     );
   }
 
+  // A successful fetch with a rating and total count but no written
+  // reviews: keep rating/count/health, drop the sections that can only be
+  // empty (activity, trends, themes, evidence) and say why, once.
+  const textUnavailable = isReviewTextUnavailable(result);
+
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
@@ -80,7 +87,9 @@ export function GoogleReviewsSection({ result }: { result: ReviewIntelligenceRes
             <span className="text-sm text-fg-subtle">No rating available</span>
           )}
           <div className="text-xs text-fg-muted">
-            {result.google_review_count !== null ? `${result.google_review_count} reviews` : "Review count unavailable"}
+            {result.google_review_count !== null
+              ? `${result.google_review_count} Google reviews in total`
+              : "Review count unavailable"}
           </div>
         </div>
 
@@ -89,92 +98,109 @@ export function GoogleReviewsSection({ result }: { result: ReviewIntelligenceRes
           <div className="text-sm font-medium text-fg">
             {result.review_health_score !== null ? `${result.review_health_score} / 100` : "Insufficient data"}
           </div>
+          {textUnavailable && result.review_health_score !== null && (
+            <div className="text-xs text-fg-subtle">Rating and review count only</div>
+          )}
         </div>
 
-        <div>
-          <div className="text-xs uppercase tracking-wide text-fg-subtle">Review activity</div>
-          <div className="text-sm font-medium text-fg">
-            {ACTIVITY_LABEL[result.review_activity_level]}
-            {result.review_frequency_per_month !== null && (
-              <span className="ml-1 font-normal text-fg-muted">~{result.review_frequency_per_month}/month</span>
-            )}
-          </div>
-        </div>
+        {!textUnavailable && (
+          <>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-fg-subtle">Review activity</div>
+              <div className="text-sm font-medium text-fg">
+                {ACTIVITY_LABEL[result.review_activity_level]}
+                {result.review_frequency_per_month !== null && (
+                  <span className="ml-1 font-normal text-fg-muted">~{result.review_frequency_per_month}/month</span>
+                )}
+              </div>
+            </div>
 
-        <div>
-          <div className="text-xs uppercase tracking-wide text-fg-subtle">Sentiment trend</div>
-          <div className="text-sm font-medium text-fg">{TREND_LABEL[result.review_sentiment_trend]}</div>
-        </div>
-      </div>
-
-      <div className="mt-2 text-xs text-fg-muted">
-        {result.recent_review_count !== null
-          ? `${result.recent_review_count} of the visible reviews are from the last 90 days`
-          : "Recent activity: insufficient data"}
-        {result.last_review_at && <> · Most recent review {new Date(result.last_review_at).toLocaleDateString()}</>}
-        {result.review_volume_trend !== "insufficient_data" && (
-          <> · Volume trend: {TREND_LABEL[result.review_volume_trend]}</>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-fg-subtle">Sentiment trend</div>
+              <div className="text-sm font-medium text-fg">{TREND_LABEL[result.review_sentiment_trend]}</div>
+            </div>
+          </>
         )}
       </div>
 
-      {result.review_summary && (
+      {textUnavailable ? (
         <div className="mt-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Review summary</h3>
-          <p className="mt-1 text-sm text-fg">{result.review_summary}</p>
+          {/* The only place this section renders (the discovered-business
+              "Google reviews" panel) also offers a Refresh action. */}
+          <ReviewTextUnavailable showRefreshNote />
         </div>
-      )}
-      {!result.review_summary && result.review_summary_unavailable_reason && (
-        <p className="mt-3 text-xs text-fg-subtle">AI summary unavailable — {result.review_summary_unavailable_reason}</p>
-      )}
-
-      {result.themes_data_sufficient ? (
-        <>
-          <div className="mt-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Customers most often praise</h3>
-            {result.positive_review_themes.length > 0 ? (
-              <ul className="mt-1 space-y-0.5 text-sm text-fg">
-                {result.positive_review_themes.map((t) => (
-                  <li key={t.theme}>✓ {t.theme}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1 text-sm text-fg-subtle">No recurring praise identified</p>
-            )}
-          </div>
-          <div className="mt-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Common friction</h3>
-            {result.negative_review_themes.length > 0 ? (
-              <ul className="mt-1 space-y-0.5 text-sm text-fg">
-                {result.negative_review_themes.map((t) => (
-                  <li key={t.theme}>• {t.theme}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1 text-sm text-fg-subtle">No recurring complaints identified</p>
-            )}
-          </div>
-        </>
       ) : (
-        <p className="mt-3 text-xs text-fg-subtle">
-          Insufficient review data to identify recurring themes ({result.reviews_with_text} review(s) with text
-          available).
-        </p>
-      )}
+        <>
+          <div className="mt-2 text-xs text-fg-muted">
+            {result.recent_review_count !== null
+              ? `${result.recent_review_count} of the visible reviews are from the last 90 days`
+              : "Recent activity: insufficient data"}
+            {result.last_review_at && <> · Most recent review {new Date(result.last_review_at).toLocaleDateString()}</>}
+            {result.review_volume_trend !== "insufficient_data" && (
+              <> · Volume trend: {TREND_LABEL[result.review_volume_trend]}</>
+            )}
+          </div>
 
-      {result.review_evidence.length > 0 && (
-        <div className="mt-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence excerpts</h3>
-          <ul className="mt-1 space-y-1.5">
-            {result.review_evidence.map((e, i) => (
-              <li key={i} className="text-sm text-fg-muted">
-                {e.rating !== null && <span className="text-amber-500">{"★".repeat(e.rating)}</span>} &ldquo;{e.snippet}&rdquo;
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+          {result.review_summary && (
+            <div className="mt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Review summary</h3>
+              <p className="mt-1 text-sm text-fg">{result.review_summary}</p>
+            </div>
+          )}
+          {!result.review_summary && result.review_summary_unavailable_reason && (
+            <p className="mt-3 text-xs text-fg-subtle">AI summary unavailable — {result.review_summary_unavailable_reason}</p>
+          )}
 
-      {result.data_limitations && <p className="mt-3 text-xs text-fg-subtle">{result.data_limitations}</p>}
+          {result.themes_data_sufficient ? (
+            <>
+              <div className="mt-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Customers most often praise</h3>
+                {result.positive_review_themes.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-fg">
+                    {result.positive_review_themes.map((t) => (
+                      <li key={t.theme}>✓ {t.theme}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-fg-subtle">No recurring praise identified</p>
+                )}
+              </div>
+              <div className="mt-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Common friction</h3>
+                {result.negative_review_themes.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-fg">
+                    {result.negative_review_themes.map((t) => (
+                      <li key={t.theme}>• {t.theme}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-fg-subtle">No recurring complaints identified</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="mt-3 text-xs text-fg-subtle">
+              Insufficient review data to identify recurring themes ({result.reviews_with_text} review(s) with text
+              available).
+            </p>
+          )}
+
+          {result.review_evidence.length > 0 && (
+            <div className="mt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Evidence excerpts</h3>
+              <ul className="mt-1 space-y-1.5">
+                {result.review_evidence.map((e, i) => (
+                  <li key={i} className="text-sm text-fg-muted">
+                    {e.rating !== null && <span className="text-amber-500">{"★".repeat(e.rating)}</span>} &ldquo;{e.snippet}&rdquo;
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.data_limitations && <p className="mt-3 text-xs text-fg-subtle">{result.data_limitations}</p>}
+        </>
+      )}
     </div>
   );
 }

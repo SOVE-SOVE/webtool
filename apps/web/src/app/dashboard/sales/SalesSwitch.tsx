@@ -56,5 +56,5 @@ export function SalesSwitch({ active, className }: { active: SalesViewId; classN
     href: hrefs[view],
   }));
 
-  return <TabBar tabs={tabs} active={active} ariaLabel="Sales view" className={className} />;
+  return <TabBar tabs={tabs} active={active} ariaLabel="Sales view" variant="workspace" className={className} />;
 }
