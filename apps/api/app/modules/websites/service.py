@@ -604,7 +604,7 @@ def generate_initial_website(
     project = _get_project_with_business(db, workspace_id, project_id)
     if project is None:
         return None
-    business = project.client.business
+    business = project.owner_business
 
     existing_sitemap = db.scalar(select(Sitemap).where(Sitemap.project_id == project.id).limit(1))
     seeded_sitemap = existing_sitemap is None

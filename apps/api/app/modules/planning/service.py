@@ -3,7 +3,6 @@ import base64
 import hashlib
 import json
 import logging
-import re
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -46,8 +45,6 @@ from app.integrations.ai.errors import AIProviderModelMissingError, AIProviderUn
 from app.integrations.llm import LlmUnavailableError
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
-from app.modules.creative_directions.models import CreativeDirectionBrief, CreativeDirectionStatus
-from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.discovery.models import DiscoveredBusiness
 from app.modules.jobs import service as jobs_service
 from app.modules.jobs.job_types import (
@@ -57,6 +54,7 @@ from app.modules.jobs.job_types import (
 )
 from app.modules.jobs.models import Job, JobStatus
 from app.modules.leads.models import Lead
+from app.modules.planning import handoff_sync
 from app.modules.planning.models import (
     AssetStatus,
     ComparableResearchStatus,
@@ -105,7 +103,7 @@ from app.modules.planning.schemas import (
 )
 from app.modules.projects.models import Project
 from app.modules.review_intelligence import service as review_intelligence_service
-from app.modules.sitemaps.models import NavPlacement, PageType, Sitemap, SitemapPage, SitemapStatus
+from app.modules.sitemaps.models import PageType
 from app.modules.stage_checklists import service as stage_checklists_service
 from app.modules.website_audits import service as website_audits_service
 from app.modules.website_audits.models import WebsiteAudit
@@ -613,227 +611,9 @@ def delete_planning(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, p
     return True
 
 
-def _slugify(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    return slug or "page"
-
-
-def _create_sitemap_from_snapshot(
-    db: Session, project_id: uuid.UUID, pages_snapshot: list[dict], content_draft_snapshot: list[dict] | None = None
-) -> None:
-    """Real Sitemap + SitemapPage rows from the approved brief's sitemap
-    snapshot — goes through the project's normal approve_sitemap gate
-    afterward, unchanged. DRAFT, no creative_direction_id yet. When an
-    approved Content Draft page exists for a given title, its SEO
-    title/meta description ride along onto the real SitemapPage row —
-    see agents/website_generator.py's _build_seo precedence check."""
-    if not pages_snapshot:
-        return
-    sitemap = Sitemap(project_id=project_id, status=SitemapStatus.DRAFT, overview=None)
-    db.add(sitemap)
-    db.flush()
-
-    content_by_title = {p["title"]: p for p in (content_draft_snapshot or [])}
-    seen_slugs: set[str] = set()
-    for order_index, page in enumerate(pages_snapshot):
-        slug = _slugify(page["title"])
-        n = 2
-        while slug in seen_slugs:
-            slug = f"{_slugify(page['title'])}-{n}"
-            n += 1
-        seen_slugs.add(slug)
-        try:
-            page_type = PageType(page.get("page_type", "custom"))
-        except ValueError:
-            page_type = PageType.CUSTOM
-        content_page = content_by_title.get(page["title"])
-        db.add(
-            SitemapPage(
-                sitemap_id=sitemap.id,
-                title=page["title"],
-                slug=slug,
-                page_type=page_type,
-                nav_placement=NavPlacement.PRIMARY_NAV,
-                order_index=order_index,
-                purpose=page.get("purpose") or page.get("reason") or "",
-                key_sections="\n".join(page.get("key_sections") or []),
-                seo_title=content_page.get("seo_title") if content_page else None,
-                seo_meta_description=content_page.get("seo_meta_description") if content_page else None,
-            )
-        )
-
-
-_NOT_GENERATED_FROM_PLANNING = "Not generated from Planning — regenerate this Creative Direction on the project to fill it in."
-
-
-def _create_creative_direction_from_snapshot(
-    db: Session, project_id: uuid.UUID, direction: dict | None
-) -> None:
-    """A real DRAFT CreativeDirectionBrief from the approved brief's
-    selected visual direction — goes through the project's normal
-    approve_creative_direction gate afterward, unchanged. Fields with no
-    Planning-sourced analog get an honest placeholder rather than an
-    invented one."""
-    if not direction:
-        return
-    db.add(
-        CreativeDirectionBrief(
-            project_id=project_id,
-            status=CreativeDirectionStatus.DRAFT,
-            facts=_NOT_GENERATED_FROM_PLANNING,
-            assumptions=_NOT_GENERATED_FROM_PLANNING,
-            creative_concept=direction.get("character", ""),
-            visual_direction=direction.get("character", ""),
-            brand_personality=_NOT_GENERATED_FROM_PLANNING,
-            colour_direction=direction.get("colour_palette", ""),
-            typography_direction=direction.get("typography", ""),
-            image_direction=direction.get("imagery", ""),
-            layout_direction=direction.get("layout", ""),
-            ux_direction=_NOT_GENERATED_FROM_PLANNING,
-            tone_of_voice=_NOT_GENERATED_FROM_PLANNING,
-            visual_hierarchy=_NOT_GENERATED_FROM_PLANNING,
-            cta_strategy=_NOT_GENERATED_FROM_PLANNING,
-            things_to_avoid=_NOT_GENERATED_FROM_PLANNING,
-            references_inspiration=_NOT_GENERATED_FROM_PLANNING,
-            sources_note="Selected in Planning's Build Brief (Visual Direction Choices).",
-            model_used="planning_build_brief",
-            prompt_version=planning_visual_directions_agent.PROMPT_VERSION,
-        )
-    )
-
-
-def _apply_assets_to_design_brief(db: Session, project_id: uuid.UUID, assets_snapshot: list[dict]) -> None:
-    """Get-or-creates the project's DesignBrief and fills logo_assets/
-    image_assets from the approved checklist's notes — only when that
-    field is still empty, never overwriting an operator-entered value on
-    the Project side either."""
-    brief = db.scalar(select(DesignBrief).where(DesignBrief.project_id == project_id))
-    if brief is None:
-        brief = DesignBrief(project_id=project_id, status=BriefStatus.DRAFT)
-        db.add(brief)
-        db.flush()
-
-    def _notes_for(category: str) -> str:
-        lines = [f"{a['label']} — {a['status']}" + (f": {a['note']}" if a.get("note") else "") for a in assets_snapshot if a["category"] == category]
-        return "\n".join(lines)
-
-    if not brief.logo_assets:
-        notes = _notes_for("logo")
-        if notes:
-            brief.logo_assets = notes
-    if not brief.image_assets:
-        notes = "\n".join(filter(None, [_notes_for("photos"), _notes_for("portfolio_images")]))
-        if notes:
-            brief.image_assets = notes
-
-
-def _apply_content_draft_to_design_brief(db: Session, project_id: uuid.UUID, content_draft_snapshot: list[dict]) -> None:
-    """
-    Get-or-creates the project's DesignBrief and folds approved Content
-    Draft copy into the exact verbatim-text fields
-    agents/website_generator.py already parses (_looks_like_list's
-    "Title — Description" lines for services, _split_faq_line's
-    "Question? Answer" lines for FAQs) — so the real, UNCHANGED generator
-    turns this into real sections with no code path added. Only ever
-    called with APPROVED pages (see approve_build_brief's snapshot);
-    only sets a field when it's still empty, same non-destructive
-    convention as _apply_assets_to_design_brief.
-    """
-    if not content_draft_snapshot:
-        return
-    brief = db.scalar(select(DesignBrief).where(DesignBrief.project_id == project_id))
-    if brief is None:
-        brief = DesignBrief(project_id=project_id, status=BriefStatus.DRAFT)
-        db.add(brief)
-        db.flush()
-
-    service_lines: list[str] = []
-    faq_lines: list[str] = []
-    cta_lines: list[str] = []
-    about_body: str | None = None
-    hero_subheading: str | None = None
-
-    for page in content_draft_snapshot:
-        for section in page.get("sections", []):
-            content = section.get("content") or {}
-            section_type = section.get("section_type")
-            if section_type == "serviceCards":
-                for service in content.get("services", []):
-                    title = service.get("title", "")
-                    description = service.get("description", "")
-                    service_lines.append(f"{title} — {description}" if description else title)
-            elif section_type == "about" and about_body is None:
-                about_body = content.get("body")
-            elif section_type == "faq":
-                for item in content.get("items", []):
-                    question = item.get("question", "").rstrip("?")
-                    answer = item.get("answer", "")
-                    if question and answer:
-                        faq_lines.append(f"{question}? {answer}")
-            elif section_type == "cta":
-                label = content.get("label") or content.get("heading")
-                if label:
-                    cta_lines.append(label)
-            elif section_type == "hero" and hero_subheading is None:
-                hero_subheading = content.get("subheading")
-
-    if not brief.services_content and service_lines:
-        brief.services_content = "\n".join(service_lines)
-    if not brief.about_content and about_body:
-        brief.about_content = about_body
-    if not brief.faqs and faq_lines:
-        brief.faqs = "\n".join(faq_lines)
-    if not brief.calls_to_action and cta_lines:
-        brief.calls_to_action = "\n".join(cta_lines)
-    if not brief.business_description and hero_subheading:
-        brief.business_description = hero_subheading
-
-
-def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID):
-    """
-    Creates a Lead-owned prospect Project from this Planning item's
-    approved Build Brief — no Client, no Lead status change, no
-    SalesOpportunity (docs/05_DECISIONS.md: creating a speculative
-    project must not convert the Lead). The operator converts to a
-    Client separately and explicitly, whenever they choose
-    (clients.service.create_client), which reassigns this same Project
-    rather than creating a second one. Requires an approved Build Brief
-    (raises NoApprovedBriefError otherwise — the route maps this to
-    400). Idempotent: once the approved brief's project_id is set, a
-    repeated call short-circuits to that same Project instead of
-    creating a duplicate.
-    """
-    from app.modules.projects import service as projects_service
-    from app.modules.projects.schemas import ProjectCreate, ProjectUpdate
-
-    planning = _get_planning(db, workspace_id, planning_id)
-    if planning is None:
-        return None
-
-    approved_brief = planning.approved_brief
-    if approved_brief is None:
-        raise NoApprovedBriefError("Approve the Build Brief before creating a project.")
-
-    if approved_brief.project_id is not None:
-        return projects_service.get_project(db, workspace_id, approved_brief.project_id)
-
-    project_read = projects_service.create_project(
-        db,
-        workspace_id,
-        actor_id,
-        ProjectCreate(lead_id=planning.lead_id, name=f"{planning.lead.business.name} Website"),
-    )
-    project = db.get(Project, project_read.id)
-    if project is None:
-        return None
-
-    _create_sitemap_from_snapshot(
-        db, project.id, approved_brief.sitemap_snapshot, approved_brief.content_draft_snapshot
-    )
-    _create_creative_direction_from_snapshot(db, project.id, approved_brief.visual_direction_snapshot)
-    _apply_assets_to_design_brief(db, project.id, approved_brief.assets_snapshot)
-    _apply_content_draft_to_design_brief(db, project.id, approved_brief.content_draft_snapshot)
-
+def _build_direction_narrative(planning: LeadPlanning, approved_brief: LeadPlanningApprovedBrief) -> str:
+    """The human-readable Planning narrative carried to a Project's `build_direction` — at
+    handoff, and again on every re-sync (planning/handoff_sync.py), so both build it the same way."""
     direction_parts = []
     if planning.website_summary:
         source = f" ({planning.website_url})" if planning.website_url else ""
@@ -903,12 +683,72 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
             direction_parts.append(
                 "Content Draft — needs confirmation:\n" + "\n".join(f"- {q}" for q in content_questions)
             )
+    return "\n\n".join(direction_parts)
 
-    if direction_parts:
-        projects_service.update_project(
-            db, workspace_id, actor_id, project.id, ProjectUpdate(build_direction="\n\n".join(direction_parts))
-        )
 
+def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID):
+    """
+    Creates a Lead-owned prospect Project from this Planning item's
+    approved Build Brief — no Client, no Lead status change, no
+    SalesOpportunity (docs/05_DECISIONS.md: creating a speculative
+    project must not convert the Lead). The operator converts to a
+    Client separately and explicitly, whenever they choose
+    (clients.service.create_client), which reassigns this same Project
+    rather than creating a second one. Requires an approved Build Brief
+    (raises NoApprovedBriefError otherwise — the route maps this to
+    400). Idempotent: once the approved brief's project_id is set, a
+    repeated call short-circuits to that same Project instead of
+    creating a duplicate.
+    """
+    from app.modules.design_briefs import service as design_briefs_service
+    from app.modules.projects import service as projects_service
+    from app.modules.projects.schemas import ProjectCreate, ProjectUpdate
+
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+
+    approved_brief = planning.approved_brief
+    if approved_brief is None:
+        raise NoApprovedBriefError("Approve the Build Brief before creating a project.")
+
+    if approved_brief.project_id is not None:
+        return projects_service.get_project(db, workspace_id, approved_brief.project_id)
+
+    project_read = projects_service.create_project(
+        db,
+        workspace_id,
+        actor_id,
+        ProjectCreate(lead_id=planning.lead_id, name=f"{planning.lead.business.name} Website"),
+    )
+    project = db.get(Project, project_read.id)
+    if project is None:
+        return None
+
+    sitemap = handoff_sync.create_sitemap_from_snapshot(
+        db, project.id, approved_brief.sitemap_snapshot, approved_brief.content_draft_snapshot
+    )
+    creative_direction = handoff_sync.create_creative_direction_from_snapshot(
+        db, project.id, approved_brief.visual_direction_snapshot
+    )
+    approved_brief.seeded_sitemap_id = sitemap.id if sitemap else None
+    approved_brief.seeded_creative_direction_id = creative_direction.id if creative_direction else None
+    handoff_sync.apply_to_design_brief(
+        db,
+        project.id,
+        handoff_sync.derive_design_brief_fields(approved_brief.assets_snapshot, approved_brief.content_draft_snapshot),
+    )
+    # Planning's helper above creates the DesignBrief (so the normal
+    # "pre-fill a brand-new brief" path never runs); top up the business
+    # fields from the lead's records now. Runs after it and only fills
+    # empty fields, so Planning's own copy is never displaced.
+    design_briefs_service.prefill_project_brief(db, project)
+
+    narrative = _build_direction_narrative(planning, approved_brief)
+    if narrative:
+        projects_service.update_project(db, workspace_id, actor_id, project.id, ProjectUpdate(build_direction=narrative))
+
+    approved_brief.handoff_baseline = handoff_sync.initial_baseline(approved_brief, narrative)
     approved_brief.project_id = project.id
     db.commit()
     return projects_service.get_project(db, workspace_id, project.id)
@@ -1907,6 +1747,7 @@ def compute_build_brief(db: Session, workspace_id: uuid.UUID, planning_id: uuid.
         approved_at=brief.approved_at if brief else None,
         approved_by_user_id=brief.approved_by_user_id if brief else None,
         project_id=brief.project_id if brief else None,
+        sync_conflicts=list(brief.sync_conflicts or []) if brief else [],
     )
 
 
@@ -1914,17 +1755,28 @@ def approve_build_brief(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID
 ) -> BuildBriefRead | None:
     """Snapshots the current compute_build_brief output into
-    LeadPlanningApprovedBrief. Freely re-approvable (upsert) up until a
-    Project has consumed it (approved_brief.project_id set) — once
-    consumed, the snapshot is left untouched (preserve the approved
-    snapshot / provenance)."""
+    LeadPlanningApprovedBrief. Freely re-approvable (upsert). Once a
+    Project has consumed the brief (approved_brief.project_id set), a
+    re-approval also pushes what changed since to that Project — the
+    Project's own edits are kept and flagged, not overwritten (see
+    planning/handoff_sync.py) — so later Planning edits and content
+    approvals reach it instead of being dropped."""
     planning = _get_planning(db, workspace_id, planning_id)
     if planning is None:
         return None
 
     existing = planning.approved_brief
+    # What the last handoff/sync was built from — only needed if this
+    # re-approval has a Project to sync (below), and read before the
+    # snapshot fields are overwritten.
+    previous_state = None
     if existing is not None and existing.project_id is not None:
-        return compute_build_brief(db, workspace_id, planning_id)
+        previous_state = handoff_sync.derive_state(
+            existing.assets_snapshot,
+            existing.content_draft_snapshot,
+            existing.sitemap_snapshot,
+            existing.visual_direction_snapshot,
+        )
 
     brief = compute_build_brief(db, workspace_id, planning_id)
     if existing is None:
@@ -1967,8 +1819,48 @@ def approve_build_brief(
         action="planning_build_brief_approved",
         summary=f"Approved the Build Brief for {planning.lead.business.name}",
     )
+    if previous_state is not None:
+        _sync_handed_off_project(db, workspace_id, actor_id, planning, existing, previous_state)
     db.commit()
     return compute_build_brief(db, workspace_id, planning_id)
+
+
+def _sync_handed_off_project(
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    planning: LeadPlanning,
+    approved_brief: LeadPlanningApprovedBrief,
+    previous_state: dict,
+) -> None:
+    project = db.get(Project, approved_brief.project_id)
+    if project is None:
+        return
+    # A handoff that predates the stored baseline: what the last snapshot
+    # handed over is exactly what the Project was seeded with, except the
+    # narrative, which can't be reconstructed — so the merge treats a
+    # non-empty Project build direction as the Project's own.
+    baseline = approved_brief.handoff_baseline or {**previous_state, "build_direction": ""}
+    applied, flagged = handoff_sync.sync_to_project(
+        db,
+        project,
+        approved_brief,
+        narrative=_build_direction_narrative(planning, approved_brief),
+        baseline=baseline,
+    )
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="project",
+        entity_id=project.id,
+        action="planning_changes_synced",
+        summary=(
+            f"Synced Planning changes to the project ({applied} applied"
+            + (f", {flagged} kept as the project's own edits" if flagged else "")
+            + ")"
+        ),
+    )
 
 
 def _hostname(url: str) -> str | None:

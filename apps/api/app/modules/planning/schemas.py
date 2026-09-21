@@ -242,12 +242,26 @@ class BuildBriefFactRead(BaseModel):
     source: str
 
 
+class BuildBriefSyncConflictRead(BaseModel):
+    """One Planning change the last re-approval couldn't apply to the
+    handed-off Project because the Project has its own edit (or the
+    artefact is approved / regenerated) — see planning/handoff_sync.py.
+    Values are truncated previews."""
+
+    area: str
+    item: str
+    planning_value: str
+    project_value: str
+    message: str
+
+
 class BuildBriefRead(BaseModel):
     """The live, always-current compiled brief (service.compute_build_brief)
     — never the frozen approved snapshot itself. `is_approved`/`approved_at`/
     `approved_by_user_id`/`project_id` report the state of the most recent
     approval, if any; approving again re-snapshots whatever this preview
-    currently shows."""
+    currently shows and, once a Project exists, pushes what changed to it.
+    `sync_conflicts` lists what that push left alone."""
 
     objective: str | None
     confirmed_facts: list[BuildBriefFactRead]
@@ -263,6 +277,7 @@ class BuildBriefRead(BaseModel):
     approved_at: datetime | None
     approved_by_user_id: uuid.UUID | None
     project_id: uuid.UUID | None
+    sync_conflicts: list[BuildBriefSyncConflictRead] = []
 
 
 # --- Content Draft -----------------------------------------------------

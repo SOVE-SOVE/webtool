@@ -226,6 +226,16 @@ describe("api", () => {
       );
     });
 
+    it("updateBrief with fillEmptyOnly adds the fill_empty_only query flag", async () => {
+      const fetchMock = stubOk({ id: "b1" });
+      await api.updateBrief("p1", { business_name: "Coastal Cafe" }, { fillEmptyOnly: true });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/projects/p1/brief?fill_empty_only=true"),
+        expect.objectContaining({ method: "PATCH" }),
+      );
+    });
+
     it("approveCreativeDirection posts to /api/v1/creative-directions/:id/approve", async () => {
       const fetchMock = stubOk({ id: "cd1", status: "approved" });
       await api.approveCreativeDirection("cd1");

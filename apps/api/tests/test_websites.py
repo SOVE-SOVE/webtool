@@ -485,6 +485,27 @@ class TestGenerateInitialWebsite:
         assert "[" not in desc and "DRAFT" not in desc
         assert "Reef Plumbing" in desc and "Cairns" in desc
 
+    def test_works_for_a_prospect_project_with_no_client(self, authed_client):
+        """A lead-owned prospect project (what Planning's "Create
+        project" makes) has no Client — the business comes from the lead."""
+        lead = authed_client.post(
+            "/api/v1/leads", json={"business_name": "Hilltop Roofing", "industry": "Roofing", "suburb": "Ipswich", "state": "QLD"}
+        ).json()
+        project = authed_client.post(
+            "/api/v1/projects", json={"lead_id": lead["id"], "name": "Hilltop Roofing Website"}
+        ).json()
+        assert project["client_id"] is None
+
+        res = authed_client.post(f"/api/v1/projects/{project['id']}/initial-website")
+        assert res.status_code == 201
+        assert [p["name"] for p in res.json()["pages"]] == ["Home", "About", "Services", "Contact"]
+
+        desc = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"][
+            "business_description"
+        ]
+        assert "Hilltop Roofing" in desc and "Ipswich" in desc
+        assert authed_client.get(f"/api/v1/projects/{project['id']}").json()["stage"] == "design"
+
     def test_second_call_reuses_seeded_sources_and_adds_a_version(self, authed_client):
         client = authed_client.post("/api/v1/clients", json={"business_name": "Peak Roofing"}).json()
         project = authed_client.post(

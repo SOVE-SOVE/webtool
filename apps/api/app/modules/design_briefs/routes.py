@@ -41,10 +41,13 @@ def get_brief(
 def update_brief(
     project_id: uuid.UUID,
     data: BriefUpdate,
+    fill_empty_only: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> BriefRead:
-    brief = service.update_brief(db, current_user.workspace_id, current_user.id, project_id, data)
+    brief = service.update_brief(
+        db, current_user.workspace_id, current_user.id, project_id, data, fill_empty_only=fill_empty_only
+    )
     if brief is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return brief

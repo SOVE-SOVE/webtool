@@ -2409,3 +2409,318 @@ def test_create_project_handoff_includes_approved_content_draft(authed_client, m
 
     design_brief = db_session.query(_DesignBrief).filter_by(project_id=uuid.UUID(project["id"])).first()
     assert design_brief.business_description == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]
+
+
+def test_create_project_handoff_prefills_brief_but_keeps_planning_copy(authed_client, monkeypatch):
+    """Planning's handoff creates the project's DesignBrief itself, so the
+    normal "pre-fill a new brief" path never runs — the handoff must top up
+    the still-empty business fields from the lead, without displacing the
+    copy Planning already put in the brief."""
+    lead = _create_lead(authed_client, industry="Kitchen Renovation", phone="07 5555 1234")
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"notes": "Lead notes that must not win."})
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    page = authed_client.get(f"/api/v1/planning/{planning['id']}").json()["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    assert project["client_id"] is None
+
+    fields = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert fields["business_description"] == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]
+    assert fields["business_name"] == "Coastal Cafe"
+    assert fields["industry"] == "Kitchen Renovation"
+    assert fields["location"] == "Byron Bay, NSW"
+    assert fields["contact_phone"] == "07 5555 1234"
+
+
+def test_create_project_handoff_prefills_brief_with_no_content_draft(authed_client):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"notes": "Owner wants online quotes."})
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+
+    fields = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert fields["business_name"] == "Coastal Cafe"
+    assert fields["industry"] == "Kitchen Renovation"
+    assert "Owner wants online quotes." in fields["business_description"]
+
+
+# --- Re-approving after handoff pushes Planning's changes to the Project ---------
+#
+# The approved Build Brief used to be frozen once a Project consumed it. Now a
+# re-approval pushes what changed since to the Project's own rows (see
+# modules/planning/handoff_sync.py) — keeping, and flagging, anything the
+# Project has edited itself.
+
+
+def _hand_off_with_sitemap_and_direction(authed_client, monkeypatch):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    monkeypatch.setattr(
+        "app.agents.planning_sitemap_proposal.generate_structured", lambda **kwargs: dict(SITEMAP_PROPOSAL_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/sitemap/generate")
+    monkeypatch.setattr(
+        "app.agents.planning_visual_directions.generate_structured", lambda **kwargs: dict(VISUAL_DIRECTIONS_LLM_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
+    authed_client.patch(f"/api/v1/planning/{planning['id']}/visual-directions/select", json={"option_index": 0})
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    return planning, project
+
+
+def _planning_page(authed_client, planning_id, title):
+    pages = authed_client.get(f"/api/v1/planning/{planning_id}").json()["sitemap_pages"]
+    return next(p for p in pages if p["title"] == title)
+
+
+def _project_sitemap(authed_client, project_id):
+    sitemaps = authed_client.get(f"/api/v1/projects/{project_id}/sitemaps").json()
+    assert len(sitemaps) == 1
+    return sitemaps[0]
+
+
+def _project_page(sitemap, title):
+    return next(p for p in sitemap["pages"] if p["title"] == title)
+
+
+def _reapprove(authed_client, planning_id):
+    res = authed_client.post(f"/api/v1/planning/{planning_id}/build-brief/approve")
+    assert res.status_code == 200
+    return res.json()
+
+
+def test_merge_decision_table():
+    from app.modules.planning.handoff_sync import _decide
+
+    # (project's current, last handed over, Planning's new) -> (decision, new baseline)
+    assert _decide("a", "a", "b") == ("set", "b")  # untouched on the project -> follow Planning
+    assert _decide("", "a", "b") == ("set", "b")  # empty on the project -> fill
+    assert _decide("c", "a", "b") == ("conflict", "a")  # the project's own edit -> keep + flag; baseline stays
+    assert _decide("c", "a", "a") == ("keep", "a")  # Planning unchanged -> nothing to do, no conflict
+    assert _decide("b", "a", "b") == ("keep", "b")  # already agree -> baseline advances
+    assert _decide("", "a", "") == ("keep", "")  # Planning cleared it and the project already is
+    assert _decide("a", "a", "") == ("set", "")  # Planning cleared it, project untouched -> cleared
+
+
+def test_reapproving_after_handoff_pushes_planning_changes_to_the_project(authed_client, monkeypatch):
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    pid = planning["id"]
+    services = _planning_page(authed_client, pid, "Services")
+    home = _planning_page(authed_client, pid, "Home")
+    authed_client.patch(f"/api/v1/planning/{pid}/sitemap/{services['id']}", json={"purpose": "Show every service with pricing."})
+    authed_client.post(
+        f"/api/v1/planning/{pid}/sitemap", json={"title": "Contact", "page_type": "contact", "purpose": "How to get in touch."}
+    )
+    authed_client.delete(f"/api/v1/planning/{pid}/sitemap/{home['id']}")
+    authed_client.patch(f"/api/v1/planning/{pid}/visual-directions/select", json={"option_index": 1})
+    authed_client.post(
+        f"/api/v1/planning/{pid}/recommendations", json={"category": "add", "title": "Online quote form", "explanation": "x"}
+    )
+
+    brief = _reapprove(authed_client, pid)
+    assert brief["project_id"] == project["id"]
+    assert brief["sync_conflicts"] == []
+
+    sitemap = _project_sitemap(authed_client, project["id"])  # still exactly one — nothing duplicated
+    assert {p["title"] for p in sitemap["pages"]} == {"Services", "Contact"}
+    assert _project_page(sitemap, "Services")["purpose"] == "Show every service with pricing."
+    assert sitemap["status"] == "draft"
+
+    directions = authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()
+    assert len(directions) == 1
+    assert directions[0]["colour_direction"] == VISUAL_DIRECTIONS_LLM_OUTPUT["options"][1]["colour_palette"]
+
+    assert "Online quote form" in authed_client.get(f"/api/v1/projects/{project['id']}").json()["build_direction"]
+
+    # The handoff itself stays idempotent.
+    again = authed_client.post(f"/api/v1/planning/{pid}/create-project").json()
+    assert again["id"] == project["id"]
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()) == 1
+
+
+def test_content_approved_after_handoff_reaches_the_projects_brief_and_sitemap(authed_client, monkeypatch, db_session):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    before = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert not before.get("business_description")
+
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    page = authed_client.get(f"/api/v1/planning/{planning['id']}").json()["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+    assert _reapprove(authed_client, planning["id"])["sync_conflicts"] == []
+
+    after = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert after["business_description"] == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]
+
+    from app.modules.sitemaps.models import SitemapPage as _SitemapPage
+
+    home = _project_page(_project_sitemap(authed_client, project["id"]), "Home")
+    assert db_session.get(_SitemapPage, uuid.UUID(home["id"])).seo_title == CONTENT_DRAFT_PAGE_OUTPUT["seo_title"]
+
+
+def test_project_edits_are_kept_and_flagged_not_overwritten(authed_client, monkeypatch):
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    pid = planning["id"]
+    sitemap = _project_sitemap(authed_client, project["id"])
+    project_services = _project_page(sitemap, "Services")
+    res = authed_client.patch(
+        f"/api/v1/sitemaps/{sitemap['id']}/pages/{project_services['id']}", json={"purpose": "Our own wording."}
+    )
+    assert res.status_code == 200
+
+    services = _planning_page(authed_client, pid, "Services")
+    authed_client.patch(
+        f"/api/v1/planning/{pid}/sitemap/{services['id']}",
+        json={"purpose": "Planning's new purpose.", "key_sections": ["service cards", "pricing"]},
+    )
+    brief = _reapprove(authed_client, pid)
+
+    page = _project_page(_project_sitemap(authed_client, project["id"]), "Services")
+    assert page["purpose"] == "Our own wording."  # the project's edit is kept…
+    assert page["key_sections"] == ["service cards", "pricing"]  # …while a field it never touched follows Planning
+    assert len(brief["sync_conflicts"]) == 1
+    conflict = brief["sync_conflicts"][0]
+    assert conflict["area"] == "Sitemap"
+    assert conflict["item"] == "Services — Purpose"
+    assert conflict["planning_value"] == "Planning's new purpose."
+    assert conflict["project_value"] == "Our own wording."
+
+    # The flag stays until it's resolved, even with nothing new changed in Planning.
+    assert len(_reapprove(authed_client, pid)["sync_conflicts"]) == 1
+
+    authed_client.patch(
+        f"/api/v1/sitemaps/{sitemap['id']}/pages/{project_services['id']}", json={"purpose": "Planning's new purpose."}
+    )
+    assert _reapprove(authed_client, pid)["sync_conflicts"] == []
+
+
+def test_project_brief_edits_are_kept_and_flagged(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    pid = planning["id"]
+    authed_client.post(f"/api/v1/planning/{pid}/assets/refresh")
+    authed_client.post(f"/api/v1/planning/{pid}/build-brief/approve")
+    project = authed_client.post(f"/api/v1/planning/{pid}/create-project").json()
+    authed_client.patch(f"/api/v1/projects/{project['id']}/brief", json={"logo_assets": "Client sent logo.png by email."})
+
+    assets = authed_client.get(f"/api/v1/planning/{pid}").json()["assets"]
+    logo = next(a for a in assets if a["category"] == "logo")
+    photos = next(a for a in assets if a["category"] == "photos")
+    authed_client.patch(f"/api/v1/planning/{pid}/assets/{logo['id']}", json={"status": "needs_owner_approval"})
+    authed_client.patch(f"/api/v1/planning/{pid}/assets/{photos['id']}", json={"note": "Use the shopfront photo."})
+    brief = _reapprove(authed_client, pid)
+
+    fields = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()
+    fields = {**fields["business"]["fields"], **fields["assets"]["fields"]}
+    assert fields["logo_assets"] == ["Client sent logo.png by email."]  # the project's edit is kept
+    assert any("Use the shopfront photo." in line for line in fields["image_assets"])  # an untouched field follows Planning
+    assert [(c["area"], c["item"]) for c in brief["sync_conflicts"]] == [("Client brief", "Logo assets")]
+
+
+def test_approved_project_artefacts_are_never_changed_by_a_sync(authed_client, monkeypatch):
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    pid = planning["id"]
+    sitemap = _project_sitemap(authed_client, project["id"])
+    direction = authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()[0]
+    assert authed_client.post(f"/api/v1/sitemaps/{sitemap['id']}/approve").status_code == 200
+    assert authed_client.post(f"/api/v1/creative-directions/{direction['id']}/approve").status_code == 200
+
+    services = _planning_page(authed_client, pid, "Services")
+    authed_client.patch(f"/api/v1/planning/{pid}/sitemap/{services['id']}", json={"purpose": "A different purpose."})
+    authed_client.patch(f"/api/v1/planning/{pid}/visual-directions/select", json={"option_index": 1})
+    brief = _reapprove(authed_client, pid)
+
+    assert {c["area"] for c in brief["sync_conflicts"]} >= {"Sitemap", "Creative direction"}
+    sitemap_after = _project_sitemap(authed_client, project["id"])
+    assert sitemap_after["status"] == "approved"
+    assert _project_page(sitemap_after, "Services")["purpose"] == SITEMAP_PROPOSAL_LLM_OUTPUT["pages"][1]["purpose"]
+    direction_after = authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()[0]
+    assert direction_after["status"] == "approved"
+    assert direction_after["colour_direction"] == VISUAL_DIRECTIONS_LLM_OUTPUT["options"][0]["colour_palette"]
+
+
+def test_a_regenerated_project_sitemap_is_not_overwritten(authed_client, monkeypatch, db_session):
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.sitemaps.models import Sitemap
+
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    pid = planning["id"]
+    db_session.add(
+        Sitemap(
+            project_id=uuid.UUID(project["id"]),
+            overview="Regenerated on the project",
+            generated_at=datetime.now(timezone.utc) + timedelta(days=1),
+        )
+    )
+    db_session.commit()
+
+    services = _planning_page(authed_client, pid, "Services")
+    authed_client.patch(f"/api/v1/planning/{pid}/sitemap/{services['id']}", json={"purpose": "A different purpose."})
+    brief = _reapprove(authed_client, pid)
+
+    assert any(c["area"] == "Sitemap" and "regenerated" in c["message"] for c in brief["sync_conflicts"])
+    seeded = next(
+        s for s in authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json() if s["overview"] is None
+    )
+    assert _project_page(seeded, "Services")["purpose"] == SITEMAP_PROPOSAL_LLM_OUTPUT["pages"][1]["purpose"]
+
+
+def test_a_handoff_from_before_baselines_resyncs_from_its_frozen_snapshot(authed_client, monkeypatch, db_session):
+    from app.modules.planning.models import LeadPlanningApprovedBrief
+
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    pid = planning["id"]
+    row = db_session.query(LeadPlanningApprovedBrief).filter_by(lead_planning_id=uuid.UUID(pid)).one()
+    row.handoff_baseline = None  # what an existing handoff looks like before this feature
+    db_session.commit()
+
+    services = _planning_page(authed_client, pid, "Services")
+    authed_client.patch(f"/api/v1/planning/{pid}/sitemap/{services['id']}", json={"purpose": "A different purpose."})
+    authed_client.post(
+        f"/api/v1/planning/{pid}/recommendations", json={"category": "add", "title": "Online quote form", "explanation": "x"}
+    )
+    brief = _reapprove(authed_client, pid)
+
+    # The structured rows are rebuilt from the frozen snapshot, so an untouched page follows Planning…
+    assert _project_page(_project_sitemap(authed_client, project["id"]), "Services")["purpose"] == "A different purpose."
+    # …but the narrative can't be verified as untouched, so it's treated as the project's own.
+    assert [c["area"] for c in brief["sync_conflicts"]] == ["Build direction"]
+    assert "Online quote form" not in authed_client.get(f"/api/v1/projects/{project['id']}").json()["build_direction"]
+
+
+def test_planning_pages_added_after_a_handoff_with_no_sitemap_create_the_projects_sitemap(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    pid = planning["id"]
+    authed_client.post(f"/api/v1/planning/{pid}/build-brief/approve")
+    project = authed_client.post(f"/api/v1/planning/{pid}/create-project").json()
+    assert authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json() == []
+
+    _add_sitemap_pages(authed_client, pid, ["Home", "About"])
+    _reapprove(authed_client, pid)
+
+    sitemap = _project_sitemap(authed_client, project["id"])
+    assert {p["title"] for p in sitemap["pages"]} == {"Home", "About"}
+    assert sitemap["status"] == "draft"
+
+    _reapprove(authed_client, pid)  # a second sync adds nothing more
+    assert len(_project_sitemap(authed_client, project["id"])["pages"]) == 2

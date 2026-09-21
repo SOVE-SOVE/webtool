@@ -9,6 +9,7 @@ from app.modules.businesses.models import Business
 from app.modules.clients.models import Client
 from app.modules.design_briefs.models import BriefStatus, DesignBrief
 from app.modules.design_briefs.schemas import BriefIntakeStart, BriefRead, BriefUpdate
+from app.modules.leads.models import Lead
 from app.modules.projects import service as projects_service
 from app.modules.projects.models import Project, ProjectStage
 
@@ -32,12 +33,12 @@ def _get_project_in_workspace(db: Session, workspace_id: uuid.UUID, project_id: 
     return db.scalar(
         select(Project)
         .where(Project.id == project_id, Project.workspace_id == workspace_id)
-        # The client's business and (for a converted lead) the source lead
-        # are eager-loaded because _get_or_create_draft pre-fills a brand
-        # new brief from them — see _prefill_brief_from_records.
+        # The owning business (the client's, or the source lead's for a
+        # prospect project) and the source lead are eager-loaded because
+        # the brief is pre-filled from them — see _prefill_brief_from_records.
         .options(
             joinedload(Project.client).joinedload(Client.business),
-            joinedload(Project.source_lead),
+            joinedload(Project.source_lead).joinedload(Lead.business),
         )
     )
 
@@ -62,11 +63,10 @@ def _prefill_brief_from_records(brief: DesignBrief, project: Project) -> bool:
     The business record already carries whatever Lead Discovery /
     website research turned up (phone, email, social links — see
     modules/business_research/service.py), so pulling from it also
-    covers "carry across the discovery/research info".
+    covers "carry across the discovery/research info". A prospect project
+    (no Client yet) is pre-filled from its lead's business the same way.
     """
-    business = project.client.business if project.client else None
-    if business is None:
-        return False
+    business = project.owner_business
     lead = project.source_lead
 
     location = ", ".join(p for p in (business.suburb, business.state, business.postcode) if p)
@@ -110,6 +110,18 @@ def _get_or_create_draft(db: Session, project: Project) -> DesignBrief:
         _prefill_brief_from_records(brief, project)
         db.add(brief)
         db.flush()
+    return brief
+
+
+def prefill_project_brief(db: Session, project: Project) -> DesignBrief:
+    """Get-or-creates the project's brief and fills any still-empty field
+    from the business/lead records. Unlike _get_or_create_draft (which only
+    pre-fills a brand-new brief), this also covers a brief that already
+    exists — e.g. one Planning's handoff created to carry assets/content
+    copy — without overwriting anything already in it."""
+    brief = _get_or_create_draft(db, project)
+    _prefill_brief_from_records(brief, project)
+    db.flush()
     return brief
 
 
@@ -244,14 +256,24 @@ def get_brief(db: Session, workspace_id: uuid.UUID, project_id: uuid.UUID) -> Br
 
 
 def update_brief(
-    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, project_id: uuid.UUID, data: BriefUpdate
+    db: Session,
+    workspace_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    project_id: uuid.UUID,
+    data: BriefUpdate,
+    *,
+    fill_empty_only: bool = False,
 ) -> BriefRead | None:
+    """`fill_empty_only` writes a field only where the brief has nothing
+    yet (same rule as intake and the record pre-fill), so a caller that just
+    wants to top up gaps — "Confirm details" — never overwrites content
+    already there, e.g. copy carried across from Planning."""
     project = _get_project_in_workspace(db, workspace_id, project_id)
     if project is None:
         return None
 
     brief = _get_or_create_draft(db, project)
-    changed = _apply_fields(brief, data)
+    changed = _apply_fields_where_empty(brief, data) if fill_empty_only else _apply_fields(brief, data)
 
     if changed and brief.status == BriefStatus.APPROVED:
         # The approved brief is the source of truth for design — once its
