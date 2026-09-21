@@ -186,7 +186,7 @@ function PlanningListPageInner() {
   if (statusFilter) {
     filterChips.push({
       id: "status",
-      label: "Status",
+      label: "Analysis status",
       value: PLANNING_STATUS_LABELS[statusFilter],
       onRemove: () => changeStatus(""),
     });
@@ -270,13 +270,13 @@ function PlanningListPageInner() {
               }
               filters={
                 <FilterPopover activeCount={filterChips.length} onClearAll={clearFilters}>
-                  <FilterField label="Status">
+                  <FilterField label="Analysis status">
                     <CompactSelect
-                      aria-label="Filter by status"
+                      aria-label="Filter by analysis status"
                       value={statusFilter}
                       onValueChange={changeStatus}
                       options={[
-                        { value: "", label: "Any status" },
+                        { value: "", label: "Any analysis status" },
                         ...PLANNING_STATUSES.map((s) => ({ value: s, label: PLANNING_STATUS_LABELS[s] })),
                       ]}
                     />

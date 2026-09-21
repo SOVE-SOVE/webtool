@@ -396,7 +396,7 @@ def _sync_design_brief(db: Session, project: Project, plan: dict, base: dict, sy
             setattr(brief, name, plan_value or None)
             sync.applied += 1
         elif decision == "conflict":
-            sync.conflict("Client brief", label, plan_value, current, message)
+            sync.conflict("Client intake", label, plan_value, current, message)
         _set_or_drop(new_base, name, next_base)
     return new_base
 

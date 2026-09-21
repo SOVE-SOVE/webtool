@@ -335,7 +335,7 @@ def test_project_reports_only_its_first_unmet_gate(authed_client, monkeypatch):
         assert len(items) == 1, items  # never more than one row per project
         return items[0]
 
-    assert only_item()["label"] == "Brief"
+    assert only_item()["label"] == "Intake"
 
     authed_client.patch(f"/api/v1/projects/{pid}/brief", json=_REAL_BRIEF)
     authed_client.post(f"/api/v1/projects/{pid}/brief/approve")

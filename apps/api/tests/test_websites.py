@@ -346,7 +346,7 @@ class TestApproveWebsite:
 
         res = authed_client.post(f"/api/v1/websites/{website['id']}/approve")
         assert res.status_code == 400
-        assert "client brief" in res.json()["detail"]
+        assert "client intake" in res.json()["detail"]
         assert "creative direction" in res.json()["detail"]
 
     def test_happy_path_records_who_when_and_notes(self, authed_client, monkeypatch):

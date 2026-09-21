@@ -872,7 +872,7 @@ def approve_website(
 
     missing = []
     if brief is None or brief.status != BriefStatus.APPROVED:
-        missing.append("client brief")
+        missing.append("client intake")
     if creative_direction is None or creative_direction.status != CreativeDirectionStatus.APPROVED:
         missing.append("creative direction")
     if sitemap is None or sitemap.status != SitemapStatus.APPROVED:

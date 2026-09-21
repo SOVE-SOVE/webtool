@@ -506,9 +506,9 @@ def _next_project_action(
     if brief is None or brief.status != BriefStatus.APPROVED:
         return (
             _PROJECT_BLOCKED,
-            "Brief",
-            "client brief not approved",
-            "Fill in the intake brief and approve it",
+            "Intake",
+            "client intake not confirmed",
+            "Fill in the client intake and confirm it",
             "",
         )
 

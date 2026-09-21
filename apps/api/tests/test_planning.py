@@ -2365,7 +2365,7 @@ def test_project_brief_edits_are_kept_and_flagged(authed_client):
     fields = {**fields["business"]["fields"], **fields["assets"]["fields"]}
     assert fields["logo_assets"] == ["Client sent logo.png by email."]  # the project's edit is kept
     assert any("Use the shopfront photo." in line for line in fields["image_assets"])  # an untouched field follows Planning
-    assert [(c["area"], c["item"]) for c in brief["sync_conflicts"]] == [("Client brief", "Logo assets")]
+    assert [(c["area"], c["item"]) for c in brief["sync_conflicts"]] == [("Client intake", "Logo assets")]
 
 
 def test_approved_project_artefacts_are_never_changed_by_a_sync(authed_client, monkeypatch):

@@ -100,7 +100,7 @@ export function AssetsChecklistSection({ planning, onUpdated }: { planning: Plan
           + Add asset
         </button>
         <button type="button" onClick={handleRefresh} disabled={refreshing} className="btn btn-primary btn-sm">
-          {refreshing ? "Refreshing…" : planning.assets.length > 0 ? "Refresh checklist" : "Build checklist"}
+          {refreshing ? "Refreshing…" : planning.assets.length > 0 ? "Refresh checklist" : "Generate checklist"}
         </button>
       </div>
       {error && <p className="text-error">{error}</p>}

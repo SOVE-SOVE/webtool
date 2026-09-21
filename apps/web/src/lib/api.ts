@@ -420,7 +420,7 @@ export type ProjectStage = (typeof PROJECT_STAGES)[number];
 export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
   intake: "Intake",
   research: "Research",
-  brief: "Brief",
+  brief: "Scoping",
   design: "Design",
   development: "Development",
   qa: "QA",

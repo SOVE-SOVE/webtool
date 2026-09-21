@@ -83,12 +83,12 @@ export function buildChecklist(input: {
   const raw: Raw[] = [
     {
       key: "discovery",
-      label: "Discovery & brief",
+      label: "Client intake",
       tab: "approval",
       done: checkpointApproved(approvals, "client_brief"),
       blocked: checkpointBlockedReason(approvals, "client_brief"),
       detail: checkpointApproved(approvals, "client_brief")
-        ? "Client brief approved"
+        ? "Client intake confirmed"
         : checkpointBlockedReason(approvals, "client_brief") ?? "Not started",
     },
     {

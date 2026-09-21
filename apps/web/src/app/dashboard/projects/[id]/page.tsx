@@ -370,7 +370,7 @@ export default function ProjectDetailPage() {
       setWebsiteBriefs((prev) => [generated, ...(prev ?? [])]);
       setWebsiteBriefExpandedId(generated.id);
     } catch (err) {
-      setGenerateWebsiteBriefError(err instanceof ApiError ? err.message : "Couldn't generate a website brief.");
+      setGenerateWebsiteBriefError(err instanceof ApiError ? err.message : "Couldn't generate a project overview.");
     } finally {
       setGeneratingWebsiteBrief(false);
     }
@@ -529,7 +529,7 @@ export default function ProjectDetailPage() {
       {/* 2. Business details — carried over from the lead, editable */}
       <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="section-title">Business details</h2>
+          <h2 className="section-title">Client intake</h2>
           {detailsConfirmed ? (
             <Badge tone="success">Confirmed</Badge>
           ) : (
@@ -610,7 +610,7 @@ export default function ProjectDetailPage() {
         </div>
         {websites && websites.length === 0 && (
           <p className="mt-2 text-sm text-fg-muted">
-            Build a demo website from the business information on file — a starter sitemap and brief are seeded
+            Build a demo website from the business information on file — a starter sitemap and client intake are seeded
             automatically. It’s a working draft to preview and show the owner before you make contact.
           </p>
         )}
@@ -620,7 +620,7 @@ export default function ProjectDetailPage() {
             value={progress}
             label={
               approvalStatus
-                ? `${progress}% · ${approvalStatus.checkpoints.filter((c) => c.approved).length} of ${approvalStatus.checkpoints.length} approval stages done`
+                ? `${progress}% · ${approvalStatus.checkpoints.filter((c) => c.approved).length} of ${approvalStatus.checkpoints.length} approval steps done`
                 : `${progress}% · ${PROJECT_STAGE_LABELS[project.stage]}`
             }
           />
@@ -651,7 +651,7 @@ export default function ProjectDetailPage() {
         )}
       </section>
 
-      <StageChecklistPanel ownerType="project" ownerId={projectId} title="Stage checklist" />
+      <StageChecklistPanel ownerType="project" ownerId={projectId} title="Project checklist" />
 
       {/* 4. Build direction — bring in direction worked out elsewhere */}
       <section className="panel">
@@ -850,7 +850,7 @@ export default function ProjectDetailPage() {
         </Disclosure>
 
         <Disclosure
-          title="Website brief"
+          title="Project overview"
           hint="The client-facing rollup — business details + creative direction + sitemap in one editable document."
           badge={<StatusChip status={wbStatus} />}
         >

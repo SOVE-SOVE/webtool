@@ -202,7 +202,7 @@ function ProjectWebsiteWorkspaceInner() {
     try {
       applyWebsiteApproval(await api.approveWebsite(website.id));
     } catch {
-      setApproveError("Couldn't approve — the brief, creative direction, and sitemap all need to be approved first.");
+      setApproveError("Couldn't approve — the client intake, creative direction, and sitemap all need to be approved first.");
     } finally {
       setApprovingWebsite(false);
     }
@@ -361,9 +361,9 @@ function ProjectWebsiteWorkspaceInner() {
         )}
       </section>
 
-      {/* 2. Build checklist */}
+      {/* 2. Website checklist */}
       <section className="panel">
-        <h2 className="section-title">Build checklist</h2>
+        <h2 className="section-title">Website checklist</h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           Derived from the project&apos;s real approval, content, QA and deployment state — not a manual list.
         </p>
@@ -406,8 +406,8 @@ function ProjectWebsiteWorkspaceInner() {
                 <p className="text-sm font-medium text-fg">No website generated yet</p>
                 <p className="mt-1 text-sm text-fg-muted">
                   “Generate initial website” builds a demo straight from the business information on file — a
-                  starter sitemap and brief are seeded for you. It’s a working draft to show the owner; refine
-                  the brief, sitemap and content and regenerate from there.
+                  starter sitemap and client intake are seeded for you. It’s a working draft to show the owner; refine
+                  the client intake, sitemap and content and regenerate from there.
                 </p>
               </div>
             ))}

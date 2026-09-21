@@ -277,7 +277,9 @@ function PlanningDetailPageInner() {
             ) : (
               <span className="text-sm text-fg-subtle">No website on record</span>
             )}
-            <Badge tone={STATUS_BADGE_TONE[planning.status]}>{PLANNING_STATUS_LABELS[planning.status]}</Badge>
+            <span title="Analysis status">
+              <Badge tone={STATUS_BADGE_TONE[planning.status]}>{PLANNING_STATUS_LABELS[planning.status]}</Badge>
+            </span>
             {showLastUpdated && (
               <span className="text-xs text-fg-subtle">Last updated {new Date(planning.updated_at).toLocaleString()}</span>
             )}
@@ -341,7 +343,7 @@ function PlanningDetailPageInner() {
       )}
 
       <div className="mb-4">
-        <StageChecklistPanel ownerType="planning" ownerId={planning.id} title="Stage checklist" />
+        <StageChecklistPanel ownerType="planning" ownerId={planning.id} title="Planning checklist" />
       </div>
 
       <TabBar

@@ -97,7 +97,7 @@ class TestCreateDeployment:
         res = authed_client.post(f"/api/v1/projects/{project['id']}/deployments")
         assert res.status_code == 400
         detail = res.json()["detail"]
-        assert "Client brief" in detail
+        assert "Client intake" in detail
         assert "Client review" in detail
 
     def test_blocked_when_only_client_review_is_missing(self, authed_client, monkeypatch):
@@ -121,7 +121,7 @@ class TestCreateDeployment:
         assert res.status_code == 400
         detail = res.json()["detail"]
         assert "Client review" in detail
-        assert "Client brief" not in detail
+        assert "Client intake" not in detail
 
     def test_happy_path_once_fully_approved(self, authed_client, monkeypatch):
         project, website = _build_deployable_project(authed_client, monkeypatch)

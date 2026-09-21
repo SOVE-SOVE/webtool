@@ -64,13 +64,13 @@ def get_project_approval_status(db: Session, workspace_id: uuid.UUID, project_id
     checkpoints.append(
         ApprovalCheckpoint(
             stage="client_brief",
-            label="Client brief",
+            label="Client intake",
             approved=brief_approved,
             approved_by_user_name=brief.approved_by_user.name if brief and brief.approved_by_user else None,
             approved_at=brief.approved_at if brief else None,
-            version_label="Current brief" if brief else None,
+            version_label="Current intake" if brief else None,
             notes=None,
-            blocked_reason=None if brief_approved else ("No client brief started yet" if brief is None else "Brief not approved yet"),
+            blocked_reason=None if brief_approved else ("No client intake started yet" if brief is None else "Client intake not confirmed yet"),
         )
     )
 
