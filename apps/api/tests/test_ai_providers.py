@@ -149,6 +149,51 @@ def _mock_transport(handler):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+class TestOllamaThinkingControl:
+    def _capture(self, monkeypatch):
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(json.loads(request.content))
+            content = json.dumps({"summary": "ok"})
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+        monkeypatch.setattr(
+            httpx, "post", lambda url, json, timeout: _mock_transport(handler).post(url, json=json, timeout=timeout)
+        )
+        return seen
+
+    def _call(self, provider, model):
+        provider.generate_structured(system="s", user="u", schema=SCHEMA, model=model)
+
+    def test_opted_in_model_prefix_gets_reasoning_effort_none(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        provider = OllamaProvider("http://fake-ollama:11434", 5.0, no_think_model_prefixes=("qwen3",))
+        self._call(provider, "qwen3:4b")
+        assert seen["reasoning_effort"] == "none"
+
+    def test_other_models_are_sent_the_unchanged_request(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        provider = OllamaProvider("http://fake-ollama:11434", 5.0, no_think_model_prefixes=("qwen3",))
+        self._call(provider, "llama3.2")
+        assert "reasoning_effort" not in seen
+
+    def test_empty_prefix_list_never_sets_reasoning_effort(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        self._call(OllamaProvider("http://fake-ollama:11434", 5.0, no_think_model_prefixes=()), "qwen3:4b")
+        assert "reasoning_effort" not in seen
+
+    def test_prefixes_default_to_the_setting_as_the_router_builds_it(self, monkeypatch):
+        monkeypatch.setattr(settings, "ollama_no_think_model_prefixes", ["qwen3"])
+        provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
+        assert provider._thinking_disabled_for("qwen3:4b")
+        assert not provider._thinking_disabled_for("llama3.2")
+
+        monkeypatch.setattr(settings, "ollama_no_think_model_prefixes", [])
+        provider = OllamaProvider(base_url="http://fake-ollama:11434", timeout_seconds=5.0)
+        assert not provider._thinking_disabled_for("qwen3:4b")
+
+
 class TestOllamaProvider:
     def test_successful_call_parses_json_content(self, monkeypatch):
         def handler(request: httpx.Request) -> httpx.Response:

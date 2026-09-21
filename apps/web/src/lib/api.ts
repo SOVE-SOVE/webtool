@@ -1415,6 +1415,16 @@ export type Planning = {
   review_faq_opportunities: ReviewFaqOpportunity[];
   review_website_gaps: ReviewWebsiteGap[];
   review_insights_generated_at: string | null;
+  // Outcome of the LATEST synthesis attempt (see PlanningRead). After a
+  // failed/skipped attempt the lists above may hold content from an
+  // earlier successful run.
+  review_synthesis_status?: "completed" | "failed" | "skipped" | null;
+  review_synthesis_error?: string | null;
+  review_synthesis_attempted_at?: string | null;
+  review_synthesis_succeeded_at?: string | null;
+  review_synthesis_outcome?: "completed" | "failed" | "skipped" | "unknown_previous_run" | "no_recorded_attempt";
+  review_synthesis_outcome_label?: string;
+  review_synthesis_content_from_latest_attempt?: boolean | null;
 
   // "New Website Plan" mode — for a Lead with no website_audit yet.
   // Mode itself is derived (website_audit_id === null), never stored.

@@ -9,8 +9,15 @@ owners, zero side effects from ticking, and persistence across pipeline
 advancement.
 """
 
+import uuid
+
+import pytest
+
+from app.integrations import places
+from app.integrations.llm import LlmUnavailableError
 from app.modules.discovery.models import DiscoveredBusiness, DiscoverySearch
-from app.modules.stage_checklists.models import StageChecklistItem
+from app.modules.stage_checklists import signals as stage_signals
+from app.modules.stage_checklists.models import StageChecklistAutoSignal, StageChecklistItem
 
 DEFAULT_DISCOVERY_TITLES = [
     "Confirm business identity and location",
@@ -583,3 +590,188 @@ class TestCompletionNotes:
         ).json()
         completed_entry = next(a for a in activity if a["action"] == "completed")
         assert "reviewed" in completed_entry["summary"].lower()
+
+
+# --- "Review Google Review Insights" evidence signal --------------------------
+# The item is MANUAL: its status is whatever a person set. The signal only
+# supplies evidence — `completed_at` drives the "needs_review" flip and the
+# "reviewed … as of" activity note — so it must not report evidence merely
+# because a fetch was attempted (review_insights_generated_at is set by
+# every run, successful or not).
+
+REVIEW_ITEM = "Review Google Review Insights, where available"
+
+NO_KEYWORD_REVIEWS = [  # written text, but nothing matching a recurring theme
+    places.PlaceReview(rating=5, text="Great place, thanks.", published_at="2026-08-01T00:00:00Z"),
+    places.PlaceReview(rating=4, text="Nice spot, will be back.", published_at="2026-08-10T00:00:00Z"),
+    places.PlaceReview(rating=5, text="Lovely afternoon here.", published_at="2026-08-20T00:00:00Z"),
+]
+
+
+def _review_signal(db_session, planning_id):
+    db_session.expire_all()
+    return stage_signals.resolve(
+        db_session, StageChecklistAutoSignal.PLANNING_REVIEW_INSIGHTS, uuid.UUID(planning_id)
+    )
+
+
+def _run_review_insights(authed_client, planning_id):
+    res = authed_client.post(f"/api/v1/planning/{planning_id}/review-insights")
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _planning_with_reviews(authed_client, monkeypatch, **patch_kwargs):
+    from tests.test_planning import _patch_review_insights
+
+    lead = _create_lead(authed_client, "Coastal Cafe")
+    planning = _start_planning(authed_client, lead)
+    _patch_review_insights(monkeypatch, **patch_kwargs)
+    return planning
+
+
+class TestReviewInsightsSignalRequiresAnalysedWrittenReviews:
+    def test_written_reviews_analysed_successfully_count_as_evidence(self, authed_client, monkeypatch, db_session):
+        from tests.test_planning import THREE_PRAISE_REVIEWS
+
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+        _run_review_insights(authed_client, planning["id"])
+
+        signal = _review_signal(db_session, planning["id"])
+        assert signal.done is True
+        assert signal.completed_at is not None
+        assert signal.completed_by is not None
+
+    def test_a_successful_analysis_with_no_recurring_themes_still_counts(self, authed_client, monkeypatch, db_session):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=NO_KEYWORD_REVIEWS)
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_intelligence"]["themes_data_sufficient"] is True
+        assert body["review_intelligence"]["positive_review_themes"] == []
+        assert body["review_website_opportunities"] == []
+
+        assert _review_signal(db_session, planning["id"]).done is True
+
+    def test_review_text_unavailable_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        # Google returned a rating and a total count but no written reviews.
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[])
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_insights_generated_at"] is not None  # the run happened…
+
+        signal = _review_signal(db_session, planning["id"])  # …but nothing was analysed
+        assert signal.done is False
+        assert signal.completed_at is None
+        assert signal.completed_by is None
+
+    def test_ratings_only_reviews_without_text_are_not_evidence(self, authed_client, monkeypatch, db_session):
+        no_text = [places.PlaceReview(rating=5, text=None, published_at="2026-08-01T00:00:00Z") for _ in range(4)]
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=no_text)
+        _run_review_insights(authed_client, planning["id"])
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_a_sample_too_small_for_theme_analysis_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=NO_KEYWORD_REVIEWS[:2])
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_intelligence"]["themes_data_sufficient"] is False
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_zero_google_reviews_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[], rating=None, review_count=0)
+        _run_review_insights(authed_client, planning["id"])
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_no_google_listing_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[])
+        monkeypatch.setattr(places, "text_search", lambda query, page_size=1, page_token=None: None)
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_intelligence"]["data_status"] == "no_listing"
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_a_failed_google_fetch_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[])
+        monkeypatch.setattr(places, "get_place_details", lambda place_id: None)
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_intelligence"]["data_status"] == "unavailable"
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_a_failed_ai_summary_of_the_reviews_is_not_evidence(self, authed_client, monkeypatch, db_session):
+        from tests.test_planning import THREE_PRAISE_REVIEWS
+
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+
+        def _boom(**kwargs):
+            raise LlmUnavailableError("no API key configured")
+
+        monkeypatch.setattr("app.agents.review_intelligence.generate_structured", _boom)
+        body = _run_review_insights(authed_client, planning["id"])
+        assert body["review_intelligence"]["review_summary_unavailable_reason"]
+        assert _review_signal(db_session, planning["id"]).done is False
+
+    def test_never_run_is_not_evidence(self, authed_client, db_session):
+        planning = _start_planning(authed_client, _create_lead(authed_client, "Coastal Cafe"))
+        signal = _review_signal(db_session, planning["id"])
+        assert signal.done is False
+        assert signal.completed_at is None
+
+
+class TestReviewInsightsItemBehaviourIsPreserved:
+    def _item_for(self, authed_client, planning_id):
+        checklist = authed_client.get(f"/api/v1/planning/{planning_id}/checklist").json()
+        return _item(checklist, REVIEW_ITEM)
+
+    def _completed_summary(self, authed_client, item_id):
+        activity = authed_client.get(
+            "/api/v1/activity", params={"entity_type": "stage_checklist_item", "entity_id": item_id}
+        ).json()
+        return next(a for a in activity if a["action"] == "completed")["summary"]
+
+    def test_the_item_is_never_auto_completed_by_a_run(self, authed_client, monkeypatch):
+        from tests.test_planning import THREE_PRAISE_REVIEWS
+
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+        _run_review_insights(authed_client, planning["id"])
+        assert self._item_for(authed_client, planning["id"])["status"] == "pending"
+
+    def test_manual_completion_still_works_without_analysed_reviews_and_is_not_flipped_by_a_refresh(
+        self, authed_client, monkeypatch
+    ):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[])
+        _run_review_insights(authed_client, planning["id"])
+        item = self._item_for(authed_client, planning["id"])
+
+        _complete(authed_client, item["id"])
+        assert "reviewed" not in self._completed_summary(authed_client, item["id"]).lower()
+        assert self._item_for(authed_client, planning["id"])["status"] == "complete"
+
+        _run_review_insights(authed_client, planning["id"])  # a refetch that analyses nothing new
+        item = self._item_for(authed_client, planning["id"])
+        assert item["status"] == "complete"
+        assert item["needs_review_reason"] is None
+
+    def test_with_analysed_reviews_completion_records_the_version_and_a_refresh_flips_to_needs_review(
+        self, authed_client, monkeypatch
+    ):
+        from tests.test_planning import THREE_PRAISE_REVIEWS
+
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+        _run_review_insights(authed_client, planning["id"])
+        item = self._item_for(authed_client, planning["id"])
+
+        _complete(authed_client, item["id"])
+        assert "reviewed" in self._completed_summary(authed_client, item["id"]).lower()
+
+        _run_review_insights(authed_client, planning["id"])
+        item = self._item_for(authed_client, planning["id"])
+        assert item["status"] == "needs_review"
+        assert item["needs_review_reason"]
+
+    def test_not_required_override_and_unrelated_items_are_unaffected(self, authed_client, monkeypatch):
+        planning = _planning_with_reviews(authed_client, monkeypatch, reviews=[])
+        _run_review_insights(authed_client, planning["id"])
+        item = self._item_for(authed_client, planning["id"])
+
+        res = authed_client.patch(f"/api/v1/stage-checklist-items/{item['id']}", json={"status": "not_required"})
+        assert res.status_code == 200, res.text
+        checklist = authed_client.get(f"/api/v1/planning/{planning['id']}/checklist").json()
+        assert _item(checklist, REVIEW_ITEM)["status"] == "not_required"
+        assert _item(checklist, "Review improvement recommendations")["status"] == "pending"
+        assert _item(checklist, "Review website audit or new-website research")["status"] == "pending"

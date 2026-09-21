@@ -3,6 +3,7 @@ import type { OpportunityScoreResult, ReviewIntelligenceResult, WebsiteQualityAu
 import { Badge } from "@/components/ui/Badge";
 import { ScoreCategoryBadge } from "@/components/ReviewStatusBadge";
 import { findingCounts, plural, reviewPriority } from "@/lib/reviewBrief";
+import { isReviewTextUnavailable } from "@/lib/reviewText";
 
 function Tile({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
@@ -38,6 +39,7 @@ export function ReviewSummaryStrip({
   const priority = reviewPriority(score?.category);
   const counts = audit ? findingCounts(audit.findings) : null;
   const hasRating = reviews?.data_status === "ok";
+  const textUnavailable = isReviewTextUnavailable(reviews);
 
   return (
     <section aria-label="Review summary" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -114,8 +116,12 @@ export function ReviewSummaryStrip({
         hint={
           hasRating && reviews ? (
             <span>
-              {reviews.google_review_count !== null ? plural(reviews.google_review_count, "review") : "Count unavailable"}
-              {reviews.review_health_score !== null && ` · Health ${reviews.review_health_score}/100`}
+              {reviews.google_review_count !== null
+                ? `${plural(reviews.google_review_count, "Google review")} in total`
+                : "Count unavailable"}
+              {reviews.review_health_score !== null &&
+                ` · Health ${reviews.review_health_score}/100${textUnavailable ? " (rating and count only)" : ""}`}
+              {textUnavailable && " · No written reviews returned"}
             </span>
           ) : reviews ? (
             reviews.data_status === "no_listing" ? "No Google listing found" : "Google Places unavailable"

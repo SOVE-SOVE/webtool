@@ -36,13 +36,24 @@ export function TabBar({
   onChange,
   className = "",
   ariaLabel,
+  variant = "default",
 }: {
   tabs: readonly TabItem[];
   active: string;
   onChange?: (id: string) => void;
   className?: string;
   ariaLabel?: string;
+  /**
+   * `workspace` is the refined strip for the four top-level workspace
+   * headers (Today, Sales, Build, Clients): a fixed 36px row, first
+   * label flush with the page content, a 1px active line on the
+   * baseline, and an inset keyboard ring. The strip's -mx-1 offsets the
+   * tabs' px-1 so the first label lines up with the content below. Opt-in only — every other
+   * TabBar (detail pages, Settings, Discovery) keeps `default`.
+   */
+  variant?: "default" | "workspace";
 }) {
+  const ws = variant === "workspace";
   const tabRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
@@ -61,13 +72,21 @@ export function TabBar({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`relative flex gap-4 overflow-x-auto border-b border-border ${className}`}
+      className={`relative flex overflow-x-auto ${
+        ws
+          ? "-mx-1 gap-4 shadow-[inset_0_-1px_0_var(--color-border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          : "gap-4 border-b border-border"
+      } ${className}`}
     >
       {tabs.map((tab) => {
         const isActive = tab.id === active;
-        const tabClassName = `shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-fast ease-standard motion-reduce:transition-none ${
-          isActive ? "text-fg" : "text-fg-muted hover:border-border-strong hover:text-fg"
-        }`;
+        const tabClassName = ws
+          ? `shrink-0 whitespace-nowrap rounded-sm px-1 py-2 text-sm font-medium leading-5 transition-colors duration-fast ease-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
+              isActive ? "text-fg" : "text-fg-muted hover:text-fg"
+            }`
+          : `shrink-0 border-b-2 border-transparent py-2.5 text-sm font-medium transition-colors duration-fast ease-standard motion-reduce:transition-none ${
+              isActive ? "text-fg" : "text-fg-muted hover:border-border-strong hover:text-fg"
+            }`;
         const setRef = (el: HTMLElement | null) => {
           if (el) tabRefs.current.set(tab.id, el);
           else tabRefs.current.delete(tab.id);
@@ -99,7 +118,7 @@ export function TabBar({
       {indicator && (
         <span
           aria-hidden="true"
-          className="absolute bottom-0 h-0.5 bg-fg transition-[left,width] duration-[var(--duration-base)] ease-standard motion-reduce:transition-none"
+          className={`absolute bottom-0 bg-fg transition-[left,width] duration-[var(--duration-base)] ease-standard motion-reduce:transition-none ${ws ? "h-px" : "h-0.5"}`}
           style={{ left: indicator.left, width: indicator.width }}
         />
       )}

@@ -54,13 +54,19 @@ class Settings(BaseSettings):
     # implemented today; an unrecognized value fails loudly rather than
     # silently picking one.
     ai_local_provider: str = "ollama"
-    ai_local_model: str = "qwen3:30b-a3b"
+    ai_local_model: str = "qwen3:4b"
     ai_premium_provider: str = "anthropic"
     # Blank = use llm_model above, so operators don't have to configure
     # the same Claude model in two places.
     ai_premium_model: str = ""
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: float = 120.0
+    # Local models whose name starts with one of these are sent
+    # `reasoning_effort: "none"` so they answer directly instead of
+    # burning the token budget on hidden reasoning (which otherwise
+    # truncates/empties structured output). JSON list in the env, e.g.
+    # OLLAMA_NO_THINK_MODEL_PREFIXES=["qwen3"]; [] disables it.
+    ollama_no_think_model_prefixes: list[str] = ["qwen3"]
 
     # AI usage cost estimation (see app/modules/ai_usage/). Per-MILLION-token
     # USD prices for Anthropic models, so pricing lives here, not scattered

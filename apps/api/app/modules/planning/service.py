@@ -2,10 +2,12 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -39,6 +41,7 @@ from app.agents.website_audit import WebsiteAuditOutput
 from app.integrations.browser import PlanningAuditSignals, fetch_planning_audit_signals
 from app.integrations.discovery import registry as discovery_registry
 from app.integrations.discovery.base import DiscoveryCriteria, WebsiteStatus
+from app.integrations.ai.errors import AIProviderModelMissingError, AIProviderUnavailableError
 from app.integrations.llm import LlmUnavailableError
 from app.modules.activity_log import service as activity_service
 from app.modules.businesses.models import Business
@@ -71,6 +74,7 @@ from app.modules.planning.models import (
     RecommendationCategory,
     RecommendationSourceType,
     RecommendationStatus,
+    ReviewSynthesisStatus,
     SocialDataSource,
 )
 from app.modules.planning.schemas import (
@@ -109,6 +113,8 @@ from app.modules.website_audits.models import WebsiteAudit
 # per search to find that many usable (has-a-real-website) candidates.
 MAX_COMPARABLE_CANDIDATES = 5
 _COMPARABLE_SEARCH_RAW_LIMIT = 10
+
+logger = logging.getLogger(__name__)
 
 
 class NoWebsiteUrlError(Exception):
@@ -258,8 +264,43 @@ def _content_source_fingerprint(planning: LeadPlanning, sitemap_page: LeadPlanni
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+_REVIEW_SYNTHESIS_LABELS = {
+    "completed": "Synthesis completed",
+    "failed": "Latest synthesis attempt failed",
+    "skipped": "Synthesis skipped — no recurring review themes to work from",
+    "unknown_previous_run": "Previous run — synthesis outcome unknown",
+    "no_recorded_attempt": "No recorded synthesis attempt",
+}
+
+
+def _review_synthesis_interpretation(planning: LeadPlanning) -> tuple[str, str, bool | None]:
+    """(outcome, label, content_from_latest_attempt) for the synthesis step.
+
+    Only the recorded status and `review_insights_generated_at` are read.
+    A null status is NOT proof the step never ran: records from before the
+    status was tracked were not backfilled. If such a record shows a run
+    happened (`review_insights_generated_at`), its outcome is unknown; only
+    when there's no run evidence at all is it "no recorded attempt".
+    Success is never inferred from the recommendation lists or timestamps,
+    and "skipped" (the AI was never called) is never reported as success."""
+    status = planning.review_synthesis_status
+    if status is not None:
+        outcome = status.value
+        content_from_latest: bool | None = status == ReviewSynthesisStatus.COMPLETED
+    elif planning.review_insights_generated_at is not None:
+        outcome, content_from_latest = "unknown_previous_run", None
+    else:
+        outcome, content_from_latest = "no_recorded_attempt", None
+    return outcome, _REVIEW_SYNTHESIS_LABELS[outcome], content_from_latest
+
+
 def _to_read(db: Session, planning: LeadPlanning, lead: Lead | None = None) -> PlanningRead:
     data = PlanningRead.model_validate(planning)
+    (
+        data.review_synthesis_outcome,
+        data.review_synthesis_outcome_label,
+        data.review_synthesis_content_from_latest_attempt,
+    ) = _review_synthesis_interpretation(planning)
     data.lead_business_name = (lead or planning.lead).business.name
     data.project_id = planning.approved_brief.project_id if planning.approved_brief else None
     audit = planning.website_audit
@@ -708,6 +749,21 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
     return projects_service.get_project(db, workspace_id, project.id)
 
 
+def _review_synthesis_failure_reason(exc: Exception) -> str:
+    """A fixed, category-level reason for the UI/API — never the raw
+    exception text, which can carry endpoints, model names or a provider's
+    error body. The exception is only inspected to pick the category."""
+    if isinstance(exc, ValidationError):
+        return "The AI response wasn't in the expected format."
+    if isinstance(exc, AIProviderModelMissingError):
+        return "The local AI model isn't installed."
+    if "timed out" in str(exc).lower():
+        return "The AI provider timed out."
+    if isinstance(exc, AIProviderUnavailableError):
+        return "The AI provider couldn't be reached."
+    return "AI generation is unavailable."
+
+
 def run_review_insights(
     db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID
 ) -> PlanningRead | None:
@@ -741,7 +797,9 @@ def run_review_insights(
 
     planning.review_intelligence_id = review_read.id
     planning.review_summary = review_read.review_summary
-    planning.review_insights_generated_at = datetime.now(timezone.utc)
+    attempted_at = datetime.now(timezone.utc)
+    planning.review_insights_generated_at = attempted_at
+    planning.review_synthesis_attempted_at = attempted_at
 
     if review_read.positive_review_themes or review_read.negative_review_themes:
         audit_findings = [planning_audit_agent.Finding.model_validate(f) for f in planning.key_points]
@@ -754,6 +812,16 @@ def run_review_insights(
                     audit_findings=audit_findings,
                 )
             )
+        except (LlmUnavailableError, ValidationError) as exc:
+            # The snapshot/themes/summary above are kept, and so is any
+            # earlier successful synthesis content (the three lists are
+            # only replaced on success) — but this attempt's failure is
+            # recorded, not swallowed.
+            reason = _review_synthesis_failure_reason(exc)
+            planning.review_synthesis_status = ReviewSynthesisStatus.FAILED
+            planning.review_synthesis_error = reason
+            logger.warning("Review insights synthesis failed for planning %s: %s", planning.id, reason)
+        else:
             planning.review_website_opportunities = [
                 o.model_dump(mode="json") for o in insights_result.output.website_opportunities
             ]
@@ -763,8 +831,14 @@ def run_review_insights(
             planning.review_website_gaps = [
                 g.model_dump(mode="json") for g in insights_result.output.review_website_gaps
             ]
-        except LlmUnavailableError:
-            pass
+            # Empty lists are a valid, successful outcome ("nothing to recommend").
+            planning.review_synthesis_status = ReviewSynthesisStatus.COMPLETED
+            planning.review_synthesis_error = None
+            planning.review_synthesis_succeeded_at = attempted_at
+    else:
+        # Nothing to synthesise from — the AI was never called.
+        planning.review_synthesis_status = ReviewSynthesisStatus.SKIPPED
+        planning.review_synthesis_error = None
 
     activity_service.record(
         db,
