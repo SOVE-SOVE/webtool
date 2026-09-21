@@ -2189,6 +2189,14 @@ def test_create_project_handoff_prefills_brief_with_no_content_draft(authed_clie
 
 
 def _hand_off_with_sitemap_and_direction(authed_client, monkeypatch):
+    lead, planning = _ready_to_hand_off(authed_client, monkeypatch)
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    return planning, project
+
+
+def _ready_to_hand_off(authed_client, monkeypatch):
+    """A Planning item with a proposed sitemap, a selected visual direction and
+    an approved Build Brief — everything short of clicking "Create project"."""
     lead = _create_lead(authed_client, industry="Kitchen Renovation")
     planning = _start_planning(authed_client, lead)
     monkeypatch.setattr(
@@ -2201,8 +2209,7 @@ def _hand_off_with_sitemap_and_direction(authed_client, monkeypatch):
     authed_client.post(f"/api/v1/planning/{planning['id']}/visual-directions/generate")
     authed_client.patch(f"/api/v1/planning/{planning['id']}/visual-directions/select", json={"option_index": 0})
     authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
-    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
-    return planning, project
+    return lead, planning
 
 
 def _planning_page(authed_client, planning_id, title):
@@ -2450,3 +2457,96 @@ def test_planning_pages_added_after_a_handoff_with_no_sitemap_create_the_project
 
     _reapprove(authed_client, pid)  # a second sync adds nothing more
     assert len(_project_sitemap(authed_client, project["id"])["pages"]) == 2
+
+
+# --- The handoff is idempotent ------------------------------------------------------
+#
+# projects_service.create_project reopens a lead's existing prospect project, so
+# "Create project" can land on a project that already has its own artefacts (or
+# that a previous, interrupted handoff already seeded). It must not stack a
+# second sitemap / creative direction on top, nor overwrite the project's own
+# build direction.
+
+
+def _add_own_sitemap_and_direction(db_session, project_id):
+    from app.modules.creative_directions.models import CreativeDirectionBrief
+    from app.modules.sitemaps.models import Sitemap
+
+    db_session.add(Sitemap(project_id=uuid.UUID(project_id), overview="The project's own sitemap"))
+    db_session.add(
+        CreativeDirectionBrief(
+            project_id=uuid.UUID(project_id),
+            model_used="test",
+            prompt_version="test",
+            **{
+                name: "The project's own direction"
+                for name in (
+                    "facts", "assumptions", "creative_concept", "visual_direction", "brand_personality",
+                    "colour_direction", "typography_direction", "image_direction", "layout_direction",
+                    "ux_direction", "tone_of_voice", "visual_hierarchy", "cta_strategy", "things_to_avoid",
+                    "references_inspiration",
+                )
+            },
+        )
+    )
+    db_session.commit()
+
+
+def test_handoff_onto_a_project_with_its_own_artefacts_does_not_duplicate_them(authed_client, monkeypatch, db_session):
+    lead, planning = _ready_to_hand_off(authed_client, monkeypatch)
+    existing = authed_client.post("/api/v1/projects", json={"lead_id": lead["id"], "name": "Started earlier"}).json()
+    authed_client.patch(f"/api/v1/projects/{existing['id']}", json={"build_direction": "The operator's own direction."})
+    _add_own_sitemap_and_direction(db_session, existing["id"])
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
+    assert res.status_code == 201
+    project = res.json()
+    assert project["id"] == existing["id"]  # reused, not a second project
+
+    sitemaps = authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()
+    assert [s["overview"] for s in sitemaps] == ["The project's own sitemap"]
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()) == 1
+    assert project["build_direction"] == "The operator's own direction."  # not overwritten
+    assert len([p for p in authed_client.get("/api/v1/projects").json() if p["source_lead_id"] == lead["id"]]) == 1
+    assert authed_client.get(f"/api/v1/planning/{planning['id']}/build-brief").json()["project_id"] == existing["id"]
+
+    # A later Planning change can't be applied to a sitemap Planning never created — it's flagged, not lost.
+    services = _planning_page(authed_client, planning["id"], "Services")
+    authed_client.patch(f"/api/v1/planning/{planning['id']}/sitemap/{services['id']}", json={"purpose": "A different purpose."})
+    conflicts = _reapprove(authed_client, planning["id"])["sync_conflicts"]
+    assert "Sitemap" in {c["area"] for c in conflicts}
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()) == 1
+
+
+def test_handoff_onto_an_existing_project_with_no_artefacts_seeds_them_once(authed_client, monkeypatch):
+    lead, planning = _ready_to_hand_off(authed_client, monkeypatch)
+    existing = authed_client.post("/api/v1/projects", json={"lead_id": lead["id"], "name": "Started earlier"}).json()
+
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    assert project["id"] == existing["id"]
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()) == 1
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()) == 1
+    assert project["build_direction"]  # nothing of the project's own to protect, so Planning's narrative is set
+
+
+def test_rerunning_an_interrupted_handoff_does_not_duplicate_artefacts(authed_client, monkeypatch, db_session):
+    from app.modules.planning.models import LeadPlanningApprovedBrief
+
+    planning, project = _hand_off_with_sitemap_and_direction(authed_client, monkeypatch)
+    row = db_session.query(LeadPlanningApprovedBrief).filter_by(lead_planning_id=uuid.UUID(planning["id"])).one()
+    seeded = (row.seeded_sitemap_id, row.seeded_creative_direction_id)
+    assert all(seeded)
+    # An interrupted handoff: the rows were committed but the brief never got marked as consumed.
+    row.project_id = None
+    db_session.commit()
+
+    again = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project")
+    assert again.status_code == 201
+    assert again.json()["id"] == project["id"]
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/sitemaps").json()) == 1
+    assert len(authed_client.get(f"/api/v1/projects/{project['id']}/creative-directions").json()) == 1
+
+    db_session.expire_all()
+    row = db_session.query(LeadPlanningApprovedBrief).filter_by(lead_planning_id=uuid.UUID(planning["id"])).one()
+    assert row.project_id == uuid.UUID(project["id"])
+    assert (row.seeded_sitemap_id, row.seeded_creative_direction_id) == seeded  # still pointing at the seeded rows

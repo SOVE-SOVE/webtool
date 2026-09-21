@@ -286,6 +286,26 @@ def create_creative_direction_from_snapshot(
     return brief
 
 
+def seed_sitemap_and_creative_direction(db: Session, project_id: uuid.UUID, approved) -> None:
+    """Idempotent handoff seeding: creates the Project's Planning sitemap /
+    creative direction only if the Project has none yet, and records their
+    ids on the approved brief (the sync's way of finding them later).
+
+    "Create project" can land on a Project that already has its own — a
+    prospect project the operator started earlier — or on one a previous,
+    interrupted handoff already seeded. Either way a second row would just
+    become the Project's "latest" and supersede the first, so it's skipped.
+    A skipped artefact leaves the recorded id alone: still pointing at the
+    seeded row after an interrupted handoff, still empty when the Project's
+    own row is what's there (a later sync then flags rather than edits it)."""
+    if db.scalar(select(Sitemap.id).where(Sitemap.project_id == project_id).limit(1)) is None:
+        sitemap = create_sitemap_from_snapshot(db, project_id, approved.sitemap_snapshot, approved.content_draft_snapshot)
+        approved.seeded_sitemap_id = sitemap.id if sitemap else None
+    if db.scalar(select(CreativeDirectionBrief.id).where(CreativeDirectionBrief.project_id == project_id).limit(1)) is None:
+        direction = create_creative_direction_from_snapshot(db, project_id, approved.visual_direction_snapshot)
+        approved.seeded_creative_direction_id = direction.id if direction else None
+
+
 def apply_to_design_brief(db: Session, project_id: uuid.UUID, fields: dict[str, str]) -> None:
     """Get-or-creates the project's DesignBrief and fills the given fields,
     only where they're still empty — never overwriting an operator-entered
@@ -398,7 +418,7 @@ def _sync_creative_direction(db: Session, project: Project, approved, plan: dict
             "Visual direction",
             plan.get("visual_direction", ""),
             "",
-            "The project's Planning-created creative direction couldn't be found — Planning's change wasn't applied.",
+            "The project has no Planning-created creative direction to update (it has its own, or it was removed) — Planning's change wasn't applied.",
         )
         return base
 
@@ -458,7 +478,7 @@ def _sync_sitemap(db: Session, project: Project, approved, plan: dict, base: dic
             "Planning sitemap",
             f"{len(plan)} page(s)",
             "",
-            "The project's Planning-created sitemap couldn't be found — Planning's change wasn't applied.",
+            "The project has no Planning-created sitemap to update (it has its own, or it was removed) — Planning's change wasn't applied.",
         )
         return base
 
