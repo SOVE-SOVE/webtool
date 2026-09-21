@@ -51,7 +51,7 @@ function ClientsPageInner() {
           itself; an introductory sentence on top of both was redundant. */}
       <PageHeader title="Clients" />
 
-      <TabBar tabs={CLIENTS_TABS} active={activeTab} onChange={(id) => setTab(id as ClientsTabId)} className="mt-4" />
+      <TabBar tabs={CLIENTS_TABS} active={activeTab} onChange={(id) => setTab(id as ClientsTabId)} variant="workspace" className="mt-4" />
 
       <div key={activeTab} className="animate-fade-in mt-6">
         {activeTab === "overview" && <ClientsOverviewTab currency={currency} />}
