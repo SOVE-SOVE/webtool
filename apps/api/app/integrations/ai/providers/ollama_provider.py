@@ -18,6 +18,7 @@ import json
 
 import httpx
 
+from app.core.settings import settings
 from app.integrations.ai.errors import AIProviderModelMissingError, AIProviderUnavailableError
 from app.integrations.ai.providers.base import GenerationResult
 
@@ -34,9 +35,31 @@ def _looks_like_missing_model(response: httpx.Response) -> bool:
 
 
 class OllamaProvider:
-    def __init__(self, base_url: str, timeout_seconds: float = 120.0):
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 120.0,
+        no_think_model_prefixes: tuple[str, ...] | None = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        # Models whose name starts with one of these get thinking turned
+        # off (see _thinking_disabled_for). None = use the setting; an
+        # empty tuple = never touch it.
+        self._no_think_model_prefixes = tuple(
+            settings.ollama_no_think_model_prefixes if no_think_model_prefixes is None else no_think_model_prefixes
+        )
+
+    def _thinking_disabled_for(self, model: str) -> bool:
+        """Thinking models (e.g. qwen3) spend `max_tokens` on hidden
+        reasoning before the JSON: at a 300-token budget the content
+        comes back empty (finish_reason=length -> JSONDecodeError), and
+        even with room a 4B model takes 40-50s instead of ~3s. Ollama's
+        OpenAI-compatible endpoint honours `reasoning_effort: "none"`
+        (verified on Ollama 0.34.2 with qwen3:4b); its `think: false`
+        field is ignored there. Applied only to opted-in model prefixes
+        so other models are sent exactly the request they always were."""
+        return any(model.startswith(prefix) for prefix in self._no_think_model_prefixes)
 
     def generate_structured(
         self,
@@ -59,6 +82,8 @@ class OllamaProvider:
                 "json_schema": {"name": "emit_result", "schema": schema, "strict": True},
             },
         }
+        if self._thinking_disabled_for(model):
+            payload["reasoning_effort"] = "none"
         try:
             response = httpx.post(
                 f"{self._base_url}/v1/chat/completions",
