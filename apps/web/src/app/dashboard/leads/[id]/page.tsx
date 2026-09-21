@@ -660,7 +660,7 @@ export default function LeadDetailPage() {
             <span className="text-fg">
               {lead.google_rating !== null ? `${lead.google_rating.toFixed(1)}★` : "No rating"}
               {lead.google_review_count !== null && (
-                <span className="text-fg-muted"> ({lead.google_review_count} reviews)</span>
+                <span className="text-fg-muted"> ({lead.google_review_count} Google reviews in total)</span>
               )}
             </span>
             {lead.review_health_score !== null && (
