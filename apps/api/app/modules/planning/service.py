@@ -725,14 +725,7 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
     if project is None:
         return None
 
-    sitemap = handoff_sync.create_sitemap_from_snapshot(
-        db, project.id, approved_brief.sitemap_snapshot, approved_brief.content_draft_snapshot
-    )
-    creative_direction = handoff_sync.create_creative_direction_from_snapshot(
-        db, project.id, approved_brief.visual_direction_snapshot
-    )
-    approved_brief.seeded_sitemap_id = sitemap.id if sitemap else None
-    approved_brief.seeded_creative_direction_id = creative_direction.id if creative_direction else None
+    handoff_sync.seed_sitemap_and_creative_direction(db, project.id, approved_brief)
     handoff_sync.apply_to_design_brief(
         db,
         project.id,
@@ -745,7 +738,9 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
     design_briefs_service.prefill_project_brief(db, project)
 
     narrative = _build_direction_narrative(planning, approved_brief)
-    if narrative:
+    # Only into an empty build direction: a project the operator already
+    # started may hold their own, and a re-run must not overwrite either.
+    if narrative and not project.build_direction:
         projects_service.update_project(db, workspace_id, actor_id, project.id, ProjectUpdate(build_direction=narrative))
 
     approved_brief.handoff_baseline = handoff_sync.initial_baseline(approved_brief, narrative)
