@@ -250,15 +250,21 @@ export default function ProjectDetailPage() {
     setConfirmingDetails(true);
     setConfirmError(null);
     try {
-      await api.updateBrief(projectId, {
-        business_name: business.name,
-        industry: business.industry ?? "",
-        location: [business.suburb, business.state].filter(Boolean).join(", "),
-        contact_phone: business.phone ?? "",
-        contact_email: business.email ?? "",
-        existing_website_url: business.website_url ?? "",
-        business_description: business.notes ?? "",
-      });
+      // Fill-empty-only: brief content already there (e.g. copy carried across
+      // from Planning) is kept; this only tops up whatever is still blank.
+      await api.updateBrief(
+        projectId,
+        {
+          business_name: business.name,
+          industry: business.industry ?? "",
+          location: [business.suburb, business.state].filter(Boolean).join(", "),
+          contact_phone: business.phone ?? "",
+          contact_email: business.email ?? "",
+          existing_website_url: business.website_url ?? "",
+          business_description: business.notes ?? "",
+        },
+        { fillEmptyOnly: true },
+      );
       setBrief(await api.approveBrief(projectId));
       loadApprovalsAndDeployments();
     } catch (err) {

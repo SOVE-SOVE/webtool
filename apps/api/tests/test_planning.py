@@ -2135,3 +2135,46 @@ def test_create_project_handoff_includes_approved_content_draft(authed_client, m
 
     design_brief = db_session.query(_DesignBrief).filter_by(project_id=uuid.UUID(project["id"])).first()
     assert design_brief.business_description == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]
+
+
+def test_create_project_handoff_prefills_brief_but_keeps_planning_copy(authed_client, monkeypatch):
+    """Planning's handoff creates the project's DesignBrief itself, so the
+    normal "pre-fill a new brief" path never runs — the handoff must top up
+    the still-empty business fields from the lead, without displacing the
+    copy Planning already put in the brief."""
+    lead = _create_lead(authed_client, industry="Kitchen Renovation", phone="07 5555 1234")
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"notes": "Lead notes that must not win."})
+    planning = _start_planning(authed_client, lead)
+    _add_sitemap_pages(authed_client, planning["id"], ["Home"])
+    monkeypatch.setattr(
+        "app.agents.planning_content_draft.generate_structured", lambda **kwargs: dict(CONTENT_DRAFT_PAGE_OUTPUT)
+    )
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/generate")
+    _drain_jobs()
+    page = authed_client.get(f"/api/v1/planning/{planning['id']}").json()["content_pages"][0]
+    authed_client.post(f"/api/v1/planning/{planning['id']}/content-draft/pages/{page['id']}/approve")
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+    assert project["client_id"] is None
+
+    fields = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert fields["business_description"] == CONTENT_DRAFT_PAGE_OUTPUT["sections"][0]["content"]["subheading"]
+    assert fields["business_name"] == "Coastal Cafe"
+    assert fields["industry"] == "Kitchen Renovation"
+    assert fields["location"] == "Byron Bay, NSW"
+    assert fields["contact_phone"] == "07 5555 1234"
+
+
+def test_create_project_handoff_prefills_brief_with_no_content_draft(authed_client):
+    lead = _create_lead(authed_client, industry="Kitchen Renovation")
+    authed_client.patch(f"/api/v1/leads/{lead['id']}", json={"notes": "Owner wants online quotes."})
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/build-brief/approve")
+
+    project = authed_client.post(f"/api/v1/planning/{planning['id']}/create-project").json()
+
+    fields = authed_client.get(f"/api/v1/projects/{project['id']}/brief").json()["business"]["fields"]
+    assert fields["business_name"] == "Coastal Cafe"
+    assert fields["industry"] == "Kitchen Renovation"
+    assert "Owner wants online quotes." in fields["business_description"]

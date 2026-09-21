@@ -762,6 +762,7 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
     repeated call short-circuits to that same Project instead of
     creating a duplicate.
     """
+    from app.modules.design_briefs import service as design_briefs_service
     from app.modules.projects import service as projects_service
     from app.modules.projects.schemas import ProjectCreate, ProjectUpdate
 
@@ -792,6 +793,11 @@ def create_project_from_planning(db: Session, workspace_id: uuid.UUID, actor_id:
     _create_creative_direction_from_snapshot(db, project.id, approved_brief.visual_direction_snapshot)
     _apply_assets_to_design_brief(db, project.id, approved_brief.assets_snapshot)
     _apply_content_draft_to_design_brief(db, project.id, approved_brief.content_draft_snapshot)
+    # Planning's helpers above create the DesignBrief (so the normal
+    # "pre-fill a brand-new brief" path never runs); top up the business
+    # fields from the lead's records now. Runs after them and only fills
+    # empty fields, so Planning's own copy is never displaced.
+    design_briefs_service.prefill_project_brief(db, project)
 
     direction_parts = []
     if planning.website_summary:

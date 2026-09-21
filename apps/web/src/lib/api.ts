@@ -2962,8 +2962,13 @@ export const api = {
   startIntake: (clientId: string, data: BriefIntakeStart) =>
     request<Brief>(`/api/v1/clients/${clientId}/intake`, { method: "POST", body: JSON.stringify(data) }),
   getBrief: (projectId: string) => request<Brief>(`/api/v1/projects/${projectId}/brief`),
-  updateBrief: (projectId: string, data: BriefUpdate) =>
-    request<Brief>(`/api/v1/projects/${projectId}/brief`, { method: "PATCH", body: JSON.stringify(data) }),
+  // fillEmptyOnly writes a field only where the brief has nothing yet — used by
+  // "Confirm details" so it tops up gaps without overwriting existing content.
+  updateBrief: (projectId: string, data: BriefUpdate, opts?: { fillEmptyOnly?: boolean }) =>
+    request<Brief>(`/api/v1/projects/${projectId}/brief${opts?.fillEmptyOnly ? "?fill_empty_only=true" : ""}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   approveBrief: (projectId: string) =>
     request<Brief>(`/api/v1/projects/${projectId}/brief/approve`, { method: "POST" }),
 

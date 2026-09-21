@@ -264,3 +264,70 @@ def test_start_intake_seeds_the_same_starter_checklist_as_a_lead_conversion(auth
 
     tasks = [t for t in authed_client.get("/api/v1/tasks").json() if t["project_id"] == brief["project_id"]]
     assert sorted(t["title"] for t in tasks) == sorted(DEFAULT_INTAKE_TASK_TITLES)
+
+
+# --- fill-empty-only updates ("Confirm details") ---------------------
+
+
+def test_fill_empty_only_update_keeps_existing_content_and_fills_gaps(authed_client):
+    client_id = _create_client(authed_client, name="Coastal Cafe")
+    brief = authed_client.post(
+        f"/api/v1/clients/{client_id}/intake",
+        json={"business_name": "Coastal Cafe Pty Ltd", "business_description": "Original hero copy."},
+    ).json()
+    project_id = brief["project_id"]
+
+    res = authed_client.patch(
+        f"/api/v1/projects/{project_id}/brief?fill_empty_only=true",
+        json={
+            "business_name": "Coastal Cafe",
+            "business_description": "Overwritten!",
+            "industry": "Hospitality",
+            "contact_phone": "",
+        },
+    )
+    assert res.status_code == 200
+    fields = res.json()["business"]["fields"]
+    assert fields["business_name"] == "Coastal Cafe Pty Ltd"  # existing answer kept
+    assert fields["business_description"] == "Original hero copy."  # existing copy kept
+    assert fields["industry"] == "Hospitality"  # gap filled
+    assert not fields.get("contact_phone")  # a blank value never clears or writes anything
+
+
+def test_plain_brief_update_still_overwrites(authed_client):
+    client_id = _create_client(authed_client)
+    brief = authed_client.post(
+        f"/api/v1/clients/{client_id}/intake", json={"business_description": "Original hero copy."}
+    ).json()
+
+    res = authed_client.patch(
+        f"/api/v1/projects/{brief['project_id']}/brief", json={"business_description": "Edited by the operator."}
+    )
+    assert res.json()["business"]["fields"]["business_description"] == "Edited by the operator."
+
+
+def test_prospect_project_brief_is_prefilled_from_the_lead(authed_client):
+    """A lead-owned prospect project has no Client — its brief is pre-filled
+    from the lead's business, same as a client-owned one."""
+    lead = authed_client.post(
+        "/api/v1/leads",
+        json={
+            "business_name": "Hilltop Roofing",
+            "industry": "Roofing",
+            "phone": "07 5555 1234",
+            "suburb": "Burleigh Heads",
+            "state": "QLD",
+        },
+    ).json()
+    project = authed_client.post(
+        "/api/v1/projects", json={"lead_id": lead["id"], "name": "Hilltop Roofing Website"}
+    ).json()
+    assert project["client_id"] is None
+
+    brief = authed_client.get(f"/api/v1/projects/{project['id']}/brief")
+    assert brief.status_code == 200
+    fields = brief.json()["business"]["fields"]
+    assert fields["business_name"] == "Hilltop Roofing"
+    assert fields["industry"] == "Roofing"
+    assert fields["contact_phone"] == "07 5555 1234"
+    assert fields["location"] == "Burleigh Heads, QLD"
