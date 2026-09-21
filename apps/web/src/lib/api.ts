@@ -1296,6 +1296,17 @@ export type BuildBrief = {
   approved_at: string | null;
   approved_by_user_id: string | null;
   project_id: string | null;
+  // Planning changes the last re-approval couldn't apply to the handed-off
+  // project because it has its own edit — see BuildBriefSyncConflict.
+  sync_conflicts: BuildBriefSyncConflict[];
+};
+
+export type BuildBriefSyncConflict = {
+  area: string;
+  item: string;
+  planning_value: string;
+  project_value: string;
+  message: string;
 };
 
 // --- Content Draft -----------------------------------------------------

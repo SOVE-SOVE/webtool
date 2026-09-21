@@ -32,6 +32,9 @@ export function BuildBriefTab({
   onUpdated: (p: Planning) => void;
 }) {
   const summary = computeBuildBriefFacts(planning, lead);
+  // Once a project exists, approving again pushes what changed to it (the
+  // project's own edits are kept and flagged, never overwritten).
+  const handedOff = planning.project_id !== null;
   const [brief, setBrief] = useState<BuildBrief | null>(null);
   const [loadingBrief, setLoadingBrief] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -135,10 +138,43 @@ export function BuildBriefTab({
               {loadingBrief ? "Loading…" : "Preview brief"}
             </button>
             <button type="button" onClick={handleApprove} disabled={approving} className="btn btn-primary btn-sm">
-              {approving ? "Approving…" : "Approve Build Brief"}
+              {approving
+                ? handedOff
+                  ? "Syncing…"
+                  : "Approving…"
+                : handedOff
+                  ? "Re-approve & sync to project"
+                  : "Approve Build Brief"}
             </button>
           </div>
+          {handedOff && (
+            <p className="text-xs text-fg-muted">
+              This brief has been handed off to a project. Re-approving pushes your Planning changes to it — anything
+              the project has edited itself is kept and listed here instead.
+            </p>
+          )}
           {briefError && <p className="text-error">{briefError}</p>}
+          {brief && brief.sync_conflicts.length > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
+              <p className="font-medium text-amber-900 dark:text-amber-300">
+                {brief.sync_conflicts.length} Planning change{brief.sync_conflicts.length === 1 ? " wasn't" : "s weren't"}{" "}
+                applied to the project
+              </p>
+              <ul className="mt-2 space-y-2">
+                {brief.sync_conflicts.map((c, i) => (
+                  <li key={`${c.area}-${c.item}-${i}`} className="text-amber-900 dark:text-amber-300">
+                    <span className="font-medium">
+                      {c.area} — {c.item}.
+                    </span>{" "}
+                    {c.message}
+                    <span className="mt-0.5 block text-xs">
+                      Planning: {c.planning_value || "—"} · Project: {c.project_value || "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {brief && (
             <div className="space-y-2 rounded-md border border-border bg-surface-subtle p-3 text-sm">
               <p className="text-fg">

@@ -498,10 +498,10 @@ class LeadPlanningApprovedBrief(Base):
     create a Project. `project_id` is set once that handoff actually
     consumes this snapshot; a repeated "Create Project" click sees
     `project_id` already set and short-circuits to that same Project
-    instead of creating a duplicate. Re-approving before a Project exists
-    freely replaces this row's contents (upsert) — it only becomes
-    immutable in spirit once `project_id` is set, since the Project's own
-    tables are the source of truth for that build from then on.
+    instead of creating a duplicate. Re-approving freely replaces this
+    row's contents (upsert). Once `project_id` is set, a re-approval also
+    pushes what changed to the Project — see planning/handoff_sync.py; the
+    Project's own edits are kept and flagged, never overwritten.
     """
 
     __tablename__ = "lead_planning_approved_briefs"
@@ -528,6 +528,19 @@ class LeadPlanningApprovedBrief(Base):
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    # Handoff bookkeeping (see planning/handoff_sync.py) — how later Planning
+    # changes reach the Project. The two ids point at the Project rows the
+    # handoff created (null for a handoff that predates them, or that had
+    # nothing to seed); `handoff_baseline` is the last value Planning handed
+    # over per field ({"design_brief", "sitemap", "creative_direction",
+    # "build_direction"}), the base of the 3-way merge; `sync_conflicts` is the
+    # last sync's list of Planning changes the Project's own edits blocked.
+    seeded_sitemap_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sitemaps.id", ondelete="SET NULL"))
+    seeded_creative_direction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("creative_direction_briefs.id", ondelete="SET NULL")
+    )
+    handoff_baseline: Mapped[dict | None] = mapped_column(JSON)
+    sync_conflicts: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
