@@ -11,6 +11,24 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-21 (review-text honesty, synthesis outcome, UI/UX agent) — Google review insights made truthful; Ollama qwen3:4b compatibility; ui-and-ux-apple agent
+
+**Mode:** interactive session, direct to main (nothing committed).
+**Scope touched:** `apps/api` — `integrations/ai/providers/ollama_provider.py`, `core/settings.py`, `.env.example`, `modules/planning/{models,schemas,service}.py`, `modules/stage_checklists/signals.py`, new migration `c8d3f1a7e254`, tests (`test_ai_providers`, `test_planning`, `test_stage_checklists`). `apps/web` — Planning `SidePanels/OverviewTab/AnalysingOverview` (larger, expandable website preview), `ReviewInsightsTab`, `components/discovery/{ReviewSections,ReviewSummaryStrip,ReviewTextUnavailable}`, `lib/{reviewText,api}.ts`, Lead + discovered-business pages (wording). `.claude/` (skills + `ui-and-ux-apple` agent), `apps/web/CLAUDE.md` (delegation rule), `skills-lock.json`.
+
+**What happened.**
+- *Findings:* Google Places returns rating + count but **no review text** for this project's key (verified on 4 places, incl. famous ones; all 206 stored OK analyses have 0 written reviews). Cause unresolved. Google Maps Platform ToS forbid saving/scraping reviews, so no raw-review table was built; third-party scrapers researched (none permission-verified, none tested); a direct Playwright read of Google Maps was blocked by the harness and not run.
+- *Ollama:* `qwen3:30b-a3b` cannot run on this 8 GB Mac; `qwen3:4b` works only with `reasoning_effort:"none"` (added, opt-in by model prefix via `OLLAMA_NO_THINK_MODEL_PREFIXES`, default `["qwen3"]`). App's selected model is unchanged.
+- *UI:* Planning website preview is larger (60/40 split default, "Expand preview" modal with focus trap/restore). New "Review text unavailable" state (helper `lib/reviewText.ts`) on Planning, Discovery and the summary strip. Planning's review tab now reuses Discovery's `GoogleReviewsSection` plus Planning-only recommendation cards.
+- *Backend:* checklist "Review Google Review Insights" signal only counts as evidence when written reviews were analysed successfully (item is MANUAL — it was never auto-completed; effect was the needs-review flip and the "reviewed as of" note). Planning synthesis outcome is now recorded (`review_synthesis_status/error/attempted_at/succeeded_at`, additive, migration applied to the dev DB, **no backfill**), with derived `review_synthesis_outcome*` fields: null status + a run timestamp = "Previous run — synthesis outcome unknown"; no evidence = "No recorded synthesis attempt".
+- *Workspace tabs (via `ui-and-ux-apple`):* `TabBar` gained an opt-in `variant="workspace"` (36px strip, 14px/500 labels, 1px active line on a 1px inset baseline, inset focus ring, contained horizontal scroll) used only by Today, Sales, Build and Clients; every other `TabBar` (Planning/Client detail, Settings, Project website) and Discovery's switch keep the default look. Files: `components/ui/Tabs.tsx`, `dashboard/page.tsx`, `clients/page.tsx`, `SalesSwitch.tsx`, `BuildSwitch.tsx`.
+- *Agent setup:* installed `ui-ux-pro-max` + `apple-design` (project scope) and created the `ui-and-ux-apple` subagent that preloads both; verified via delegation.
+**Tests:** web tsc clean, 442/442; API `test_planning` + `test_stage_checklists` + `test_review_intelligence` 199/199 (whole API suite not run — it calls live Ollama and takes ~26 min).
+**Blockers/issues:** Today overview's revenue chart SVG is ~593px wide and overflows the page at 390px (pre-existing, not the tabs); the workspace tab baseline overhangs content by 4px each side (`-mx-1`, deliberate trade-off); light theme, hover and reduced-motion of the new tabs not viewed. No source of written Google reviews exists yet; Discovery (discovered-business scoped) and Planning (lead scoped) can hold different review records for the same business; the test suite is not isolated from a running Ollama (loads the default 30b model); one API-side test error seen once during a concurrent run (calendar test) passed on rerun. Not exercised live: analysed/small-sample review states, Run/Refresh buttons.
+**Next up:** decide whether/how to obtain written reviews (owner-authorised source or a provider you accept the terms risk for); consider a root `CLAUDE.md` for the delegation rule; isolate tests from live Ollama.
+
+---
+
 ## 2026-09-19 (review queue follow-up) — Sidebar badge no longer downloads the whole queue
 
 **Mode:** interactive session, direct to main (not yet committed).
