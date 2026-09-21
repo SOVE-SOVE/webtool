@@ -12,12 +12,16 @@ Create Project handoff.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app.agents import planning_audit as planning_audit_agent
 from app.integrations import places
 from app.integrations.browser import PlanningAuditSignals
 from app.integrations.discovery.base import DiscoveryPage, NormalizedBusinessResult, WebsiteStatus
 from app.integrations.discovery.google_places_provider import GooglePlacesDiscoveryProvider
+from app.integrations.ai.errors import AIProviderModelMissingError, AIProviderUnavailableError
 from app.integrations.llm import LlmUnavailableError
 from app.jobs import runner
 from app.jobs.handlers import HANDLERS
@@ -842,6 +846,276 @@ def test_review_insights_synthesis_failure_still_keeps_the_snapshot(authed_clien
     body = res.json()
     assert body["review_summary"] == "Customers consistently mention the friendly staff."
     assert body["review_website_opportunities"] == []
+
+
+# --- Review-insights synthesis outcome ------------------------------------------
+# The synthesis step's own outcome is tracked separately from the fetch:
+# `review_synthesis_status` is null (no RECORDED outcome — not proof it never ran), "completed" (a valid
+# result — possibly with nothing to recommend), "failed" (latest attempt
+# failed; older successful content is preserved and dated by
+# `review_synthesis_succeeded_at`) or "skipped" (no themes to work from).
+
+EMPTY_SYNTHESIS_OUTPUT = {"website_opportunities": [], "faq_opportunities": [], "review_website_gaps": []}
+SECRET_FAILURE_TEXT = "connect failed to http://internal-host:11434 using key sk-ant-SECRET model=qwen3:4b body={'input': 'private'}"
+
+
+def _fail_synthesis(monkeypatch, message=SECRET_FAILURE_TEXT):
+    def _boom(**kwargs):
+        raise LlmUnavailableError(message)
+
+    monkeypatch.setattr("app.agents.planning_review_insights.generate_structured", _boom)
+
+
+def _run_insights(authed_client, planning_id):
+    res = authed_client.post(f"/api/v1/planning/{planning_id}/review-insights")
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_a_plan_with_no_run_evidence_has_no_recorded_synthesis_attempt(authed_client):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["review_synthesis_status"] is None
+    assert body["review_synthesis_error"] is None
+    assert body["review_synthesis_attempted_at"] is None
+    assert body["review_synthesis_succeeded_at"] is None
+    # Existing fields unchanged for a planning that has never run it.
+    assert body["review_website_opportunities"] == []
+    assert body["review_insights_generated_at"] is None
+
+
+def test_successful_synthesis_with_recommendations_is_completed(authed_client, monkeypatch):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+
+    body = _run_insights(authed_client, planning["id"])
+    assert body["review_synthesis_status"] == "completed"
+    assert body["review_synthesis_error"] is None
+    assert body["review_synthesis_attempted_at"] is not None
+    assert body["review_synthesis_succeeded_at"] == body["review_synthesis_attempted_at"]
+    assert body["review_website_opportunities"] == SYNTHESIS_LLM_OUTPUT["website_opportunities"]
+    # Persisted, not just returned.
+    assert authed_client.get(f"/api/v1/planning/{planning['id']}").json()["review_synthesis_status"] == "completed"
+
+
+def test_successful_synthesis_with_no_recommendations_is_completed_not_failed(authed_client, monkeypatch):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS, synthesis_output=EMPTY_SYNTHESIS_OUTPUT)
+
+    body = _run_insights(authed_client, planning["id"])
+    assert body["review_synthesis_status"] == "completed"
+    assert body["review_synthesis_error"] is None
+    assert body["review_synthesis_succeeded_at"] is not None
+    assert body["review_website_opportunities"] == []
+    assert body["review_faq_opportunities"] == []
+    assert body["review_website_gaps"] == []
+
+
+def test_ai_failure_is_recorded_with_a_safe_reason_and_never_swallowed(authed_client, monkeypatch):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+    _fail_synthesis(monkeypatch)
+
+    body = _run_insights(authed_client, planning["id"])
+    assert body["review_synthesis_status"] == "failed"
+    assert body["review_synthesis_error"] == "AI generation is unavailable."
+    for leaked in ("sk-ant-SECRET", "internal-host", "11434", "qwen3", "private"):
+        assert leaked not in body["review_synthesis_error"]
+    assert body["review_synthesis_attempted_at"] is not None
+    assert body["review_synthesis_succeeded_at"] is None  # it never succeeded
+    # The snapshot/themes/summary from the same run are still kept.
+    assert body["review_intelligence"]["themes_data_sufficient"] is True
+    assert body["review_summary"] == "Customers consistently mention the friendly staff."
+    assert body["review_website_opportunities"] == []
+
+
+def test_a_malformed_ai_response_is_a_recorded_failure_not_a_server_error(authed_client, monkeypatch):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(
+        monkeypatch, reviews=THREE_PRAISE_REVIEWS, synthesis_output={"website_opportunities": "not a list"}
+    )
+
+    body = _run_insights(authed_client, planning["id"])
+    assert body["review_synthesis_status"] == "failed"
+    assert body["review_synthesis_error"] == "The AI response wasn't in the expected format."
+
+
+def test_failure_after_a_previous_success_preserves_the_old_content_but_marks_the_latest_attempt_failed(
+    authed_client, monkeypatch
+):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+    first = _run_insights(authed_client, planning["id"])
+    assert first["review_synthesis_status"] == "completed"
+
+    _fail_synthesis(monkeypatch, "The request timed out while contacting the model")
+    second = _run_insights(authed_client, planning["id"])
+
+    assert second["review_synthesis_status"] == "failed"
+    assert second["review_synthesis_error"] == "The AI provider timed out."
+    # Old successful content preserved…
+    assert second["review_website_opportunities"] == SYNTHESIS_LLM_OUTPUT["website_opportunities"]
+    # …and distinguishable: it is dated by the earlier success, older than the failed attempt.
+    assert second["review_synthesis_succeeded_at"] == first["review_synthesis_succeeded_at"]
+    assert second["review_synthesis_attempted_at"] > second["review_synthesis_succeeded_at"]
+
+    # A later success clears the failure and moves the success date forward.
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS, synthesis_output=EMPTY_SYNTHESIS_OUTPUT)
+    third = _run_insights(authed_client, planning["id"])
+    assert third["review_synthesis_status"] == "completed"
+    assert third["review_synthesis_error"] is None
+    assert third["review_synthesis_succeeded_at"] > first["review_synthesis_succeeded_at"]
+    assert third["review_website_opportunities"] == []
+
+
+def test_no_themes_means_the_synthesis_is_skipped_and_the_ai_is_not_called(authed_client, monkeypatch):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=[])
+    _fail_synthesis(monkeypatch)  # would fail loudly if it were (wrongly) called
+
+    body = _run_insights(authed_client, planning["id"])
+    assert body["review_synthesis_status"] == "skipped"
+    assert body["review_synthesis_error"] is None
+    assert body["review_synthesis_attempted_at"] is not None
+    assert body["review_synthesis_succeeded_at"] is None
+
+
+# --- Interpreting a null status (historical records were not backfilled) ---------
+
+UNKNOWN_LABEL = "Previous run — synthesis outcome unknown"
+NO_ATTEMPT_LABEL = "No recorded synthesis attempt"
+
+
+def _simulate_historical_record(db_session, planning_id, *, run_at=None, with_lists=False):
+    """A record from before synthesis status was tracked: what its columns
+    look like — a run timestamp and maybe recommendation lists, but a null status."""
+    from app.modules.planning.models import LeadPlanning
+
+    row = db_session.get(LeadPlanning, uuid.UUID(planning_id))
+    row.review_insights_generated_at = run_at
+    if with_lists:
+        row.review_website_opportunities = [{"recommendation": "Highlight the team.", "based_on_theme": "Friendly staff"}]
+    assert row.review_synthesis_status is None
+    db_session.commit()
+
+
+def test_a_run_timestamp_with_a_null_status_is_a_previous_run_with_unknown_outcome(
+    authed_client, db_session
+):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _simulate_historical_record(db_session, planning["id"], run_at=datetime.now(timezone.utc) - timedelta(days=30))
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["review_synthesis_status"] is None  # nothing is backfilled
+    assert body["review_synthesis_outcome"] == "unknown_previous_run"
+    assert body["review_synthesis_outcome_label"] == UNKNOWN_LABEL
+    assert body["review_synthesis_content_from_latest_attempt"] is None
+    assert body["review_synthesis_succeeded_at"] is None
+
+
+def test_success_is_never_inferred_from_existing_recommendations_or_timestamps(authed_client, db_session):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _simulate_historical_record(
+        db_session, planning["id"], run_at=datetime.now(timezone.utc) - timedelta(days=30), with_lists=True
+    )
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["review_website_opportunities"]  # content exists…
+    assert body["review_synthesis_outcome"] == "unknown_previous_run"  # …but that proves nothing
+    assert body["review_synthesis_outcome"] != "completed"
+    assert body["review_synthesis_succeeded_at"] is None
+    assert body["review_synthesis_content_from_latest_attempt"] is None
+
+
+def test_recommendations_without_any_run_evidence_are_still_no_recorded_attempt(authed_client, db_session):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _simulate_historical_record(db_session, planning["id"], run_at=None, with_lists=True)
+
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["review_synthesis_outcome"] == "no_recorded_attempt"
+    assert body["review_synthesis_outcome_label"] == NO_ATTEMPT_LABEL
+    assert body["review_synthesis_content_from_latest_attempt"] is None
+
+
+def test_a_plan_that_never_ran_is_no_recorded_attempt(authed_client):
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["review_synthesis_outcome"] == "no_recorded_attempt"
+    assert body["review_synthesis_outcome_label"] == NO_ATTEMPT_LABEL
+
+
+def test_completed_failed_and_skipped_stay_distinct_and_only_completed_is_current_content(
+    authed_client, monkeypatch
+):
+    completed_plan = _start_planning(authed_client, _create_lead(authed_client, business_name="Cafe One"))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+    completed = _run_insights(authed_client, completed_plan["id"])
+
+    failed_plan = _start_planning(authed_client, _create_lead(authed_client, business_name="Cafe Two"))
+    _fail_synthesis(monkeypatch)
+    failed = _run_insights(authed_client, failed_plan["id"])
+
+    skipped_plan = _start_planning(authed_client, _create_lead(authed_client, business_name="Cafe Three"))
+    _patch_review_insights(monkeypatch, reviews=[])
+    skipped = _run_insights(authed_client, skipped_plan["id"])
+
+    assert [b["review_synthesis_outcome"] for b in (completed, failed, skipped)] == ["completed", "failed", "skipped"]
+    assert len({b["review_synthesis_outcome_label"] for b in (completed, failed, skipped)}) == 3
+    assert completed["review_synthesis_content_from_latest_attempt"] is True
+    assert failed["review_synthesis_content_from_latest_attempt"] is False
+    assert skipped["review_synthesis_content_from_latest_attempt"] is False
+    # Skipped means the AI never ran: it is not a success and has no success date.
+    assert skipped["review_synthesis_outcome"] != "completed"
+    assert skipped["review_synthesis_succeeded_at"] is None
+
+
+def test_a_skipped_run_after_a_success_keeps_the_old_content_and_its_original_success_date(
+    authed_client, monkeypatch, db_session
+):
+    from app.modules.review_intelligence.models import ReviewIntelligenceResult
+
+    planning = _start_planning(authed_client, _create_lead(authed_client))
+    _patch_review_insights(monkeypatch, reviews=THREE_PRAISE_REVIEWS)
+    first = _run_insights(authed_client, planning["id"])
+    assert first["review_synthesis_outcome"] == "completed"
+    assert first["review_website_opportunities"] == SYNTHESIS_LLM_OUTPUT["website_opportunities"]
+
+    # Age the cached review result past its 24h freshness window (test DB
+    # only) so the next run refetches — and this time Google returns no
+    # written reviews, hence no themes and nothing to synthesise.
+    for row in db_session.query(ReviewIntelligenceResult).all():
+        row.review_data_updated_at = datetime.now(timezone.utc) - timedelta(days=3)
+    db_session.commit()
+    _patch_review_insights(monkeypatch, reviews=[])
+    _fail_synthesis(monkeypatch)  # the AI must not be called on a skipped run
+
+    second = _run_insights(authed_client, planning["id"])
+    assert second["review_synthesis_status"] == "skipped"
+    assert second["review_synthesis_error"] is None
+    assert second["review_synthesis_outcome"] == "skipped"
+    assert second["review_synthesis_outcome_label"] != first["review_synthesis_outcome_label"]
+
+    # Earlier content is preserved, dated by its ORIGINAL success…
+    assert second["review_website_opportunities"] == first["review_website_opportunities"]
+    assert second["review_synthesis_succeeded_at"] == first["review_synthesis_succeeded_at"]
+    # …and is not presentable as newly generated: the attempt is newer and
+    # the content is explicitly marked as not from the latest attempt.
+    assert second["review_synthesis_attempted_at"] > second["review_synthesis_succeeded_at"]
+    assert second["review_synthesis_content_from_latest_attempt"] is False
+
+
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (ValueError("x"), "AI generation is unavailable."),
+        (LlmUnavailableError("anything sk-ant-SECRET"), "AI generation is unavailable."),
+        (AIProviderUnavailableError("Ollama at http://h:11434 is unreachable"), "The AI provider couldn't be reached."),
+        (AIProviderUnavailableError("Local AI timed out after 120.0s"), "The AI provider timed out."),
+        (AIProviderModelMissingError("run ollama pull qwen3:4b"), "The local AI model isn't installed."),
+    ],
+)
+def test_failure_reasons_are_fixed_categories_never_raw_exception_text(exc, expected):
+    assert planning_service._review_synthesis_failure_reason(exc) == expected
 
 
 def test_review_insights_prefers_a_known_place_id_over_a_text_search(authed_client, monkeypatch, db_session):

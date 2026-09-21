@@ -396,6 +396,28 @@ class PlanningRead(BaseModel):
     review_faq_opportunities: list[ReviewFaqOpportunityRead] = []
     review_website_gaps: list[ReviewWebsiteGapRead] = []
     review_insights_generated_at: datetime | None = None
+    # Outcome of the LATEST synthesis attempt. Null status = no RECORDED
+    # outcome — NOT proof it never ran: records from before this was
+    # tracked were not backfilled (see `review_synthesis_outcome`).
+    # Additive: the fields above are unchanged. After a failed or skipped
+    # attempt the lists above may still hold content from an EARLIER
+    # successful attempt; `review_synthesis_succeeded_at` dates it.
+    review_synthesis_status: Literal["completed", "failed", "skipped"] | None = None
+    review_synthesis_error: str | None = None
+    review_synthesis_attempted_at: datetime | None = None
+    review_synthesis_succeeded_at: datetime | None = None
+    # Derived, read-only interpretation of the four fields above plus
+    # `review_insights_generated_at` (see service._review_synthesis_interpretation).
+    # Success is never inferred from the recommendation lists or timestamps.
+    review_synthesis_outcome: Literal[
+        "completed", "failed", "skipped", "unknown_previous_run", "no_recorded_attempt"
+    ] = "no_recorded_attempt"
+    review_synthesis_outcome_label: str = "No recorded synthesis attempt"
+    # True only when the lists were produced by the latest attempt
+    # (completed); False when the latest attempt failed or was skipped, so
+    # any content shown is from an earlier run; None when that can't be
+    # known (unknown_previous_run / no_recorded_attempt).
+    review_synthesis_content_from_latest_attempt: bool | None = None
 
     # "New Website Plan" mode — for a Lead with no website_audit yet.
     # See LeadPlanning's own docstring in models.py: the mode itself is
