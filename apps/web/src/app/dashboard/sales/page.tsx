@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { DelayedSectionLoading } from "@/components/ui/SectionLoadingIndicator";
 import { getLastSalesView } from "./lastView";
 
 /**
@@ -31,12 +32,12 @@ function SalesRedirectInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return null;
+  return <DelayedSectionLoading icon="sales" label="Loading Sales…" />;
 }
 
 export default function SalesRedirect() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DelayedSectionLoading icon="sales" label="Loading Sales…" />}>
       <SalesRedirectInner />
     </Suspense>
   );

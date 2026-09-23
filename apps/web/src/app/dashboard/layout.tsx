@@ -9,14 +9,15 @@ import {
   NAV_SECTIONS,
   isNavLinkActive,
   pageFadeKey,
+  primaryNavHrefForPath,
   type NavLink as NavLinkType,
 } from "@/lib/nav";
 import { loadNavCounts, peekNavCounts, type NavCounts } from "@/lib/navCounts";
 import { ActivityIndicatorButton } from "@/components/activity/ActivityIndicatorButton";
+import { PrimaryNavIcon } from "@/components/nav/AnimatedNavIcon";
 import { Sidebar } from "@/components/nav/Sidebar";
 import { CommandMenuButton, CommandMenuProvider } from "@/components/ui/CommandMenuProvider";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
-import { NavIcon } from "@/components/ui/Icons";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 
 // The mobile bottom nav's five primary destinations, resolved once from
@@ -29,10 +30,15 @@ function BottomNav({
   pathname,
   search,
   onOpenMore,
+  iconAnimation,
 }: {
   pathname: string;
   search: URLSearchParams;
   onOpenMore: () => void;
+  /** See Sidebar's `iconAnimation` — the mobile bottom nav shows the
+   * same five... four of the five primary destinations (Clients lives
+   * behind "More"), so it plays the same one-time arrival animation. */
+  iconAnimation?: { href: string; token: number } | null;
 }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-stretch border-t border-border bg-surface lg:hidden">
@@ -48,7 +54,11 @@ function BottomNav({
             }`}
           >
             {active && <span aria-hidden="true" className="absolute inset-x-6 top-0 h-0.5 rounded-full bg-accent" />}
-            <NavIcon name={link.icon} className="h-5 w-5" />
+            <PrimaryNavIcon
+              name={link.icon}
+              className="h-5 w-5"
+              playToken={iconAnimation?.href === link.href ? iconAnimation.token : undefined}
+            />
             <span className="truncate">{link.label === "Map Discovery" ? "Discover" : link.label}</span>
           </Link>
         );
@@ -88,6 +98,28 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     setMobileNavOpen(false);
+  }
+
+  // The sidebar's one-time per-section icon acknowledgement (see
+  // AnimatedNavIcon.tsx). `lastMainSection`'s lazy initializer already
+  // matches the first render's own section, so a fresh page load or a
+  // reload never plays it — only a real, later change to a *different*
+  // one of the five primary destinations does. Sub-navigation inside the
+  // same section (a tab, a view, a detail page, an unrelated query-param
+  // change) resolves to the same href via `primaryNavHrefForPath` — the
+  // exact "which row would light up" check the sidebar itself uses — so
+  // switching Sales' Leads/Pipeline/Follow-ups views or Today's tabs
+  // never replays it, and neither does clicking the already-active
+  // section (a no-op navigation). Adjusted during render, same pattern
+  // as `lastPathname` above, so there's no extra render/flash.
+  const currentMainSection = primaryNavHrefForPath(pathname, searchParams);
+  const [lastMainSection, setLastMainSection] = useState<string | null>(() => currentMainSection);
+  const [iconAnimation, setIconAnimation] = useState<{ href: string; token: number } | null>(null);
+  if (currentMainSection !== lastMainSection) {
+    setLastMainSection(currentMainSection);
+    if (currentMainSection) {
+      setIconAnimation((prev) => ({ href: currentMainSection, token: (prev?.token ?? 0) + 1 }));
+    }
   }
 
   // setChecking/setLoadError reset the previous attempt's result before a
@@ -209,7 +241,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Desktop sidebar */}
-        <Sidebar variant="desktop" me={me} pathname={pathname} search={searchParams} counts={counts} />
+        <Sidebar
+          variant="desktop"
+          me={me}
+          pathname={pathname}
+          search={searchParams}
+          counts={counts}
+          iconAnimation={iconAnimation}
+        />
 
         {/* No overflow-x-auto here (removed) — it used to catch wide
             tables/boards, but every one of those already wraps itself in
@@ -241,7 +280,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </main>
 
-        <BottomNav pathname={pathname} search={searchParams} onOpenMore={() => setMobileNavOpen(true)} />
+        <BottomNav
+          pathname={pathname}
+          search={searchParams}
+          onOpenMore={() => setMobileNavOpen(true)}
+          iconAnimation={iconAnimation}
+        />
       </div>
     </CommandMenuProvider>
     </ToastProvider>

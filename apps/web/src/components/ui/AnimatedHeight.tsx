@@ -16,16 +16,26 @@ export function AnimatedHeight({ open, children }: { open: boolean; children: Re
   // reacted to during render itself (React's documented way to adjust
   // state in response to a changed prop) instead of in an effect.
   const [prevOpen, setPrevOpen] = useState(open);
+  // True once the open transition has finished (or straight away when
+  // open on mount / under reduced motion). While settled the clip is
+  // lifted, so content that grows later (async loads) and things that
+  // hang outside the panel (focus rings, dropdowns) are never cut off.
+  // The clip is only needed while the height is actually animating.
+  const [settled, setSettled] = useState(open);
 
   if (open !== prevOpen) {
     setPrevOpen(open);
+    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (open) {
       setMounted(true);
-    } else if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      // Reduced motion disables the transition, so it never fires
-      // `transitionend` — unmount immediately instead of waiting on an
-      // event that won't come.
-      setMounted(false);
+      // Reduced motion disables the transition, so `transitionend`
+      // never fires — settle immediately instead of waiting for it.
+      setSettled(reduced);
+    } else {
+      setSettled(false);
+      // Same reason: unmount now rather than wait on an event that
+      // won't come.
+      if (reduced) setMounted(false);
     }
   }
 
@@ -42,7 +52,7 @@ export function AnimatedHeight({ open, children }: { open: boolean; children: Re
       inert={!open}
     >
       <div
-        className={`overflow-hidden transition-opacity duration-base ease-standard motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}
+        className={`${settled ? "overflow-visible" : "overflow-hidden"} transition-opacity duration-base ease-standard motion-reduce:transition-none ${open ? "opacity-100" : "opacity-0"}`}
       >
         {mounted && children}
       </div>

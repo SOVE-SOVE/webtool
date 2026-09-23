@@ -47,6 +47,16 @@ JOBS_LOG="$LOG_DIR/jobs.log"
 JOBS_HEAD_FILE="$RUN_DIR/jobs-head"
 WEB_HEAD_FILE="$RUN_DIR/web-head"
 CURRENT_HEAD="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+# The job runner does not reload itself. A commit-only check misses local
+# edits to settings, prompts, and .env, leaving it on the old AI model.
+# Hash the files it runs so another start picks up those edits too.
+JOBS_CODE_FINGERPRINT="$({
+  printf '%s\n' "$CURRENT_HEAD"
+  find "$API_DIR/app" -type f \( -name '*.py' -o -name '*.md' \) -print0 \
+    | sort -z | xargs -0 shasum -a 256
+  shasum -a 256 "$API_DIR/.env" 2>/dev/null || true
+  shasum -a 256 "$SCRIPT_DIR/start-mac.sh"
+} | shasum -a 256 | cut -d ' ' -f 1)"
 
 info() { echo "-> $1"; }
 ok()   { echo "[OK] $1"; }
@@ -161,6 +171,20 @@ JOBS_DOMAIN="gui/$(id -u)"
 # lib/job_runner_health.sh (sourced above) — shared with stop-mac.sh and
 # covered by lib/job_runner_health.test.sh.
 
+# The recorded PID can belong to the shell that launched a fallback worker,
+# while the Python child keeps running. Find the actual workers belonging to
+# this checkout before deciding whether to keep or stop them.
+local_runner_pids() {
+  local pid launchd_pid
+  launchd_pid="$(job_runner_pid)"
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && [ "$pid" != "$launchd_pid" ] || continue
+    if lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep -Fxq "n$API_DIR"; then
+      printf '%s\n' "$pid"
+    fi
+  done < <(pgrep -f 'app[.]jobs[.]runner' 2>/dev/null || true)
+}
+
 # Already running our own unsupervised fallback on current code? Leave
 # it alone rather than killing and respawning it every single run —
 # same "leave it as is" precedent as the API/web checks above, and
@@ -169,7 +193,7 @@ JOBS_DOMAIN="gui/$(id -u)"
 # it's known not to work here; scripts/README.md covers re-running this
 # script after fixing the underlying TCC/permissions issue to pick
 # launchd supervision back up.
-if fallback_pid_alive && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
+if [ -n "$(local_runner_pids)" ] && [ "$JOBS_CODE_FINGERPRINT" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
   ok "Job runner already running (unsupervised fallback) on current code - leaving it as is"
 else
   # Stop any stale poller before (re)starting — an old-code fallback
@@ -177,10 +201,15 @@ else
   # ran the poller this way. If one of those is still alive, launchd
   # wouldn't know about it and we'd end up with two pollers racing to
   # claim the same jobs.
-  if fallback_pid_alive; then
+  if [ -n "$(local_runner_pids)" ]; then
     info "Stopping the old unsupervised job runner process before (re)starting it..."
-    kill "$(cat "$JOBS_PID_FILE")" 2>/dev/null
-    sleep 1
+    local_runner_pids | xargs -r kill 2>/dev/null
+    for _ in 1 2 3 4 5; do
+      [ -z "$(local_runner_pids)" ] && break
+      sleep 1
+    done
+    [ -z "$(local_runner_pids)" ] \
+      || fail "The old job runner is still running; stopping here to avoid two workers claiming the same jobs."
   fi
   rm -f "$JOBS_PID_FILE"
 
@@ -219,7 +248,7 @@ cat >"$JOBS_PLIST" <<PLIST
 </plist>
 PLIST
 
-if job_runner_alive && [ "$CURRENT_HEAD" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
+if job_runner_alive && [ "$JOBS_CODE_FINGERPRINT" = "$(cat "$JOBS_HEAD_FILE" 2>/dev/null || echo none)" ]; then
   ok "Job runner already running on current code - leaving it as is"
 else
   if launchctl print "$JOBS_DOMAIN/$JOBS_LABEL" >/dev/null 2>&1; then
@@ -244,7 +273,7 @@ else
   done
 
   if [ "$runner_confirmed" = true ]; then
-    echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
+    echo "$JOBS_CODE_FINGERPRINT" >"$JOBS_HEAD_FILE"
     ok "Job runner is running, supervised by launchd (log: $JOBS_LOG)"
   else
     echo "[WARN] The launchd-supervised job runner isn't actually staying alive"
@@ -262,7 +291,7 @@ else
     ( cd "$API_DIR" && nohup ./.venv/bin/python -m app.jobs.runner >"$JOBS_LOG" 2>&1 & echo $! >"$JOBS_PID_FILE" )
     sleep 1
     if kill -0 "$(cat "$JOBS_PID_FILE" 2>/dev/null || echo 0)" 2>/dev/null; then
-      echo "$CURRENT_HEAD" >"$JOBS_HEAD_FILE"
+      echo "$JOBS_CODE_FINGERPRINT" >"$JOBS_HEAD_FILE"
       ok "Job runner is running, unsupervised (log: $JOBS_LOG)"
     else
       fail "Job runner didn't start at all (tried both launchd and a plain background process)." "$JOBS_LOG"

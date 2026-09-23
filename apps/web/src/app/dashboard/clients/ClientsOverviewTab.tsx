@@ -520,52 +520,61 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         </div>
       )}
 
-      {visibleRows && clients && clients.length > 0 && visibleRows.length === 0 && view === "attention" && (
-        <div className="mt-4">
-          <EmptyState
-            title="No clients need attention"
-            description="Every client is caught up — no overdue payments or outstanding required tasks right now."
-            action={
-              (search || activeFilterCount > 0) && (
-                <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-                  Clear filters
-                </button>
-              )
-            }
-          />
-        </div>
-      )}
-
-      {visibleRows && clients && clients.length > 0 && visibleRows.length === 0 && view === "all" && (
-        <div className="mt-4">
-          <EmptyState
-            title="No clients found"
-            description="Try adjusting your search or filters."
-            action={
-              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-                Clear filters
-              </button>
-            }
-          />
-        </div>
-      )}
-
-      {visibleRows && visibleRows.length > 0 && (
-        <div className="animate-fade-in mt-3 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-          {visibleRows.map((row) => {
-            const card = attentionByClientId.get(row.client.id);
-            const issueCount = card ? card.payments.length + (card.requiredTasksOutstanding > 0 ? 1 : 0) : 0;
-            return (
-              <ClientCard
-                key={row.client.id}
-                row={row}
-                currency={currency}
-                issueCount={issueCount}
-                isPreviewOpen={previewId === row.client.id}
-                onOpenPreview={() => openPreview(row.client.id)}
+      {/* One wrapper for all three "clients loaded, at least one exists"
+          branches below, mounted once when `clients`/`visibleRows` first
+          exist — so switching the attention/all view or typing a search
+          that changes which of these three shows re-renders in place
+          instead of replaying the reveal each time. */}
+      {visibleRows && clients && clients.length > 0 && (
+        <div className="content-reveal">
+          {visibleRows.length === 0 && view === "attention" && (
+            <div className="mt-4">
+              <EmptyState
+                title="No clients need attention"
+                description="Every client is caught up — no overdue payments or outstanding required tasks right now."
+                action={
+                  (search || activeFilterCount > 0) && (
+                    <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                      Clear filters
+                    </button>
+                  )
+                }
               />
-            );
-          })}
+            </div>
+          )}
+
+          {visibleRows.length === 0 && view === "all" && (
+            <div className="mt-4">
+              <EmptyState
+                title="No clients found"
+                description="Try adjusting your search or filters."
+                action={
+                  <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                    Clear filters
+                  </button>
+                }
+              />
+            </div>
+          )}
+
+          {visibleRows.length > 0 && (
+            <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {visibleRows.map((row) => {
+                const card = attentionByClientId.get(row.client.id);
+                const issueCount = card ? card.payments.length + (card.requiredTasksOutstanding > 0 ? 1 : 0) : 0;
+                return (
+                  <ClientCard
+                    key={row.client.id}
+                    row={row}
+                    currency={currency}
+                    issueCount={issueCount}
+                    isPreviewOpen={previewId === row.client.id}
+                    onOpenPreview={() => openPreview(row.client.id)}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

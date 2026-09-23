@@ -178,6 +178,20 @@ html[data-font="mono"] {
   --font-app: var(--font-geist-mono);
 }
 
+/* The desktop dashboard sidebar's current effective width — the single
+   source of truth for anything outside its own DOM subtree that needs
+   to sit flush against its right edge (Discovery's fixed/full-bleed map
+   and floating controls, which can't rely on ordinary flex layout
+   because they're positioned relative to the viewport). Kept in sync
+   with the collapsed/expanded toggle by Sidebar.tsx (see
+   SIDEBAR_W_EXPANDED/COLLAPSED there); this value is only the default
+   before that effect runs, and below `lg` where the sidebar is hidden
+   and consumers don't read it anyway. Matches `w-60` (expanded) — see
+   the `w-[4.5rem]` collapsed counterpart on `.app-sidebar` below. */
+:root {
+  --sidebar-w: 15rem;
+}
+
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -251,9 +265,22 @@ html[data-font="mono"] {
   /* A "this just changed" highlight is a deliberate exception to the
      scale: long enough to notice, then it settles without a trace. */
   --duration-highlight: 1400ms;
+  /* Another deliberate exception: the sidebar's one-time "you've
+     arrived" icon acknowledgement on a real section change (see
+     components/nav/AnimatedNavIcon.tsx). Longer than the state-change
+     scale above on purpose — it's a short piece of narrative motion
+     (a sweep, a scan, a line drawing in), not a control responding to
+     a press. */
+  --duration-nav-icon: 420ms;
   /* How far an arriving popover/dropdown rises from. Small on purpose:
      it should read as "settling into place", never as travel. */
   --rise-distance: 6px;
+  /* How far a page/tab's real content settles up from on its one entry
+     reveal (`.content-reveal` below) — deliberately smaller than
+     `--rise-distance`: a popover rising *to* a trigger reads as travel
+     toward something, while a page's own content just needs to feel
+     "placed", not "arrived from afar". */
+  --content-reveal-distance: 4px;
 }
 
 /* Named duration utilities. Tailwind has no theme namespace for
@@ -365,23 +392,23 @@ body {
   /* Buttons. `.btn` carries shape/sizing; combine with a color modifier,
      e.g. className="btn btn-primary". */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium motion-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50;
   }
   /* A disabled button must not react to the pointer. */
   .btn:disabled {
     scale: none;
   }
   .btn-primary {
-    @apply bg-accent text-accent-fg hover:opacity-90;
+    @apply bg-accent text-accent-fg not-disabled:hover:opacity-90;
   }
   .btn-secondary {
-    @apply border border-border-strong bg-surface text-fg hover:bg-surface-hover;
+    @apply border border-border-strong bg-surface text-fg not-disabled:hover:bg-surface-hover;
   }
   .btn-ghost {
-    @apply text-fg-muted hover:bg-surface-hover hover:text-fg;
+    @apply text-fg-muted not-disabled:hover:bg-surface-hover not-disabled:hover:text-fg;
   }
   .btn-danger {
-    @apply bg-danger text-danger-fg hover:opacity-90;
+    @apply bg-danger text-danger-fg not-disabled:hover:opacity-90;
   }
   .btn-sm {
     @apply px-2 py-1 text-xs;
@@ -586,7 +613,9 @@ body {
   }
 
   /* Dashboard sidebar (layout.tsx / components/nav). Width itself is set
-     inline (it depends on collapsed state); this only owns the
+     inline (it depends on collapsed state — see `w-60`/`w-[4.5rem]` in
+     Sidebar.tsx, mirrored in the `--sidebar-w` CSS variable defined
+     above for consumers outside this subtree); this only owns the
      transition so expand/collapse animates instead of jumping, and
      backs off under reduced motion like every other transform-y
      animation in the app. */
@@ -642,6 +671,25 @@ body {
     animation: fade-in var(--duration-base) var(--ease-standard);
   }
 
+  /* A page/tab's real content the instant it's ready — whether that was
+     under the 150ms `ContentLoadingIndicator`/`DelayedSectionLoading`
+     delay (so no loader ever showed) or past it (so this is the loader's
+     hand-off) — eases in with a short fade and a small upward settle,
+     instead of snapping in either way. See
+     components/ui/SectionLoadingIndicator.tsx for the one place this
+     convention is documented; it's applied as a plain class (like
+     `.animate-fade-in` above), not a wrapper component, because every
+     call site already has a natural one-shot mount for it: the element
+     it's put on only comes into existence once real data (or a real
+     empty/error result) is ready, and stays put through any later
+     refetch, filter, sort or pagination — so a plain CSS animation tied
+     to that one mount already satisfies "once per navigation, never on
+     a background re-render" with no extra state or timer needed. */
+  .content-reveal {
+    @apply motion-reduce:animate-none;
+    animation: content-reveal var(--duration-fast) var(--ease-out-calm);
+  }
+
   /* A surface that appears anchored to a trigger (dropdown, popover,
      menu) fades in while rising a few px into place. Movement is tiny
      and stays under the pointer's travel, so it never shifts a control
@@ -686,6 +734,112 @@ body {
       animation: none;
     }
   }
+
+  /* The sidebar's one-time per-section icon acknowledgement (see
+     components/nav/AnimatedNavIcon.tsx) — five distinct, restrained,
+     monochrome animations, each built only from `transform`/`opacity`/
+     `stroke-dashoffset` on the icon's own existing strokes (or a stroke
+     that's invisible at both ends, for the two that briefly draw a new
+     line), so none of them shift layout or add colour. Every keyframe
+     below ends exactly at the rest pose. Belt-and-suspenders reduced-
+     motion override: the global backstop at the end of this file
+     already collapses these to ~0s, but AnimatedNavIcon also skips
+     rendering the animated variant entirely under
+     prefers-reduced-motion, so this rule should rarely even apply. */
+  .nav-icon-play-today {
+    transform-origin: 12px 12px;
+    animation: nav-icon-today-sweep var(--duration-nav-icon) var(--ease-out-calm);
+  }
+  .nav-icon-play-discovery {
+    animation: nav-icon-discovery-scan var(--duration-nav-icon) var(--ease-standard);
+  }
+  .nav-icon-play-sales-line {
+    stroke-dasharray: 1;
+    animation: nav-icon-draw-in var(--duration-nav-icon) var(--ease-out-calm);
+  }
+  .nav-icon-play-sales-arrow {
+    transform-origin: 16.5px 8.5px;
+    animation: nav-icon-fade-scale-in var(--duration-fast) var(--ease-out-calm);
+    animation-delay: calc(var(--duration-nav-icon) * 0.55);
+    animation-fill-mode: backwards;
+  }
+  .nav-icon-play-build {
+    transform-origin: 4px 20px;
+    animation: nav-icon-build-tilt var(--duration-nav-icon) var(--ease-out-calm);
+  }
+  .nav-icon-play-build-line {
+    /* Static, not just the keyframe's 0%/100% opacity: a CSS animation
+       with the default fill-mode reverts to this base style (not the
+       keyframe's last value) the instant it ends, so without this the
+       line would revert to the browser's initial opacity (1) — a
+       permanent extra mark on the pencil icon — instead of back to
+       invisible. */
+    stroke-dasharray: 1;
+    opacity: 0;
+    animation: nav-icon-build-line-draw var(--duration-nav-icon) var(--ease-standard);
+  }
+  .nav-icon-play-clients-lid {
+    transform-origin: 12px 7.5px;
+    animation: nav-icon-clients-lid var(--duration-nav-icon) var(--ease-standard);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-icon-play-today,
+    .nav-icon-play-discovery,
+    .nav-icon-play-sales-line,
+    .nav-icon-play-sales-arrow,
+    .nav-icon-play-build,
+    .nav-icon-play-build-line,
+    .nav-icon-play-clients-lid {
+      animation: none;
+    }
+  }
+
+  /* Content-loading indicators (components/ui/SectionLoadingIndicator.tsx's
+     `ContentLoadingIndicator`) — an ongoing "this is still loading" signal
+     inside a page's own content area, entirely separate from the
+     `.nav-icon-play-*` sidebar acknowledgement above even where the icon
+     concept is shared (Sales, Build): different trigger (a real data
+     fetch, not a nav click), different icon (a standalone glyph, not the
+     nav rest icon), and a single, un-repeating cycle rather than a one-
+     shot burst. Each runs exactly once (`1`, no `infinite`) and holds at
+     its own final keyframe — a quiet, non-moving pose — for as long as
+     the fetch keeps running, rather than looping at full motion
+     indefinitely (see the task notes). The global reduced-motion block
+     at the end of this file already collapses these to next-to-instant
+     (0.01ms, one iteration), landing on that same settled pose
+     immediately — no separate override needed here. */
+  .content-loading-today-minute {
+    transform-origin: 12px 12px;
+    animation: content-loading-clock-minute var(--duration-highlight) var(--ease-out-calm) 1;
+    animation-fill-mode: both;
+  }
+  .content-loading-today-hour {
+    transform-origin: 12px 12px;
+    animation: content-loading-clock-hour var(--duration-highlight) var(--ease-out-calm) 1;
+    animation-fill-mode: both;
+  }
+  .content-loading-sales-bar {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: content-loading-bar-rise var(--duration-highlight) var(--ease-out-calm) 1;
+    animation-fill-mode: both;
+  }
+  .content-loading-sales-bar-2 {
+    animation-delay: 120ms;
+  }
+  .content-loading-sales-bar-3 {
+    animation-delay: 240ms;
+  }
+  .content-loading-build-line {
+    stroke-dasharray: 1;
+    animation: content-loading-pencil-draw var(--duration-highlight) var(--ease-standard) 1;
+    animation-fill-mode: both;
+  }
+  .content-loading-clients-lid {
+    transform-origin: 12px 7.5px;
+    animation: content-loading-briefcase-lid var(--duration-highlight) var(--ease-standard) 1;
+    animation-fill-mode: both;
+  }
 }
 
 @keyframes scan-sweep {
@@ -718,6 +872,17 @@ body {
   from {
     opacity: 0;
     transform: translateY(var(--rise-distance));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes content-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--content-reveal-distance));
   }
   to {
     opacity: 1;
@@ -776,6 +941,162 @@ body {
   to {
     transform: translateX(0);
     opacity: 1;
+  }
+}
+
+/* Today: the house icon's own roofline sweeps down into place — the
+   closest a house glyph gets to "hands sweeping into position" without
+   drawing a clock face over it (which would change the resting icon —
+   see AnimatedNavIcon.tsx). */
+@keyframes nav-icon-today-sweep {
+  0% {
+    transform: rotate(-14deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Discovery: the magnifying glass shifts side to side, like scanning a
+   line of results. */
+@keyframes nav-icon-discovery-scan {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-2px);
+  }
+  70% {
+    transform: translateX(1.5px);
+  }
+}
+
+/* Sales: the trend line draws in left-to-right (the "chart rising" — see
+   AnimatedNavIcon.tsx for why this reuses the existing trend-line glyph
+   instead of literal bars). Shared by the pencil's short drawn line
+   below, at a different pace via its own animation name. */
+@keyframes nav-icon-draw-in {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Sales: the arrowhead lands just after the line finishes drawing. */
+@keyframes nav-icon-fade-scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Build: the pencil tilts down as if about to write, then returns. */
+@keyframes nav-icon-build-tilt {
+  0% {
+    transform: rotate(-9deg);
+  }
+  60% {
+    transform: rotate(-9deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Build: the short line the pencil draws — invisible until the tilt
+   settles, drawn in, then faded back out so the rest icon (no line) is
+   unchanged once the animation ends. */
+@keyframes nav-icon-build-line-draw {
+  0%,
+  55% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  70% {
+    opacity: 1;
+  }
+  90% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* Clients: the case's lid (the handle + its seam) lifts open, then
+   closes back down. */
+@keyframes nav-icon-clients-lid {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-1.75px);
+  }
+}
+
+/* Content-loading icons (.content-loading-* above) — Today's clock hands
+   gently sweep forward once and hold; Sales' three bars rise into place
+   (staggered per-bar delay lives on the class, not the keyframe) and
+   stay risen; Build's pencil draws its short stroke and leaves it drawn;
+   Clients' briefcase lid lifts and settles back closed. */
+@keyframes content-loading-clock-minute {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(50deg);
+  }
+}
+@keyframes content-loading-clock-hour {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(10deg);
+  }
+}
+@keyframes content-loading-bar-rise {
+  0% {
+    transform: scaleY(0.25);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+@keyframes content-loading-pencil-draw {
+  0%,
+  15% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  70%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+@keyframes content-loading-briefcase-lid {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-1.75px);
   }
 }
 

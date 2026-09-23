@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DelayedSectionLoading } from "@/components/ui/SectionLoadingIndicator";
 import { TabBar, type TabItem } from "@/components/ui/Tabs";
 import { useTodayTab, type TodayTabId } from "./useTodayTab";
 import { TodayOverviewTab } from "./TodayOverviewTab";
@@ -59,7 +60,7 @@ function TodayPageInner() {
 
 export default function TodayPage() {
   return (
-    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+    <Suspense fallback={<DelayedSectionLoading icon="home" label="Loading Today…" />}>
       <TodayPageInner />
     </Suspense>
   );

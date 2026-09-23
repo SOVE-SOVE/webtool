@@ -25,7 +25,7 @@ import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { ListSkeleton } from "@/components/ui/Skeleton";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { SoftSwap } from "@/components/ui/SoftSwap";
 import { useRecentChanges } from "@/lib/useRecentChanges";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -280,11 +280,7 @@ export function TasksView() {
         </div>
       )}
 
-      {!tasks && !error && (
-        <div className="mt-4">
-          <ListSkeleton rows={5} />
-        </div>
-      )}
+      {!tasks && !error && <ContentLoadingIndicator variant="today" label="Loading tasks…" className="mt-4" />}
 
       {tasks && tasks.length === 0 && (
         <div className="mt-4">
@@ -317,7 +313,7 @@ export function TasksView() {
       )}
 
       {tasks && tasks.length > 0 && filteredTasks && filteredTasks.length > 0 && (
-        <SoftSwap signature={`${tab}|${filterKey}`} className="animate-fade-in mt-4 space-y-4">
+        <SoftSwap signature={`${tab}|${filterKey}`} className="content-reveal mt-4 space-y-4">
           {tab !== "done" && (
             <div className="card overflow-hidden">
               {!hasOpenWork && (

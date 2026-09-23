@@ -230,7 +230,7 @@ function PlanningDetailPageInner() {
   );
 
   return (
-    <div className="animate-fade-in mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="content-reveal mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <Link href={planningReturnUrl} className="text-fg-muted hover:underline">

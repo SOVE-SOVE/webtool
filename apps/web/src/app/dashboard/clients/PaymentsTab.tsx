@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { RevenueReport, RevenueTransaction } from "@/lib/api";
 import { withParam } from "@/lib/url";
 import { CompactSelect } from "@/components/ui/CompactSelect";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { ErrorState } from "@/components/ui/ErrorState";
 import type { FilterChip } from "@/components/ui/FilterChips";
 import { FilterField } from "@/components/ui/FilterPopover";
@@ -204,7 +205,7 @@ export function PaymentsTab({
           <ErrorState message={error} onRetry={onRetry} compact />
         </div>
       ) : !report ? (
-        <p className="mt-3 text-sm text-fg-subtle">Loading payments…</p>
+        <ContentLoadingIndicator variant="clients" label="Loading payments…" className="mt-3" />
       ) : report.transactions.length === 0 ? (
         <p className="mt-3 text-sm text-fg-subtle">No payments in this period.</p>
       ) : visible.length === 0 ? (

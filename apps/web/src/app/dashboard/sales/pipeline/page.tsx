@@ -86,7 +86,7 @@ export default function SalesPipelinePage() {
       )}
 
       {data && (
-        <>
+        <div className="content-reveal space-y-6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Metric label="Hot leads" value={data.hot_leads_count} href="/dashboard/sales/leads" />
             <Metric label="Follow-ups due" value={data.needs_follow_up_count} href="/dashboard/sales/follow-ups" />
@@ -305,7 +305,7 @@ export default function SalesPipelinePage() {
                 </ul>
               ))}
           </Panel>
-        </>
+        </div>
       )}
     </div>
   );

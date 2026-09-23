@@ -156,26 +156,33 @@ export function ClientsWebsitesTab({ currency }: { currency: string }) {
         </div>
       )}
 
-      {projects && projects.length > 0 && visible && visible.length === 0 && (
-        <div className="mt-4">
-          <EmptyState
-            title="No live websites yet"
-            description="Nothing has been deployed for a client yet — once a project ships, it shows up here."
-          />
-        </div>
-      )}
+      {/* One wrapper for both branches below, mounted once `visible` first
+          exists — so typing a search that narrows results to zero (and
+          back) re-renders in place instead of replaying the reveal. */}
+      {visible && (
+        <div className="content-reveal">
+          {projects && projects.length > 0 && visible.length === 0 && (
+            <div className="mt-4">
+              <EmptyState
+                title="No live websites yet"
+                description="Nothing has been deployed for a client yet — once a project ships, it shows up here."
+              />
+            </div>
+          )}
 
-      {visible && visible.length > 0 && (
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {visible.map((project) => (
-            <WebsiteCard
-              key={project.id}
-              project={project}
-              currency={currency}
-              nextTask={nextOpenTask(tasks, project.id)}
-              showClient
-            />
-          ))}
+          {visible.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {visible.map((project) => (
+                <WebsiteCard
+                  key={project.id}
+                  project={project}
+                  currency={currency}
+                  nextTask={nextOpenTask(tasks, project.id)}
+                  showClient
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

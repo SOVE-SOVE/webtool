@@ -6,18 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   ApiError,
-  DISCOVERED_WEBSITE_STATUS_LABEL,
-  INSTAGRAM_CHECK_STATE_LABEL,
   INSTAGRAM_WEBSITE_STATUS_LABEL,
   INSTAGRAM_WEBSITE_STATUSES,
   MAX_SUBURBS_PER_SEARCH,
-  instagramCheckDisplayState,
   type DiscoveredBusiness,
   type DiscoverySearch,
-  type InstagramCheckState,
   type InstagramImportResult,
 } from "@/lib/api";
-import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import {
   ACTIVE_RECENTLY_DAYS,
   filterDiscoveredBusinesses,
@@ -28,7 +23,6 @@ import {
 } from "@/lib/filters";
 import { diffNewIds } from "@/lib/discovery-diff";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -38,6 +32,7 @@ import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { invalidateNavCounts, loadNavCounts } from "@/lib/navCounts";
+import { DiscoveryResultsPanel, type DiscoveryResultsPanelItem } from "@/components/discovery/DiscoveryResultsPanel";
 
 // Leaflet touches `window` on import — client-only, no SSR.
 const DiscoveryMap = dynamic(() => import("@/components/DiscoveryMap"), { ssr: false });
@@ -51,23 +46,6 @@ const NO_FILTERS: DiscoveredBusinessFilters = {
   activeRecentlyOnly: false,
   minFollowers: null,
   showImported: false,
-};
-
-// "none" (no website) gets the standout tone — the strongest sales
-// opportunity, not a problem to flag.
-const WEBSITE_BADGE: Record<DiscoveredBusiness["website_status"], BadgeTone> = {
-  found: "muted",
-  none: "highlight",
-  unknown: "muted",
-};
-
-// Shared badge tone for INSTAGRAM_CHECK_STATE_LABEL.
-const INSTAGRAM_CHECK_STATE_BADGE: Record<InstagramCheckState, BadgeTone> = {
-  website_found: "success",
-  no_website_found: "highlight",
-  link_in_bio_only: "info",
-  check_pending: "warning",
-  needs_review: "muted",
 };
 
 function criteriaSummary(search: DiscoverySearch): string {
@@ -124,7 +102,12 @@ export function DiscoveryWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoveredBusinessFilters>(NO_FILTERS);
   const [sort, setSort] = useState<DiscoverySort>("discovered");
-  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  // The results panel's own collapse state — deliberately not reset by
+  // background refreshes (the website-check poll below only ever calls
+  // `applyResults`, never this), only by a genuine change of search
+  // context (see `selectSearch`), so a deliberate collapse survives a
+  // poll landing behind it.
+  const [panelOpen, setPanelOpen] = useState(true);
 
   // Tracks which result ids have already been shown, so a poll/filter/
   // sort/re-render never replays the "new result" fade-in — only rows
@@ -221,6 +204,11 @@ export function DiscoveryWorkspace({
     setActiveId(id);
     setFilters(NO_FILTERS);
     setSelectedId(null);
+    // A genuinely new search context (run, imported, or switched to via
+    // the picker below) opens the results panel — even if the operator
+    // had collapsed it for a previous search. A background poll never
+    // calls this, so it never fights a deliberate collapse.
+    setPanelOpen(true);
   }
 
   // Initial load: searches list, then pick the active search (the
@@ -358,19 +346,6 @@ export function DiscoveryWorkspace({
 
   const activeSelectionId =
     selectedId && visible.some((b) => b.id === selectedId) ? selectedId : null;
-
-  useEffect(() => {
-    if (!activeSelectionId) return;
-    const row = rowRefs.current.get(activeSelectionId);
-    // The results list starts below the full-screen map's first screen,
-    // so only bring the row into view once the list is already on screen
-    // — otherwise clicking a pin would scroll the page off the map (and
-    // slide the list over it).
-    const listTop = row?.closest("table")?.getBoundingClientRect().top;
-    if (row && listTop !== undefined && listTop < window.innerHeight) {
-      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [activeSelectionId]);
 
   // Background website-check progress for this search — only
   // instagram_search candidates ever get an automatic check (see
@@ -514,6 +489,39 @@ export function DiscoveryWorkspace({
   const mappedCount = visible.filter(hasCoordinates).length;
   const noWebsiteCount = visible.filter((b) => b.website_status === "none").length;
 
+  // What the results panel's body shows — mirrors the state machine the
+  // old in-page sections used (loading searches, loading this search's
+  // results, no searches yet, no results, filtered down to none, or the
+  // list itself), collapsed into the panel's one content slot. A
+  // specific active search's own state always wins over the broader
+  // "still loading the searches list" skeleton, since a deep link
+  // (`/dashboard/discovery/map/{id}`) can resolve its own fetch before
+  // that list fetch finishes.
+  let panelLoading = false;
+  let panelEmptyMessage: string | null = null;
+  let panelItems: DiscoveryResultsPanelItem[] | null = null;
+  let showCommandBar = false;
+  if (activeId && !activeResults && !error) {
+    panelLoading = true;
+  } else if (activeResults && activeResults.length > 0) {
+    showCommandBar = true;
+    if (visible.length === 0) {
+      panelEmptyMessage = "No results match these filters.";
+    } else {
+      panelItems = visible.map((business, index) => ({
+        business,
+        isNew: newIds.has(business.id),
+        animationDelayMs: Math.min(index * 20, 200),
+      }));
+    }
+  } else if (activeResults && activeResults.length === 0) {
+    panelEmptyMessage = "No results for this search.";
+  } else if (!searches && !listError) {
+    panelLoading = true;
+  } else if (searches && searches.length === 0 && !listError) {
+    panelEmptyMessage = 'No discovery searches yet. Try "plumbing" in "Gold Coast" above.';
+  }
+
   return (
     <>
       {/* Full-viewport base layer (fixed; see DiscoveryMap). Always
@@ -534,24 +542,38 @@ export function DiscoveryWorkspace({
         }}
         queuingId={queuingId}
       />
-    <div className="relative z-10">
       {/* The intro copy and the "Import from Instagram" button now live in
           DiscoveryLayout's floating header layer. */}
 
+      {/* Left-hand floating column: search controls, then the results
+          panel below them. `pointer-events-none` on the shell with each
+          child opting back in (`pointer-events-auto`) — same convention
+          as DiscoveryLayout's header layer — so any gap between them,
+          or the empty space below a collapsed results panel, still lets
+          clicks/drags reach the map underneath instead of just sitting
+          on top of it. `top`/`bottom` bound the column exactly between
+          the header layer above and the search-history bar below (the
+          same reserved-space constants the search form's own max-height
+          used to compute for itself when it was the only thing here),
+          so the column can never grow into either. Width switches at
+          `sm` (the search form's old breakpoint); the bottom clearance
+          switches at `lg`, where the mobile bottom nav disappears (see
+          dashboard/layout.tsx). `lg:left` is the shared `--sidebar-w`
+          variable plus this column's own 0.75rem gutter, so it stays
+          flush with the sidebar's real edge (collapsed or expanded)
+          instead of a hard-coded width that can drift out of sync. */}
+      <div className="pointer-events-none fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] bottom-[calc(3.5rem+1.75rem+3.75rem+0.75rem)] z-20 flex flex-col gap-3 sm:right-auto sm:w-[400px] lg:left-[calc(var(--sidebar-w)+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:bottom-[calc(0.75rem+3.75rem+0.75rem)]">
       {/* Search controls — always visible: this is where discovery starts.
-          A frosted panel floating over the map's top-left corner (fixed,
-          so it stays put while the page scrolls). The five criteria
-          fields stack in one column, then a divider sets the
-          website-status refinement + the primary Run search action apart
-          as their own block, then a second divider sets the quiet helper
-          copy apart from both. It sits just below the floating header
-          layer: `--discovery-layer-h` is that layer's measured height,
-          published by DiscoveryLayout (the fallback only applies if the
-          layout hasn't measured yet), on top of the mobile top bar /
-          desktop header strip. */}
+          The five criteria fields stack in one column, then a divider
+          sets the website-status refinement + the primary Run search
+          action apart as their own block, then a second divider sets
+          the quiet helper copy apart from both. Capped to its own share
+          of the column (rather than growing to push the results panel
+          out) by the same max-height this element used before the
+          results panel existed. */}
       <form
         onSubmit={handleCreate}
-        className="fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] z-20 max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] overflow-y-auto map-glass px-4 py-3 sm:right-auto sm:w-80 lg:left-[calc(14rem+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
+        className="pointer-events-auto max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] shrink-0 overflow-y-auto map-glass px-4 py-3 lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
       >
         <button
           type="button"
@@ -686,12 +708,201 @@ export function DiscoveryWorkspace({
         </div>
       </form>
 
+      <DiscoveryResultsPanel
+        open={panelOpen}
+        onOpenChange={setPanelOpen}
+        resultCount={ready ? total : null}
+        banner={
+          (listError || error) ? (
+            <div className="space-y-2">
+              {listError && <ErrorState message={listError} onRetry={loadSearches} compact />}
+              {error && <ErrorState message={error} onRetry={() => activeId && loadResults(activeId)} compact />}
+            </div>
+          ) : undefined
+        }
+        statusInfo={
+          activeSearch ? (
+            <div>
+              <p className="text-xs text-fg-muted">
+                {criteriaSummary(activeSearch)}
+                {activeSearch.status === "failed" && activeSearch.error_message
+                  ? ` — ${activeSearch.error_message}`
+                  : ""}
+              </p>
+              {activeSearch.provider === "instagram_search" && (
+                <div className="mt-1.5 rounded-md border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-fg-muted">
+                  <p>
+                    Checked {activeSearch.raw_results_checked} raw result
+                    {activeSearch.raw_results_checked === 1 ? "" : "s"} → {activeSearch.result_count} valid
+                    candidate{activeSearch.result_count === 1 ? "" : "s"} imported
+                  </p>
+                  <p className="mt-0.5">
+                    {activeSearch.queries_used} live search{activeSearch.queries_used === 1 ? "" : "es"} used
+                    {activeSearch.cache_hits > 0 && (
+                      <> · {activeSearch.cache_hits} served from the 24h cache</>
+                    )}
+                  </p>
+                  {activeSearch.suburbs && activeSearch.suburbs.length > 0 && (
+                    <p className="mt-0.5">
+                      {activeSearch.has_more
+                        ? `Suburb ${Math.min(activeSearch.next_suburb_index + 1, activeSearch.suburbs.length)} of ${activeSearch.suburbs.length}`
+                        : `All ${activeSearch.suburbs.length} suburb${activeSearch.suburbs.length === 1 ? "" : "s"} checked`}
+                      {" · "}
+                      {activeSearch.suburbs.join(", ")}
+                    </p>
+                  )}
+                  {websiteCheckProgress && (
+                    <p className="mt-0.5">
+                      {pendingWebsiteChecks > 0
+                        ? `Checking websites: ${websiteCheckProgress.completed} of ${websiteCheckProgress.total}`
+                        : `Website checks complete: ${websiteCheckProgress.total} of ${websiteCheckProgress.total}`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : undefined
+        }
+        commandBar={
+          showCommandBar ? (
+            // Search + Filters + Sort, active filters as chips. The
+            // Instagram-only criteria appear in the popover only once
+            // there's at least one Instagram-sourced result to filter,
+            // so an ordinary Places/Brave search doesn't offer controls
+            // that could never match anything.
+            <CommandBar
+              search={
+                <SearchInput
+                  value={filters.search}
+                  onValueChange={(search) => setFilters((f) => ({ ...f, search }))}
+                  placeholder="Filter by name, category, address…"
+                  aria-label="Filter results by name, category or address"
+                />
+              }
+              filters={
+                <FilterPopover activeCount={filterChips.length} onClearAll={clearResultFilters}>
+                  <FilterField label="Website">
+                    <CompactSelect
+                      aria-label="Filter by website"
+                      value={filters.website}
+                      onValueChange={(website) => setFilters((f) => ({ ...f, website }))}
+                      options={[
+                        { value: "", label: "Any website status" },
+                        { value: "has", label: "Has website" },
+                        { value: "no", label: "No website" },
+                      ]}
+                    />
+                  </FilterField>
+                  <FilterToggle
+                    label="On map only"
+                    checked={filters.mappedOnly}
+                    onChange={(mappedOnly) => setFilters((f) => ({ ...f, mappedOnly }))}
+                  />
+                  <FilterToggle
+                    label="Already imported"
+                    checked={filters.showImported}
+                    onChange={(showImported) => setFilters((f) => ({ ...f, showImported }))}
+                  />
+                  {hasInstagramResults && (
+                    <div className="space-y-3 border-t border-border pt-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">Instagram</p>
+                      <FilterField label="Website status">
+                        <CompactSelect
+                          aria-label="Filter by Instagram website status"
+                          value={filters.instagramStatus}
+                          onValueChange={(instagramStatus) => setFilters((f) => ({ ...f, instagramStatus }))}
+                          options={[
+                            { value: "", label: "Any Instagram status" },
+                            ...INSTAGRAM_WEBSITE_STATUSES.map((status) => ({
+                              value: status,
+                              label: INSTAGRAM_WEBSITE_STATUS_LABEL[status],
+                            })),
+                          ]}
+                        />
+                      </FilterField>
+                      <FilterToggle
+                        label="Contactable only"
+                        checked={filters.contactableOnly}
+                        onChange={(contactableOnly) => setFilters((f) => ({ ...f, contactableOnly }))}
+                      />
+                      <FilterToggle
+                        label={`Active in last ${ACTIVE_RECENTLY_DAYS} days`}
+                        checked={filters.activeRecentlyOnly}
+                        onChange={(activeRecentlyOnly) => setFilters((f) => ({ ...f, activeRecentlyOnly }))}
+                      />
+                      <FilterField label="Minimum followers">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={filters.minFollowers ?? ""}
+                          onChange={(e) =>
+                            setFilters((f) => ({
+                              ...f,
+                              minFollowers: e.target.value === "" ? null : Number(e.target.value),
+                            }))
+                          }
+                          placeholder="Min followers"
+                          className="control"
+                          aria-label="Minimum follower count"
+                        />
+                      </FilterField>
+                    </div>
+                  )}
+                </FilterPopover>
+              }
+              sort={
+                <SortSelect
+                  aria-label="Sort results"
+                  value={sort}
+                  onValueChange={setSort}
+                  options={[
+                    { value: "discovered", label: "Relevance" },
+                    { value: "no-website", label: "No website first" },
+                    { value: "score", label: "Best score first" },
+                  ]}
+                />
+              }
+              chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearResultFilters} /> : undefined}
+            />
+          ) : undefined
+        }
+        loading={panelLoading}
+        emptyMessage={panelEmptyMessage}
+        items={panelItems}
+        selectedId={activeSelectionId}
+        onSelect={(id) => setSelectedId(id === activeSelectionId ? null : id)}
+        queuingId={queuingId}
+        onQueue={handleQueue}
+        onUnqueue={handleUnqueue}
+        footer={
+          activeResults && activeResults.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-fg-muted">
+              <span>
+                Showing {visible.length} of {total} {total === 1 ? "result" : "results"}
+                {mappedCount > 0 && <> · {mappedCount} on the map</>}
+                {noWebsiteCount > 0 && <> · {noWebsiteCount} with no website</>}
+              </span>
+              {activeSearch?.has_more ? (
+                <button onClick={handleLoadMore} disabled={loadingMore} className="btn btn-secondary btn-sm">
+                  {loadingMore ? "Loading…" : "Load more results"}
+                </button>
+              ) : (
+                <span className="text-fg-subtle">All results loaded</span>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
+      </div>
+
       {/* Recent searches — switch which one this workspace is showing.
           A frosted panel floating over the map's bottom-left corner
           (same treatment as the search panel above), clear of the mobile
-          bottom nav. Leaflet's attribution stays visible bottom-right. */}
+          bottom nav. Leaflet's attribution stays visible bottom-right.
+          `lg:left` mirrors the search/results column above — flush with
+          the sidebar's real edge via `--sidebar-w`. */}
       {searches && searches.length > 0 && (
-        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 map-glass px-4 py-3 text-sm sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(14rem+0.75rem)]">
+        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 map-glass px-4 py-3 text-sm sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(var(--sidebar-w)+0.75rem)]">
           <label htmlFor="discovery-search-picker" className="shrink-0 text-fg-muted">
             Showing
           </label>
@@ -713,359 +924,6 @@ export function DiscoveryWorkspace({
           </Link>
         </div>
       )}
-      {listError && (
-        <div className="mt-3">
-          <ErrorState message={listError} onRetry={loadSearches} compact />
-        </div>
-      )}
-
-      {activeSearch && (
-        <div className="mt-4">
-          <h2 className="text-base font-semibold text-fg">{searchLabel(activeSearch)}</h2>
-          <p className="mt-0.5 text-sm text-fg-muted">
-            {criteriaSummary(activeSearch)}
-            {activeSearch.status === "failed" && activeSearch.error_message
-              ? ` — ${activeSearch.error_message}`
-              : ""}
-          </p>
-          {activeSearch.provider === "instagram_search" && (
-            <div className="mt-1 rounded-md border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-fg-muted">
-              <p>
-                Checked {activeSearch.raw_results_checked} raw result
-                {activeSearch.raw_results_checked === 1 ? "" : "s"} → {activeSearch.result_count} valid
-                candidate{activeSearch.result_count === 1 ? "" : "s"} imported
-              </p>
-              <p className="mt-0.5">
-                {activeSearch.queries_used} live search{activeSearch.queries_used === 1 ? "" : "es"} used
-                {activeSearch.cache_hits > 0 && (
-                  <> · {activeSearch.cache_hits} served from the 24h cache</>
-                )}
-              </p>
-              {activeSearch.suburbs && activeSearch.suburbs.length > 0 && (
-                <p className="mt-0.5">
-                  {activeSearch.has_more
-                    ? `Suburb ${Math.min(activeSearch.next_suburb_index + 1, activeSearch.suburbs.length)} of ${activeSearch.suburbs.length}`
-                    : `All ${activeSearch.suburbs.length} suburb${activeSearch.suburbs.length === 1 ? "" : "s"} checked`}
-                  {" · "}
-                  {activeSearch.suburbs.join(", ")}
-                </p>
-              )}
-              {websiteCheckProgress && (
-                <p className="mt-0.5">
-                  {pendingWebsiteChecks > 0
-                    ? `Checking websites: ${websiteCheckProgress.completed} of ${websiteCheckProgress.total}`
-                    : `Website checks complete: ${websiteCheckProgress.total} of ${websiteCheckProgress.total}`}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4">
-          <ErrorState message={error} onRetry={() => activeId && loadResults(activeId)} compact />
-        </div>
-      )}
-
-      {!searches && !listError && (
-        <div className="mt-4">
-          <TableSkeleton rows={4} cols={6} />
-        </div>
-      )}
-
-      {searches && searches.length === 0 && !listError && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          No discovery searches yet. Try &ldquo;plumbing&rdquo; in &ldquo;Gold Coast&rdquo; above.
-        </div>
-      )}
-
-      {activeId && !activeResults && !error && (
-        <div className="mt-4 space-y-4">
-          <Skeleton className="h-72 w-full sm:h-80" />
-          <TableSkeleton rows={4} cols={6} />
-        </div>
-      )}
-
-      {activeResults && activeResults.length === 0 && (
-        <div className="mt-6 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-          No results for this search.
-        </div>
-      )}
-
-      {activeResults && activeResults.length > 0 && (
-        <>
-          {/* Command bar over the results: Search + Filters + Sort, active
-              filters as chips. The Instagram-only criteria appear in the
-              popover only once there's at least one Instagram-sourced
-              result to filter, so an ordinary Places/Brave search doesn't
-              offer controls that could never match anything. */}
-          <CommandBar
-            className="mt-3"
-            search={
-              <SearchInput
-                value={filters.search}
-                onValueChange={(search) => setFilters((f) => ({ ...f, search }))}
-                placeholder="Filter by name, category, address…"
-                aria-label="Filter results by name, category or address"
-              />
-            }
-            filters={
-              <FilterPopover activeCount={filterChips.length} onClearAll={clearResultFilters}>
-                <FilterField label="Website">
-                  <CompactSelect
-                    aria-label="Filter by website"
-                    value={filters.website}
-                    onValueChange={(website) => setFilters((f) => ({ ...f, website }))}
-                    options={[
-                      { value: "", label: "Any website status" },
-                      { value: "has", label: "Has website" },
-                      { value: "no", label: "No website" },
-                    ]}
-                  />
-                </FilterField>
-                <FilterToggle
-                  label="On map only"
-                  checked={filters.mappedOnly}
-                  onChange={(mappedOnly) => setFilters((f) => ({ ...f, mappedOnly }))}
-                />
-                <FilterToggle
-                  label="Already imported"
-                  checked={filters.showImported}
-                  onChange={(showImported) => setFilters((f) => ({ ...f, showImported }))}
-                />
-                {hasInstagramResults && (
-                  <div className="space-y-3 border-t border-border pt-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-fg-subtle">Instagram</p>
-                    <FilterField label="Website status">
-                      <CompactSelect
-                        aria-label="Filter by Instagram website status"
-                        value={filters.instagramStatus}
-                        onValueChange={(instagramStatus) => setFilters((f) => ({ ...f, instagramStatus }))}
-                        options={[
-                          { value: "", label: "Any Instagram status" },
-                          ...INSTAGRAM_WEBSITE_STATUSES.map((status) => ({
-                            value: status,
-                            label: INSTAGRAM_WEBSITE_STATUS_LABEL[status],
-                          })),
-                        ]}
-                      />
-                    </FilterField>
-                    <FilterToggle
-                      label="Contactable only"
-                      checked={filters.contactableOnly}
-                      onChange={(contactableOnly) => setFilters((f) => ({ ...f, contactableOnly }))}
-                    />
-                    <FilterToggle
-                      label={`Active in last ${ACTIVE_RECENTLY_DAYS} days`}
-                      checked={filters.activeRecentlyOnly}
-                      onChange={(activeRecentlyOnly) => setFilters((f) => ({ ...f, activeRecentlyOnly }))}
-                    />
-                    <FilterField label="Minimum followers">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={filters.minFollowers ?? ""}
-                        onChange={(e) =>
-                          setFilters((f) => ({ ...f, minFollowers: e.target.value === "" ? null : Number(e.target.value) }))
-                        }
-                        placeholder="Min followers"
-                        className="control"
-                        aria-label="Minimum follower count"
-                      />
-                    </FilterField>
-                  </div>
-                )}
-              </FilterPopover>
-            }
-            sort={
-              <SortSelect
-                aria-label="Sort results"
-                value={sort}
-                onValueChange={setSort}
-                options={[
-                  { value: "discovered", label: "Relevance" },
-                  { value: "no-website", label: "No website first" },
-                  { value: "score", label: "Best score first" },
-                ]}
-              />
-            }
-            chips={filterChips.length > 0 ? <FilterChips chips={filterChips} onClearAll={clearResultFilters} /> : undefined}
-          />
-
-          {visible.length === 0 ? (
-            <div className="mt-4 rounded-md border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">
-              No results match these filters.
-            </div>
-          ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full border border-border text-left text-sm">
-                <thead className="bg-surface-subtle text-xs uppercase text-fg-muted">
-                  <tr>
-                    <th className="px-3 py-2">Business</th>
-                    <th className="px-3 py-2">Location</th>
-                    <th className="px-3 py-2">Phone</th>
-                    <th className="px-3 py-2">Website</th>
-                    <th className="px-3 py-2">Score</th>
-                    <th className="px-3 py-2">Review</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {visible.map((business, index) => {
-                    const onMap = hasCoordinates(business);
-                    const selected = business.id === activeSelectionId;
-                    const location =
-                      business.address ||
-                      [business.suburb, business.state].filter(Boolean).join(", ") ||
-                      "—";
-                    const igState = instagramCheckDisplayState(business);
-                    const isNew = newIds.has(business.id);
-                    return (
-                      <tr
-                        key={business.id}
-                        ref={(el) => {
-                          if (el) rowRefs.current.set(business.id, el);
-                          else rowRefs.current.delete(business.id);
-                        }}
-                        onClick={onMap ? () => setSelectedId(selected ? null : business.id) : undefined}
-                        className={
-                          (selected ? "bg-surface-subtle " : "") +
-                          (onMap ? "cursor-pointer " : "") +
-                          (isNew ? "animate-fade-in" : "")
-                        }
-                        style={isNew ? { animationDelay: `${Math.min(index * 20, 200)}ms`, animationFillMode: "backwards" } : undefined}
-                      >
-                        <td className="px-3 py-2">
-                          <span className="flex items-center gap-1.5">
-                            <Link
-                              href={`/dashboard/discovered-businesses/${business.id}`}
-                              className="font-medium text-fg hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {business.name}
-                            </Link>
-                            {onMap && (
-                              <span className="text-fg-subtle" title="On the map" aria-hidden>
-                                &#9679;
-                              </span>
-                            )}
-                          </span>
-                          {(business.business_category || business.industry) && (
-                            <div className="text-xs text-fg-muted">
-                              {business.business_category || business.industry}
-                            </div>
-                          )}
-                          {business.instagram_handle && (
-                            <a
-                              href={business.instagram_profile_url ?? undefined}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs text-fg-subtle hover:underline"
-                            >
-                              @{business.instagram_handle}
-                            </a>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-fg-muted">
-                          <span className="block max-w-[220px] truncate" title={location}>
-                            {location}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-fg-muted">
-                          {business.phone ? (
-                            <a
-                              href={`tel:${business.phone}`}
-                              className="hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {business.phone}
-                            </a>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <Badge tone={igState ? INSTAGRAM_CHECK_STATE_BADGE[igState] : WEBSITE_BADGE[business.website_status]}>
-                            {igState ? INSTAGRAM_CHECK_STATE_LABEL[igState] : DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
-                          </Badge>
-                          {business.website_status === "found" && business.website_url && (
-                            <a
-                              href={business.website_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="ml-1 text-xs text-fg-subtle hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              open
-                            </a>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-fg-muted">{business.opportunity_score ?? "—"}</td>
-                        <td className="px-3 py-2">
-                          {business.status === "imported" && business.imported_lead_id ? (
-                            <Link
-                              href={`/dashboard/leads/${business.imported_lead_id}`}
-                              className="text-xs text-fg-muted hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              View lead &rarr;
-                            </Link>
-                          ) : business.review_queued_at ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium text-fg-muted">In Review Queue</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleUnqueue(business);
-                                }}
-                                disabled={queuingId === business.id}
-                                className="text-xs text-fg-subtle hover:underline disabled:opacity-50"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleQueue(business);
-                              }}
-                              disabled={queuingId === business.id}
-                              className="text-xs font-medium text-fg hover:underline disabled:opacity-50"
-                            >
-                              {queuingId === business.id ? "Adding…" : "Add to Review Queue"}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-fg-muted">
-            <span>
-              Showing {visible.length} of {total} {total === 1 ? "result" : "results"}
-              {mappedCount > 0 && <> · {mappedCount} on the map</>}
-              {noWebsiteCount > 0 && <> · {noWebsiteCount} with no website</>}
-            </span>
-            {activeSearch?.has_more ? (
-              <button onClick={handleLoadMore} disabled={loadingMore} className="btn btn-secondary">
-                {loadingMore ? "Loading…" : "Load more results"}
-              </button>
-            ) : (
-              <span className="text-fg-subtle">All results loaded</span>
-            )}
-          </div>
-        </>
-      )}
-
-    </div>
-      {/* Outside the z-10 page wrapper so the modal's own stacking isn't
-          trapped beneath the dashboard header. */}
       {importOpen && (
         <InstagramImportModal onClose={() => onImportOpenChange?.(false)} onImported={handleImported} />
       )}

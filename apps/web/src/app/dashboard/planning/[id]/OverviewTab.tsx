@@ -183,7 +183,7 @@ export function OverviewTab({
   );
 
   return (
-    <div className="animate-fade-in">
+    <div className="content-reveal">
       {planning.status === "analysing" && (
         <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-surface-subtle px-3 py-2 text-xs text-fg-muted">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden="true" />

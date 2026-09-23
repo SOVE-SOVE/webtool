@@ -704,7 +704,7 @@ function LeadsPageInner() {
       {view === "table" && visibleLeads && visibleLeads.length > 0 && (
         <SoftSwap
           signature={`${tab}|${statusFilter}|${websiteFilter}|${priorityFilter}|${sort}`}
-          className="animate-fade-in mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+          className="content-reveal mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
         >
           {visibleLeads.map((lead) => (
             <LeadCard

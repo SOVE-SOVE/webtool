@@ -22,6 +22,7 @@ import { QaReportView } from "@/components/QaReportView";
 import { WebsiteFeedbackPanel } from "@/components/WebsiteFeedbackPanel";
 import { WebsiteView } from "@/components/WebsiteView";
 import { WebsiteWorkflowPanel } from "@/components/WebsiteWorkflowPanel";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Badge } from "@/components/ui/Badge";
@@ -254,10 +255,10 @@ function ProjectWebsiteWorkspaceInner() {
       </div>
     );
   }
-  if (versions === null) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (versions === null) return <ContentLoadingIndicator variant="build" label="Loading this project's website…" className="p-6" />;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="content-reveal mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <Link href={`/dashboard/projects/${projectId}`} className="text-sm text-fg-muted hover:underline">
         ← Back to project
       </Link>

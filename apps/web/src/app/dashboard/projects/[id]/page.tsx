@@ -37,6 +37,7 @@ import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { EmptyRow } from "@/components/ui/Panel";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
@@ -419,13 +420,13 @@ export default function ProjectDetailPage() {
       </div>
     );
   }
-  if (!project) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (!project) return <ContentLoadingIndicator variant="build" label="Loading this project…" className="p-6" />;
 
   const dl = deadlineStatus(project.deadline);
   const detailsConfirmed = brief?.status === "approved";
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="content-reveal space-y-6 p-4 sm:p-6">
       {/* 1. Project header */}
       <div>
         <Link href={projectsReturnUrl} className="text-sm text-fg-muted hover:underline">

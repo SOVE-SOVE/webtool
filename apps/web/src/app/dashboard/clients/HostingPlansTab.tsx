@@ -194,7 +194,7 @@ export function HostingPlansTab({
   }
 
   return (
-    <div>
+    <div className="content-reveal">
       {plans.length === 0 ? (
         <div className="mt-4">
           <EmptyState

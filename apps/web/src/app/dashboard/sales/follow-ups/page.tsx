@@ -14,7 +14,7 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Disclosure } from "@/components/ui/Disclosure";
-import { ListSkeleton } from "@/components/ui/Skeleton";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { Select } from "@/components/ui/Select";
 
@@ -286,9 +286,7 @@ export default function SalesFollowUpsPage() {
       )}
 
       {buckets === null && !error && (
-        <div className="mt-6">
-          <ListSkeleton />
-        </div>
+        <ContentLoadingIndicator variant="sales" label="Loading follow-ups…" className="mt-6" />
       )}
 
       {queueEmpty && (
@@ -301,7 +299,7 @@ export default function SalesFollowUpsPage() {
       )}
 
       {buckets && !queueEmpty && (
-        <>
+        <div className="content-reveal">
           <BucketSection
             title="Overdue"
             items={buckets.overdue}
@@ -324,7 +322,7 @@ export default function SalesFollowUpsPage() {
             onResolve={handleResolve}
             onSnooze={handleSnooze}
           />
-        </>
+        </div>
       )}
 
       {candidates.length > 0 && (

@@ -133,13 +133,16 @@ export default function DiscoveryMap({
     const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45 });
     map.addLayer(cluster);
     // Top: the header layer's height (`--discovery-layer-h`, published by
-    // DiscoveryLayout) + a gutter. Left: from `sm` up the search panel
-    // (20rem + 0.75rem inset) occupies that column, so popups pan clear of it.
+    // DiscoveryLayout) + a gutter. Left: from `sm` up, the search-form +
+    // results-panel column (25rem/400px + 0.75rem inset) occupies that
+    // space regardless of whether the results panel itself is open or
+    // collapsed — collapsing only shortens it, the column's *width*
+    // never changes — so this doesn't need to vary with that state.
     const popupPadding = popupPaddingRef.current;
     const container = containerRef.current;
     function syncPopupPadding() {
       const layerH = parseFloat(getComputedStyle(container).getPropertyValue("--discovery-layer-h")) || 0;
-      popupPadding.x = window.innerWidth >= 640 ? 348 : 16;
+      popupPadding.x = window.innerWidth >= 640 ? 428 : 16;
       popupPadding.y = layerH + 16;
     }
     syncPopupPadding();
@@ -267,7 +270,19 @@ export default function DiscoveryMap({
       const marker = markersRef.current.get(selectedId);
       if (marker) {
         cluster.zoomToShowLayer(marker, () => {
-          map.setView(marker.getLatLng(), Math.max(map.getZoom(), 14), { animate: true });
+          const zoom = Math.max(map.getZoom(), 14);
+          // Center on the marker, then nudge that center left by half the
+          // results column's own width (the same clearance the popup's
+          // own autoPan below uses) — so the marker itself lands in the
+          // middle of the map area the column doesn't cover, not the
+          // container's true (partly-obstructed) center.
+          const offsetX = popupPaddingRef.current.x;
+          if (offsetX > 0) {
+            const point = map.project(marker.getLatLng(), zoom).subtract([offsetX / 2, 0]);
+            map.setView(map.unproject(point, zoom), zoom, { animate: true });
+          } else {
+            map.setView(marker.getLatLng(), zoom, { animate: true });
+          }
           marker.openPopup();
         });
       }
@@ -279,7 +294,12 @@ export default function DiscoveryMap({
     // leaves free — below the mobile top bar / desktop header strip,
     // above the mobile bottom nav, right of the desktop sidebar — so the
     // app navigation stays reachable. Offsets mirror dashboard/layout.tsx.
-    <div className="fixed inset-x-0 bottom-14 top-12 z-0 lg:bottom-0 lg:left-56 lg:top-11">
+    // `left` reads the sidebar's real width from `--sidebar-w` (published
+    // by Sidebar.tsx) rather than a hard-coded constant, so it tracks the
+    // collapsed/expanded toggle instead of drifting out of sync with it —
+    // the ResizeObserver below already re-measures Leaflet whenever this
+    // resulting width changes.
+    <div className="fixed inset-x-0 bottom-14 top-12 z-0 lg:bottom-0 lg:left-[var(--sidebar-w)] lg:top-11">
       <div
         ref={containerRef}
         className="h-full w-full [&_.leaflet-top.leaflet-right]:top-10!"

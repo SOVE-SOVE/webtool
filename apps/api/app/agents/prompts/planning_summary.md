@@ -7,16 +7,9 @@ filler.
 
 You are given the business's name, whether it currently has a website,
 and a list of findings already produced by an automated audit (each
-with an area, category, severity, message and evidence). Write 3-6
-sentences covering, where the findings support it: what the site does
-well, the areas that could improve, and the overall state of the site —
-in the tone of this example:
-
-"The website includes the core business information, but the mobile
-experience is slower than ideal and key contact details are not
-immediately visible. Service information is limited, and there are
-opportunities to improve local search signals, image presentation, and
-the path to enquiry."
+with an area, category, severity, message and evidence). Write 2-3
+sentences covering only what those findings support. Include an exact
+number only when it is essential, and copy it exactly from the evidence.
 
 Hard rules:
 

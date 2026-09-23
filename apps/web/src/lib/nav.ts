@@ -201,6 +201,20 @@ export const MOBILE_PRIMARY_HREFS = [
   "/dashboard/build",
 ] as const;
 
+/**
+ * Which of the sidebar's five primary destinations (if any) a pathname
+ * belongs to — the exact "which main section am I in" check the
+ * sidebar itself uses to highlight a row (`isNavLinkActive`), reused
+ * here so nothing outside this file has to duplicate that routing
+ * knowledge. Used to decide when a *real* section change happened (as
+ * opposed to switching tabs/views inside the same section, or a
+ * no-op click on the already-active one) — see dashboard/layout.tsx's
+ * sidebar-icon acknowledgement animation.
+ */
+export function primaryNavHrefForPath(pathname: string, search: URLSearchParams): string | null {
+  return PRIMARY_NAV_LINKS.find((link) => isNavLinkActive(pathname, search, link))?.href ?? null;
+}
+
 export function isNavLinkActive(pathname: string, search: URLSearchParams, link: NavLink): boolean {
   const prefixMatch = (link.activePrefixes ?? []).some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),

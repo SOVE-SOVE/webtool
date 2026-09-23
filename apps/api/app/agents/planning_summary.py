@@ -59,6 +59,7 @@ def run(input: PlanningSummaryInput) -> AgentResult[PlanningSummaryOutput]:
         system=_load_system_prompt(),
         user=_build_user_message(input),
         schema=schema,
+        max_tokens=300,
     )
     output = PlanningSummaryOutput.model_validate(raw)
     return AgentResult(output=output)

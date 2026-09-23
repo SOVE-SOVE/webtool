@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DelayedSectionLoading } from "@/components/ui/SectionLoadingIndicator";
 import { TabBar, type TabItem } from "@/components/ui/Tabs";
 import { useClientsTab, type ClientsTabId } from "./useClientsTab";
 import { ClientsOverviewTab } from "./ClientsOverviewTab";
@@ -64,7 +65,7 @@ function ClientsPageInner() {
 
 export default function ClientsPage() {
   return (
-    <Suspense fallback={<div className="p-4 sm:p-6" />}>
+    <Suspense fallback={<DelayedSectionLoading icon="clients" label="Loading Clients…" />}>
       <ClientsPageInner />
     </Suspense>
   );

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { DelayedSectionLoading } from "@/components/ui/SectionLoadingIndicator";
 import { getLastDiscoveryView } from "./lastView";
 
 /**
@@ -33,12 +34,12 @@ function DiscoveryRedirectInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return null;
+  return <DelayedSectionLoading icon="discovery" label="Loading Discovery…" />;
 }
 
 export default function DiscoveryRedirect() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DelayedSectionLoading icon="discovery" label="Loading Discovery…" />}>
       <DiscoveryRedirectInner />
     </Suspense>
   );

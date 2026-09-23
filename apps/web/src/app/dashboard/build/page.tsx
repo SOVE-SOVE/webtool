@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { DelayedSectionLoading } from "@/components/ui/SectionLoadingIndicator";
 import { getLastBuildView } from "./lastView";
 
 /**
@@ -25,12 +26,12 @@ function BuildRedirectInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return null;
+  return <DelayedSectionLoading icon="projects" label="Loading Build…" />;
 }
 
 export default function BuildRedirect() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DelayedSectionLoading icon="projects" label="Loading Build…" />}>
       <BuildRedirectInner />
     </Suspense>
   );

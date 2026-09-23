@@ -343,7 +343,7 @@ function PlanningListPageInner() {
           <>
             <SoftSwap
               signature={`${statusFilter}|${modeFilter}|${sortBy}`}
-              className="animate-fade-in grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
+              className="content-reveal grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
             >
               {pagedItems.map((item) => (
                 <PlanningCard

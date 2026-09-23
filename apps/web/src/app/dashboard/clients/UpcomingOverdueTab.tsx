@@ -265,7 +265,7 @@ export function UpcomingOverdueTab({
   const hasActiveFilters = Boolean(search || typeFilter || clientFilter);
 
   return (
-    <div>
+    <div className="content-reveal">
       <div className="space-y-2">
         <OverdueStrip obligations={overdue} currency={currency} onOpen={() => setParam("day", OVERDUE_SENTINEL)} />
         <NoDueDateStrip obligations={noDueDate} onOpen={() => setParam("day", NO_DUE_DATE_SENTINEL)} />

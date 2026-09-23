@@ -37,6 +37,7 @@ import { Disclosure } from "@/components/ui/Disclosure";
 import { DetailField, DetailRow } from "@/components/ui/DetailField";
 import { EmptyRow } from "@/components/ui/Panel";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -490,7 +491,7 @@ export default function LeadDetailPage() {
       </div>
     );
   }
-  if (!lead || !business) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (!lead || !business) return <ContentLoadingIndicator variant="sales" label="Loading this lead…" className="p-6" />;
 
   const existingClient = clients.find((c) => c.business_id === business.id) ?? convertedClient;
   const clientProjects = existingClient ? projects.filter((p) => p.client_id === existingClient.id) : [];
@@ -567,7 +568,7 @@ export default function LeadDetailPage() {
   const salesEligible = SALES_AUDIT_ELIGIBLE_STATUSES.includes(lead.status) && !lead.archived_at;
 
   return (
-    <div className="p-6">
+    <div className="content-reveal p-6">
       <Link href={leadsReturnUrl} className="text-sm text-fg-muted hover:underline">
         ← All leads
       </Link>

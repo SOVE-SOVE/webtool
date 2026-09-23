@@ -161,7 +161,7 @@ function ClientDetailPageInner() {
   }
 
   return (
-    <div>
+    <div className="content-reveal">
       <ClientHeader
         business={business}
         clientRecord={clientRecord}

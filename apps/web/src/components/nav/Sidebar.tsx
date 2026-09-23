@@ -13,10 +13,18 @@ import {
 import type { NavCounts } from "@/lib/navCounts";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
 import { CountBadge } from "@/components/ui/CountBadge";
-import { NavIcon } from "@/components/ui/Icons";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { PrimaryNavIcon } from "@/components/nav/AnimatedNavIcon";
 
 export const SIDEBAR_COLLAPSED_KEY = "wdos-sidebar-collapsed";
+
+// Kept in exact sync with the `w-60` / `w-[4.5rem]` classes on the
+// desktop `<aside>` below — these are the values published to the
+// `--sidebar-w` CSS variable (defined in globals.css) that anything
+// outside this component's own DOM subtree reads to sit flush against
+// the sidebar's real right edge, in either state.
+const SIDEBAR_W_EXPANDED = "15rem";
+const SIDEBAR_W_COLLAPSED = "4.5rem";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -113,12 +121,20 @@ function NavRow({
   count,
   collapsed,
   onNavigate,
+  iconPlayToken,
 }: {
   link: NavLinkType;
   active: boolean;
   count?: number;
   collapsed: boolean;
   onNavigate?: () => void;
+  /** Plays that one-time section-arrival animation on this row's icon
+   * when positive and new — see AnimatedNavIcon.tsx and
+   * dashboard/layout.tsx (where it's computed from a real section
+   * change, never a no-op click or a same-section tab switch). Omitted
+   * for footer links (Settings), which aren't one of the five animated
+   * sections. */
+  iconPlayToken?: number;
 }) {
   const tooltipRef = useRef<HTMLAnchorElement>(null);
   const [tooltipVisible, setTooltipVisible] = useState(false);
@@ -135,7 +151,11 @@ function NavRow({
       onFocus={collapsed ? () => setTooltipVisible(true) : undefined}
       onBlur={collapsed ? () => setTooltipVisible(false) : undefined}
     >
-      <NavIcon name={link.icon} className={`h-[18px] w-[18px] shrink-0 ${active ? "text-accent" : ""}`} />
+      <PrimaryNavIcon
+        name={link.icon}
+        className={`h-[18px] w-[18px] shrink-0 ${active ? "text-accent" : ""}`}
+        playToken={iconPlayToken}
+      />
       <span className={collapsed ? "sr-only" : "min-w-0 flex-1 truncate"}>{link.label}</span>
       {!collapsed && <CountBadge count={count} />}
       {collapsed && !!count && (
@@ -276,6 +296,7 @@ function SidebarBody({
   collapsed,
   allowCollapse,
   onToggleCollapse,
+  iconAnimation,
 }: {
   me: Me;
   pathname: string;
@@ -285,6 +306,10 @@ function SidebarBody({
   collapsed: boolean;
   allowCollapse: boolean;
   onToggleCollapse?: () => void;
+  /** The primary link (by href) whose icon should play its one-time
+   * arrival animation, and a token that changes on every new arrival —
+   * see NavRow's `iconPlayToken` and dashboard/layout.tsx. */
+  iconAnimation?: { href: string; token: number } | null;
 }) {
   return (
     <>
@@ -308,6 +333,7 @@ function SidebarBody({
             count={link.countKey ? counts?.[link.countKey] : undefined}
             collapsed={collapsed}
             onNavigate={onNavigate}
+            iconPlayToken={iconAnimation?.href === link.href ? iconAnimation.token : undefined}
           />
         ))}
       </nav>
@@ -349,6 +375,7 @@ export function Sidebar({
   search,
   counts,
   onNavigate,
+  iconAnimation,
 }: {
   variant: "desktop" | "mobile";
   me: Me;
@@ -356,6 +383,13 @@ export function Sidebar({
   search: URLSearchParams;
   counts: NavCounts | null;
   onNavigate?: () => void;
+  /** See SidebarBody — passed through from dashboard/layout.tsx, which
+   * is the one place that knows a real section change just happened.
+   * Not wired into the "mobile" variant: it only ever renders while its
+   * drawer is open, and opening that drawer is never itself what
+   * triggered the navigation, so there's never a moment where its rows
+   * would need to play the animation. */
+  iconAnimation?: { href: string; token: number } | null;
 }) {
   const allowCollapse = variant === "desktop";
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -379,6 +413,24 @@ export function Sidebar({
       return next;
     });
   }
+
+  // Publish the sidebar's real current width onto the document root —
+  // the single source of truth Discovery's fixed/full-bleed map and
+  // floating controls read (`var(--sidebar-w)`) instead of duplicating
+  // this width as their own hard-coded constant, which is exactly what
+  // caused them to drift out of sync with it. `useLayoutEffect` so this
+  // lands before the browser paints the commit that changed `collapsed`
+  // — no visible frame at the old offset. Skipped for the mobile variant,
+  // which floats over content rather than pushing it (`--sidebar-w`'s
+  // default in globals.css only matters below `lg` as a harmless unused
+  // fallback, since nothing reads it there).
+  useLayoutEffect(() => {
+    if (!allowCollapse) return;
+    document.documentElement.style.setProperty(
+      "--sidebar-w",
+      collapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED,
+    );
+  }, [allowCollapse, collapsed]);
 
   if (variant === "mobile") {
     return (
@@ -417,6 +469,7 @@ export function Sidebar({
         collapsed={collapsed}
         allowCollapse
         onToggleCollapse={toggleCollapsed}
+        iconAnimation={iconAnimation}
       />
     </aside>
   );

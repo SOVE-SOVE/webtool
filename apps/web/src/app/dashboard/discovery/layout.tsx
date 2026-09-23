@@ -93,12 +93,14 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
           non-positioned elements. Floating, the layer itself ignores
           pointer events so the map stays draggable around the header
           card and Import button, which opt back in. Offsets mirror
-          dashboard/layout.tsx's chrome, same as DiscoveryMap's. */}
+          dashboard/layout.tsx's chrome, same as DiscoveryMap's — `left`
+          reads the shared `--sidebar-w` variable so it stays flush with
+          the sidebar's real edge in both collapsed and expanded states. */}
       <div
         ref={layerRef}
         className={
           floating
-            ? "pointer-events-none fixed inset-x-0 top-12 z-20 flex items-start justify-between gap-3 p-3 lg:left-56 lg:top-11"
+            ? "pointer-events-none fixed inset-x-0 top-12 z-20 flex items-start justify-between gap-3 p-3 lg:left-[var(--sidebar-w)] lg:top-11"
             : "relative z-10"
         }
       >
@@ -138,13 +140,15 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
           </button>
         )}
       </div>
-      {/* Floating, the map fills the first screen (height mirrors
-          DiscoveryMap's fixed box: viewport minus the mobile top bar +
-          bottom nav / the desktop header strip) and the in-flow results
-          list starts just below it — scroll down and it slides up over
-          the fixed map. Without this the opaque list covered the whole
-          map, so it couldn't be seen, panned or clicked. */}
-      <div className={floating ? "mt-[calc(100dvh-6.5rem)] lg:mt-[calc(100dvh-2.75rem)]" : "mt-6"}>
+      {/* Floating, every piece of Map Discovery's own content (the map,
+          the search/results column, the search-history bar) positions
+          itself with `fixed`, so this wrapper never needs to reserve
+          page height for it — the page simply doesn't scroll on this
+          tab. (It used to: an in-flow results table started one
+          `100dvh` down, requiring a page scroll just to reach it. The
+          results panel replacing that table floats over the map
+          instead — see DiscoveryWorkspace.) */}
+      <div className={floating ? "" : "mt-6"}>
         <div hidden={active !== "map"}>
           <DiscoveryWorkspace
             initialSearchId={params.id}
