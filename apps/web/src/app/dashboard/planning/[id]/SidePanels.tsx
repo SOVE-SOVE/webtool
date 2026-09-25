@@ -103,9 +103,14 @@ function ScreenshotDialog({
 export function EvidencePanel({
   planning,
   evidence,
+  emptyStateMessage = "No screenshot captured yet.",
 }: {
   planning: Planning;
   evidence?: { label: string; text: string } | null;
+  /** Overrides the default "no screenshot" copy when there's a more
+   * specific, data-backed reason to give (e.g. an audit ran but the
+   * capture itself failed) — never a fabricated cause. */
+  emptyStateMessage?: string;
 }) {
   const hasDesktop = Boolean(planning.screenshot_desktop_base64);
   const hasMobile = Boolean(planning.screenshot_mobile_base64);
@@ -143,7 +148,7 @@ export function EvidencePanel({
   if (!hasDesktop && !hasMobile) {
     return (
       <div className="rounded-md border border-border bg-surface-subtle px-4 py-10 text-center">
-        <p className="text-sm text-fg-muted">No screenshot captured yet.</p>
+        <p className="text-sm text-fg-muted">{emptyStateMessage}</p>
       </div>
     );
   }

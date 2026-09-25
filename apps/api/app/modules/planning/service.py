@@ -68,6 +68,7 @@ from app.modules.planning.models import (
     LeadPlanningContentPage,
     LeadPlanningContentSection,
     LeadPlanningRecommendation,
+    LeadPlanningRequirement,
     LeadPlanningSitemapPage,
     PlanningAnalysisStep,
     PlanningStatus,
@@ -78,13 +79,16 @@ from app.modules.planning.models import (
     SocialDataSource,
 )
 from app.modules.planning.schemas import (
+    ApplyBlueprintTemplateRequest,
     AssetRead,
     BuildBriefFactRead,
     BuildBriefRead,
     ContentPageRead,
     ContentSectionPreviewRead,
     CreateAssetRequest,
+    CreateBlueprintSectionRequest,
     CreateRecommendationRequest,
+    CreateRequirementRequest,
     CreateSitemapPageRequest,
     PlanningChecklistSummary,
     PlanningListItem,
@@ -92,11 +96,15 @@ from app.modules.planning.schemas import (
     PlanningSocialProfileRead,
     RecommendationRead,
     RegenerateContentSectionResponse,
+    ReorderContentSectionsRequest,
     ReorderSitemapPagesRequest,
+    RequirementRead,
     SelectVisualDirectionRequest,
     SitemapPageProposalRead,
     UpdateAssetRequest,
+    UpdateContentSectionRequest,
     UpdateRecommendationRequest,
+    UpdateRequirementRequest,
     UpdateSitemapPageRequest,
     UpdateSocialProfileRequest,
     VisualDirectionOptionRead,
@@ -161,6 +169,7 @@ def _get_planning(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) 
             selectinload(LeadPlanning.comparable_sites),
             selectinload(LeadPlanning.recommendations),
             selectinload(LeadPlanning.sitemap_pages),
+            selectinload(LeadPlanning.requirements),
             selectinload(LeadPlanning.assets),
             joinedload(LeadPlanning.approved_brief),
             selectinload(LeadPlanning.content_pages).selectinload(LeadPlanningContentPage.sections),
@@ -303,6 +312,11 @@ def _to_read(db: Session, planning: LeadPlanning, lead: Lead | None = None) -> P
     ) = _review_synthesis_interpretation(planning)
     data.lead_business_name = (lead or planning.lead).business.name
     data.project_id = planning.approved_brief.project_id if planning.approved_brief else None
+    # Named differently from the ORM relationship (`requirements`), so
+    # model_validate's by-attribute-name matching doesn't pick it up on
+    # its own — same reason lead_business_name/project_id above need an
+    # explicit assignment.
+    data.blueprint_requirements = [RequirementRead.model_validate(r) for r in planning.requirements]
     audit = planning.website_audit
     if audit is not None:
         data.has_existing_site = audit.has_existing_site
@@ -1462,6 +1476,180 @@ def reorder_sitemap_pages(
     return _to_read(db, planning)
 
 
+# --- Website Blueprint -------------------------------------------------
+#
+# One row per starter-template page: (title, page_type, section_types).
+# `section_types` are agents.planning_content_draft.SECTION_TYPES
+# strings, so a section seeded straight from a template is already in
+# Content Draft's real vocabulary with zero translation — same reasoning
+# as LeadPlanningSitemapPage mirroring modules/sitemaps.SitemapPage's
+# vocabulary. "header"/"footer" are deliberately NOT modelled as stored
+# sections here: the wireframe canvas renders them as fixed, non-
+# editable framing chrome on every page instead, since the real
+# generator derives them from site-wide nav config, never a per-page
+# content section (agents/website_generator.py) — storing them as rows
+# would be a fiction Content Draft's own editor doesn't expect either.
+_BLUEPRINT_TEMPLATE_PAGES: dict[str, list[tuple[str, PageType, list[str]]]] = {
+    "simple": [
+        ("Home", PageType.HOME, ["hero", "serviceCards", "about", "contact"]),
+    ],
+    "standard": [
+        ("Home", PageType.HOME, ["hero", "serviceCards", "cta"]),
+        ("Services", PageType.SERVICES, ["serviceCards"]),
+        ("About", PageType.ABOUT, ["about"]),
+        ("Contact", PageType.CONTACT, ["contact"]),
+    ],
+    "expanded": [
+        ("Home", PageType.HOME, ["hero", "serviceCards", "cta"]),
+        ("Services", PageType.SERVICES, ["serviceCards"]),
+        ("Service Detail", PageType.SERVICE_DETAIL, ["about", "cta"]),
+        ("About", PageType.ABOUT, ["about"]),
+        ("Gallery", PageType.PORTFOLIO, ["gallery"]),
+        ("FAQ", PageType.FAQ, ["faq"]),
+        ("Contact", PageType.CONTACT, ["contact"]),
+    ],
+}
+
+
+def apply_blueprint_template(
+    db: Session, workspace_id: uuid.UUID, actor_id: uuid.UUID, planning_id: uuid.UUID, template: str
+) -> PlanningRead | None:
+    """
+    Website Blueprint step 1: seed the SAME hierarchy Content Draft
+    already manages (LeadPlanningSitemapPage -> LeadPlanningContentPage
+    -> LeadPlanningContentSection) with one of three starter layouts.
+    Deliberately destructive — replaces whatever sitemap_pages/content
+    already exist (cascades away the old content_pages/content_sections
+    with them). The frontend is responsible for confirming with the
+    operator first when a layout already exists (never overwrite without
+    confirmation); this function trusts the caller has decided to go
+    ahead once it's called.
+    """
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    pages_spec = _BLUEPRINT_TEMPLATE_PAGES.get(template)
+    if pages_spec is None:
+        return None
+
+    for page in list(planning.sitemap_pages):
+        db.delete(page)
+    db.flush()
+
+    for order, (title, page_type, section_types) in enumerate(pages_spec):
+        page = LeadPlanningSitemapPage(
+            lead_planning_id=planning.id,
+            order_index=order,
+            title=title,
+            page_type=page_type,
+            purpose="",
+            reason=f'Added by the "{template.capitalize()}" website blueprint template.',
+            key_sections=list(section_types),
+            needs_confirmation=False,
+        )
+        db.add(page)
+        db.flush()
+
+        content_page = LeadPlanningContentPage(lead_planning_id=planning.id, sitemap_page_id=page.id)
+        db.add(content_page)
+        db.flush()
+
+        for section_order, section_type in enumerate(section_types):
+            db.add(
+                LeadPlanningContentSection(
+                    content_page_id=content_page.id,
+                    order_index=section_order,
+                    section_type=section_type,
+                    content={},
+                    source=ContentSource.OPERATOR_EDITED,
+                )
+            )
+
+    planning.blueprint_template = template
+    planning.blueprint_selected_at = datetime.now(timezone.utc)
+    activity_service.record(
+        db,
+        workspace_id=workspace_id,
+        user_id=actor_id,
+        entity_type="lead",
+        entity_id=planning.lead_id,
+        action="planning_blueprint_template_applied",
+        summary=f'Applied the "{template}" website blueprint template for {planning.lead.business.name}',
+    )
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+# --- Website Blueprint: requirements board ----------------------------------
+
+
+def add_requirement(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, data: CreateRequirementRequest
+) -> PlanningRead | None:
+    """The requirements board's "add a card". Idempotent on `feature_key`
+    — adding an already-added feature is a silent no-op (the primary
+    "prevent accidental duplicates" enforcement is the frontend disabling
+    an already-added card; this is the data-layer backstop, and the
+    unique constraint on the table is the last-resort guarantee under a
+    race). Position (`order_index`) is assignment order only — nothing
+    reads it as layout/sitemap meaning, unlike LeadPlanningSitemapPage's
+    own order_index."""
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    if any(r.feature_key == data.feature_key for r in planning.requirements):
+        return _to_read(db, planning)
+    db.add(
+        LeadPlanningRequirement(
+            lead_planning_id=planning.id,
+            order_index=_next_order_index(planning.requirements),
+            feature_key=data.feature_key,
+            notes=data.notes,
+            source_recommendation_id=data.source_recommendation_id,
+        )
+    )
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+def update_requirement(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, requirement_id: uuid.UUID,
+    data: UpdateRequirementRequest,
+) -> PlanningRead | None:
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    requirement = next((r for r in planning.requirements if r.id == requirement_id), None)
+    if requirement is None:
+        return None
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(requirement, field, value)
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+def delete_requirement(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, requirement_id: uuid.UUID
+) -> PlanningRead | None:
+    """Removing a card only ever deletes this one row — never its
+    `source_recommendation_id` recommendation, and never touches
+    sitemap_pages/content_pages (this table has no relationship to
+    them)."""
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    requirement = next((r for r in planning.requirements if r.id == requirement_id), None)
+    if requirement is None:
+        return None
+    db.delete(requirement)
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
 # --- Build Brief: Visual Direction Choices ----------------------------------
 
 
@@ -1719,6 +1907,7 @@ def compute_build_brief(db: Session, workspace_id: uuid.UUID, planning_id: uuid.
         RecommendationRead.model_validate(r) for r in planning.recommendations if r.status == RecommendationStatus.ACCEPTED
     ]
     sitemap = [SitemapPageProposalRead.model_validate(p) for p in planning.sitemap_pages]
+    requested_features = [RequirementRead.model_validate(r) for r in planning.requirements]
     visual_direction = (
         VisualDirectionOptionRead.model_validate(planning.selected_visual_direction)
         if planning.selected_visual_direction
@@ -1743,6 +1932,7 @@ def compute_build_brief(db: Session, workspace_id: uuid.UUID, planning_id: uuid.
         approved_by_user_id=brief.approved_by_user_id if brief else None,
         project_id=brief.project_id if brief else None,
         sync_conflicts=list(brief.sync_conflicts or []) if brief else [],
+        requested_features=requested_features,
     )
 
 
@@ -2308,12 +2498,17 @@ def _find_content_page_and_section(
 
 def update_content_section(
     db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, page_id: uuid.UUID, section_id: uuid.UUID,
-    content: dict,
+    data: UpdateContentSectionRequest,
 ) -> PlanningRead | None:
-    """A direct operator edit. Reverts an APPROVED page to EDITED (same
-    edit-reverts-approval convention as CreativeDirectionBrief/Sitemap/
-    DesignBrief) — never silently keeps a stale "approved" label on
-    content that's since changed."""
+    """A direct operator edit — either Content Draft's own full-replace
+    `content` dict, or the Website Blueprint editor's lighter
+    `heading`/`purpose`/`draft_text`/`notes`/`section_type`/
+    `source_recommendation_id` fields on this same section row; either
+    set may be sent independently, whatever's omitted is left untouched.
+    Reverts an APPROVED page to EDITED (same edit-reverts-approval
+    convention as CreativeDirectionBrief/Sitemap/DesignBrief) — never
+    silently keeps a stale "approved" label on content that's since
+    changed."""
     planning = _get_planning(db, workspace_id, planning_id)
     if planning is None:
         return None
@@ -2321,11 +2516,106 @@ def update_content_section(
     if page is None:
         return None
 
-    section.content = content
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        return _to_read(db, planning)
+    for field, value in changes.items():
+        setattr(section, field, value)
     section.source = ContentSource.OPERATOR_EDITED
     if page.status in (ContentPageStatus.APPROVED, ContentPageStatus.DRAFT):
         page.status = ContentPageStatus.EDITED
 
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+def add_blueprint_section(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, sitemap_page_id: uuid.UUID,
+    data: CreateBlueprintSectionRequest,
+) -> PlanningRead | None:
+    """Website Blueprint's "add a section" — both a plain section from
+    the standard library and a "suggested" one dragged in from an
+    accepted recommendation (`source_recommendation_id` set) land here.
+    Keyed by the sitemap page (not the content page, unlike every other
+    section endpoint) because a page can reach this before it has any
+    content of its own yet — gets-or-creates its LeadPlanningContentPage
+    the first time."""
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    sitemap_page = next((p for p in planning.sitemap_pages if p.id == sitemap_page_id), None)
+    if sitemap_page is None:
+        return None
+
+    content_page = next((cp for cp in planning.content_pages if cp.sitemap_page_id == sitemap_page_id), None)
+    if content_page is None:
+        content_page = LeadPlanningContentPage(lead_planning_id=planning.id, sitemap_page_id=sitemap_page_id)
+        db.add(content_page)
+        db.flush()
+
+    db.add(
+        LeadPlanningContentSection(
+            content_page_id=content_page.id,
+            order_index=_next_order_index(content_page.sections),
+            section_type=data.section_type,
+            content={},
+            heading=data.heading,
+            purpose=data.purpose,
+            draft_text=data.draft_text,
+            notes=data.notes,
+            source_recommendation_id=data.source_recommendation_id,
+            source=ContentSource.OPERATOR_EDITED,
+        )
+    )
+    if content_page.status in (ContentPageStatus.APPROVED, ContentPageStatus.DRAFT):
+        content_page.status = ContentPageStatus.EDITED
+
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+def delete_content_section(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, page_id: uuid.UUID, section_id: uuid.UUID
+) -> PlanningRead | None:
+    """Removing a section (from the Website Blueprint editor, typically)
+    only ever deletes this one row. `source_recommendation_id` points
+    outward to a recommendation, never the other way, so this can never
+    cascade into deleting the recommendation the section was suggested
+    from, or touch any other section/content on the page."""
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    page, section = _find_content_page_and_section(planning, page_id, section_id)
+    if page is None:
+        return None
+    db.delete(section)
+    if page.status == ContentPageStatus.APPROVED:
+        page.status = ContentPageStatus.EDITED
+    db.commit()
+    db.refresh(planning)
+    return _to_read(db, planning)
+
+
+def reorder_content_sections(
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, page_id: uuid.UUID,
+    data: ReorderContentSectionsRequest,
+) -> PlanningRead | None:
+    """Reordering within one page's sections — the Website Blueprint
+    canvas's drag-to-reorder, and available as a keyboard-accessible
+    Move up/down alternative on the frontend."""
+    planning = _get_planning(db, workspace_id, planning_id)
+    if planning is None:
+        return None
+    page = next((p for p in planning.content_pages if p.id == page_id), None)
+    if page is None:
+        return None
+    by_id = {s.id: s for s in page.sections}
+    for item in data.sections:
+        section = by_id.get(item.id)
+        if section is not None:
+            section.order_index = item.order_index
     db.commit()
     db.refresh(planning)
     return _to_read(db, planning)

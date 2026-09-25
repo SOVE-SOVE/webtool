@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -317,6 +317,16 @@ class LeadPlanning(Base):
     recommendations_objective: Mapped[str | None] = mapped_column(Text)
     recommendations_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sitemap_proposal_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Website Blueprint (docs/05_DECISIONS.md) — which starter template
+    # the operator picked ("simple"/"standard"/"expanded"), if any. Not
+    # an enum: only ever set by service.apply_blueprint_template, which
+    # already validates it against ApplyBlueprintTemplateRequest's
+    # Literal. The Blueprint's actual pages/sections are NOT separate
+    # rows owned by this field — they're the existing sitemap_pages /
+    # content_pages / content_sections hierarchy below; this is only
+    # "which template last seeded/replaced that hierarchy, and when."
+    blueprint_template: Mapped[str | None] = mapped_column(String(20))
+    blueprint_selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Raw candidates from the last generation — fully replaced each time
     # (these are choices to pick FROM, not individually-owned items).
     visual_direction_options: Mapped[list] = mapped_column(JSON, default=list)
@@ -365,6 +375,14 @@ class LeadPlanning(Base):
         back_populates="lead_planning",
         cascade="all, delete-orphan",
         order_by="LeadPlanningSitemapPage.order_index",
+    )
+    # Website Blueprint's simplified "requirements board" (docs/05_DECISIONS.md)
+    # — see LeadPlanningRequirement's own docstring for why this is
+    # deliberately separate from sitemap_pages/content_pages above.
+    requirements: Mapped[list["LeadPlanningRequirement"]] = relationship(
+        back_populates="lead_planning",
+        cascade="all, delete-orphan",
+        order_by="LeadPlanningRequirement.order_index",
     )
     assets: Mapped[list["LeadPlanningAsset"]] = relationship(
         back_populates="lead_planning",
@@ -493,6 +511,63 @@ class LeadPlanningSitemapPage(Base):
     )
 
     lead_planning: Mapped["LeadPlanning"] = relationship(back_populates="sitemap_pages")
+
+
+class LeadPlanningRequirement(Base):
+    """
+    One "must include" feature chosen via the Website Blueprint's
+    simplified requirements board — a website-level requirement to
+    scope, NOT a page or section. Deliberately its own table, separate
+    from LeadPlanningSitemapPage/LeadPlanningContentPage/
+    LeadPlanningContentSection above: those model an ordered page
+    structure (each page has a real slug/type, each section belongs to
+    one specific page and one specific position within it), which is
+    exactly the "layout" this board deliberately does NOT ask the
+    operator to decide. Reusing the page-scoped tables for a
+    page-independent, order-independent concept would silently
+    reinterpret what a "page"/"section" means elsewhere in this app
+    (Content Draft, the real Sitemap conversion at Create Project) —
+    a requirement may or may not ever become a real page or section,
+    and that mapping is a later operator/generator decision this record
+    does not make or imply.
+
+    `feature_key` is a free string (same loosely-typed convention as
+    LeadPlanningContentSection.section_type) rather than a fixed enum —
+    the board's starter set (services/gallery/pricing/faq/contact/
+    booking/...) is illustrative, not exhaustive, and the frontend owns
+    the human-readable label for each key. `order_index` exists only
+    for a stable list display order; nothing reads it as meaningful
+    sequence or layout position (see the board's own docstring/UI).
+    The unique constraint is the data-layer backstop for "prevent
+    accidental duplicates" — the primary enforcement is the frontend
+    disabling an already-added card, this just makes double-adding a
+    no-op rather than two rows (see service.add_requirement).
+    """
+
+    __tablename__ = "lead_planning_requirements"
+    __table_args__ = (
+        UniqueConstraint("lead_planning_id", "feature_key", name="uq_lead_planning_requirement_feature"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_planning_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("lead_planning.id", ondelete="CASCADE"))
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    feature_key: Mapped[str] = mapped_column(String(50))
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Same SET NULL reasoning as LeadPlanningContentSection.source_recommendation_id:
+    # traceability only, and removing this requirement (or the
+    # recommendation it came from) must never cascade into deleting the
+    # other.
+    source_recommendation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("lead_planning_recommendations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    lead_planning: Mapped["LeadPlanning"] = relationship(back_populates="requirements")
+    source_recommendation: Mapped["LeadPlanningRecommendation | None"] = relationship(viewonly=True)
 
 
 class LeadPlanningAsset(Base):
@@ -658,9 +733,30 @@ class LeadPlanningContentSection(Base):
     source: Mapped[ContentSource] = mapped_column(
         Enum(ContentSource, name="content_source"), default=ContentSource.GENERATED
     )
+    # Website Blueprint's own light, type-agnostic authoring fields on
+    # this exact row — additive alongside `content` above, which stays
+    # Content Draft's type-specific shape (see this class's docstring).
+    # All null until an operator fills them in via the Blueprint editor;
+    # a section created straight from a template starts with all four
+    # null, `content` empty, and `source` OPERATOR_EDITED (nothing was
+    # AI-generated yet).
+    heading: Mapped[str | None] = mapped_column(String(255))
+    purpose: Mapped[str | None] = mapped_column(Text)
+    draft_text: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Which accepted Keep/Improve/Add recommendation this section was
+    # added from, if the operator dragged in a "suggested" section
+    # rather than a plain one from the standard library — traceability
+    # only. SET NULL (never CASCADE): removing this section must not
+    # touch the recommendation, and if the recommendation is ever
+    # deleted this reference just clears rather than erroring.
+    source_recommendation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("lead_planning_recommendations.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     content_page: Mapped["LeadPlanningContentPage"] = relationship(back_populates="sections")
+    source_recommendation: Mapped["LeadPlanningRecommendation | None"] = relationship(viewonly=True)

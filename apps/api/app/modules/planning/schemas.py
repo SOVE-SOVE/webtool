@@ -179,6 +179,74 @@ class ReorderSitemapPagesRequest(BaseModel):
     pages: list[SitemapPageOrderItem]
 
 
+# --- Website Blueprint -------------------------------------------------
+#
+# The Blueprint is a visual wireframe editor over the SAME data Content
+# Draft already manages (LeadPlanningSitemapPage -> LeadPlanningContentPage
+# -> LeadPlanningContentSection) — not a parallel structure. A template
+# just seeds that existing hierarchy with a starting set of pages/
+# sections; `heading`/`purpose`/`draft_text`/`notes` on ContentSectionRead
+# below are this editor's own light, type-agnostic authoring fields,
+# additive alongside Content Draft's richer type-specific `content` dict.
+
+BlueprintTemplateLiteral = Literal["simple", "standard", "expanded"]
+
+
+class ApplyBlueprintTemplateRequest(BaseModel):
+    template: BlueprintTemplateLiteral
+
+
+class CreateBlueprintSectionRequest(BaseModel):
+    section_type: str
+    heading: str | None = None
+    purpose: str | None = None
+    draft_text: str | None = None
+    notes: str | None = None
+    source_recommendation_id: uuid.UUID | None = None
+
+
+class SectionOrderItem(BaseModel):
+    id: uuid.UUID
+    order_index: int
+
+
+class ReorderContentSectionsRequest(BaseModel):
+    sections: list[SectionOrderItem]
+
+
+# --- Website Blueprint: requirements board ----------------------------------
+#
+# A simplified, position-independent alternative to the wireframe editor
+# above: the operator picks WHAT the website should include (a flat set
+# of feature requirements), not a page layout. Backed by its own table
+# (LeadPlanningRequirement) — see that model's docstring for why this is
+# deliberately not the same structure as the sitemap/content hierarchy.
+# The wireframe editor above remains fully intact and reachable; this is
+# additive, not a replacement of that data.
+
+
+class RequirementRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    order_index: int
+    feature_key: str
+    notes: str | None
+    source_recommendation_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateRequirementRequest(BaseModel):
+    feature_key: str
+    notes: str | None = None
+    source_recommendation_id: uuid.UUID | None = None
+
+
+class UpdateRequirementRequest(BaseModel):
+    notes: str | None = None
+
+
 # --- Build Brief: Visual Direction Choices ----------------------------------
 
 
@@ -278,6 +346,13 @@ class BuildBriefRead(BaseModel):
     approved_by_user_id: uuid.UUID | None
     project_id: uuid.UUID | None
     sync_conflicts: list[BuildBriefSyncConflictRead] = []
+    # Requested features from the Website Blueprint's requirements board —
+    # scope requests the operator picked, not verified business facts and
+    # not yet real pages/sections (see RequirementRead's own section
+    # above). Live-computed like everything else here; re-approving the
+    # brief re-snapshots whatever this currently shows, same as every
+    # other field.
+    requested_features: list[RequirementRead] = []
 
 
 # --- Content Draft -----------------------------------------------------
@@ -295,6 +370,13 @@ class ContentSectionRead(BaseModel):
     content: dict
     needs_confirmation_notes: list[str]
     source: ContentSourceLiteral
+    # The Website Blueprint's own authoring fields on this same section
+    # row — see the "Website Blueprint" section above.
+    heading: str | None
+    purpose: str | None
+    draft_text: str | None
+    notes: str | None
+    source_recommendation_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -324,7 +406,19 @@ class ContentPageRead(BaseModel):
 
 
 class UpdateContentSectionRequest(BaseModel):
-    content: dict
+    """`content` is Content Draft's own full-replace edit of a section's
+    type-specific fields. The rest are the Website Blueprint editor's
+    lighter, type-agnostic authoring fields on the exact same row —
+    either set may be sent independently; whatever's omitted is left
+    untouched (see service.update_content_section)."""
+
+    content: dict | None = None
+    section_type: str | None = None
+    heading: str | None = None
+    purpose: str | None = None
+    draft_text: str | None = None
+    notes: str | None = None
+    source_recommendation_id: uuid.UUID | None = None
 
 
 class UpdateContentPageSeoRequest(BaseModel):
@@ -472,6 +566,17 @@ class PlanningRead(BaseModel):
 
     sitemap_proposal_generated_at: datetime | None = None
     sitemap_pages: list[SitemapPageProposalRead] = []
+
+    # Website Blueprint — which starter template was last applied, if
+    # any. The actual pages/sections it seeded are sitemap_pages and
+    # content_pages above, not a separate structure (see schemas above
+    # and service.apply_blueprint_template).
+    blueprint_template: BlueprintTemplateLiteral | None = None
+    blueprint_selected_at: datetime | None = None
+    # The requirements board's own flat, position-independent picks —
+    # separate from sitemap_pages/content_pages above (see
+    # LeadPlanningRequirement's docstring).
+    blueprint_requirements: list[RequirementRead] = []
 
     visual_direction_options: list[VisualDirectionOptionRead] = []
     selected_visual_direction: VisualDirectionOptionRead | None = None

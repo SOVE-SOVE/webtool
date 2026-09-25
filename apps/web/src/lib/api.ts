@@ -1223,6 +1223,65 @@ export type ReorderSitemapPagesRequest = {
   pages: { id: string; order_index: number }[];
 };
 
+// --- Website Blueprint -------------------------------------------------
+//
+// The Blueprint is a visual wireframe editor over the SAME data as the
+// sitemap proposal above and Content Draft below (SitemapPageProposal ->
+// ContentPage -> ContentSection) — not a separate structure. Applying a
+// template seeds that existing hierarchy; `heading`/`purpose`/
+// `draft_text`/`notes`/`source_recommendation_id` on ContentSection are
+// this editor's own light, type-agnostic authoring fields, additive
+// alongside Content Draft's richer type-specific `content` dict.
+
+export const BLUEPRINT_TEMPLATES = ["simple", "standard", "expanded"] as const;
+export type BlueprintTemplate = (typeof BLUEPRINT_TEMPLATES)[number];
+
+export type ApplyBlueprintTemplateRequest = {
+  template: BlueprintTemplate;
+};
+
+export type CreateBlueprintSectionRequest = {
+  section_type: string;
+  heading?: string | null;
+  purpose?: string | null;
+  draft_text?: string | null;
+  notes?: string | null;
+  source_recommendation_id?: string | null;
+};
+
+export type ReorderContentSectionsRequest = {
+  sections: { id: string; order_index: number }[];
+};
+
+// --- Website Blueprint: requirements board ----------------------------------
+//
+// A simplified, position-independent alternative to the wireframe editor
+// above: the operator picks WHAT the website should include (a flat set
+// of feature requirements), not a page layout. Backed by its own table,
+// separate from sitemap_pages/content_pages — see the backend's
+// LeadPlanningRequirement docstring for why. The wireframe editor above
+// remains fully intact and reachable; this is additive.
+
+export type Requirement = {
+  id: string;
+  order_index: number;
+  feature_key: string;
+  notes: string | null;
+  source_recommendation_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateRequirementRequest = {
+  feature_key: string;
+  notes?: string | null;
+  source_recommendation_id?: string | null;
+};
+
+export type UpdateRequirementRequest = {
+  notes?: string | null;
+};
+
 // --- Build Brief: Visual Direction Choices ----------------------------------
 
 export type VisualDirectionOption = {
@@ -1299,6 +1358,10 @@ export type BuildBrief = {
   // Planning changes the last re-approval couldn't apply to the handed-off
   // project because it has its own edit — see BuildBriefSyncConflict.
   sync_conflicts: BuildBriefSyncConflict[];
+  // Requested features from the Website Blueprint's requirements board —
+  // scope requests the operator picked, not verified business facts and
+  // not yet real pages/sections.
+  requested_features: Requirement[];
 };
 
 export type BuildBriefSyncConflict = {
@@ -1335,6 +1398,13 @@ export type ContentSection = {
   content: Record<string, unknown>;
   needs_confirmation_notes: string[];
   source: ContentSource;
+  // The Website Blueprint editor's own light, type-agnostic authoring
+  // fields on this same row — see the "Website Blueprint" section above.
+  heading: string | null;
+  purpose: string | null;
+  draft_text: string | null;
+  notes: string | null;
+  source_recommendation_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1354,7 +1424,16 @@ export type ContentPage = {
 };
 
 export type UpdateContentSectionRequest = {
-  content: Record<string, unknown>;
+  // Content Draft's own full-replace edit and the Website Blueprint
+  // editor's lighter fields may be sent independently — whatever's
+  // omitted here is left untouched server-side.
+  content?: Record<string, unknown>;
+  section_type?: string;
+  heading?: string | null;
+  purpose?: string | null;
+  draft_text?: string | null;
+  notes?: string | null;
+  source_recommendation_id?: string | null;
 };
 
 export type UpdateContentPageSeoRequest = {
@@ -1458,6 +1537,15 @@ export type Planning = {
 
   sitemap_proposal_generated_at: string | null;
   sitemap_pages: SitemapPageProposal[];
+
+  // Website Blueprint — which starter template was last applied, if
+  // any. The pages/sections it seeded are sitemap_pages and
+  // content_pages, not a separate structure.
+  blueprint_template: BlueprintTemplate | null;
+  blueprint_selected_at: string | null;
+  // The requirements board's own flat, position-independent picks —
+  // separate from sitemap_pages/content_pages above.
+  blueprint_requirements: Requirement[];
 
   visual_direction_options: VisualDirectionOption[];
   selected_visual_direction: VisualDirectionOption | null;
@@ -3137,6 +3225,34 @@ export const api = {
   reorderPlanningSitemapPages: (id: string, data: ReorderSitemapPagesRequest) =>
     request<Planning>(`/api/v1/planning/${id}/sitemap/reorder`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Website Blueprint — starter template + section library/canvas.
+  // Deliberately destructive (replaces any existing sitemap_pages/
+  // content) — callers must confirm with the operator first when a
+  // layout already exists.
+  applyBlueprintTemplate: (id: string, data: ApplyBlueprintTemplateRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/blueprint/template`, { method: "POST", body: JSON.stringify(data) }),
+  // Keyed by the sitemap page (not the content page, unlike every other
+  // section endpoint below) because a page can reach this before it has
+  // any content of its own yet.
+  addBlueprintSection: (id: string, sitemapPageId: string, data: CreateBlueprintSectionRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/sitemap/${sitemapPageId}/sections`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Website Blueprint — requirements board. Adding an already-added
+  // feature_key is a silent no-op server-side (see the backend's own
+  // docstring) — callers don't need to pre-check before calling.
+  addRequirement: (id: string, data: CreateRequirementRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/requirements`, { method: "POST", body: JSON.stringify(data) }),
+  updateRequirement: (id: string, requirementId: string, data: UpdateRequirementRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/requirements/${requirementId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteRequirement: (id: string, requirementId: string) =>
+    request<Planning>(`/api/v1/planning/${id}/requirements/${requirementId}`, { method: "DELETE" }),
+
   // Build Brief — Visual Direction Choices.
   generateVisualDirections: (id: string) =>
     request<Planning>(`/api/v1/planning/${id}/visual-directions/generate`, { method: "POST" }),
@@ -3169,6 +3285,20 @@ export const api = {
     }),
   updateContentSection: (id: string, pageId: string, sectionId: string, data: UpdateContentSectionRequest) =>
     request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/${sectionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  // Website Blueprint's "Remove" action — never touches the section's
+  // source recommendation (see the backend's own docstring).
+  deleteContentSection: (id: string, pageId: string, sectionId: string) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/${sectionId}`, {
+      method: "DELETE",
+    }),
+  // Reordering within one page's sections — the Blueprint canvas's
+  // drag-to-reorder, and the backing call for a keyboard Move up/down
+  // alternative.
+  reorderContentSections: (id: string, pageId: string, data: ReorderContentSectionsRequest) =>
+    request<Planning>(`/api/v1/planning/${id}/content-draft/pages/${pageId}/sections/reorder`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),

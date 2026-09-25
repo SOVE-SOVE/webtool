@@ -10,15 +10,19 @@ from app.integrations.discovery.base import ProviderUnavailableError
 from app.modules.planning import service
 from app.modules.planning.schemas import (
     AnalysePlanningRequest,
+    ApplyBlueprintTemplateRequest,
     ApplyContentSectionPreviewRequest,
     BuildBriefRead,
     CreateAssetRequest,
+    CreateBlueprintSectionRequest,
     CreateRecommendationRequest,
+    CreateRequirementRequest,
     CreateSitemapPageRequest,
     PlanningChecklistSummary,
     PlanningListItem,
     PlanningRead,
     RegenerateContentSectionResponse,
+    ReorderContentSectionsRequest,
     ReorderSitemapPagesRequest,
     SelectVisualDirectionRequest,
     UpdateAssetRequest,
@@ -27,6 +31,7 @@ from app.modules.planning.schemas import (
     UpdateContentSectionRequest,
     UpdatePlanningRequest,
     UpdateRecommendationRequest,
+    UpdateRequirementRequest,
     UpdateSitemapPageRequest,
     UpdateSocialProfileRequest,
 )
@@ -255,6 +260,81 @@ def delete_sitemap_page(
     return planning
 
 
+# --- Website Blueprint -------------------------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/blueprint/template", response_model=PlanningRead)
+def apply_blueprint_template(
+    planning_id: uuid.UUID,
+    body: ApplyBlueprintTemplateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.apply_blueprint_template(
+        db, current_user.workspace_id, current_user.id, planning_id, body.template
+    )
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.post("/api/v1/planning/{planning_id}/sitemap/{page_id}/sections", response_model=PlanningRead)
+def add_blueprint_section(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    body: CreateBlueprintSectionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.add_blueprint_section(db, current_user.workspace_id, planning_id, page_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or sitemap page not found")
+    return planning
+
+
+# --- Website Blueprint: requirements board ----------------------------------
+
+
+@router.post("/api/v1/planning/{planning_id}/requirements", response_model=PlanningRead)
+def add_requirement(
+    planning_id: uuid.UUID,
+    body: CreateRequirementRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.add_requirement(db, current_user.workspace_id, planning_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item not found")
+    return planning
+
+
+@router.patch("/api/v1/planning/{planning_id}/requirements/{requirement_id}", response_model=PlanningRead)
+def update_requirement(
+    planning_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    body: UpdateRequirementRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.update_requirement(db, current_user.workspace_id, planning_id, requirement_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or requirement not found")
+    return planning
+
+
+@router.delete("/api/v1/planning/{planning_id}/requirements/{requirement_id}", response_model=PlanningRead)
+def delete_requirement(
+    planning_id: uuid.UUID,
+    requirement_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    planning = service.delete_requirement(db, current_user.workspace_id, planning_id, requirement_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or requirement not found")
+    return planning
+
+
 # --- Build Brief: Visual Direction Choices ----------------------------------
 
 
@@ -400,6 +480,30 @@ def update_content_page_seo(
 
 
 @router.patch(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/reorder",
+    response_model=PlanningRead,
+)
+def reorder_content_sections(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    body: ReorderContentSectionsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    # Registered before the parametrized `/sections/{section_id}` PATCH
+    # below on purpose: FastAPI/Starlette matches routes in registration
+    # order, so with the literal `/reorder` path second, a PATCH here
+    # was being swallowed by `update_content_section` with
+    # `section_id="reorder"` — a UUID-parsing 422, not a 404, so it was
+    # easy to miss. Route order matters for any literal path segment
+    # sharing a prefix with a parametrized one; keep this one first.
+    planning = service.reorder_content_sections(db, current_user.workspace_id, planning_id, page_id, body)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item or content page not found")
+    return planning
+
+
+@router.patch(
     "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/{section_id}",
     response_model=PlanningRead,
 )
@@ -412,8 +516,27 @@ def update_content_section(
     db: Session = Depends(get_db),
 ) -> PlanningRead:
     planning = service.update_content_section(
-        db, current_user.workspace_id, planning_id, page_id, section_id, body.content
+        db, current_user.workspace_id, planning_id, page_id, section_id, body
     )
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning item, content page, or section not found")
+    return planning
+
+
+@router.delete(
+    "/api/v1/planning/{planning_id}/content-draft/pages/{page_id}/sections/{section_id}",
+    response_model=PlanningRead,
+)
+def delete_content_section(
+    planning_id: uuid.UUID,
+    page_id: uuid.UUID,
+    section_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlanningRead:
+    """Website Blueprint's "Remove" action on a section — never touches
+    its source recommendation (see service.delete_content_section)."""
+    planning = service.delete_content_section(db, current_user.workspace_id, planning_id, page_id, section_id)
     if planning is None:
         raise HTTPException(status_code=404, detail="Planning item, content page, or section not found")
     return planning

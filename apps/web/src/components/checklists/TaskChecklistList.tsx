@@ -19,7 +19,7 @@ type TaskItem = ChecklistItem | StageChecklistItem;
 
 type ProgressPart = { completed: number; total: number; pct: number | null };
 type Progress = { required: ProgressPart; optional: ProgressPart };
-type NextAction<T> = { kind: "task"; item: T } | { kind: "blocked"; items: T[] } | { kind: "done" };
+export type NextAction<T> = { kind: "task"; item: T } | { kind: "blocked"; items: T[] } | { kind: "done" };
 
 type UpdatePatch = {
   status?: "pending" | "complete" | "not_required" | "blocked";
@@ -28,7 +28,10 @@ type UpdatePatch = {
   note?: string;
 };
 
-function progressLabel(progress: Progress): string {
+/** Exported for Planning's "Review & hand off" step, which shows this
+ * exact progress line as its own concise summary — reusing the render,
+ * not just the data, so the two never drift apart. */
+export function progressLabel(progress: Progress): string {
   const { required, optional } = progress;
   if (required.total === 0 && optional.total === 0) return "No applicable tasks — nothing to track here.";
   const requiredText = `Required: ${required.completed} of ${required.total} complete`;
@@ -61,7 +64,8 @@ function CompletedByText({ item }: { item: TaskItem }) {
   return <span className="text-fg-subtle">Marked done by {item.completed_by.name ?? "a teammate"}</span>;
 }
 
-function NextActionSummary<T extends TaskItem>({ nextAction }: { nextAction: NextAction<T> }) {
+/** Exported for the same reason as `progressLabel` above. */
+export function NextActionSummary<T extends TaskItem>({ nextAction }: { nextAction: NextAction<T> }) {
   if (nextAction.kind === "done") {
     return <p className="text-sm text-fg-muted">All set — nothing left here right now.</p>;
   }

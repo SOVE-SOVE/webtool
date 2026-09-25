@@ -2239,6 +2239,201 @@ def test_update_content_section_reverts_approved_page_to_edited(authed_client, m
     assert updated_section["content"] == {"heading": "Edited after approval"}
 
 
+def test_apply_blueprint_template_seeds_pages_and_sections(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/blueprint/template", json={"template": "standard"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["blueprint_template"] == "standard"
+    assert body["blueprint_selected_at"] is not None
+    assert [p["title"] for p in body["sitemap_pages"]] == ["Home", "Services", "About", "Contact"]
+    home_content_page = next(
+        cp for cp in body["content_pages"]
+        if cp["sitemap_page_id"] == next(p["id"] for p in body["sitemap_pages"] if p["title"] == "Home")
+    )
+    assert [s["section_type"] for s in home_content_page["sections"]] == ["hero", "serviceCards", "cta"]
+    assert all(s["heading"] is None and s["source"] == "operator_edited" for s in home_content_page["sections"])
+
+
+def test_reapplying_blueprint_template_replaces_the_previous_layout(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    authed_client.post(f"/api/v1/planning/{planning['id']}/blueprint/template", json={"template": "simple"})
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/blueprint/template", json={"template": "expanded"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["blueprint_template"] == "expanded"
+    assert len(body["sitemap_pages"]) == 7  # not 8 — the old "simple" page is gone, not appended to
+
+
+def test_blueprint_section_add_update_reorder_delete(authed_client):
+    """Exercises the full Website Blueprint section lifecycle through the
+    real HTTP routes (not calling service functions directly) — this is
+    the level a route-registration-order bug (a literal path segment
+    like `/sections/reorder` being shadowed by a parametrized
+    `/sections/{section_id}` registered first) would actually surface
+    at, so it belongs here rather than as a service-level-only test."""
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    body = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/blueprint/template", json={"template": "simple"}
+    ).json()
+    home_page_id = body["sitemap_pages"][0]["id"]
+    content_page = body["content_pages"][0]
+    assert content_page["sitemap_page_id"] == home_page_id
+    original_section_ids = [s["id"] for s in content_page["sections"]]
+
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/sitemap/{home_page_id}/sections",
+        json={"section_type": "testimonials", "heading": "What clients say"},
+    )
+    assert res.status_code == 200
+    content_page = next(cp for cp in res.json()["content_pages"] if cp["sitemap_page_id"] == home_page_id)
+    new_section = next(s for s in content_page["sections"] if s["section_type"] == "testimonials")
+    assert new_section["heading"] == "What clients say"
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{content_page['id']}/sections/{new_section['id']}",
+        json={"purpose": "Build trust", "notes": "Pull from the two 5-star reviews."},
+    )
+    assert res.status_code == 200
+    content_page = next(cp for cp in res.json()["content_pages"] if cp["sitemap_page_id"] == home_page_id)
+    updated = next(s for s in content_page["sections"] if s["id"] == new_section["id"])
+    assert updated["purpose"] == "Build trust"
+    assert updated["notes"] == "Pull from the two 5-star reviews."
+    assert updated["heading"] == "What clients say"  # untouched by this call
+
+    # The reorder route itself — a PATCH to a literal `/sections/reorder`
+    # path on the same resource `update_content_section` PATCHes by id.
+    reversed_order = [
+        {"id": s["id"], "order_index": len(content_page["sections"]) - 1 - i}
+        for i, s in enumerate(content_page["sections"])
+    ]
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{content_page['id']}/sections/reorder",
+        json={"sections": reversed_order},
+    )
+    assert res.status_code == 200, res.text
+    content_page = next(cp for cp in res.json()["content_pages"] if cp["sitemap_page_id"] == home_page_id)
+    by_id = {item["id"]: item["order_index"] for item in reversed_order}
+    assert all(s["order_index"] == by_id[s["id"]] for s in content_page["sections"])
+
+    res = authed_client.delete(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{content_page['id']}/sections/{new_section['id']}"
+    )
+    assert res.status_code == 200
+    content_page = next(cp for cp in res.json()["content_pages"] if cp["sitemap_page_id"] == home_page_id)
+    assert new_section["id"] not in [s["id"] for s in content_page["sections"]]
+    assert {s["id"] for s in content_page["sections"]} == set(original_section_ids)
+
+
+def test_deleting_blueprint_section_does_not_delete_its_source_recommendation(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    body = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/blueprint/template", json={"template": "simple"}
+    ).json()
+    home_page_id = body["sitemap_pages"][0]["id"]
+
+    rec = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/recommendations",
+        json={"category": "add", "title": "Add a testimonials section", "explanation": "Operator's own idea."},
+    ).json()
+    recommendation_id = rec["recommendations"][-1]["id"]
+
+    body = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/sitemap/{home_page_id}/sections",
+        json={"section_type": "testimonials", "source_recommendation_id": recommendation_id},
+    ).json()
+    content_page = next(cp for cp in body["content_pages"] if cp["sitemap_page_id"] == home_page_id)
+    section = next(s for s in content_page["sections"] if s["source_recommendation_id"] == recommendation_id)
+
+    body = authed_client.delete(
+        f"/api/v1/planning/{planning['id']}/content-draft/pages/{content_page['id']}/sections/{section['id']}"
+    ).json()
+    assert any(r["id"] == recommendation_id for r in body["recommendations"])  # untouched
+
+
+def test_requirement_add_is_idempotent_on_feature_key(authed_client):
+    """The requirements board's "prevent accidental duplicates" — adding
+    an already-added feature key must be a silent no-op, never a second
+    row, and must never apply the duplicate call's own fields (notes)."""
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    res = authed_client.post(f"/api/v1/planning/{planning['id']}/requirements", json={"feature_key": "services"})
+    assert res.status_code == 200
+    assert [r["feature_key"] for r in res.json()["blueprint_requirements"]] == ["services"]
+
+    res = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/requirements", json={"feature_key": "services", "notes": "should be ignored"}
+    )
+    assert res.status_code == 200
+    requirements = res.json()["blueprint_requirements"]
+    assert len(requirements) == 1
+    assert requirements[0]["notes"] is None
+
+
+def test_requirement_update_and_delete(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    body = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/requirements", json={"feature_key": "gallery"}
+    ).json()
+    requirement_id = body["blueprint_requirements"][0]["id"]
+
+    res = authed_client.patch(
+        f"/api/v1/planning/{planning['id']}/requirements/{requirement_id}", json={"notes": "Show recent projects"}
+    )
+    assert res.status_code == 200
+    assert res.json()["blueprint_requirements"][0]["notes"] == "Show recent projects"
+
+    res = authed_client.delete(f"/api/v1/planning/{planning['id']}/requirements/{requirement_id}")
+    assert res.status_code == 200
+    assert res.json()["blueprint_requirements"] == []
+
+
+def test_deleting_requirement_does_not_delete_its_source_recommendation(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    rec = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/recommendations",
+        json={"category": "add", "title": "Clarify service pricing", "explanation": "Operator's own idea."},
+    ).json()
+    recommendation_id = rec["recommendations"][-1]["id"]
+
+    body = authed_client.post(
+        f"/api/v1/planning/{planning['id']}/requirements",
+        json={"feature_key": "pricing", "source_recommendation_id": recommendation_id},
+    ).json()
+    requirement_id = body["blueprint_requirements"][0]["id"]
+    assert body["blueprint_requirements"][0]["source_recommendation_id"] == recommendation_id
+
+    body = authed_client.delete(f"/api/v1/planning/{planning['id']}/requirements/{requirement_id}").json()
+    assert body["blueprint_requirements"] == []
+    assert any(r["id"] == recommendation_id for r in body["recommendations"])  # untouched
+
+
+def test_requirements_are_independent_of_sitemap_pages_and_appear_in_build_brief(authed_client):
+    """The requirements board must never touch or depend on
+    sitemap_pages/content_pages, and must surface in the compiled Build
+    Brief as requested_features."""
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+
+    authed_client.post(f"/api/v1/planning/{planning['id']}/requirements", json={"feature_key": "faq"})
+    body = authed_client.get(f"/api/v1/planning/{planning['id']}").json()
+    assert body["sitemap_pages"] == []
+    assert body["content_pages"] == []
+    assert [r["feature_key"] for r in body["blueprint_requirements"]] == ["faq"]
+
+    brief = authed_client.get(f"/api/v1/planning/{planning['id']}/build-brief").json()
+    assert [f["feature_key"] for f in brief["requested_features"]] == ["faq"]
+
+
 def test_update_content_page_seo_reverts_approved_page_to_edited(authed_client, monkeypatch):
     lead = _create_lead(authed_client)
     planning = _start_planning(authed_client, lead)

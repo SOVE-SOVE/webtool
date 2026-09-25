@@ -6,7 +6,6 @@ import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Badge } from "@/components/ui/Badge";
 import { AREA_LABELS, SEVERITY_LABEL, SEVERITY_TONE, groupByArea } from "../lib";
-import { EvidencePanel } from "./SidePanels";
 
 const AREA_ORDER = ["technical", "usability", "seo", "accessibility", "visual"];
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -53,6 +52,8 @@ function FindingItem({ point }: { point: PlanningKeyPoint }) {
  * the worst area opens first. Evidence for each finding is itself
  * behind a second, per-finding disclosure — the "important finding and
  * its state first" progressive-disclosure rule applies at both levels.
+ * The screenshots themselves live in the persistent `WebsitePreviewPanel`
+ * (page.tsx) now, reachable from every step — not duplicated here.
  */
 export function AuditTab({ planning }: { planning: Planning }) {
   const hasAudit = planning.website_audit_id !== null;
@@ -75,8 +76,6 @@ export function AuditTab({ planning }: { planning: Planning }) {
     return AREA_ORDER.indexOf(a) - AREA_ORDER.indexOf(b);
   });
 
-  const hasScreenshots = Boolean(planning.screenshot_desktop_base64 || planning.screenshot_mobile_base64);
-
   return (
     <div className="space-y-3">
       {grouped.length === 0 ? (
@@ -97,12 +96,6 @@ export function AuditTab({ planning }: { planning: Planning }) {
             </ul>
           </Disclosure>
         ))
-      )}
-
-      {hasScreenshots && (
-        <Disclosure title="Screenshots" hint="Desktop and mobile evidence captured during the audit">
-          <EvidencePanel planning={planning} />
-        </Disclosure>
       )}
     </div>
   );

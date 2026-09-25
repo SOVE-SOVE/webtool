@@ -8,9 +8,16 @@ import { TaskChecklistList } from "./TaskChecklistList";
 /**
  * Loads a stage checklist and the workspace users its items can be
  * assigned to. Shared by `StageChecklistPanel` (the collapsible
- * version every stage page uses) and the discovered-business review
- * brief, which shows the progress on a card and the editable list in a
- * side panel — both need the same state without a second fetch.
+ * version every stage page uses), the discovered-business review
+ * brief, and Planning's own step process (which needs the same
+ * progress/next-action to compute its step statuses, before its own
+ * `planning` has necessarily loaded) — all three need the same state
+ * without a second fetch.
+ *
+ * `ownerId` may be passed empty (a caller that hasn't loaded its own
+ * owner record yet, so it can still call this hook unconditionally,
+ * ahead of any early return) — the fetch is simply held off until a
+ * real id shows up, rather than firing against an invalid path.
  */
 export function useStageChecklist(ownerType: StageChecklistOwnerType, ownerId: string) {
   const [checklist, setChecklist] = useState<StageChecklist | null>(null);
@@ -18,6 +25,7 @@ export function useStageChecklist(ownerType: StageChecklistOwnerType, ownerId: s
   const [error, setError] = useState<string | null>(null);
 
   function load() {
+    if (!ownerId) return;
     api
       .getStageChecklist(ownerType, ownerId)
       .then((c) => {
@@ -65,6 +73,58 @@ export function StageChecklistBody({
   );
 }
 
+/** The `progress.required` hint every closed checklist header shows —
+ * exported so a caller that already holds a `StageChecklist` via the
+ * lifted `useStageChecklist` above (Planning's step process) can show
+ * the exact same text without re-deriving it. */
+export function stageChecklistHint(checklist: StageChecklist): string {
+  const { progress } = checklist;
+  return progress.required.total === 0
+    ? "No applicable tasks"
+    : `Required: ${progress.required.completed} of ${progress.required.total} complete`;
+}
+
+/**
+ * The Disclosure-wrapped body — split out of `StageChecklistPanel` so a
+ * caller that already has `useStageChecklist`'s state (Planning's step
+ * process, which also needs it to compute step statuses) can render the
+ * exact same widget without a second fetch. `StageChecklistPanel` below
+ * is this plus its own self-contained fetch, for every other caller.
+ */
+export function StageChecklistPanelView({
+  ownerType,
+  ownerId,
+  title,
+  checklist,
+  users,
+  error,
+  onUpdated,
+}: {
+  ownerType: StageChecklistOwnerType;
+  ownerId: string;
+  title: string;
+  checklist: StageChecklist | null;
+  users: User[];
+  error: string | null;
+  onUpdated: (next: StageChecklist) => void;
+}) {
+  if (error) {
+    return (
+      <div className="mt-4 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        <p className="mt-2 text-error">{error}</p>
+      </div>
+    );
+  }
+  if (!checklist) return null;
+
+  return (
+    <Disclosure title={title} hint={stageChecklistHint(checklist)}>
+      <StageChecklistBody ownerType={ownerType} ownerId={ownerId} checklist={checklist} users={users} onUpdated={onUpdated} />
+    </Disclosure>
+  );
+}
+
 /**
  * A compact, collapsible "Stage Checklist" panel — one per pre-Client
  * stage (Discovery review, Lead, Planning, Project), reusing the Client
@@ -83,32 +143,15 @@ export function StageChecklistPanel({
   title: string;
 }) {
   const { checklist, users, error, setChecklist } = useStageChecklist(ownerType, ownerId);
-
-  if (error) {
-    return (
-      <div className="mt-4 rounded-md border border-border p-4">
-        <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <p className="mt-2 text-error">{error}</p>
-      </div>
-    );
-  }
-  if (!checklist) return null;
-
-  const { progress } = checklist;
-  const hint =
-    progress.required.total === 0
-      ? "No applicable tasks"
-      : `Required: ${progress.required.completed} of ${progress.required.total} complete`;
-
   return (
-    <Disclosure title={title} hint={hint}>
-      <StageChecklistBody
-        ownerType={ownerType}
-        ownerId={ownerId}
-        checklist={checklist}
-        users={users}
-        onUpdated={setChecklist}
-      />
-    </Disclosure>
+    <StageChecklistPanelView
+      ownerType={ownerType}
+      ownerId={ownerId}
+      title={title}
+      checklist={checklist}
+      users={users}
+      error={error}
+      onUpdated={setChecklist}
+    />
   );
 }

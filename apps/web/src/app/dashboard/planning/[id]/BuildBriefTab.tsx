@@ -13,6 +13,29 @@ import { VisualDirectionsSection } from "./VisualDirectionsSection";
 type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business_phone" | "business_email">;
 
 /**
+ * The "Keep / Improve / Add" Disclosure — split out of BuildBriefTab so
+ * the Planning workspace's "Choose improvements" step can show the same
+ * editor (same data, same accept/dismiss/edit controls) without a
+ * second copy of this wrapper, while BuildBriefTab itself still renders
+ * it inline for `showRecommendations` callers.
+ */
+export function RecommendationsDisclosure({
+  planning,
+  onUpdated,
+  defaultOpen = true,
+}: {
+  planning: Planning;
+  onUpdated: (p: Planning) => void;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <Disclosure title="Keep / Improve / Add" hint="Recommendations organised by what to keep, fix, and add" defaultOpen={defaultOpen}>
+      <RecommendationsSection planning={planning} onUpdated={onUpdated} />
+    </Disclosure>
+  );
+}
+
+/**
  * Planning's Build Brief (docs/05_DECISIONS.md) — turns Planning's
  * research into a structured, editable, explicitly-approved brief that
  * lands in the real Project tables the build pipeline reads. Built in
@@ -21,15 +44,23 @@ type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business
  * Every section is independent — generating/editing one never touches
  * another, and an operator's own edits are never silently overwritten
  * by a later regeneration (see each section's own docstring).
+ *
+ * `showRecommendations` (default true) hides the "Keep / Improve / Add"
+ * Disclosure — the Planning workspace's "Prepare the website" step
+ * passes `false` because "Choose improvements" (an earlier step) already
+ * shows `RecommendationsDisclosure` itself; nothing else about this
+ * component changes.
  */
 export function BuildBriefTab({
   planning,
   lead,
   onUpdated,
+  showRecommendations = true,
 }: {
   planning: Planning;
   lead: LeadBusinessFields | null;
   onUpdated: (p: Planning) => void;
+  showRecommendations?: boolean;
 }) {
   const summary = computeBuildBriefFacts(planning, lead);
   // Once a project exists, approving again pushes what changed to it (the
@@ -66,9 +97,7 @@ export function BuildBriefTab({
 
   return (
     <div className="space-y-5">
-      <Disclosure title="Keep / Improve / Add" hint="Recommendations organised by what to keep, fix, and add" defaultOpen>
-        <RecommendationsSection planning={planning} onUpdated={onUpdated} />
-      </Disclosure>
+      {showRecommendations && <RecommendationsDisclosure planning={planning} onUpdated={onUpdated} />}
 
       <Disclosure title="Proposed Sitemap and Homepage Outline" hint="Pages and sections suggested for this website">
         <SitemapProposalSection planning={planning} onUpdated={onUpdated} />

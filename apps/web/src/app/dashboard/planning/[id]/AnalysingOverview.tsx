@@ -7,13 +7,14 @@ import { AnalysingProgress } from "./AnalysingProgress";
 import { AnalysingPreviewPanel } from "./SidePanels";
 
 /**
- * The Overview tab's content while status === "analysing" — same
- * two-column shape as the finished OverviewTab (so the transition into
- * the real thing is a content swap, not a layout jump), with the
- * progress list up top and skeleton placeholders standing in for
- * Top Opportunities, the Website Summary, and Audit status. Nothing
- * here is faked data — it's structure only, until the real content
- * replaces it in place.
+ * Step 2 (Review current presence)'s "current site" content while
+ * status === "analysing" and no prior audit exists yet — same
+ * two-column shape as the finished content (so the transition into the
+ * real thing is a content swap, not a layout jump), with the progress
+ * list up top and skeleton placeholders standing in for Top
+ * Opportunities, the Website Summary, and Audit status. Nothing here is
+ * faked data — it's structure only, until the real content replaces it
+ * in place.
  */
 export function AnalysingOverview({ planning }: { planning: Planning }) {
   return (
