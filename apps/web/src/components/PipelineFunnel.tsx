@@ -21,16 +21,26 @@ function describe(segment: FunnelSegment): string {
   return `${segment.label}: ${leads} (${Math.round(segment.share * 100)}%)`;
 }
 
+/** Width of an empty stage's sliver in the bar — thinner than any filled segment's minimum. */
+const EMPTY_SEGMENT_PX = 4;
+const MIN_FILLED_SEGMENT_PX = 8;
+
 /**
  * A single horizontal segmented bar: one segment per pipeline stage, in
  * stage order, width proportional to its lead count. Clicking a segment
  * opens the Leads list filtered to that stage.
  *
- * Segments are too narrow to carry text (a stage can be 1 lead in 200),
- * so the labels and counts live in the legend beneath — which is also the
+ * Every stage is drawn, so the bar always shows the shape of the whole
+ * pipeline: a stage with no leads is a thin muted sliver in its legend
+ * colour, never a gap. A filled segment carries its label and count in a
+ * small surface-coloured chip once it's wide enough (count alone when it's
+ * a little narrower, nothing when it's a sliver) — the chip keeps the text
+ * readable on every fill in both themes. Widths come from each segment's
+ * own container query, so no measuring in JS.
+ *
+ * The legend beneath still lists every stage with its count and is the
  * keyboard path (the bar's own links are skipped by Tab so a screen-reader
- * or keyboard user doesn't hit every stage twice). A stage with no leads
- * draws no segment and shows in the legend as a muted, non-link "0".
+ * or keyboard user doesn't hit every stage twice).
  * `children` sits in a footer row (extra links that aren't pipeline stages).
  */
 export function PipelineFunnel({
@@ -44,7 +54,6 @@ export function PipelineFunnel({
   children?: ReactNode;
 }) {
   const { segments, total } = funnel;
-  const filled = segments.filter((s) => s.count > 0);
 
   return (
     // `@container`: the legend picks its column count from this card's own width, not the
@@ -71,8 +80,17 @@ export function PipelineFunnel({
       ) : (
         <>
           <div className="mt-3 flex h-9 gap-px overflow-hidden rounded-md" role="group" aria-label="Leads by pipeline stage">
-            {filled.map((segment) => {
-              const style: CSSProperties = { flex: `${segment.count} 1 0`, minWidth: 6, backgroundColor: fillFor(segment) };
+            {segments.map((segment) => {
+              if (segment.count === 0) {
+                // Same muted swatch the legend uses for an empty stage.
+                const style: CSSProperties = { flex: `0 0 ${EMPTY_SEGMENT_PX}px`, backgroundColor: fillFor(segment), opacity: 0.35 };
+                return <div key={segment.key} aria-hidden="true" title={describe(segment)} style={style} />;
+              }
+              const style: CSSProperties = {
+                flex: `${segment.count} 1 0`,
+                minWidth: MIN_FILLED_SEGMENT_PX,
+                backgroundColor: fillFor(segment),
+              };
               return (
                 <Link
                   key={segment.key}
@@ -81,8 +99,13 @@ export function PipelineFunnel({
                   aria-hidden="true"
                   title={describe(segment)}
                   style={style}
-                  className="block transition-[filter] duration-[var(--duration-fast)] hover:brightness-110 motion-reduce:transition-none"
-                />
+                  className="@container flex min-w-0 items-center px-1.5 transition-[filter] duration-[var(--duration-fast)] hover:brightness-110 motion-reduce:transition-none"
+                >
+                  <span className="hidden max-w-full items-center gap-1.5 rounded bg-surface/90 px-1.5 py-0.5 text-xs leading-none text-fg @min-[2rem]:flex">
+                    <span className="hidden min-w-0 truncate @min-[7rem]:inline">{segment.label}</span>
+                    <span className="shrink-0 font-semibold tabular-nums">{segment.count}</span>
+                  </span>
+                </Link>
               );
             })}
           </div>
