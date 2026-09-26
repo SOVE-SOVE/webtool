@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ChevronDownIcon } from "./ControlIcons";
 
 export type SelectOption<T extends string = string> = { value: T; label: string; disabled?: boolean };
@@ -14,6 +15,9 @@ type Props<T extends string> = {
   prefix?: string;
   /** Shown when `value` matches no option. */
   placeholder?: string;
+  /** Custom visible value (e.g. a truncating name beside fixed metadata);
+   *  defaults to the selected option's label. The option list is unaffected. */
+  display?: ReactNode;
   invalid?: boolean;
   disabled?: boolean;
   id?: string;
@@ -40,6 +44,7 @@ export function CompactSelect<T extends string>({
   options,
   prefix,
   placeholder = "",
+  display,
   invalid,
   disabled,
   className = "",
@@ -56,7 +61,11 @@ export function CompactSelect<T extends string>({
             {o.label}
           </span>
         ))}
-        <span className="col-start-1 row-start-1 truncate">{selected?.label ?? placeholder}</span>
+        {display && selected ? (
+          <span className="col-start-1 row-start-1 flex min-w-0 items-baseline">{display}</span>
+        ) : (
+          <span className="col-start-1 row-start-1 truncate">{selected?.label ?? placeholder}</span>
+        )}
       </span>
       <ChevronDownIcon className="h-4 w-4 shrink-0 text-fg-subtle" />
       <select

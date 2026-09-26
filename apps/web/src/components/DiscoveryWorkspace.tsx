@@ -56,6 +56,11 @@ function searchLabel(search: DiscoverySearch): string {
   return search.query_label ?? criteriaSummary(search);
 }
 
+function searchMeta(search: DiscoverySearch): string {
+  const results = `${search.result_count} result${search.result_count === 1 ? "" : "s"}`;
+  return `${results} · ${new Date(search.created_at).toLocaleDateString()}`;
+}
+
 /**
  * The Map Discovery tab's content: search controls, the map, and the
  * discovered-business results with their website status and review/add
@@ -719,10 +724,24 @@ export function DiscoveryWorkspace({
               onValueChange={(id) => selectSearch(id || null)}
               placeholder="Choose a search"
               className="w-full font-medium"
-              options={searches.map((s) => ({
-                value: s.id,
-                label: `${searchLabel(s)} · ${s.result_count} result${s.result_count === 1 ? "" : "s"} · ${new Date(s.created_at).toLocaleDateString()}`,
-              }))}
+              options={searches.map((s) => ({ value: s.id, label: `${searchLabel(s)} · ${searchMeta(s)}` }))}
+              // Only the name truncates; the date always stays whole. The
+              // count (also in the panel footer) drops below `sm` so a
+              // phone-width name keeps some room.
+              display={
+                activeSearch && (
+                  <>
+                    <span className="min-w-0 truncate">{searchLabel(activeSearch)}</span>
+                    <span className="shrink-0 whitespace-nowrap font-normal text-fg-muted">
+                      &nbsp;·{" "}
+                      <span className="max-sm:hidden">
+                        {activeSearch.result_count} result{activeSearch.result_count === 1 ? "" : "s"} ·{" "}
+                      </span>
+                      {new Date(activeSearch.created_at).toLocaleDateString()}
+                    </span>
+                  </>
+                )
+              }
             />
           ) : undefined
         }
