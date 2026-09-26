@@ -725,19 +725,14 @@ export function DiscoveryWorkspace({
               placeholder="Choose a search"
               className="w-full font-medium"
               options={searches.map((s) => ({ value: s.id, label: `${searchLabel(s)} · ${searchMeta(s)}` }))}
-              // Only the name truncates; the date always stays whole. The
-              // count (also in the panel footer) drops below `sm` so a
-              // phone-width name keeps some room.
+              // Only the name truncates; the date always stays whole. No
+              // result count here — the panel footer already shows it.
               display={
                 activeSearch && (
                   <>
                     <span className="min-w-0 truncate">{searchLabel(activeSearch)}</span>
                     <span className="shrink-0 whitespace-nowrap font-normal text-fg-muted">
-                      &nbsp;·{" "}
-                      <span className="max-sm:hidden">
-                        {activeSearch.result_count} result{activeSearch.result_count === 1 ? "" : "s"} ·{" "}
-                      </span>
-                      {new Date(activeSearch.created_at).toLocaleDateString()}
+                      &nbsp;· {new Date(activeSearch.created_at).toLocaleDateString()}
                     </span>
                   </>
                 )
