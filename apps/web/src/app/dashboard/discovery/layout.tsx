@@ -141,7 +141,7 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
         )}
       </div>
       {/* Floating, every piece of Map Discovery's own content (the map,
-          the search/results column, the search-history bar) positions
+          the search/results column) positions
           itself with `fixed`, so this wrapper never needs to reserve
           page height for it — the page simply doesn't scroll on this
           tab. (It used to: an in-flow results table started one

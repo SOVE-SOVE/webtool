@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -204,8 +203,8 @@ export function DiscoveryWorkspace({
     setActiveId(id);
     setFilters(NO_FILTERS);
     setSelectedId(null);
-    // A genuinely new search context (run, imported, or switched to via
-    // the picker below) opens the results panel — even if the operator
+    // A genuinely new search context (run or imported) opens the
+    // results panel — even if the operator
     // had collapsed it for a previous search. A background poll never
     // calls this, so it never fights a deliberate collapse.
     setPanelOpen(true);
@@ -552,17 +551,16 @@ export function DiscoveryWorkspace({
           or the empty space below a collapsed results panel, still lets
           clicks/drags reach the map underneath instead of just sitting
           on top of it. `top`/`bottom` bound the column exactly between
-          the header layer above and the search-history bar below (the
-          same reserved-space constants the search form's own max-height
-          used to compute for itself when it was the only thing here),
-          so the column can never grow into either. Width switches at
+          the header layer above and the mobile bottom nav (or the
+          viewport edge at `lg`) below, so the column can never grow
+          into either. Width switches at
           `sm` (the search form's old breakpoint); the bottom clearance
           switches at `lg`, where the mobile bottom nav disappears (see
           dashboard/layout.tsx). `lg:left` is the shared `--sidebar-w`
           variable plus this column's own 0.75rem gutter, so it stays
           flush with the sidebar's real edge (collapsed or expanded)
           instead of a hard-coded width that can drift out of sync. */}
-      <div className="pointer-events-none fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] bottom-[calc(3.5rem+1.75rem+3.75rem+0.75rem)] z-20 flex flex-col gap-3 sm:right-auto sm:w-[400px] lg:left-[calc(var(--sidebar-w)+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:bottom-[calc(0.75rem+3.75rem+0.75rem)]">
+      <div className="pointer-events-none fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] bottom-[calc(3.5rem+1.75rem)] z-20 flex flex-col gap-3 sm:right-auto sm:w-[400px] lg:left-[calc(var(--sidebar-w)+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:bottom-3">
       {/* Search controls — always visible: this is where discovery starts.
           The five criteria fields stack in one column, then a divider
           sets the website-status refinement + the primary Run search
@@ -573,7 +571,7 @@ export function DiscoveryWorkspace({
           results panel existed. */}
       <form
         onSubmit={handleCreate}
-        className="pointer-events-auto max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem-3.75rem-0.75rem)] shrink-0 overflow-y-auto map-glass px-4 py-3 lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem-3.75rem-0.75rem)]"
+        className="pointer-events-auto max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem)] shrink-0 overflow-y-auto map-glass px-4 py-3 lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem)]"
       >
         <button
           type="button"
@@ -730,7 +728,7 @@ export function DiscoveryWorkspace({
                   : ""}
               </p>
               {activeSearch.provider === "instagram_search" && (
-                <div className="mt-1.5 rounded-md border border-border bg-surface-subtle px-2.5 py-1.5 text-xs text-fg-muted">
+                <div className="mt-1.5 rounded-md border border-[var(--glass-hairline)] bg-[var(--glass-fill)] px-2.5 py-1.5 text-xs text-fg-muted">
                   <p>
                     Checked {activeSearch.raw_results_checked} raw result
                     {activeSearch.raw_results_checked === 1 ? "" : "s"} → {activeSearch.result_count} valid
@@ -895,35 +893,6 @@ export function DiscoveryWorkspace({
       />
       </div>
 
-      {/* Recent searches — switch which one this workspace is showing.
-          A frosted panel floating over the map's bottom-left corner
-          (same treatment as the search panel above), clear of the mobile
-          bottom nav. Leaflet's attribution stays visible bottom-right.
-          `lg:left` mirrors the search/results column above — flush with
-          the sidebar's real edge via `--sidebar-w`. */}
-      {searches && searches.length > 0 && (
-        <div className="fixed inset-x-3 bottom-[calc(3.5rem+1.75rem)] z-20 flex items-center gap-2 map-glass px-4 py-3 text-sm sm:right-auto sm:max-w-md lg:bottom-3 lg:left-[calc(var(--sidebar-w)+0.75rem)]">
-          <label htmlFor="discovery-search-picker" className="shrink-0 text-fg-muted">
-            Showing
-          </label>
-          <Select
-            id="discovery-search-picker"
-            value={activeId ?? ""}
-            onChange={(e) => selectSearch(e.target.value || null)}
-            className="min-w-0 flex-1 rounded-md border border-border-strong px-2 py-1.5 text-sm"
-          >
-            {searches.map((s) => (
-              <option key={s.id} value={s.id}>
-                {searchLabel(s)} · {s.result_count} result{s.result_count === 1 ? "" : "s"} ·{" "}
-                {new Date(s.created_at).toLocaleDateString()}
-              </option>
-            ))}
-          </Select>
-          <Link href="/dashboard/discovery/review" className="shrink-0 text-fg-muted hover:text-fg hover:underline">
-            Review queue →
-          </Link>
-        </div>
-      )}
       {importOpen && (
         <InstagramImportModal onClose={() => onImportOpenChange?.(false)} onImported={handleImported} />
       )}

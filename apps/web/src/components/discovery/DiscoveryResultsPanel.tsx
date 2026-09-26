@@ -118,7 +118,7 @@ function ResultRow({
       }}
       aria-current={selected ? "true" : undefined}
       className={`border-l-2 px-3 py-2.5 transition-colors duration-fast ease-standard motion-reduce:transition-none ${
-        onMap ? "cursor-pointer hover:bg-surface-hover" : ""
+        onMap ? "cursor-pointer hover:bg-[var(--glass-fill)]" : ""
       } ${selected ? "border-l-accent bg-accent-soft" : "border-l-transparent"} ${isNew ? "animate-fade-in" : ""}`}
       style={isNew ? { animationDelay: `${animationDelayMs}ms`, animationFillMode: "backwards" } : undefined}
     >
@@ -169,14 +169,13 @@ function ResultRow({
  * floating over the map, replacing the old full-width transparent table
  * (see docs/07_SESSION_LOG.md for the redesign this came out of).
  *
- * The two states deliberately use different surfaces. Collapsed, this is
- * just another floating control alongside the nav bar and search
- * panel/history bar, so it takes their `.map-glass` frosted treatment.
- * Expanded, the row list is dense text over a busy tile layer, where
- * translucency made rows unreadable (the bug this component replaces) —
- * so opening it switches to a solidly opaque surface. That solid surface
- * is the one place on this page that intentionally breaks the glass
- * convention, and does so on purpose; only the expanded body needs to.
+ * Collapsed or expanded, it takes the same `.map-glass` frosted
+ * treatment as the other floating controls (nav bar, search panel).
+ * `.map-glass-controls` makes the command bar's controls and the footer
+ * button sit on the glass too, and rows/dividers use the translucent
+ * --glass-fill/--glass-hairline tokens rather than opaque surfaces. Text
+ * contrast over the map comes from --glass-bg plus the panel's scoped
+ * --fg-muted/--fg-subtle overrides (see globals.css).
  *
  * Owns its own collapse state's presentation (the caller owns the
  * boolean) and, internally, scrolling the selected business into view —
@@ -239,17 +238,8 @@ export function DiscoveryResultsPanel({
 
   return (
     <div
-      // Collapsed, this is one of the floating controls over the map (nav
-      // bar, search panel) — so it takes their `.map-glass` frosted
-      // treatment (tokens + backdrop-blur, with the same opaque fallback
-      // those already rely on for browsers without backdrop-filter, since
-      // --glass-bg's 55%/72% white reads as a plain light panel without
-      // the blur). Expanded, the body's rows need a genuinely opaque
-      // surface (see the block comment above) so this switches back to
-      // the solid `border-border-strong bg-surface shadow-xl` treatment
-      // once `open`, instead of forking `.map-glass` itself.
-      className={`pointer-events-auto flex min-h-0 flex-col overflow-hidden rounded-lg ${
-        open ? "flex-1 border border-border-strong bg-surface shadow-xl" : "map-glass shrink-0"
+      className={`map-glass map-glass-controls pointer-events-auto flex min-h-0 flex-col overflow-hidden ${
+        open ? "flex-1" : "shrink-0"
       }`}
     >
       <button
@@ -257,16 +247,11 @@ export function DiscoveryResultsPanel({
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         aria-controls={bodyId}
-        className={`flex w-full shrink-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition-[background-color,box-shadow] duration-fast ease-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset ${
-          // Collapsed, the button sits directly on `.map-glass` — any
-          // background-color hover (even a translucent one, like the
-          // `bg-surface/75` this replaces) paints an extra opaque-white
-          // layer on top of the frosted backdrop-blur and reads as a
-          // solid white flash. An inset ring in the same colour as the
-          // glass border gives a hover affordance without touching the
-          // background, so the frosted look stays identical to rest.
-          open ? "hover:bg-surface-hover" : "hover:shadow-[inset_0_0_0_1px_var(--glass-border)]"
-        }`}
+        // The button sits directly on `.map-glass` — a background-color
+        // hover paints an extra white layer over the backdrop-blur and
+        // reads as a solid flash. An inset ring in the glass border colour
+        // gives a hover affordance while the frosted look stays identical.
+        className="flex w-full shrink-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition-[box-shadow] duration-fast ease-standard motion-reduce:transition-none hover:shadow-[inset_0_0_0_1px_var(--glass-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset"
       >
         <span className="text-sm font-medium text-fg">
           {open ? "Results" : resultCount !== null ? `Show results (${resultCount})` : "Show results"}
@@ -287,10 +272,10 @@ export function DiscoveryResultsPanel({
       <div
         id={bodyId}
         hidden={!open}
-        className="animate-rise-in flex min-h-0 flex-1 flex-col border-t border-border"
+        className="animate-rise-in flex min-h-0 flex-1 flex-col border-t border-[var(--glass-hairline)]"
       >
         {(banner || statusInfo || commandBar) && (
-          <div className="shrink-0 space-y-2.5 border-b border-border px-3 py-2.5">
+          <div className="shrink-0 space-y-2.5 border-b border-[var(--glass-hairline)] px-3 py-2.5">
             {banner}
             {statusInfo}
             {commandBar}
@@ -306,7 +291,7 @@ export function DiscoveryResultsPanel({
               {emptyAction && <div className="mt-3 flex justify-center">{emptyAction}</div>}
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-[var(--glass-hairline)]">
               {items?.map((item) => (
                 <ResultRow
                   key={item.business.id}
@@ -326,7 +311,7 @@ export function DiscoveryResultsPanel({
           )}
         </div>
 
-        {footer && <div className="shrink-0 border-t border-border px-3 py-2">{footer}</div>}
+        {footer && <div className="shrink-0 border-t border-[var(--glass-hairline)] px-3 py-2">{footer}</div>}
       </div>
     </div>
   );

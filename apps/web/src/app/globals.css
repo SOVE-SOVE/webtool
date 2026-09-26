@@ -47,6 +47,11 @@
     0 8px 32px rgb(15 23 42 / 0.14), 0 1px 2px rgb(15 23 42 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.5);
   --glass-fg-muted: #525252;
   --glass-fg-subtle: #5c5c5c;
+  /* Fills/hairlines for controls and rows that sit *on* a glass panel
+     (see .map-glass-controls) — translucent so the blur reads through. */
+  --glass-fill: rgb(255 255 255 / 0.4);
+  --glass-fill-hover: rgb(255 255 255 / 0.65);
+  --glass-hairline: rgb(23 23 23 / 0.12);
   --danger: #dc2626;
   --danger-fg: #ffffff;
 
@@ -103,6 +108,9 @@
     0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
   --glass-fg-muted: #d4d4d4;
   --glass-fg-subtle: #c8c8c8;
+  --glass-fill: rgb(255 255 255 / 0.06);
+  --glass-fill-hover: rgb(255 255 255 / 0.12);
+  --glass-hairline: rgb(255 255 255 / 0.12);
   --danger: #f87171;
   --danger-fg: #171717;
 
@@ -144,6 +152,9 @@
       0 8px 32px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.08);
     --glass-fg-muted: #d4d4d4;
     --glass-fg-subtle: #c8c8c8;
+    --glass-fill: rgb(255 255 255 / 0.06);
+    --glass-fill-hover: rgb(255 255 255 / 0.12);
+    --glass-hairline: rgb(255 255 255 / 0.12);
     --danger: #f87171;
     --danger-fg: #171717;
 
@@ -512,6 +523,19 @@ body {
     box-shadow: var(--glass-shadow);
     --fg-muted: var(--glass-fg-muted);
     --fg-subtle: var(--glass-fg-subtle);
+  }
+  /* Opt-in for a glass panel whose command-bar controls and buttons
+     should sit on the glass rather than read as opaque blocks. Popovers
+     (role="dialog") opened from inside keep their solid surface. */
+  /* `:where()` keeps the base rule at one class so the controls' own
+     hover/focus/invalid border states still win over it. */
+  .map-glass-controls :where(.control, .control-btn, .chip, .btn-secondary):where(:not([role="dialog"] *)) {
+    background-color: var(--glass-fill);
+    border-color: var(--glass-hairline);
+  }
+  .map-glass-controls
+    :where(.control-btn, .btn-secondary):is(:hover:not(:disabled), [aria-expanded="true"]):where(:not([role="dialog"] *)) {
+    background-color: var(--glass-fill-hover);
   }
 
   /* Tables */
