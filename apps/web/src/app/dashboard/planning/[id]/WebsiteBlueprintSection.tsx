@@ -49,7 +49,7 @@ export function WebsiteBlueprintSection({
   /** Reports whether the inspector currently has edits that haven't
    * been saved — the same signal that gates this component's own
    * internal navigation guard (`confirmDiscardIfDirty`), lifted so a
-   * caller like PrepareStep's "Continue to review" footer can apply the
+   * caller like the Plan step's unsaved-edits guard (page.tsx requestStep) can apply the
    * same guard before leaving the step entirely. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {

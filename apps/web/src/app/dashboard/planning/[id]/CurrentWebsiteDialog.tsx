@@ -7,8 +7,8 @@ import { planningMode } from "../lib";
 import { AnalysingPreviewPanel, EvidencePanel } from "./SidePanels";
 
 /**
- * On-demand replacement for `WebsitePreviewPanel` on "Prepare the
- * website" specifically: that step gives its persistent 320px preview
+ * On-demand replacement for `WebsitePreviewPanel` on the "Plan"
+ * step specifically: that step gives its persistent 320px preview
  * column to the requirements-board canvas instead (see page.tsx), so the
  * screenshot content it used to show at rest here becomes a trigger +
  * dialog instead. Reuses `EvidencePanel`/`AnalysingPreviewPanel` from

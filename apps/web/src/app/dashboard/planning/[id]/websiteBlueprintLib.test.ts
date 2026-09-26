@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   availableLibraryFeatures,
   availableRecommendedFeatures,
+  acceptedRecommendationIdsForFeature,
   clampGapIndex,
   computeBlueprintSummary,
+  computePlanSelectionSummary,
+  computeRequirementEvidence,
+  conflictingSelections,
+  featureKind,
+  filterFeatureLibrary,
+  describeRequirementTemplateEffect,
   deriveRecommendedRequirements,
   deriveRecommendedSections,
   deriveSuggestedSections,
@@ -14,14 +21,19 @@ import {
   gapToMoveIndex,
   getSectionWireframe,
   inferAppliedRequirementTemplate,
+  isSiteWideRecommendation,
+  recommendationFeatureKey,
+  recommendationIdsForFeature,
   isRequirementSelectionCustomised,
   mapKeyPointToFeatureKey,
   mapRecommendationToFeatureKey,
   mapRecommendationToSectionType,
+  REQUIREMENT_TEMPLATE_SUMMARY,
   REQUIREMENT_TEMPLATES,
   reorderSections,
   SECTION_TYPE_LABEL,
   sitemapPagePathLabel,
+  unplacedAcceptedFeatureRecommendations,
 } from "./websiteBlueprintLib";
 import type {
   ContentPage,
@@ -114,6 +126,7 @@ function planning(overrides: Partial<Planning> = {}): Planning {
     blueprint_template: null,
     blueprint_selected_at: null,
     blueprint_requirements: [],
+    inspiration_references: [],
     visual_direction_options: [],
     selected_visual_direction: null,
     visual_directions_generated_at: null,
@@ -827,14 +840,17 @@ describe("availableLibraryFeatures", () => {
     // Remove "gallery" (index 1) from the added set, as if its requirement
     // had just been deleted from the canvas.
     const withoutGallery = availableLibraryFeatures(new Set(["services", "pricing"]));
-    expect(withoutGallery.map((f) => f.key)).toEqual(["gallery", "faq", "contact", "booking", "about", "testimonials"]);
+    expect(withoutGallery.map((f) => f.key)).toEqual(
+      FEATURE_LIBRARY.map((f) => f.key).filter((k) => k !== "services" && k !== "pricing"),
+    );
+    expect(withoutGallery.at(-1)?.key).not.toBe("gallery"); // back in place, not appended
   });
 });
 
 describe("availableRecommendedFeatures", () => {
   const cards = [
-    { featureKey: "faq", sourceRecommendationId: "r1", reason: "x" },
-    { featureKey: "gallery", sourceRecommendationId: "r2", reason: "y" },
+    { featureKey: "faq", sourceRecommendationId: "r1", recommendationIds: ["r1"], hasAcceptedRecommendation: false, reason: "x" },
+    { featureKey: "gallery", sourceRecommendationId: "r2", recommendationIds: ["r2"], hasAcceptedRecommendation: false, reason: "y" },
   ];
 
   it("returns every recommended card, in order, when nothing is added yet", () => {
@@ -847,5 +863,206 @@ describe("availableRecommendedFeatures", () => {
 
   it("returns an empty list once every recommended feature has been added", () => {
     expect(availableRecommendedFeatures(cards, new Set(["faq", "gallery"]))).toEqual([]);
+  });
+});
+
+describe("Plan step: recommendation decisions live in one place", () => {
+  const faqProposed = recommendation({ id: "faq1", order_index: 0, title: "Add an FAQ section", explanation: "Answer common questions.", status: "proposed" });
+  const faqAccepted = recommendation({ id: "faq2", order_index: 1, title: "Answer common questions up front", explanation: "Visitors ask the same things.", status: "accepted" });
+  const faqDismissed = recommendation({ id: "faq3", order_index: 2, title: "Add a FAQs page", explanation: "More FAQs.", status: "dismissed" });
+  const speed = recommendation({ id: "speed", order_index: 3, category: "improve", title: "Improve page speed", explanation: "Reduce load time.", status: "proposed" });
+  const keepBrand = recommendation({ id: "keep", order_index: 4, category: "keep", title: "Keep the photo-led homepage", explanation: "Great images.", status: "accepted" });
+  const improveGallery = recommendation({ id: "gal", order_index: 5, category: "improve", title: "Improve the gallery", explanation: "Photos are low resolution.", status: "proposed" });
+
+  it("maps add/improve feature wording to a feature key; keep and cross-page concerns stay site-wide", () => {
+    expect(recommendationFeatureKey(faqProposed)).toBe("faq");
+    expect(recommendationFeatureKey(improveGallery)).toBe("gallery");
+    expect(recommendationFeatureKey(keepBrand)).toBeNull();
+    expect(recommendationFeatureKey(speed)).toBeNull();
+    expect(isSiteWideRecommendation(keepBrand)).toBe(true);
+    expect(isSiteWideRecommendation(speed)).toBe(true);
+    expect(isSiteWideRecommendation(faqProposed)).toBe(false);
+  });
+
+  it("offers proposed recommendations in the library (not just already-accepted ones), deduped with every source id kept", () => {
+    const p = planning({ recommendations: [faqProposed, faqAccepted, faqDismissed, speed, keepBrand, improveGallery] });
+    const cards = deriveRecommendedRequirements(p);
+    const faq = cards.find((c) => c.featureKey === "faq")!;
+    expect(cards.map((c) => c.featureKey).sort()).toEqual(["faq", "gallery"]);
+    expect(faq.recommendationIds).toEqual(["faq1", "faq2"]); // dismissed never revived
+    expect(faq.sourceRecommendationId).toBe("faq1");
+    expect(faq.hasAcceptedRecommendation).toBe(true);
+    expect(faq.reason).not.toContain("accepted");
+    expect(cards.find((c) => c.featureKey === "gallery")!.hasAcceptedRecommendation).toBe(false);
+  });
+
+  it("accepts every supporting recommendation on add, and only returns accepted ones to proposed on remove", () => {
+    const p = planning({ recommendations: [faqProposed, faqAccepted, faqDismissed, speed] });
+    expect(recommendationIdsForFeature(p, "faq")).toEqual(["faq1", "faq2"]);
+    expect(acceptedRecommendationIdsForFeature(p, "faq")).toEqual(["faq2"]);
+    expect(recommendationIdsForFeature(p, "booking")).toEqual([]);
+  });
+
+  it("surfaces accepted feature recommendations whose feature isn't on the canvas — never drops them", () => {
+    const offBoard = planning({ recommendations: [faqAccepted, keepBrand], blueprint_requirements: [] });
+    expect(unplacedAcceptedFeatureRecommendations(offBoard).map((r) => r.id)).toEqual(["faq2"]);
+    const onBoard = planning({
+      recommendations: [faqAccepted, keepBrand],
+      blueprint_requirements: [requirement({ feature_key: "faq" })],
+    });
+    expect(unplacedAcceptedFeatureRecommendations(onBoard)).toEqual([]);
+  });
+
+  it("summarises features, site-wide decisions and gaps for Review & build", () => {
+    const p = planning({
+      recommendations: [faqAccepted, speed, keepBrand],
+      blueprint_requirements: [requirement({ feature_key: "services" }), requirement({ id: "req2", feature_key: "about" })],
+    });
+    const summary = computePlanSelectionSummary(p);
+    expect(summary.featureLabels).toEqual(["About", "Services"]);
+    expect(summary.siteWideAccepted.map((r) => r.id)).toEqual(["keep"]);
+    expect(summary.siteWideProposed).toBe(1);
+    expect(summary.unplacedAccepted.map((r) => r.id)).toEqual(["faq2"]);
+  });
+});
+
+describe("template descriptions and apply preview", () => {
+  it("each summary names exactly the features its template defines — no more, no fewer", () => {
+    for (const [key, keys] of Object.entries(REQUIREMENT_TEMPLATES)) {
+      const summary = REQUIREMENT_TEMPLATE_SUMMARY[key as keyof typeof REQUIREMENT_TEMPLATES];
+      const mentioned = new Set(FEATURE_LIBRARY.filter((f) => new RegExp(`\\b${f.label}\\b`).test(summary)).map((f) => f.key));
+      if (/Everything in Standard/.test(summary)) for (const k of REQUIREMENT_TEMPLATES.standard) mentioned.add(k);
+      expect([...mentioned].sort(), key).toEqual([...keys].sort());
+    }
+  });
+
+  it("empty plan: everything is an addition", () => {
+    expect(describeRequirementTemplateEffect([], "expanded")).toEqual({
+      toAdd: REQUIREMENT_TEMPLATES.expanded,
+      alreadySelected: [],
+      toRemove: [],
+      toRemoveWithNotes: [],
+    });
+    expect(describeRequirementTemplateEffect([], "blank").toAdd).toEqual([]);
+  });
+
+  it("partial selection: counts what's already there and adds the rest", () => {
+    const effect = describeRequirementTemplateEffect([requirement({ feature_key: "services" }), requirement({ id: "q2", feature_key: "contact" })], "expanded");
+    expect(effect.toAdd).toHaveLength(6);
+    expect(effect.alreadySelected).toEqual(["services", "contact"]);
+    expect(effect.toRemove).toEqual([]);
+  });
+
+  it("customised selection: custom picks outside the template are removed, with notes flagged", () => {
+    const effect = describeRequirementTemplateEffect(
+      [requirement({ feature_key: "services" }), requirement({ id: "q2", feature_key: "booking", notes: "Use Fresha" }), requirement({ id: "q3", feature_key: "custom_quote" })],
+      "simple",
+    );
+    expect(effect.toAdd).toEqual(["contact"]);
+    expect(effect.alreadySelected).toEqual(["services"]);
+    expect(effect.toRemove).toEqual(["booking", "custom_quote"]);
+    expect(effect.toRemoveWithNotes).toEqual(["booking"]);
+  });
+});
+
+describe("computeRequirementEvidence", () => {
+  const noContact = { business_phone: null, business_email: null };
+  const asset = (category: string, status: string, note: string | null = null) =>
+    ({ id: category, category, label: category, status, note, created_at: "", updated_at: "" }) as never;
+
+  it("reports what's on file per selected feature, with its source, and asks nothing routine", () => {
+    const p = planning({
+      blueprint_requirements: [
+        requirement({ id: "a", order_index: 0, feature_key: "booking" }),
+        requirement({ id: "b", order_index: 1, feature_key: "pricing" }),
+        requirement({ id: "c", order_index: 2, feature_key: "services" }),
+      ],
+      assets: [asset("booking_destination", "ready_to_use"), asset("service_descriptions", "missing")],
+    });
+    const byKey = Object.fromEntries(
+      computeRequirementEvidence(p, { business_phone: "0400 000 000", business_email: null }).map((e) => [e.featureKey, e]),
+    );
+    expect(byKey.booking.known.map((k) => k.source)).toEqual(["Assets checklist", "Lead record"]);
+    expect(byKey.booking.essentialQuestion).toBeNull();
+    expect(byKey.pricing).toMatchObject({ featureKey: "pricing", known: [], essentialQuestion: null }); // never invented
+    expect(byKey.pricing.contentNeeded).toBe("Prices confirmed by the business.");
+    expect(byKey.services.known[0].text).toContain("not supplied yet");
+  });
+
+  it("the one essential question: a contact method, only when the lead has neither phone nor email", () => {
+    const p = planning({ blueprint_requirements: [requirement({ feature_key: "contact" })] });
+    expect(computeRequirementEvidence(p, noContact)[0].essentialQuestion).toContain("lead record");
+    expect(computeRequirementEvidence(p, { business_phone: null, business_email: "hi@x.test" })[0]).toMatchObject({
+      essentialQuestion: null,
+      known: [{ text: "Email: hi@x.test", source: "Lead record" }],
+    });
+    expect(computeRequirementEvidence(p, null)[0].essentialQuestion).toBeNull(); // still loading — don't guess
+  });
+
+  it("draws on research already done (reviews, FAQ ideas) without touching notes", () => {
+    const p = planning({
+      blueprint_requirements: [
+        requirement({ id: "a", feature_key: "faq", notes: "Operator's own" }),
+        requirement({ id: "b", order_index: 1, feature_key: "testimonials" }),
+      ],
+      review_faq_opportunities: [{ question: "Do you do weekends?", answer_hint: "", source_theme: "" }] as never,
+      review_intelligence: { google_rating: 4.7, google_review_count: 23, reviews_with_text: 5 } as never,
+    });
+    const [faq, testimonials] = computeRequirementEvidence(p, noContact);
+    expect(faq.known).toEqual([{ text: "Do you do weekends?", source: "Review Insights" }]);
+    expect(testimonials.known[0].text).toBe("4.7★ from 23 Google reviews, 5 with written text");
+  });
+});
+
+describe("expanded feature catalogue", () => {
+  it("keeps every original key and has no duplicate keys or labels", () => {
+    const keys = FEATURE_LIBRARY.map((f) => f.key);
+    for (const k of ["services", "gallery", "pricing", "faq", "contact", "booking", "about", "testimonials"]) expect(keys).toContain(k);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(new Set(FEATURE_LIBRARY.map((f) => f.label.toLowerCase())).size).toBe(keys.length);
+    expect(keys.every((k) => k.length <= 50)).toBe(true); // feature_key is String(50)
+  });
+
+  it("every capability says it still needs implementing; evidence-dependent features say what's needed", () => {
+    for (const f of FEATURE_LIBRARY.filter((f) => f.kind === "capability")) expect(f.detail).toContain("nothing is connected yet");
+    for (const k of ["testimonials", "accreditations", "case_studies", "animated_stats"]) {
+      expect(FEATURE_LIBRARY.find((f) => f.key === k)?.needsRealContent).toBeTruthy();
+    }
+  });
+
+  it("filters by search text and category", () => {
+    expect(filterFeatureLibrary(FEATURE_LIBRARY, "quote req", "all").map((f) => f.key)).toEqual(["quote_request"]);
+    expect(filterFeatureLibrary(FEATURE_LIBRARY, "QUOTE", "all").map((f) => f.key)).toEqual(["testimonials", "quote_request"]);
+    expect(filterFeatureLibrary(FEATURE_LIBRARY, "", "style").every((f) => f.category === "style")).toBe(true);
+    expect(filterFeatureLibrary(FEATURE_LIBRARY, "gallery", "experience").map((f) => f.key)).toEqual(["filterable_gallery"]);
+  });
+
+  it("light and dark appearance conflict; unrelated styles don't", () => {
+    expect(conflictingSelections("style_dark", ["style_light", "style_bold_type"])).toEqual(["style_light"]);
+    expect(conflictingSelections("style_bold_type", ["style_light"])).toEqual([]);
+  });
+
+  it("templates never remove or count design preferences / site-wide behaviours", () => {
+    const current = ["services", "contact", "style_dark", "sticky_nav"];
+    expect(inferAppliedRequirementTemplate(current)).toBe("simple");
+    expect(diffRequirementTemplate(current, "blank").toRemove).toEqual(["services", "contact"]);
+    expect(diffRequirementTemplate(current, "standard")).toEqual({ toAdd: ["about", "gallery"], toRemove: [] });
+    expect(featureKind("style_dark")).toBe("design");
+    expect(featureKind("some_legacy_key")).toBe("section");
+  });
+
+  it("the review summary keeps sections, functionality and design preferences apart", () => {
+    const p = planning({
+      blueprint_requirements: [
+        requirement({ id: "a", feature_key: "services" }),
+        requirement({ id: "b", order_index: 1, feature_key: "payments" }),
+        requirement({ id: "c", order_index: 2, feature_key: "style_dark" }),
+        requirement({ id: "d", order_index: 3, feature_key: "sticky_nav" }),
+      ],
+    });
+    const summary = computePlanSelectionSummary(p);
+    expect(summary.featureLabels).toEqual(["Services"]);
+    expect(summary.capabilityLabels).toEqual(["Payments / deposits"]);
+    expect(summary.designLabels).toEqual(["Dark appearance", "Sticky navigation"]);
   });
 });

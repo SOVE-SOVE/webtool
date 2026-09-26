@@ -5,6 +5,7 @@ import { api, ApiError, type Planning, type Recommendation, type RecommendationC
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Badge } from "@/components/ui/Badge";
+import { featureLabel, recommendationFeatureKey } from "./websiteBlueprintLib";
 
 const CATEGORY_LABEL: Record<RecommendationCategory, string> = { keep: "Keep", improve: "Improve", add: "Add" };
 const CATEGORY_HINT: Record<RecommendationCategory, string> = {
@@ -35,13 +36,33 @@ function RecommendationCard({
   const [title, setTitle] = useState(rec.title);
   const [explanation, setExplanation] = useState(rec.explanation);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function setStatus(status: "accepted" | "dismissed") {
-    onUpdated(await api.updateRecommendation(planningId, rec.id, { status }));
+  // Every mutation reports its own failure next to the card it came
+  // from — never a silent no-op the operator would only notice later.
+  async function run(action: () => Promise<Planning>, failure: string): Promise<boolean> {
+    setSaving(true);
+    setError(null);
+    try {
+      onUpdated(await action());
+      return true;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : failure);
+      return false;
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function handleDelete() {
-    onUpdated(await api.deleteRecommendation(planningId, rec.id));
+  function setStatus(status: "accepted" | "dismissed") {
+    return run(
+      () => api.updateRecommendation(planningId, rec.id, { status }),
+      status === "accepted" ? "Couldn't accept this recommendation." : "Couldn't dismiss this recommendation.",
+    );
+  }
+
+  function handleDelete() {
+    return run(() => api.deleteRecommendation(planningId, rec.id), "Couldn't remove this recommendation.");
   }
 
   return (
@@ -64,13 +85,11 @@ function RecommendationCard({
               type="button"
               disabled={saving}
               onClick={async () => {
-                setSaving(true);
-                try {
-                  onUpdated(await api.updateRecommendation(planningId, rec.id, { title, explanation }));
-                  setEditing(false);
-                } finally {
-                  setSaving(false);
-                }
+                const ok = await run(
+                  () => api.updateRecommendation(planningId, rec.id, { title, explanation }),
+                  "Couldn't save this recommendation.",
+                );
+                if (ok) setEditing(false);
               }}
               className="btn btn-secondary btn-sm"
             >
@@ -80,6 +99,7 @@ function RecommendationCard({
               Cancel
             </button>
           </div>
+          {error && <p className="text-error">{error}</p>}
         </div>
       ) : (
         <>
@@ -96,26 +116,38 @@ function RecommendationCard({
               <button
                 type="button"
                 onClick={() => setStatus("accepted")}
-                className="font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+                disabled={saving}
+                className="font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-400"
               >
                 Accept
               </button>
             )}
             {rec.status !== "dismissed" && (
-              <button type="button" onClick={() => setStatus("dismissed")} className="font-medium text-fg-muted hover:underline">
+              <button
+                type="button"
+                onClick={() => setStatus("dismissed")}
+                disabled={saving}
+                className="font-medium text-fg-muted hover:underline disabled:opacity-50"
+              >
                 Dismiss
               </button>
             )}
             <button type="button" onClick={() => setEditing(true)} className="font-medium text-fg-muted hover:underline">
               Edit
             </button>
-            <button type="button" onClick={handleDelete} className="font-medium text-fg-subtle hover:underline">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={saving}
+              className="font-medium text-fg-subtle hover:underline disabled:opacity-50"
+            >
               Remove
             </button>
             {rec.status === "proposed" && <span className="text-fg-subtle">Proposed — awaiting a decision</span>}
             {rec.status === "accepted" && <span className="text-emerald-700 dark:text-emerald-400">Accepted</span>}
             {rec.status === "dismissed" && <span className="text-fg-subtle">Dismissed</span>}
           </div>
+          {error && <p className="mt-1 text-error">{error}</p>}
         </>
       )}
     </li>
@@ -127,13 +159,37 @@ function RecommendationCard({
  * either Planning mode — `improve` is only ever populated when the
  * agent had real audit findings or review themes to cite (see
  * agents/planning_recommendations.py's hard rule).
+ *
+ * `filter` narrows which recommendations are listed — the Plan step's
+ * "Site-wide improvements" panel passes `isSiteWideRecommendation`, since
+ * feature recommendations are decided in the feature library there. It
+ * only affects the lists: Generate/Regenerate still act on (and label
+ * themselves from) every recommendation, because that's what the backend
+ * regenerates. `generateHint` is an optional line under the objective
+ * explaining that wider effect.
  */
-export function RecommendationsSection({ planning, onUpdated }: { planning: Planning; onUpdated: (p: Planning) => void }) {
+export function RecommendationsSection({
+  planning,
+  onUpdated,
+  filter,
+  generateHint,
+}: {
+  planning: Planning;
+  onUpdated: (p: Planning) => void;
+  filter?: (r: Recommendation) => boolean;
+  generateHint?: string;
+}) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addingCategory, setAddingCategory] = useState<RecommendationCategory | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [newExplanation, setNewExplanation] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  // Set when a just-added recommendation doesn't pass `filter` — it was
+  // saved, but it's listed somewhere else, so say where rather than let it
+  // look like it vanished.
+  const [addedElsewhere, setAddedElsewhere] = useState<string | null>(null);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -149,12 +205,34 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
 
   async function handleAdd(category: RecommendationCategory) {
     if (!newTitle.trim()) return;
-    onUpdated(
-      await api.addRecommendation(planning.id, { category, title: newTitle, explanation: newExplanation || "" }),
-    );
-    setAddingCategory(null);
-    setNewTitle("");
-    setNewExplanation("");
+    setAdding(true);
+    setAddError(null);
+    setAddedElsewhere(null);
+    try {
+      const before = new Set(planning.recommendations.map((r) => r.id));
+      const updated = await api.addRecommendation(planning.id, {
+        category,
+        title: newTitle,
+        explanation: newExplanation || "",
+      });
+      onUpdated(updated);
+      const created = updated.recommendations.find((r) => !before.has(r.id));
+      if (created && filter && !filter(created)) {
+        const featureKey = recommendationFeatureKey(created);
+        setAddedElsewhere(
+          featureKey
+            ? `“${created.title}” matches the ${featureLabel(featureKey)} feature, so it's listed in the feature library's Recommended view.`
+            : `“${created.title}” was added, but it's listed elsewhere.`,
+        );
+      }
+      setAddingCategory(null);
+      setNewTitle("");
+      setNewExplanation("");
+    } catch (err) {
+      setAddError(err instanceof ApiError ? err.message : "Couldn't add that recommendation.");
+    } finally {
+      setAdding(false);
+    }
   }
 
   const hasAny = planning.recommendations.length > 0;
@@ -162,16 +240,24 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-fg-muted">{planning.recommendations_objective || "Not generated yet."}</p>
+        <div className="min-w-0">
+          <p className="text-xs text-fg-muted">{planning.recommendations_objective || "Not generated yet."}</p>
+          {generateHint && <p className="mt-0.5 text-xs text-fg-subtle">{generateHint}</p>}
+        </div>
         <button type="button" onClick={handleGenerate} disabled={generating} className="btn btn-primary btn-sm shrink-0">
           {generating ? "Generating…" : hasAny ? "Regenerate" : "Generate"}
         </button>
       </div>
       {error && <p className="text-error">{error}</p>}
+      {addedElsewhere && (
+        <p role="status" className="rounded-md bg-surface-subtle px-3 py-2 text-xs text-fg-muted">
+          {addedElsewhere}
+        </p>
+      )}
 
       {(["keep", "improve", "add"] as RecommendationCategory[]).map((category) => {
         const items = planning.recommendations
-          .filter((r) => r.category === category && r.status !== "dismissed")
+          .filter((r) => r.category === category && r.status !== "dismissed" && (!filter || filter(r)))
           .sort((a, b) => a.order_index - b.order_index);
         return (
           <div key={category}>
@@ -182,7 +268,12 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
               </div>
               <button
                 type="button"
-                onClick={() => setAddingCategory(addingCategory === category ? null : category)}
+                onClick={() => {
+                  setAddingCategory(addingCategory === category ? null : category);
+                  setAddError(null);
+                }}
+                aria-expanded={addingCategory === category}
+                aria-label={`Add a ${CATEGORY_LABEL[category]} recommendation`}
                 className="text-xs font-medium text-fg-muted hover:underline"
               >
                 + Add
@@ -192,20 +283,28 @@ export function RecommendationsSection({ planning, onUpdated }: { planning: Plan
               <div className="mt-2 space-y-2 rounded-md border border-border p-3">
                 <Input
                   placeholder="Title"
+                  aria-label="Recommendation title"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="input"
                 />
                 <Textarea
                   placeholder="Explanation"
+                  aria-label="Recommendation explanation"
                   value={newExplanation}
                   onChange={(e) => setNewExplanation(e.target.value)}
                   rows={2}
                   className="input"
                 />
-                <button type="button" onClick={() => handleAdd(category)} className="btn btn-secondary btn-sm">
-                  Add
+                <button
+                  type="button"
+                  onClick={() => handleAdd(category)}
+                  disabled={adding || !newTitle.trim()}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {adding ? "Adding…" : "Add"}
                 </button>
+                {addError && <p className="text-error">{addError}</p>}
               </div>
             )}
             {items.length > 0 ? (

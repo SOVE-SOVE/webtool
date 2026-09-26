@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -326,10 +326,13 @@ def update_requirement(
 def delete_requirement(
     planning_id: uuid.UUID,
     requirement_id: uuid.UUID,
+    deselect_recommendation_ids: list[uuid.UUID] = Query(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PlanningRead:
-    planning = service.delete_requirement(db, current_user.workspace_id, planning_id, requirement_id)
+    planning = service.delete_requirement(
+        db, current_user.workspace_id, planning_id, requirement_id, deselect_recommendation_ids
+    )
     if planning is None:
         raise HTTPException(status_code=404, detail="Planning item or requirement not found")
     return planning

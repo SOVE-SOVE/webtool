@@ -47,6 +47,7 @@ export function AnalyseWebsiteAction({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…"
+          aria-label="Website address"
           required
           className="input max-w-sm sm:w-auto"
         />

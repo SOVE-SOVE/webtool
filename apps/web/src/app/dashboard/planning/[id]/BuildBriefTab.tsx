@@ -14,10 +14,10 @@ type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business
 
 /**
  * The "Keep / Improve / Add" Disclosure — split out of BuildBriefTab so
- * the Planning workspace's "Choose improvements" step can show the same
- * editor (same data, same accept/dismiss/edit controls) without a
- * second copy of this wrapper, while BuildBriefTab itself still renders
- * it inline for `showRecommendations` callers.
+ * other callers can show the same editor (same data, same
+ * accept/dismiss/edit controls) without a second copy of this wrapper,
+ * while BuildBriefTab itself still renders it inline for
+ * `showRecommendations` callers.
  */
 export function RecommendationsDisclosure({
   planning,
@@ -46,21 +46,25 @@ export function RecommendationsDisclosure({
  * by a later regeneration (see each section's own docstring).
  *
  * `showRecommendations` (default true) hides the "Keep / Improve / Add"
- * Disclosure — the Planning workspace's "Prepare the website" step
- * passes `false` because "Choose improvements" (an earlier step) already
- * shows `RecommendationsDisclosure` itself; nothing else about this
- * component changes.
+ * Disclosure — the Planning workspace's Plan step passes `false` because
+ * it already decides every recommendation itself (feature ones in the
+ * requirements board's library, the rest in its "Site-wide improvements"
+ * panel); nothing else about this component changes.
  */
 export function BuildBriefTab({
   planning,
   lead,
   onUpdated,
   showRecommendations = true,
+  onApproved,
 }: {
   planning: Planning;
   lead: LeadBusinessFields | null;
   onUpdated: (p: Planning) => void;
   showRecommendations?: boolean;
+  /** Called after a successful approval — e.g. so the page can refresh the
+   * checklist item that Create project's readiness reads. */
+  onApproved?: () => void;
 }) {
   const summary = computeBuildBriefFacts(planning, lead);
   // Once a project exists, approving again pushes what changed to it (the
@@ -88,6 +92,7 @@ export function BuildBriefTab({
     setBriefError(null);
     try {
       setBrief(await api.approveBuildBrief(planning.id));
+      onApproved?.();
     } catch (err) {
       setBriefError(err instanceof ApiError ? err.message : "Couldn't approve the Build Brief.");
     } finally {

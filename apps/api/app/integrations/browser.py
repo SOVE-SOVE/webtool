@@ -6,6 +6,7 @@ a lead's existing website (never a guessed/estimated number) per the
 """
 
 import base64
+import html
 import ipaddress
 import json
 import re
@@ -13,7 +14,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
@@ -957,3 +958,149 @@ async def fetch_planning_audit_signals(
         return PlanningAuditSignals(error=str(exc))
     except Exception as exc:
         return PlanningAuditSignals(error=str(exc))
+
+
+# --- Website Reference Library: one guarded preview capture ------------------
+
+REFERENCE_CAPTURE_TIMEOUT_MS = 15_000
+REFERENCE_VIEWPORT = {"width": 1280, "height": 800}
+REFERENCE_MAX_REDIRECTS = 5
+
+
+@dataclass
+class ReferenceCapture:
+    screenshot_jpeg: bytes | None
+    final_url: str | None
+    error: str | None
+
+
+def _public_ip_for(hostname: str, cache: dict[str, str | None]) -> str | None:
+    """The first public address `hostname` resolves to (every answer must
+    be public, same rule as `_check_url_is_public`), or None if any answer
+    isn't public / it can't be resolved. Cached per capture."""
+    if hostname in cache:
+        return cache[hostname]
+    try:
+        if hostname.lower() == "localhost":
+            raise UrlNotAllowedError("localhost")
+        literal = _parse_ip_literal(hostname)
+        if literal is not None:
+            _reject_if_not_public(hostname, literal)
+            cache[hostname] = str(literal)
+        else:
+            resolved = _resolve_with_retry(hostname)
+            addresses = [ipaddress.ip_address(sockaddr[0]) for *_, sockaddr in resolved]
+            for ip in addresses:
+                _reject_if_not_public(hostname, ip)
+            cache[hostname] = str(addresses[0]) if addresses else None
+    except UrlNotAllowedError:
+        cache[hostname] = None
+    return cache[hostname]
+
+
+async def capture_reference_screenshot(url: str) -> ReferenceCapture:
+    """
+    A single viewport-sized JPEG of a public page, for the Website
+    Reference Library. Stricter than the audit fetchers' guard (whose
+    docstring notes it only checks the first URL): here EVERY request the
+    page makes — the document, each redirect hop, every sub-resource — is
+    intercepted and aborted unless its scheme is http(s) and its host
+    resolves only to public addresses; redirects are followed by the guard
+    itself, one checked hop at a time (see `_guard` — the browser's own
+    redirect following bypasses request interception). Residual risk: the guard's
+    DNS check and the request's own lookup are separate, so a DNS answer
+    that flips between them (rebinding with a zero TTL) isn't covered.
+    Bounded by a
+    navigation timeout; no login, cookie or CAPTCHA handling — a page that
+    blocks automated visitors simply fails, honestly.
+    """
+    try:
+        _check_url_is_public(url)
+    except UrlNotAllowedError as exc:
+        if "Could not resolve" in str(exc):
+            return ReferenceCapture(None, None, "The website address couldn't be found.")
+        return ReferenceCapture(None, None, "That address isn't public, so it wasn't visited.")
+
+    start_host = urlparse(url).hostname or ""
+    cache: dict[str, str | None] = {}
+    pinned_ip = _public_ip_for(start_host, cache)
+    if pinned_ip is None:
+        return ReferenceCapture(None, None, f"{start_host} doesn't resolve to a public address")
+    blocked: list[str] = []
+
+    def _allowed(target: str) -> bool:
+        parsed = urlparse(target)
+        return (
+            parsed.scheme in _ALLOWED_SCHEMES
+            and bool(parsed.hostname)
+            and _public_ip_for(parsed.hostname, cache) is not None
+        )
+
+    async def _guard(route, request):
+        if urlparse(request.url).scheme in ("data", "blob"):
+            await route.continue_()
+            return
+        # Playwright's routing never sees redirect hops the browser follows
+        # itself — verified with a real 302 to 127.0.0.1, both with
+        # continue_() and with a fulfilled 3xx. So redirects are followed
+        # HERE, one hop at a time, each target checked before it's
+        # requested; the browser only ever receives the final response.
+        target = request.url
+        response = None
+        for _hop in range(REFERENCE_MAX_REDIRECTS + 1):
+            if not _allowed(target):
+                blocked.append(target)
+                await route.abort("blockedbyclient")
+                return
+            try:
+                response = await route.fetch(url=target, max_redirects=0, timeout=REFERENCE_CAPTURE_TIMEOUT_MS)
+            except PlaywrightError:
+                await route.abort("failed")
+                return
+            location = response.headers.get("location")
+            if response.status in (301, 302, 303, 307, 308) and location:
+                target = urljoin(target, location)
+                continue
+            break
+        else:
+            await route.abort("failed")  # too many redirects
+            return
+        content_type = response.headers.get("content-type", "")
+        if target != request.url and request.is_navigation_request() and "text/html" in content_type:
+            # The page is served under its original address, so give it
+            # the real base for relative links/assets.
+            body = await response.body()
+            text = body.decode("utf-8", errors="replace")
+            base_tag = f'<base href="{html.escape(target, quote=True)}">'
+            match = re.search(r"<head[^>]*>", text, flags=re.IGNORECASE)
+            text = text[: match.end()] + base_tag + text[match.end():] if match else base_tag + text
+            await route.fulfill(response=response, body=text)
+            return
+        await route.fulfill(response=response)
+
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                context = await browser.new_context(viewport=REFERENCE_VIEWPORT, service_workers="block")
+                await context.route("**/*", _guard)
+                page = await context.new_page()
+                response = await page.goto(url, wait_until="load", timeout=REFERENCE_CAPTURE_TIMEOUT_MS)
+                final_url = page.url
+                if response is None or response.status >= 400:
+                    status = response.status if response is not None else "no response"
+                    return ReferenceCapture(None, final_url, f"The page answered with {status}.")
+                # Let late-loading imagery settle briefly, bounded.
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=3_000)
+                except PlaywrightError:
+                    pass
+                image = await page.screenshot(type="jpeg", quality=70, full_page=False)
+                return ReferenceCapture(image, final_url, None)
+            finally:
+                await browser.close()
+    except PlaywrightError as exc:
+        if "ERR_BLOCKED_BY_CLIENT" in str(exc):
+            return ReferenceCapture(None, None, "The page tried to load a non-public address — blocked for safety.")
+        message = str(exc).splitlines()[0][:200]
+        return ReferenceCapture(None, None, f"The page couldn't be loaded ({message}).")

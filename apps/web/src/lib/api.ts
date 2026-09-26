@@ -1276,11 +1276,64 @@ export type CreateRequirementRequest = {
   feature_key: string;
   notes?: string | null;
   source_recommendation_id?: string | null;
+  /** Recommendations this feature is the decision for — proposed ones
+   * become accepted in the same request (dismissed ones are left alone). */
+  accept_recommendation_ids?: string[];
 };
 
 export type UpdateRequirementRequest = {
   notes?: string | null;
 };
+
+
+// --- Website Reference Library ----------------------------------------------
+// Shared, workspace-scoped inspiration sites (how a site should LOOK and
+// FEEL) — separate from feature requirements. Previews are captured once by
+// a guarded background job and served from storage; browsing never
+// refetches the site.
+
+export type ReferenceCaptureStatus = "pending" | "captured" | "failed";
+export const LIKED_ASPECTS = ["layout", "typography", "colours", "imagery", "navigation", "interaction"] as const;
+export type LikedAspect = (typeof LIKED_ASPECTS)[number];
+export const LIKED_ASPECT_LABELS: Record<LikedAspect, string> = {
+  layout: "Layout",
+  typography: "Typography",
+  colours: "Colours",
+  imagery: "Imagery",
+  navigation: "Navigation",
+  interaction: "Interaction / motion",
+};
+
+export type WebsiteReference = {
+  id: string;
+  url: string;
+  name: string;
+  tags: string[];
+  notes: string | null;
+  capture_status: ReferenceCaptureStatus;
+  capture_error: string | null;
+  has_screenshot: boolean;
+  screenshot_captured_at: string | null;
+  archived_at: string | null;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateWebsiteReferenceRequest = { url: string; name?: string | null; tags?: string[]; notes?: string | null };
+export type UpdateWebsiteReferenceRequest = { name?: string; tags?: string[]; notes?: string | null };
+
+/** A shared reference attached to one plan, with that plan's own direction
+ * and liked aspects (operator notes — not verified findings). */
+export type PlanningReference = {
+  id: string;
+  reference: WebsiteReference;
+  direction: string | null;
+  liked_aspects: LikedAspect[];
+  order_index: number;
+};
+
+export type UpdatePlanningReferenceRequest = { direction?: string | null; liked_aspects?: LikedAspect[] };
 
 // --- Build Brief: Visual Direction Choices ----------------------------------
 
@@ -1362,6 +1415,7 @@ export type BuildBrief = {
   // scope requests the operator picked, not verified business facts and
   // not yet real pages/sections.
   requested_features: Requirement[];
+  inspiration_references?: PlanningReference[];
 };
 
 export type BuildBriefSyncConflict = {
@@ -1546,6 +1600,7 @@ export type Planning = {
   // The requirements board's own flat, position-independent picks —
   // separate from sitemap_pages/content_pages above.
   blueprint_requirements: Requirement[];
+  inspiration_references: PlanningReference[];
 
   visual_direction_options: VisualDirectionOption[];
   selected_visual_direction: VisualDirectionOption | null;
@@ -3157,6 +3212,44 @@ export const api = {
   // route, so the browser's native lazy-loading handles the "don't load
   // full screenshots for every card" requirement with no extra JS.
   planningScreenshotUrl: (id: string) => `${API_URL}/api/v1/planning/${id}/screenshot`,
+  // Website Reference Library (workspace-scoped).
+  listWebsiteReferences: (params: { q?: string; tag?: string; includeArchived?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.tag) qs.set("tag", params.tag);
+    if (params.includeArchived) qs.set("include_archived", "true");
+    const query = qs.toString();
+    return request<WebsiteReference[]>(`/api/v1/website-references${query ? `?${query}` : ""}`);
+  },
+  createWebsiteReference: (data: CreateWebsiteReferenceRequest) =>
+    request<WebsiteReference>(`/api/v1/website-references`, { method: "POST", body: JSON.stringify(data) }),
+  updateWebsiteReference: (id: string, data: UpdateWebsiteReferenceRequest) =>
+    request<WebsiteReference>(`/api/v1/website-references/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  retryWebsiteReferenceCapture: (id: string) =>
+    request<WebsiteReference>(`/api/v1/website-references/${id}/capture`, { method: "POST" }),
+  archiveWebsiteReference: (id: string) =>
+    request<WebsiteReference>(`/api/v1/website-references/${id}/archive`, { method: "POST" }),
+  unarchiveWebsiteReference: (id: string) =>
+    request<WebsiteReference>(`/api/v1/website-references/${id}/unarchive`, { method: "POST" }),
+  deleteWebsiteReference: (id: string) =>
+    request<void>(`/api/v1/website-references/${id}`, { method: "DELETE" }),
+  /** Stored preview only — `v` (the capture time) busts the browser cache
+   * when a retry replaces it; otherwise it's served from cache. */
+  websiteReferenceScreenshotUrl: (ref: Pick<WebsiteReference, "id" | "screenshot_captured_at">) =>
+    `${API_URL}/api/v1/website-references/${ref.id}/screenshot?v=${encodeURIComponent(ref.screenshot_captured_at ?? "")}`,
+  attachPlanningReference: (planningId: string, referenceId: string) =>
+    request<Planning>(`/api/v1/planning/${planningId}/references`, {
+      method: "POST",
+      body: JSON.stringify({ reference_id: referenceId }),
+    }),
+  updatePlanningReference: (planningId: string, attachmentId: string, data: UpdatePlanningReferenceRequest) =>
+    request<Planning>(`/api/v1/planning/${planningId}/references/${attachmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  detachPlanningReference: (planningId: string, attachmentId: string) =>
+    request<Planning>(`/api/v1/planning/${planningId}/references/${attachmentId}`, { method: "DELETE" }),
+
   // "Analyse Website" — the explicit trigger that enqueues the real
   // background audit pipeline.
   analysePlanning: (id: string, data?: AnalysePlanningRequest) =>
@@ -3250,8 +3343,17 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  deleteRequirement: (id: string, requirementId: string) =>
-    request<Planning>(`/api/v1/planning/${id}/requirements/${requirementId}`, { method: "DELETE" }),
+  // `deselectRecommendationIds` — accepted recommendations this card was
+  // the decision for go back to proposed in the same request (never
+  // deleted or dismissed).
+  deleteRequirement: (id: string, requirementId: string, deselectRecommendationIds: string[] = []) => {
+    const params = new URLSearchParams();
+    for (const recId of deselectRecommendationIds) params.append("deselect_recommendation_ids", recId);
+    const qs = params.toString();
+    return request<Planning>(`/api/v1/planning/${id}/requirements/${requirementId}${qs ? `?${qs}` : ""}`, {
+      method: "DELETE",
+    });
+  },
 
   // Build Brief — Visual Direction Choices.
   generateVisualDirections: (id: string) =>

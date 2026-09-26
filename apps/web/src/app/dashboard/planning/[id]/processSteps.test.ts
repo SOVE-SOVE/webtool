@@ -12,6 +12,7 @@ import {
   lastStepStorageKey,
   legacyTabToStep,
   parseStoredStep,
+  resolveStepId,
   reviewInsightsStepStatus,
   structureStepStatus,
 } from "./processSteps";
@@ -87,6 +88,7 @@ function planning(overrides: Partial<Planning> = {}): Planning {
     blueprint_template: null,
     blueprint_selected_at: null,
     blueprint_requirements: [],
+    inspiration_references: [],
     visual_direction_options: [],
     selected_visual_direction: null,
     visual_directions_generated_at: null,
@@ -288,25 +290,63 @@ describe("handoffStepStatus", () => {
 });
 
 describe("computeStepStatus", () => {
-  it("never assigns a status to 'understand' -- no evidence exists for it", () => {
-    expect(computeStepStatus("understand", planning(), null)).toBeNull();
-  });
-
-  it("combines both halves of 'presence'", () => {
+  it("combines both halves of 'research' (the old presence step's audit + reviews)", () => {
     const p = planning({ website_audit_id: "a1", status: "completed", review_synthesis_status: "skipped" });
     // audit half: in_progress (no checklist item, audit exists) ; review half: skipped
-    expect(computeStepStatus("presence", p, null)).toBe("in_progress");
+    expect(computeStepStatus("research", p, null)).toBe("in_progress");
+  });
+
+  it("never reads research as complete while reviews still need doing", () => {
+    const cl = checklist([checklistItem(PLANNING_CHECKLIST_TITLES.audit, "complete")]);
+    const p = planning({ website_audit_id: "a1", status: "completed" });
+    expect(computeStepStatus("research", p, cl)).toBe("not_started");
+    const withSkip = checklist([
+      checklistItem(PLANNING_CHECKLIST_TITLES.audit, "complete"),
+      checklistItem(PLANNING_CHECKLIST_TITLES.reviewInsights, "not_required"),
+    ]);
+    expect(computeStepStatus("research", p, withSkip)).toBe("complete");
+  });
+
+  it("only reads 'plan' complete when recommendations, structure AND assets are all complete", () => {
+    const partial = checklist([
+      checklistItem(PLANNING_CHECKLIST_TITLES.recommendations, "complete"),
+      checklistItem(PLANNING_CHECKLIST_TITLES.structure, "complete"),
+    ]);
+    expect(computeStepStatus("plan", planning(), partial)).toBe("not_started");
+    const all = checklist([
+      checklistItem(PLANNING_CHECKLIST_TITLES.recommendations, "complete"),
+      checklistItem(PLANNING_CHECKLIST_TITLES.structure, "complete"),
+      checklistItem(PLANNING_CHECKLIST_TITLES.assets, "complete"),
+    ]);
+    expect(computeStepStatus("plan", planning(), all)).toBe("complete");
+  });
+
+  it("'review' reads straight from the brief-approval item — never auto-complete", () => {
+    expect(computeStepStatus("review", planning(), null)).toBe("not_started");
   });
 });
 
 describe("legacyTabToStep", () => {
   it("maps every old tab id to a step, and leaves 'notes' unmapped", () => {
-    expect(legacyTabToStep("overview")).toBe("understand");
-    expect(legacyTabToStep("audit")).toBe("presence");
-    expect(legacyTabToStep("reviews")).toBe("presence");
-    expect(legacyTabToStep("build-brief")).toBe("prepare");
-    expect(legacyTabToStep("content-draft")).toBe("prepare");
+    expect(legacyTabToStep("overview")).toBe("research");
+    expect(legacyTabToStep("audit")).toBe("research");
+    expect(legacyTabToStep("reviews")).toBe("research");
+    expect(legacyTabToStep("build-brief")).toBe("plan");
+    expect(legacyTabToStep("content-draft")).toBe("plan");
     expect(legacyTabToStep("notes")).toBeNull();
+  });
+});
+
+describe("resolveStepId (old 5-step ?step= links)", () => {
+  it("maps every old step id forward and keeps current ids as-is", () => {
+    expect(resolveStepId("understand")).toBe("research");
+    expect(resolveStepId("presence")).toBe("research");
+    expect(resolveStepId("improvements")).toBe("plan");
+    expect(resolveStepId("prepare")).toBe("plan");
+    expect(resolveStepId("handoff")).toBe("review");
+    for (const id of ["research", "plan", "review"] as const) expect(resolveStepId(id)).toBe(id);
+    expect(resolveStepId("nonsense")).toBeNull();
+    expect(resolveStepId(null)).toBeNull();
   });
 });
 
@@ -317,10 +357,12 @@ describe("resume-step persistence (pure half)", () => {
     expect(lastStepStorageKey("p1")).not.toBe(lastStepStorageKey("p2"));
   });
 
-  it("accepts any real step id", () => {
-    for (const id of ["understand", "presence", "improvements", "prepare", "handoff"] as const) {
+  it("accepts any real step id, and maps a step remembered before the merge", () => {
+    for (const id of ["research", "plan", "review"] as const) {
       expect(parseStoredStep(id)).toBe(id);
     }
+    expect(parseStoredStep("prepare")).toBe("plan");
+    expect(parseStoredStep("handoff")).toBe("review");
   });
 
   it("falls back to null for nothing stored, garbage, or a stale/removed step id", () => {
@@ -387,31 +429,27 @@ function recommendation(
 }
 
 describe("computeStepSummary", () => {
-  it("never summarizes 'understand' -- no evidence exists for it either", () => {
-    expect(computeStepSummary("understand", planning(), null)).toBeNull();
-  });
-
-  describe("presence", () => {
+  describe("research", () => {
     it("is null before anything is on record (New Website Plan mode, no url)", () => {
-      expect(computeStepSummary("presence", planning(), null)).toBe("No website on record");
+      expect(computeStepSummary("research", planning(), null)).toBe("No website on record");
     });
 
     it("says a website exists but hasn't been analysed yet", () => {
-      expect(computeStepSummary("presence", planning({ website_url: "https://example.com" }), null)).toBe(
+      expect(computeStepSummary("research", planning({ website_url: "https://example.com" }), null)).toBe(
         "Not analysed yet",
       );
     });
 
     it("is 'Analysing…' while a run is active, even with no prior audit", () => {
       expect(
-        computeStepSummary("presence", planning({ status: "analysing", website_audit_id: null }), null),
+        computeStepSummary("research", planning({ status: "analysing", website_audit_id: null }), null),
       ).toBe("Analysing…");
     });
 
     it("never reads a failed analysis as anything but failed", () => {
       expect(
         computeStepSummary(
-          "presence",
+          "research",
           planning({ website_audit_id: "a1", status: "failed" }),
           null,
         ),
@@ -420,16 +458,16 @@ describe("computeStepSummary", () => {
 
     it("distinguishes ready-to-review from explicitly reviewed", () => {
       const p = planning({ website_audit_id: "a1", status: "completed" });
-      expect(computeStepSummary("presence", p, null)).toBe("Audit ready to review");
+      expect(computeStepSummary("research", p, null)).toBe("Audit ready to review");
       const cl = checklist([checklistItem(PLANNING_CHECKLIST_TITLES.audit, "complete")]);
-      expect(computeStepSummary("presence", p, cl)).toBe("Audit reviewed");
+      expect(computeStepSummary("research", p, cl)).toBe("Audit reviewed");
     });
 
     it("is null on a plain needs_review status, since ProcessNav's own status pill already says that word-for-word right next to it", () => {
-      expect(computeStepSummary("presence", planning({ website_audit_id: "a1", status: "needs_review" }), null)).toBeNull();
+      expect(computeStepSummary("research", planning({ website_audit_id: "a1", status: "needs_review" }), null)).toBeNull();
       expect(
         computeStepSummary(
-          "presence",
+          "research",
           planning({ website_plan_generated_at: "2026-01-02T00:00:00Z", status: "needs_review" }),
           null,
         ),
@@ -437,40 +475,45 @@ describe("computeStepSummary", () => {
     });
   });
 
-  describe("improvements", () => {
-    it("is null with nothing generated", () => {
-      expect(computeStepSummary("improvements", planning(), null)).toBeNull();
+  describe("plan — selection", () => {
+    it("is null with nothing generated or selected", () => {
+      expect(computeStepSummary("plan", planning(), null)).toBeNull();
     });
 
-    it("counts accepted vs. merely proposed recommendations", () => {
-      const proposedOnly = planning({ recommendations: [recommendation(), recommendation({ id: "r2" })] });
-      expect(computeStepSummary("improvements", proposedOnly, null)).toBe("2 improvements to review");
+    it("counts recommendations still awaiting a decision", () => {
+      const proposedOnly = planning({
+        recommendations: [recommendation(), recommendation({ id: "r2" }), recommendation({ id: "r3", status: "dismissed" })],
+      });
+      expect(computeStepSummary("plan", proposedOnly, null)).toBe("2 recommendations to review");
+    });
 
-      const someAccepted = planning({
+    it("counts features on the canvas and accepted site-wide improvements", () => {
+      const p = planning({
         recommendations: [
-          recommendation({ status: "accepted" }),
-          recommendation({ id: "r2", status: "accepted" }),
-          recommendation({ id: "r3", status: "dismissed" }),
+          recommendation({ id: "s1", category: "improve", title: "Improve page speed", explanation: "Slow.", status: "accepted" }),
+        ],
+        blueprint_requirements: [
+          { id: "q1", order_index: 0, feature_key: "faq", notes: null, source_recommendation_id: null, created_at: "", updated_at: "" },
         ],
       });
-      expect(computeStepSummary("improvements", someAccepted, null)).toBe("2 improvements selected");
+      expect(computeStepSummary("plan", p, null)).toBe("1 feature, 1 site-wide improvement selected");
     });
   });
 
-  describe("prepare", () => {
+  describe("plan — content", () => {
     it("is null before any structure or content exists", () => {
-      expect(computeStepSummary("prepare", planning(), null)).toBeNull();
+      expect(computeStepSummary("plan", planning(), null)).toBeNull();
     });
 
     it("reports structure drafted before any content page has sections", () => {
       expect(
-        computeStepSummary("prepare", planning({ sitemap_proposal_generated_at: "2026-01-02T00:00:00Z" }), null),
+        computeStepSummary("plan", planning({ sitemap_proposal_generated_at: "2026-01-02T00:00:00Z" }), null),
       ).toBe("Structure drafted");
     });
 
     it("reports 'Draft saved' once a page has content but none are approved", () => {
       const p = planning({ content_pages: [contentPage({ sections: [contentSection()] })] });
-      expect(computeStepSummary("prepare", p, null)).toBe("Draft saved");
+      expect(computeStepSummary("plan", p, null)).toBe("Draft saved");
     });
 
     it("counts approved pages honestly, never as fully approved until all are", () => {
@@ -480,29 +523,29 @@ describe("computeStepSummary", () => {
           contentPage({ id: "cp2", sections: [contentSection()], status: "draft" }),
         ],
       });
-      expect(computeStepSummary("prepare", p, null)).toBe("1 of 2 pages approved");
+      expect(computeStepSummary("plan", p, null)).toBe("1 of 2 pages approved");
     });
 
     it("never reports a failed or in-review content draft as saved/approved", () => {
-      expect(computeStepSummary("prepare", planning({ content_draft_status: "failed" }), null)).toBe(
+      expect(computeStepSummary("plan", planning({ content_draft_status: "failed" }), null)).toBe(
         "Content draft failed",
       );
-      expect(computeStepSummary("prepare", planning({ content_draft_status: "needs_review" }), null)).toBe(
+      expect(computeStepSummary("plan", planning({ content_draft_status: "needs_review" }), null)).toBe(
         "Content draft needs review",
       );
     });
   });
 
-  describe("handoff", () => {
+  describe("review", () => {
     it("is null until the brief is explicitly approved", () => {
-      expect(computeStepSummary("handoff", planning(), null)).toBeNull();
+      expect(computeStepSummary("review", planning(), null)).toBeNull();
     });
 
     it("reads 'Brief approved' straight from the AUTOMATIC checklist item", () => {
       const cl = checklist([
         checklistItem(PLANNING_CHECKLIST_TITLES.buildBriefApproved, "complete", { completion_mode: "automatic" }),
       ]);
-      expect(computeStepSummary("handoff", planning(), cl)).toBe("Brief approved");
+      expect(computeStepSummary("review", planning(), cl)).toBe("Brief approved");
     });
   });
 });

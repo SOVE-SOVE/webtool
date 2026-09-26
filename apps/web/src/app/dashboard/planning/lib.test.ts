@@ -92,6 +92,7 @@ function planning(overrides: Partial<Planning> = {}): Planning {
     blueprint_template: null,
     blueprint_selected_at: null,
     blueprint_requirements: [],
+    inspiration_references: [],
     visual_direction_options: [],
     selected_visual_direction: null,
     visual_directions_generated_at: null,

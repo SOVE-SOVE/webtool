@@ -1,22 +1,29 @@
 import type { Planning, StageChecklist, StageChecklistItem } from "@/lib/api";
 import { planningMode } from "../lib";
+import { computePlanSelectionSummary } from "./websiteBlueprintLib";
 
 /**
- * The Planning workspace's 5-step guided process (replaces the old
- * 6-tab `TabBar`) — pure step/status logic, split out so it's testable
- * without rendering anything (same precedent as lib/delayedVisible.ts).
- * ProcessNav.tsx and page.tsx are the only consumers.
+ * The Planning workspace's 3-step guided process — pure step/status
+ * logic, split out so it's testable without rendering anything (same
+ * precedent as lib/delayedVisible.ts). ProcessNav.tsx and page.tsx are
+ * the only consumers.
+ *
+ * Research = the old "Understand the business" + "Review current
+ * presence"; Plan = the old "Choose improvements" + "Prepare the
+ * website"; Review & build = the old "Review & hand off". The old ids
+ * still arrive from bookmarks, shared links and remembered steps — see
+ * `LEGACY_STEP_TO_STEP`.
  */
-export type StepId = "understand" | "presence" | "improvements" | "prepare" | "handoff";
+export type StepId = "research" | "plan" | "review";
 
-export const STEP_ORDER: readonly StepId[] = ["understand", "presence", "improvements", "prepare", "handoff"];
+export const STEP_ORDER: readonly StepId[] = ["research", "plan", "review"];
 
+// Ids stay "research" | "plan" | "review" so every existing URL and
+// remembered step keeps working; only the visible wording changed.
 export const STEP_LABEL: Record<StepId, string> = {
-  understand: "Understand the business",
-  presence: "Review current presence",
-  improvements: "Choose improvements",
-  prepare: "Prepare the website",
-  handoff: "Review & hand off",
+  research: "Analyse business",
+  plan: "Choose your website",
+  review: "Confirm & create project",
 };
 
 export function isStepId(value: string | null | undefined): value is StepId {
@@ -27,17 +34,34 @@ export function stepIndex(id: StepId): number {
   return STEP_ORDER.indexOf(id);
 }
 
+// --- Old step ids -> new step (the 5-step process's `?step=` values) ---
+
+const LEGACY_STEP_TO_STEP: Record<string, StepId> = {
+  understand: "research",
+  presence: "research",
+  improvements: "plan",
+  prepare: "plan",
+  handoff: "review",
+};
+
+/** A current step id as-is, an old 5-step id mapped forward, or `null`
+ * for anything else (nothing, garbage, a removed id). */
+export function resolveStepId(value: string | null | undefined): StepId | null {
+  if (isStepId(value)) return value;
+  return (value && LEGACY_STEP_TO_STEP[value]) || null;
+}
+
 // --- Old ?tab= -> new step, for existing bookmarks/shared links --------
 // "notes" isn't mapped here: Notes is no longer a step (see NotesPanel),
 // it opens the persistent Notes control instead — callers should check
 // for "notes" themselves before falling back to this map.
 
 const LEGACY_TAB_TO_STEP: Record<string, StepId> = {
-  overview: "understand",
-  audit: "presence",
-  reviews: "presence",
-  "build-brief": "prepare",
-  "content-draft": "prepare",
+  overview: "research",
+  audit: "research",
+  reviews: "research",
+  "build-brief": "plan",
+  "content-draft": "plan",
 };
 
 export function legacyTabToStep(tab: string): StepId | null {
@@ -60,21 +84,22 @@ export function lastStepStorageKey(planningId: string): string {
 }
 
 /**
- * `null` for anything that isn't a real, current step id — nothing
- * stored yet, or a stale value naming a step a future version removed —
- * so the caller can fall back to the default step instead of erroring.
+ * A remembered step — an old 5-step id (remembered before the merge) maps
+ * forward; `null` for anything else (nothing stored yet, or a stale value
+ * naming a step a future version removed) so the caller can fall back to
+ * the default step instead of erroring.
  */
 export function parseStoredStep(raw: string | null | undefined): StepId | null {
-  return isStepId(raw) ? raw : null;
+  return resolveStepId(raw);
 }
 
 // --- Step status ---------------------------------------------------------
 // Status vocabulary is deliberately small and only ever applied where
-// real evidence backs it — see docs note in page.tsx. "understand" has
-// no persisted evidence of its own (no checklist item, no
-// generation/approval event exists for "the business is understood"),
-// so it never gets a status pill at all (`null`), rather than guessing
-// one from data presence.
+// real evidence backs it — see docs note in page.tsx. The old
+// "understand" half of Research has no persisted evidence of its own (no
+// checklist item, no generation/approval event exists for "the business
+// is understood"), so it contributes nothing to Research's status rather
+// than a guess from data presence.
 
 export type StepStatus = "not_started" | "in_progress" | "needs_review" | "complete" | "skipped";
 
@@ -154,7 +179,7 @@ export function combineStepStatuses(statuses: StepStatus[]): StepStatus {
   return "complete";
 }
 
-/** Step 2's "current website" half — the website audit for Existing
+/** Research's "current website" half — the website audit for Existing
  * Website mode, or the generated Website Plan standing in for it in New
  * Website Plan mode (see planningMode's own docstring: the "Analyse
  * Website" empty state wins whenever a website_url is on record, even
@@ -166,7 +191,7 @@ export function auditOrPlanStepStatus(planning: Planning, checklist: StageCheckl
 
   // A run is literally happening right now — wins regardless of mode,
   // the same `status === "analysing"` check the composed content
-  // itself branches on first (see PresenceStep.tsx / AnalysingOverview),
+  // itself branches on first (see ResearchStep.tsx / AnalysingOverview),
   // including the "never-yet-audited site currently being analysed"
   // case, where `planningMode` still reads "new" (no audit exists yet).
   if (planning.status === "analysing") return "in_progress";
@@ -191,7 +216,7 @@ export function auditOrPlanStepStatus(planning: Planning, checklist: StageCheckl
   return planning.status === "needs_review" ? "needs_review" : "in_progress";
 }
 
-/** Step 2's "Google Review Insights" half. `review_synthesis_status` is
+/** Research's "Google Review Insights" half. `review_synthesis_status` is
  * the one place an explicit, recorded "skipped" decision actually shows
  * up (never inferred from reviews merely being absent). */
 export function reviewInsightsStepStatus(planning: Planning, checklist: StageChecklist | null): StepStatus {
@@ -202,7 +227,7 @@ export function reviewInsightsStepStatus(planning: Planning, checklist: StageChe
   return planning.review_insights_generated_at !== null ? "in_progress" : "not_started";
 }
 
-/** Step 3 — Keep/Improve/Add recommendations. */
+/** Plan's recommendations part — Keep/Improve/Add. */
 export function improvementsStepStatus(planning: Planning, checklist: StageChecklist | null): StepStatus {
   const item = checklistItemStepStatus(findChecklistItem(checklist, PLANNING_CHECKLIST_TITLES.recommendations));
   if (item) return item;
@@ -210,7 +235,7 @@ export function improvementsStepStatus(planning: Planning, checklist: StageCheck
   return generated ? "in_progress" : "not_started";
 }
 
-/** Step 4's "structure" half — proposed sitemap + visual direction. */
+/** Plan's "structure" part — proposed sitemap + visual direction. */
 export function structureStepStatus(planning: Planning, checklist: StageChecklist | null): StepStatus {
   const item = checklistItemStepStatus(findChecklistItem(checklist, PLANNING_CHECKLIST_TITLES.structure));
   if (item) return item;
@@ -218,7 +243,7 @@ export function structureStepStatus(planning: Planning, checklist: StageChecklis
   return generated ? "in_progress" : "not_started";
 }
 
-/** Step 4's "assets & content" half — assets checklist + content draft. */
+/** Plan's "assets & content" part — assets checklist + content draft. */
 export function assetsStepStatus(planning: Planning, checklist: StageChecklist | null): StepStatus {
   if (planning.content_draft_status === "generating") return "in_progress";
   const item = checklistItemStepStatus(findChecklistItem(checklist, PLANNING_CHECKLIST_TITLES.assets));
@@ -230,7 +255,7 @@ export function assetsStepStatus(planning: Planning, checklist: StageChecklist |
   return generated ? "in_progress" : "not_started";
 }
 
-/** Step 5 — the build brief's own approval, an AUTOMATIC checklist item
+/** Review & build — the build brief's own approval, an AUTOMATIC checklist item
  * (`done` fully determines it server-side — see
  * stage_checklists/signals.py's module docstring), so its status is
  * read straight from the checklist with no extra generation-evidence
@@ -240,27 +265,28 @@ export function handoffStepStatus(planning: Planning, checklist: StageChecklist 
   return item ?? "not_started";
 }
 
-/** The single status shown against each step in ProcessNav — `null` for
- * "understand" (no evidence exists either way, see the module docstring
- * above), a real `StepStatus` for every other step. */
+/** The single status shown against each step in ProcessNav. Each merged
+ * step combines the SAME per-part statuses the 5 old steps showed
+ * (`combineStepStatuses`), so a merged step only reads complete when
+ * every underlying part is — never a new completion rule. */
 export function computeStepStatus(
   stepId: StepId,
   planning: Planning,
   checklist: StageChecklist | null,
-): StepStatus | null {
+): StepStatus {
   switch (stepId) {
-    case "understand":
-      return null;
-    case "presence":
+    case "research":
       return combineStepStatuses([
         auditOrPlanStepStatus(planning, checklist),
         reviewInsightsStepStatus(planning, checklist),
       ]);
-    case "improvements":
-      return improvementsStepStatus(planning, checklist);
-    case "prepare":
-      return combineStepStatuses([structureStepStatus(planning, checklist), assetsStepStatus(planning, checklist)]);
-    case "handoff":
+    case "plan":
+      return combineStepStatuses([
+        improvementsStepStatus(planning, checklist),
+        structureStepStatus(planning, checklist),
+        assetsStepStatus(planning, checklist),
+      ]);
+    case "review":
       return handoffStepStatus(planning, checklist);
   }
 }
@@ -298,12 +324,16 @@ function auditOrPlanStepSummary(planning: Planning, checklist: StageChecklist | 
   return reviewed ? "Plan reviewed" : "Plan generated";
 }
 
-function improvementsStepSummary(planning: Planning): string | null {
-  const total = planning.recommendations.length;
-  if (total === 0) return null;
-  const accepted = planning.recommendations.filter((r) => r.status === "accepted").length;
-  if (accepted === 0) return `${total} improvement${total === 1 ? "" : "s"} to review`;
-  return `${accepted} improvement${accepted === 1 ? "" : "s"} selected`;
+function planSelectionStepSummary(planning: Planning): string | null {
+  const { featureLabels, siteWideAccepted } = computePlanSelectionSummary(planning);
+  const parts: string[] = [];
+  if (featureLabels.length > 0) parts.push(`${featureLabels.length} feature${featureLabels.length === 1 ? "" : "s"}`);
+  if (siteWideAccepted.length > 0) {
+    parts.push(`${siteWideAccepted.length} site-wide improvement${siteWideAccepted.length === 1 ? "" : "s"}`);
+  }
+  if (parts.length > 0) return `${parts.join(", ")} selected`;
+  const total = planning.recommendations.filter((r) => r.status !== "dismissed").length;
+  return total > 0 ? `${total} recommendation${total === 1 ? "" : "s"} to review` : null;
 }
 
 function prepareStepSummary(planning: Planning): string | null {
@@ -330,24 +360,31 @@ function handoffStepSummary(planning: Planning, checklist: StageChecklist | null
   return item?.status === "complete" ? "Brief approved" : null;
 }
 
-/** The short second line ProcessNav shows under a step's label —
- * `null` for "understand" (same reasoning as `computeStepStatus`: there
- * is no persisted evidence for "the business is understood" to summarize). */
+/** Plan's short line — the content draft's own failure/in-progress
+ * states win (they need attention), then what's been selected. */
+function planStepSummary(planning: Planning): string | null {
+  if (
+    planning.content_draft_status === "generating" ||
+    planning.content_draft_status === "failed" ||
+    planning.content_draft_status === "needs_review"
+  ) {
+    return prepareStepSummary(planning);
+  }
+  return planSelectionStepSummary(planning) ?? prepareStepSummary(planning);
+}
+
+/** The short second line ProcessNav shows under a step's label. */
 export function computeStepSummary(
   stepId: StepId,
   planning: Planning,
   checklist: StageChecklist | null,
 ): string | null {
   switch (stepId) {
-    case "understand":
-      return null;
-    case "presence":
+    case "research":
       return auditOrPlanStepSummary(planning, checklist);
-    case "improvements":
-      return improvementsStepSummary(planning);
-    case "prepare":
-      return prepareStepSummary(planning);
-    case "handoff":
+    case "plan":
+      return planStepSummary(planning);
+    case "review":
       return handoffStepSummary(planning, checklist);
   }
 }

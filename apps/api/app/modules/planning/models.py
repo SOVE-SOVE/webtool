@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.modules.review_intelligence.models import ReviewIntelligenceResult
     from app.modules.users.models import User
     from app.modules.website_audits.models import WebsiteAudit
+    from app.modules.website_references.models import LeadPlanningReference
 
 
 class PlanningStatus(str, enum.Enum):
@@ -379,6 +380,10 @@ class LeadPlanning(Base):
     # Website Blueprint's simplified "requirements board" (docs/05_DECISIONS.md)
     # — see LeadPlanningRequirement's own docstring for why this is
     # deliberately separate from sitemap_pages/content_pages above.
+    inspiration_references: Mapped[list["LeadPlanningReference"]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="LeadPlanningReference.order_index",
+    )
     requirements: Mapped[list["LeadPlanningRequirement"]] = relationship(
         back_populates="lead_planning",
         cascade="all, delete-orphan",

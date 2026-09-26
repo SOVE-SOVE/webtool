@@ -45,6 +45,7 @@ from app.modules.jobs.job_types import (
     JOB_REVIEW_INTELLIGENCE,
     JOB_WEBSITE_GENERATE,
     JOB_WEBSITE_QUALITY_AUDIT,
+    JOB_WEBSITE_REFERENCE_CAPTURE,
 )
 from app.modules.jobs.models import Job
 
@@ -333,6 +334,15 @@ def handle_hosting_billing_sweep(db: Session, job: Job) -> dict:
         )
 
 
+def handle_website_reference_capture(db: Session, job: Job) -> dict:
+    """Website Reference Library preview capture — one guarded screenshot
+    (integrations/browser.capture_reference_screenshot). Records failure
+    on the reference rather than raising, so it never auto-retries."""
+    from app.modules.website_references import service as references_service
+
+    return references_service.run_capture_job(db, uuid.UUID(job.payload["reference_id"]))
+
+
 HANDLERS = {
     JOB_DISCOVERY_SEARCH: handle_discovery_search,
     JOB_BUSINESS_RESEARCH: handle_business_research,
@@ -348,4 +358,5 @@ HANDLERS = {
     JOB_PLANNING_COMPARABLE_ANALYSIS: handle_planning_comparable_analysis,
     JOB_CONTENT_DRAFT_GENERATE: handle_content_draft_generate,
     JOB_HOSTING_BILLING_SWEEP: handle_hosting_billing_sweep,
+    JOB_WEBSITE_REFERENCE_CAPTURE: handle_website_reference_capture,
 }

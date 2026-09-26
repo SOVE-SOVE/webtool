@@ -27,6 +27,7 @@ from app.modules.opportunity_scoring import models as _opportunity_scoring  # no
 from app.modules.outreach import models as _outreach  # noqa: F401
 from app.modules.pipeline import models as _pipeline  # noqa: F401
 from app.modules.planning import models as _planning  # noqa: F401
+from app.modules.website_references import models as _website_references  # noqa: F401
 from app.modules.previews import models as _previews  # noqa: F401
 from app.modules.projects import models as _projects  # noqa: F401
 from app.modules.qa_reports import models as _qa_reports  # noqa: F401

@@ -22,6 +22,7 @@ JOB_PLANNING_ANALYSIS = "planning_analysis"
 JOB_PLANNING_COMPARABLE_ANALYSIS = "planning_comparable_analysis"
 JOB_CONTENT_DRAFT_GENERATE = "content_draft_generate"
 JOB_HOSTING_BILLING_SWEEP = "hosting_billing_sweep"
+JOB_WEBSITE_REFERENCE_CAPTURE = "website_reference_capture"
 
 # Default cadence for a recurring discovery search that doesn't specify
 # its own interval — daily, per docs/04_ROADMAP.md M7's "scheduled/

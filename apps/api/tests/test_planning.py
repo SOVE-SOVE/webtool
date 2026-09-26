@@ -2417,6 +2417,85 @@ def test_deleting_requirement_does_not_delete_its_source_recommendation(authed_c
     assert any(r["id"] == recommendation_id for r in body["recommendations"])  # untouched
 
 
+def _add_generated_style_recommendation(authed_client, planning_id, title, status):
+    """An operator-added recommendation starts ACCEPTED; moving it to
+    `status` stands in for a generated one awaiting (or past) a decision."""
+    body = authed_client.post(
+        f"/api/v1/planning/{planning_id}/recommendations",
+        json={"category": "add", "title": title, "explanation": "Evidence."},
+    ).json()
+    rec_id = body["recommendations"][-1]["id"]
+    authed_client.patch(f"/api/v1/planning/{planning_id}/recommendations/{rec_id}", json={"status": status})
+    return rec_id
+
+
+def test_adding_requirement_accepts_its_recommendations_in_one_call(authed_client):
+    """The Plan step's library: adding a recommended feature IS the
+    decision — every supporting proposed recommendation becomes accepted
+    in the same request; a dismissed one is never revived."""
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    pid = planning["id"]
+    first = _add_generated_style_recommendation(authed_client, pid, "Add an FAQ section", "proposed")
+    second = _add_generated_style_recommendation(authed_client, pid, "Answer common questions", "proposed")
+    dismissed = _add_generated_style_recommendation(authed_client, pid, "Add FAQs page", "dismissed")
+
+    body = authed_client.post(
+        f"/api/v1/planning/{pid}/requirements",
+        json={
+            "feature_key": "faq",
+            "source_recommendation_id": first,
+            "accept_recommendation_ids": [first, second, dismissed],
+        },
+    ).json()
+    statuses = {r["id"]: r["status"] for r in body["recommendations"]}
+    assert statuses == {first: "accepted", second: "accepted", dismissed: "dismissed"}
+    assert [(r["feature_key"], r["source_recommendation_id"]) for r in body["blueprint_requirements"]] == [
+        ("faq", first)
+    ]
+
+    # Re-adding is still a no-op for the row — never a duplicate.
+    body = authed_client.post(
+        f"/api/v1/planning/{pid}/requirements", json={"feature_key": "faq", "accept_recommendation_ids": [first]}
+    ).json()
+    assert len(body["blueprint_requirements"]) == 1
+
+
+def test_removing_requirement_deselects_but_keeps_its_recommendations(authed_client):
+    lead = _create_lead(authed_client)
+    planning = _start_planning(authed_client, lead)
+    pid = planning["id"]
+    rec_id = _add_generated_style_recommendation(authed_client, pid, "Add a gallery of recent work", "proposed")
+    body = authed_client.post(
+        f"/api/v1/planning/{pid}/requirements",
+        json={"feature_key": "gallery", "source_recommendation_id": rec_id, "accept_recommendation_ids": [rec_id]},
+    ).json()
+    requirement_id = body["blueprint_requirements"][0]["id"]
+
+    res = authed_client.delete(
+        f"/api/v1/planning/{pid}/requirements/{requirement_id}", params={"deselect_recommendation_ids": [rec_id]}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["blueprint_requirements"] == []
+    assert [(r["id"], r["status"]) for r in body["recommendations"]] == [(rec_id, "proposed")]
+
+
+def test_requirement_recommendation_ids_from_another_plan_are_ignored(authed_client):
+    lead = _create_lead(authed_client)
+    other_lead = _create_lead(authed_client, business_name="Harbour Bakery")
+    planning = _start_planning(authed_client, lead)
+    other = _start_planning(authed_client, other_lead)
+    foreign = _add_generated_style_recommendation(authed_client, other["id"], "Add pricing", "proposed")
+
+    authed_client.post(
+        f"/api/v1/planning/{planning['id']}/requirements",
+        json={"feature_key": "pricing", "accept_recommendation_ids": [foreign]},
+    )
+    body = authed_client.get(f"/api/v1/planning/{other['id']}").json()
+    assert [r["status"] for r in body["recommendations"]] == ["proposed"]
+
+
 def test_requirements_are_independent_of_sitemap_pages_and_appear_in_build_brief(authed_client):
     """The requirements board must never touch or depend on
     sitemap_pages/content_pages, and must surface in the compiled Build
@@ -3019,3 +3098,35 @@ def test_rerunning_an_interrupted_handoff_does_not_duplicate_artefacts(authed_cl
     row = db_session.query(LeadPlanningApprovedBrief).filter_by(lead_planning_id=uuid.UUID(planning["id"])).one()
     assert row.project_id == uuid.UUID(project["id"])
     assert (row.seeded_sitemap_id, row.seeded_creative_direction_id) == seeded  # still pointing at the seeded rows
+
+
+def test_requirement_catalog_matches_frontend_catalogue():
+    """The handoff narrative's labels/kinds must stay in sync with the
+    frontend FEATURE_LIBRARY (the source of truth for the library UI)."""
+    import re
+    from pathlib import Path
+
+    from app.modules.planning.requirement_catalog import FEATURES
+
+    ts = (
+        Path(__file__).resolve().parents[2] / "web/src/app/dashboard/planning/[id]/websiteBlueprintLib.ts"
+    ).read_text()
+    block = ts[ts.index("export const FEATURE_LIBRARY: FeatureDefinition[] = [") : ts.index("export const FEATURE_BY_KEY")]
+    frontend = {k: (label, kind) for k, label, kind in re.findall(r'\{ key: "([^"]+)", label: "([^"]+)",.*?kind: "([a-z]+)"', block)}
+    assert frontend == FEATURES
+
+
+def test_create_project_carries_selected_features_grouped_by_kind(authed_client, monkeypatch):
+    lead = _create_lead(authed_client)
+    result = _start_and_analyse(authed_client, monkeypatch, lead, website_url="https://coastalcafe.example")
+    pid = result["id"]
+    for key, notes in (("services", "Coffee, catering"), ("payments", None), ("style_dark", None), ("sticky_nav", None)):
+        authed_client.post(f"/api/v1/planning/{pid}/requirements", json={"feature_key": key, "notes": notes})
+    authed_client.post(f"/api/v1/planning/{pid}/build-brief/approve")
+
+    project = authed_client.post(f"/api/v1/planning/{pid}/create-project").json()
+    direction = project["build_direction"]
+    assert "Requested website content:\n- Services — Coffee, catering" in direction
+    assert "Requested functionality (still to be built or connected):\n- Payments / deposits" in direction
+    assert "Design preferences:\n- Dark appearance" in direction
+    assert "Site-wide behaviour:\n- Sticky navigation" in direction

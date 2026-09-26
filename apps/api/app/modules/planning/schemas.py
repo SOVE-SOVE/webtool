@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.modules.website_references.schemas import PlanningReferenceRead
+
 from app.modules.review_intelligence.schemas import ReviewIntelligenceResultRead
 
 
@@ -241,6 +243,11 @@ class CreateRequirementRequest(BaseModel):
     feature_key: str
     notes: str | None = None
     source_recommendation_id: uuid.UUID | None = None
+    # Recommendations this feature is the decision for — adding the
+    # feature from the library IS the operator's decision to accept them,
+    # so they're marked accepted in the same transaction (never a second
+    # "select it again" step). Optional; omitted keeps the old behaviour.
+    accept_recommendation_ids: list[uuid.UUID] = []
 
 
 class UpdateRequirementRequest(BaseModel):
@@ -353,6 +360,7 @@ class BuildBriefRead(BaseModel):
     # brief re-snapshots whatever this currently shows, same as every
     # other field.
     requested_features: list[RequirementRead] = []
+    inspiration_references: list[PlanningReferenceRead] = []
 
 
 # --- Content Draft -----------------------------------------------------
@@ -577,6 +585,9 @@ class PlanningRead(BaseModel):
     # separate from sitemap_pages/content_pages above (see
     # LeadPlanningRequirement's docstring).
     blueprint_requirements: list[RequirementRead] = []
+    # Website Reference Library attachments — inspiration for look & feel,
+    # separate from feature requirements (see modules/website_references).
+    inspiration_references: list[PlanningReferenceRead] = []
 
     visual_direction_options: list[VisualDirectionOptionRead] = []
     selected_visual_direction: VisualDirectionOptionRead | None = None

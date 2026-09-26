@@ -40,7 +40,9 @@ export function useStageChecklist(ownerType: StageChecklistOwnerType, ownerId: s
     api.listUsers().then(setUsers).catch(() => {});
   }, []);
 
-  return { checklist, users, error, setChecklist };
+  // `reload` — for callers whose own action changes an AUTOMATIC item
+  // server-side (e.g. approving a Build Brief) and need the fresh status.
+  return { checklist, users, error, setChecklist, reload: load };
 }
 
 /** The editable checklist itself — no Disclosure/card chrome around it. */

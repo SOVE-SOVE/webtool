@@ -41,6 +41,10 @@ class PlanningVisualDirectionsInput(BaseModel):
     instagram_bio: str | None = None
     comparable_patterns: list[str] = []
     operator_notes: str | None = None
+    # Website Reference Library attachments as TEXT only (name, likes,
+    # direction) — the operator's own notes; this model never sees the
+    # screenshots.
+    inspiration_notes: list[str] = []
 
 
 class VisualDirectionOption(BaseModel):
@@ -78,6 +82,12 @@ def _build_user_message(input: PlanningVisualDirectionsInput) -> str:
         )
     if input.operator_notes:
         lines.append(f"Operator notes: {input.operator_notes}")
+    if input.inspiration_notes:
+        lines.append(
+            "Operator's inspiration references (their own notes on sites they like — "
+            "use as direction only; never copy another site's branding, text or imagery):\n"
+            + "\n".join(f"- {n}" for n in input.inspiration_notes)
+        )
     return "\n".join(lines)
 
 

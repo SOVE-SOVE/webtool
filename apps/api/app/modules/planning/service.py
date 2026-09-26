@@ -54,7 +54,9 @@ from app.modules.jobs.job_types import (
 )
 from app.modules.jobs.models import Job, JobStatus
 from app.modules.leads.models import Lead
-from app.modules.planning import handoff_sync
+from app.modules.planning import handoff_sync, requirement_catalog
+from app.modules.website_references import service as references_service
+from app.modules.website_references.schemas import PlanningReferenceRead
 from app.modules.planning.models import (
     AssetStatus,
     ComparableResearchStatus,
@@ -156,6 +158,20 @@ def _get_lead(db: Session, workspace_id: uuid.UUID, lead_id: uuid.UUID) -> Lead 
     )
 
 
+def _planning_references_read(db: Session, planning: LeadPlanning) -> list[PlanningReferenceRead]:
+    attachments = sorted(planning.inspiration_references, key=lambda a: a.order_index)
+    return [
+        PlanningReferenceRead(
+            id=a.id,
+            reference=references_service.to_read(db, a.reference),
+            direction=a.direction,
+            liked_aspects=a.liked_aspects or [],
+            order_index=a.order_index,
+        )
+        for a in attachments
+    ]
+
+
 def _get_planning(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) -> LeadPlanning | None:
     return db.scalar(
         select(LeadPlanning)
@@ -170,6 +186,7 @@ def _get_planning(db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID) 
             selectinload(LeadPlanning.recommendations),
             selectinload(LeadPlanning.sitemap_pages),
             selectinload(LeadPlanning.requirements),
+            selectinload(LeadPlanning.inspiration_references),
             selectinload(LeadPlanning.assets),
             joinedload(LeadPlanning.approved_brief),
             selectinload(LeadPlanning.content_pages).selectinload(LeadPlanningContentPage.sections),
@@ -317,6 +334,7 @@ def _to_read(db: Session, planning: LeadPlanning, lead: Lead | None = None) -> P
     # its own — same reason lead_business_name/project_id above need an
     # explicit assignment.
     data.blueprint_requirements = [RequirementRead.model_validate(r) for r in planning.requirements]
+    data.inspiration_references = _planning_references_read(db, planning)
     audit = planning.website_audit
     if audit is not None:
         data.has_existing_site = audit.has_existing_site
@@ -655,6 +673,45 @@ def _build_direction_narrative(planning: LeadPlanning, approved_brief: LeadPlann
         direction_parts.append(f"Opportunities from comparable-site research:\n{opportunities}")
     if planning.operator_notes:
         direction_parts.append(f"Operator notes:\n{planning.operator_notes}")
+
+    # The requirements board's selections, grouped by what they are — read
+    # live like operator_notes above. Capabilities are stated as requests,
+    # never as working integrations; order carries no structural meaning.
+    # Inspiration references — how the site should look/feel, never
+    # permission to copy another site's text, branding, imagery or code.
+    # Direction/likes are the operator's own notes, not verified findings;
+    # only URLs and text are passed on (no screenshots in this narrative).
+    if planning.inspiration_references:
+        ref_lines = []
+        for a in sorted(planning.inspiration_references, key=lambda a: a.order_index):
+            line = f"- {a.reference.name} ({a.reference.url})"
+            if a.liked_aspects:
+                line += f" — likes: {', '.join(a.liked_aspects)}"
+            if a.direction:
+                line += f" — direction: {a.direction}"
+            ref_lines.append(line)
+        direction_parts.append(
+            "Inspiration references (look & feel only — don't copy their text, branding, imagery or code):\n"
+            + "\n".join(ref_lines)
+        )
+
+    requirement_groups = (
+        ("section", "Requested website content"),
+        ("capability", "Requested functionality (still to be built or connected)"),
+        ("design", "Design preferences"),
+        ("behaviour", "Site-wide behaviour"),
+    )
+    for kind, heading in requirement_groups:
+        items = sorted(
+            (r for r in planning.requirements if requirement_catalog.feature_kind(r.feature_key) == kind),
+            key=lambda r: requirement_catalog.feature_label(r.feature_key),
+        )
+        if items:
+            lines = "\n".join(
+                f"- {requirement_catalog.feature_label(r.feature_key)}" + (f" — {r.notes}" if r.notes else "")
+                for r in items
+            )
+            direction_parts.append(f"{heading}:\n{lines}")
 
     # Approved Build Brief — confirmed facts, accepted Keep/Improve/Add
     # (with evidence), assets, and open questions, all carried forward as
@@ -1598,17 +1655,20 @@ def add_requirement(
     planning = _get_planning(db, workspace_id, planning_id)
     if planning is None:
         return None
-    if any(r.feature_key == data.feature_key for r in planning.requirements):
-        return _to_read(db, planning)
-    db.add(
-        LeadPlanningRequirement(
-            lead_planning_id=planning.id,
-            order_index=_next_order_index(planning.requirements),
-            feature_key=data.feature_key,
-            notes=data.notes,
-            source_recommendation_id=data.source_recommendation_id,
-        )
+    _set_recommendation_statuses(
+        planning, data.accept_recommendation_ids,
+        from_statuses={RecommendationStatus.PROPOSED}, to_status=RecommendationStatus.ACCEPTED,
     )
+    if not any(r.feature_key == data.feature_key for r in planning.requirements):
+        db.add(
+            LeadPlanningRequirement(
+                lead_planning_id=planning.id,
+                order_index=_next_order_index(planning.requirements),
+                feature_key=data.feature_key,
+                notes=data.notes,
+                source_recommendation_id=data.source_recommendation_id,
+            )
+        )
     db.commit()
     db.refresh(planning)
     return _to_read(db, planning)
@@ -1631,19 +1691,44 @@ def update_requirement(
     return _to_read(db, planning)
 
 
+def _set_recommendation_statuses(
+    planning: LeadPlanning,
+    recommendation_ids: list[uuid.UUID],
+    *,
+    from_statuses: set[RecommendationStatus],
+    to_status: RecommendationStatus,
+) -> None:
+    """Moves this plan's own recommendations named in `recommendation_ids`
+    to `to_status`, but only from one of `from_statuses` — so a dismissed
+    recommendation is never silently revived, and an id belonging to
+    another plan (or none) is simply ignored rather than touched."""
+    wanted = set(recommendation_ids)
+    for rec in planning.recommendations:
+        if rec.id in wanted and rec.status in from_statuses:
+            rec.status = to_status
+
+
 def delete_requirement(
-    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, requirement_id: uuid.UUID
+    db: Session, workspace_id: uuid.UUID, planning_id: uuid.UUID, requirement_id: uuid.UUID,
+    deselect_recommendation_ids: list[uuid.UUID] | None = None,
 ) -> PlanningRead | None:
     """Removing a card only ever deletes this one row — never its
     `source_recommendation_id` recommendation, and never touches
     sitemap_pages/content_pages (this table has no relationship to
-    them)."""
+    them). `deselect_recommendation_ids` (optional) are the
+    recommendations the card was the decision for: accepted ones go back
+    to proposed in the same transaction, so the finding stays available
+    to add again — it is never deleted or dismissed."""
     planning = _get_planning(db, workspace_id, planning_id)
     if planning is None:
         return None
     requirement = next((r for r in planning.requirements if r.id == requirement_id), None)
     if requirement is None:
         return None
+    _set_recommendation_statuses(
+        planning, deselect_recommendation_ids or [],
+        from_statuses={RecommendationStatus.ACCEPTED}, to_status=RecommendationStatus.PROPOSED,
+    )
     db.delete(requirement)
     db.commit()
     db.refresh(planning)
@@ -1681,6 +1766,12 @@ def generate_visual_directions(
         instagram_bio=social.instagram_bio,
         comparable_patterns=[p["pattern"] for p in planning.comparable_research_patterns],
         operator_notes=planning.operator_notes,
+        inspiration_notes=[
+            a.reference.name
+            + (f" — likes: {', '.join(a.liked_aspects)}" if a.liked_aspects else "")
+            + (f" — {a.direction}" if a.direction else "")
+            for a in sorted(planning.inspiration_references, key=lambda a: a.order_index)
+        ],
     )
 
     result = planning_visual_directions_agent.run(agent_input)
@@ -1908,6 +1999,7 @@ def compute_build_brief(db: Session, workspace_id: uuid.UUID, planning_id: uuid.
     ]
     sitemap = [SitemapPageProposalRead.model_validate(p) for p in planning.sitemap_pages]
     requested_features = [RequirementRead.model_validate(r) for r in planning.requirements]
+    inspiration_references = _planning_references_read(db, planning)
     visual_direction = (
         VisualDirectionOptionRead.model_validate(planning.selected_visual_direction)
         if planning.selected_visual_direction
@@ -1933,6 +2025,7 @@ def compute_build_brief(db: Session, workspace_id: uuid.UUID, planning_id: uuid.
         project_id=brief.project_id if brief else None,
         sync_conflicts=list(brief.sync_conflicts or []) if brief else [],
         requested_features=requested_features,
+        inspiration_references=inspiration_references,
     )
 
 

@@ -12,11 +12,8 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { Badge } from "@/components/ui/Badge";
 import { STATUS_BADGE_TONE, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
-import { HandoffStep } from "./HandoffStep";
-import { ImprovementsStep } from "./ImprovementsStep";
 import { NotesPanel } from "./NotesPanel";
-import { PrepareStep } from "./PrepareStep";
-import { PresenceStep } from "./PresenceStep";
+import { PlanStep } from "./PlanStep";
 import { ProcessNav } from "./ProcessNav";
 import {
   STEP_ORDER,
@@ -26,11 +23,14 @@ import {
   lastStepStorageKey,
   legacyTabToStep,
   parseStoredStep,
+  resolveStepId,
   stepIndex,
   type StepId,
   type StepStatus,
 } from "./processSteps";
-import { UnderstandStep } from "./UnderstandStep";
+import { ResearchStep } from "./ResearchStep";
+import { ReviewStep } from "./ReviewStep";
+import { computeHandoffReadiness } from "./handoffReadiness";
 import { WebsitePreviewPanel } from "./WebsitePreviewPanel";
 
 // "Resume where you left off" — reads/writes are wrapped in try/catch the
@@ -77,22 +77,45 @@ function PlanningDetailPageInner() {
   // Step is URL-addressable the same way the old `?tab=` was — a plain
   // query param, shareable/back-button-safe, no local state to keep in
   // sync. Old `?tab=` deep links (and a bare "notes" one, which no
-  // longer names a step at all) are read here too and mapped forward —
-  // see the redirect effect below, which cleans the URL to the new
-  // `?step=` form without changing what's on screen.
+  // longer names a step at all) and old 5-step `?step=` ids
+  // (understand/presence/improvements/prepare/handoff — resolveStepId)
+  // are read here too and mapped forward — see the redirect effect
+  // below, which cleans the URL to the current `?step=` form without
+  // changing what's on screen.
   const stepParam = searchParams.get("step");
   const legacyTab = searchParams.get("tab");
   const legacyMappedStep = legacyTab && legacyTab !== "notes" ? legacyTabToStep(legacyTab) : null;
-  const activeStep: StepId = isStepId(stepParam) ? stepParam : (legacyMappedStep ?? "understand");
+  const resolvedStepParam = resolveStepId(stepParam);
+  const isLegacyStepParam = resolvedStepParam !== null && !isStepId(stepParam);
+  const activeStep: StepId = resolvedStepParam ?? legacyMappedStep ?? "research";
 
   function setStep(id: StepId) {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("tab");
-    if (id === "understand") next.delete("step");
+    if (id === "research") next.delete("step");
     else next.set("step", id);
     const qs = next.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
     writeLastStep(planningId, id);
+  }
+
+  // Plan's unsaved edits (a feature's notes, or the advanced layout
+  // editor's section inspector — reported up by PlanStep) guard EVERY way
+  // of leaving that step through this page — Previous/Continue and the
+  // stepper alike — rather than only its own Continue button.
+  const [planDirty, setPlanDirty] = useState(false);
+  async function requestStep(id: StepId) {
+    if (id !== activeStep && activeStep === "plan" && planDirty) {
+      const ok = await confirm({
+        title: "Discard unsaved changes?",
+        description: "Plan has edits that haven't been saved yet. Leaving this step will discard them.",
+        confirmLabel: "Discard changes",
+        danger: true,
+      });
+      if (!ok) return;
+      setPlanDirty(false);
+    }
+    setStep(id);
   }
 
   // Resume where the operator left off on THIS plan — but only landing
@@ -102,11 +125,13 @@ function PlanningDetailPageInner() {
   // remembered step, and browser Back/Forward never re-triggers this
   // (it depends on `planningId`, not on the URL). An invalid/stale
   // remembered id (parseStoredStep) or nothing stored at all just leaves
-  // the URL alone, which already defaults to "understand".
+  // the URL alone, which already defaults to "research". A step
+  // remembered before the 3-step merge (e.g. "prepare") maps forward in
+  // parseStoredStep and is re-written in the new form by setStep.
   useEffect(() => {
     if (stepParam || legacyTab) return;
     const remembered = readLastStep(planningId);
-    if (remembered && remembered !== "understand") setStep(remembered);
+    if (remembered && remembered !== "research") setStep(remembered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planningId]);
 
@@ -116,10 +141,10 @@ function PlanningDetailPageInner() {
   const [notesOpen, setNotesOpen] = useState(() => searchParams.get("tab") === "notes");
 
   useEffect(() => {
-    if (!legacyTab) return;
+    if (!legacyTab && !isLegacyStepParam) return;
     setStep(activeStep);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [legacyTab]);
+  }, [legacyTab, isLegacyStepParam]);
 
   // Restores the exact filters/scroll the operator left the Planning
   // list in, instead of always resetting to the bare list URL.
@@ -141,7 +166,7 @@ function PlanningDetailPageInner() {
 
   // Lifted (rather than left inside a child) so both the always-visible
   // checklist widget below and the step process's own status badges
-  // (ProcessNav/computeStepStatus, and Step 5's own concise summary)
+  // (ProcessNav/computeStepStatus, and Review & build's own concise summary)
   // read the exact same fetch — see useStageChecklist's own docstring
   // for why it tolerates an empty id ahead of `planning` loading.
   const {
@@ -149,6 +174,7 @@ function PlanningDetailPageInner() {
     users: checklistUsers,
     error: checklistError,
     setChecklist,
+    reload: reloadChecklist,
   } = useStageChecklist("planning", planning?.id ?? "");
 
   function load() {
@@ -164,7 +190,7 @@ function PlanningDetailPageInner() {
   useEffect(load, [planningId]);
 
   // The Lead's own business record (industry/location/contact) — needed
-  // for Step 1's business-details rows and New Website Plan mode's
+  // for Research's business-details rows and New Website Plan mode's
   // completeness rows, but cheap enough to just always have on hand.
   useEffect(() => {
     if (!planning) return;
@@ -194,16 +220,17 @@ function PlanningDetailPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnalysing, isAnalysingComparableSites, isGeneratingContentDraft, planningId]);
 
-  // "Completed: automatically open Review current presence" — only on
+  // "Completed: automatically open Research" — only on
   // the transition into completed (e.g. a run finished while the
   // operator had Notes open), never re-forcing the step back on every
   // subsequent poll. This is where the old Overview tab used to jump to
-  // as well — the freshly-completed audit/plan now lives in Step 2.
+  // as well — the freshly-completed audit/plan now lives in Research.
   const prevStatusRef = useRef<PlanningStatus | undefined>(undefined);
   useEffect(() => {
     if (!planning) return;
-    if (prevStatusRef.current === "analysing" && planning.status === "completed") {
-      setStep("presence");
+    // Never yanks the operator off Plan mid-edit (see requestStep).
+    if (prevStatusRef.current === "analysing" && planning.status === "completed" && !planDirty) {
+      setStep("research");
     }
     prevStatusRef.current = planning.status;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,8 +243,8 @@ function PlanningDetailPageInner() {
   // `--discovery-layer-h`, adapted here because this chrome's height
   // genuinely varies (a stale/failed/needs-review banner can appear or
   // disappear, the header can wrap onto a second line) in a way no fixed
-  // offset could account for. Only "Prepare the website" reads it (see
-  // PrepareStep.tsx, which combines it with its own measured height to
+  // offset could account for. Only "Plan" reads it (see
+  // PlanStep.tsx, which combines it with its own measured height to
   // size the Website Blueprint editor to the real remaining viewport) —
   // for every other step this is simply never observed, at no cost.
   const chromeRef = useRef<HTMLDivElement>(null);
@@ -225,7 +252,7 @@ function PlanningDetailPageInner() {
   useEffect(() => {
     const outer = outerRef.current;
     const chrome = chromeRef.current;
-    if (activeStep !== "prepare" || !outer || !chrome) {
+    if (activeStep !== "plan" || !outer || !chrome) {
       outerRef.current?.style.removeProperty("--planning-above-h");
       return;
     }
@@ -245,7 +272,14 @@ function PlanningDetailPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep, Boolean(planning)]);
 
+  // A ref, not state: two clicks in the same tick both see
+  // `creatingProject === false` before React re-renders, and the backend's
+  // "already has a project" check isn't atomic under concurrent requests —
+  // a same-tick double-click previously created two projects.
+  const createInFlight = useRef(false);
   async function handleCreateProject() {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
     setCreatingProject(true);
     setCreateProjectError(null);
     try {
@@ -256,6 +290,7 @@ function PlanningDetailPageInner() {
         err instanceof ApiError ? err.message : "Couldn't create a project from this Planning item.",
       );
     } finally {
+      createInFlight.current = false;
       setCreatingProject(false);
     }
   }
@@ -339,32 +374,38 @@ function PlanningDetailPageInner() {
   const mode = planningMode(planning);
   // "Ready to hand off" for either mode: a real audit, or a generated
   // Website Plan — and never mid-run.
-  const readyForHandoff =
-    (hasAudit || planning.website_plan_generated_at !== null) && !isAnalysing;
+  // Blockers vs warnings for Create project — only the existing
+  // prerequisite rules (research on file + not mid-run, and the backend's
+  // approved-Build-Brief rule), see handoffReadiness.ts.
+  const readiness = computeHandoffReadiness(planning, checklist);
   const showLastUpdated = Boolean(
     planning.analysed_at || planning.review_insights_generated_at || planning.website_plan_generated_at,
   );
 
   const stepStatuses = Object.fromEntries(
     STEP_ORDER.map((id) => [id, computeStepStatus(id, planning, checklist)]),
-  ) as Record<StepId, StepStatus | null>;
+  ) as Record<StepId, StepStatus>;
   const stepSummaries = Object.fromEntries(
     STEP_ORDER.map((id) => [id, computeStepSummary(id, planning, checklist)]),
   ) as Record<StepId, string | null>;
 
   const currentIndex = stepIndex(activeStep);
-  const goPrevious = currentIndex > 0 ? () => setStep(STEP_ORDER[currentIndex - 1]) : undefined;
-  const goNext = currentIndex < STEP_ORDER.length - 1 ? () => setStep(STEP_ORDER[currentIndex + 1]) : undefined;
+  const goPrevious = currentIndex > 0 ? () => requestStep(STEP_ORDER[currentIndex - 1]) : undefined;
+  const goNext = currentIndex < STEP_ORDER.length - 1 ? () => requestStep(STEP_ORDER[currentIndex + 1]) : undefined;
+  // A project already made from this plan (this session, or earlier —
+  // the handoff is idempotent server-side) always offers "Open project",
+  // never a second "Create project".
+  const projectId = createdProjectId ?? planning.project_id;
 
   return (
     <div className="content-reveal p-4 sm:p-6">
     {/* Tighter `gap-4` (was `space-y-6`) between the rows below — the
         vertical room that removing the 220px nav column and the top
         checklist panel freed up. `chromeRef` wraps everything down
-        through the stepper — on "Prepare the website" its measured
+        through the stepper — on "Plan" its measured
         height feeds `--planning-above-h` (see the effect below), the one
         genuinely dynamic input the Website Blueprint's height calc needs
-        (see PrepareStep.tsx for the other half and the full explanation:
+        (see PlanStep.tsx for the other half and the full explanation:
         a live-measured value, not a guessed offset, because notices here
         can appear/disappear and the header can wrap). */}
     <div ref={outerRef} className="flex flex-col gap-4">
@@ -439,17 +480,14 @@ function PlanningDetailPageInner() {
             )}
           </div>
         </div>
-        {readyForHandoff && (
+        {/* Only "Open project" lives up here now — creating one happens on
+            "Confirm & create project", after its summary and blockers,
+            rather than from a second button that skips them. */}
+        {projectId && (
           <div className="shrink-0 sm:col-start-3 sm:justify-self-end">
-            {createdProjectId ? (
-              <Link href={`/dashboard/projects/${createdProjectId}`} className="btn btn-primary btn-sm">
-                Open project →
-              </Link>
-            ) : (
-              <button type="button" onClick={handleCreateProject} disabled={creatingProject} className="btn btn-primary btn-sm">
-                {creatingProject ? "Creating…" : "Create project"}
-              </button>
-            )}
+            <Link href={`/dashboard/projects/${projectId}`} className="btn btn-primary btn-sm">
+              Open project →
+            </Link>
           </div>
         )}
       </div>
@@ -502,27 +540,27 @@ function PlanningDetailPageInner() {
           edge-to-edge on very wide screens. The top-level "Planning
           checklist" panel that used to sit here is gone — its data
           (`checklist`/`checklistUsers`/`checklistError`) is untouched and
-          now only reaches the UI through Step 5's own quiet "View
-          checklist" control (see HandoffStep.tsx) and the step statuses
+          now only reaches the UI through Review & build's own quiet "View
+          checklist" control (see ReviewStep.tsx) and the step statuses
           below. */}
-      {/* Capped/centered (`max-w-3xl`) for every step except "Prepare the
-          website": that step's own content column below drops that same
+      {/* Capped/centered (`max-w-3xl`) for every step except "Plan" —
+          that step's own content column below drops that same
           cap (see the step-content wrapper's className further down,
-          `activeStep === "prepare"`) since its canvas wants the full
+          `activeStep === "plan"`) since its canvas wants the full
           available width, not a comfortable reading column. Matching
           this row's own cap to that — both `w-full`, both direct children
           of `outerRef` — is what puts the "Notes" button's right edge on
           the same vertical line as the canvas's right edge below and
-          "View current website"'s right edge inside it (PrepareStep.tsx):
+          "View current website"'s right edge inside it (PlanStep.tsx):
           all three simply span the same unconstrained parent width, so
           there's nothing here that could drift out of sync the way two
           independently hard-coded offsets could. */}
-      <div className={activeStep === "prepare" ? "w-full" : "mx-auto w-full max-w-3xl"}>
+      <div className={activeStep === "plan" ? "w-full" : "mx-auto w-full max-w-3xl"}>
         <ProcessNav
           active={activeStep}
           statuses={stepStatuses}
           summaries={stepSummaries}
-          onChange={setStep}
+          onChange={requestStep}
           hasNotes={Boolean(planning.operator_notes && planning.operator_notes.trim())}
           onOpenNotes={() => setNotesOpen(true)}
         />
@@ -538,10 +576,10 @@ function PlanningDetailPageInner() {
           content below) — so its own collapse state and EvidencePanel's
           Desktop/Mobile + Expand state persist across both.
 
-          "Prepare the website" is the one exception, in two ways: it
+          "Plan" is the one exception, in two ways: it
           drops the `xl` 320px preview column entirely (no reserved-but-
           empty column) and gives that width to the requirements board's
-          canvas instead (see PrepareStep's own "View current website"
+          canvas instead (see PlanStep's own "View current website"
           trigger, CurrentWebsiteDialog, for the on-demand replacement);
           and it drops the `mx-auto max-w-6xl` centering every other step
           gets, since the canvas wants the full available width, not a
@@ -549,54 +587,48 @@ function PlanningDetailPageInner() {
           below stays mounted either way (`hidden`, never removed from the
           tree) so switching back to any other step finds it exactly as it
           was left — nothing about its own collapse/Desktop-Mobile/Expand
-          state is reset by visiting Prepare. */}
+          state is reset by visiting Plan. */}
       <div
         className={
-          activeStep === "prepare" ? "" : "mx-auto w-full max-w-6xl xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-8"
+          activeStep === "plan" ? "" : "mx-auto w-full max-w-6xl xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-8"
         }
       >
         <div key={activeStep} className="min-w-0">
-          {activeStep === "understand" && <UnderstandStep planning={planning} lead={lead} onNext={goNext!} />}
-          {activeStep === "presence" && (
-            <PresenceStep
+          {activeStep === "research" && (
+            <ResearchStep planning={planning} lead={lead} onUpdated={setPlanning} onNext={goNext!} />
+          )}
+          {activeStep === "plan" && (
+            <PlanStep
               planning={planning}
               lead={lead}
               onUpdated={setPlanning}
+              onDirtyChange={setPlanDirty}
+              onBriefApproved={reloadChecklist}
               onPrevious={goPrevious!}
               onNext={goNext!}
             />
           )}
-          {activeStep === "improvements" && (
-            <ImprovementsStep planning={planning} onUpdated={setPlanning} onPrevious={goPrevious!} onNext={goNext!} />
-          )}
-          {activeStep === "prepare" && (
-            <PrepareStep
-              planning={planning}
-              lead={lead}
-              onUpdated={setPlanning}
-              onPrevious={goPrevious!}
-              onNext={goNext!}
-            />
-          )}
-          {activeStep === "handoff" && (
-            <HandoffStep
+          {activeStep === "review" && (
+            <ReviewStep
               planning={planning}
               lead={lead}
               checklist={checklist}
               checklistUsers={checklistUsers}
               checklistError={checklistError}
               onChecklistUpdated={setChecklist}
-              readyForHandoff={readyForHandoff}
+              onUpdated={setPlanning}
+              readiness={readiness}
+              onBriefApproved={reloadChecklist}
               creatingProject={creatingProject}
               createProjectError={createProjectError}
-              createdProjectId={createdProjectId}
+              projectId={projectId}
               onCreateProject={handleCreateProject}
               onPrevious={goPrevious!}
             />
           )}
         </div>
 
-        <div className={`mt-4 xl:mt-0 xl:self-start ${activeStep === "prepare" ? "hidden" : ""}`}>
+        <div className={`mt-4 xl:mt-0 xl:self-start ${activeStep === "plan" ? "hidden" : ""}`}>
           <WebsitePreviewPanel planning={planning} />
         </div>
       </div>
