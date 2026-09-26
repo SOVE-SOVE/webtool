@@ -710,6 +710,22 @@ export function DiscoveryWorkspace({
         open={panelOpen}
         onOpenChange={setPanelOpen}
         resultCount={ready ? total : null}
+        switcher={
+          searches && searches.length > 0 ? (
+            // Switch which past search this workspace is showing.
+            <CompactSelect
+              aria-label="Switch search"
+              value={activeId ?? ""}
+              onValueChange={(id) => selectSearch(id || null)}
+              placeholder="Choose a search"
+              className="w-full font-medium"
+              options={searches.map((s) => ({
+                value: s.id,
+                label: `${searchLabel(s)} · ${s.result_count} result${s.result_count === 1 ? "" : "s"} · ${new Date(s.created_at).toLocaleDateString()}`,
+              }))}
+            />
+          ) : undefined
+        }
         banner={
           (listError || error) ? (
             <div className="space-y-2">

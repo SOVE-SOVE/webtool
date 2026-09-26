@@ -187,6 +187,7 @@ export function DiscoveryResultsPanel({
   open,
   onOpenChange,
   resultCount,
+  switcher,
   commandBar,
   statusInfo,
   banner,
@@ -205,6 +206,8 @@ export function DiscoveryResultsPanel({
   onOpenChange: (open: boolean) => void;
   /** Shown on the collapsed control ("Show results (N)"); null while unknown. */
   resultCount: number | null;
+  /** Past-search picker; replaces the "Results" title in the expanded header. */
+  switcher?: ReactNode;
   commandBar?: ReactNode;
   statusInfo?: ReactNode;
   banner?: ReactNode;
@@ -234,36 +237,76 @@ export function DiscoveryResultsPanel({
     rowRefs.current.get(selectedId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedId]);
 
+  // With a switcher, the header's toggle is a different <button> open vs
+  // collapsed, so a click would otherwise drop focus to <body>. Refocus
+  // the toggle now rendered — only after a toggle click, never when
+  // `open` changes for another reason (e.g. a new search opening it).
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const refocusToggle = useRef(false);
+  useEffect(() => {
+    if (!refocusToggle.current) return;
+    refocusToggle.current = false;
+    toggleRef.current?.focus();
+  }, [open]);
+
   const bodyId = "discovery-results-body";
 
   return (
     <div
-      // `min-h-11` keeps at least the toggle row when an expanded search
-      // form above takes most of a short column (high zoom, landscape phone).
-      className={`map-glass map-glass-controls pointer-events-auto flex min-h-11 flex-col overflow-hidden ${
+      // `min-h-14` keeps at least the header row (the 40px switcher plus
+      // padding) when an expanded search form above takes most of a short
+      // column (high zoom, landscape phone).
+      className={`map-glass map-glass-controls pointer-events-auto flex min-h-14 flex-col overflow-hidden ${
         open ? "flex-1" : "shrink-0"
       }`}
     >
-      <button
-        type="button"
-        onClick={() => onOpenChange(!open)}
-        aria-expanded={open}
-        aria-controls={bodyId}
-        // The button sits directly on `.map-glass` — a background-color
-        // hover paints an extra white layer over the backdrop-blur and
-        // reads as a solid flash. An inset ring in the glass border colour
-        // gives a hover affordance while the frosted look stays identical.
-        className="flex w-full shrink-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition-[box-shadow] duration-fast ease-standard motion-reduce:transition-none hover:shadow-[inset_0_0_0_1px_var(--glass-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset"
-      >
-        <span className="text-sm font-medium text-fg">
-          {open ? "Results" : resultCount !== null ? `Show results (${resultCount})` : "Show results"}
-        </span>
-        <ChevronDownIcon
-          className={`h-4 w-4 shrink-0 text-fg-muted transition-transform duration-fast ease-standard motion-reduce:transition-none ${
-            open ? "rotate-180" : ""
-          }`}
-        />
-      </button>
+      {open && switcher ? (
+        // Expanded with a switcher: the picker takes the title's place and
+        // the collapse toggle shrinks to an icon button beside it (a
+        // <select> can't live inside the full-width toggle <button>).
+        <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+          <div className="min-w-0 flex-1">{switcher}</div>
+          <button
+            ref={toggleRef}
+            type="button"
+            onClick={() => {
+              refocusToggle.current = true;
+              onOpenChange(false);
+            }}
+            aria-expanded
+            aria-controls={bodyId}
+            aria-label="Collapse results"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-[box-shadow] duration-fast ease-standard motion-reduce:transition-none hover:shadow-[inset_0_0_0_1px_var(--glass-border)] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <ChevronDownIcon className="h-4 w-4 rotate-180" />
+          </button>
+        </div>
+      ) : (
+        <button
+          ref={toggleRef}
+          type="button"
+          onClick={() => {
+            refocusToggle.current = true;
+            onOpenChange(!open);
+          }}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          // The button sits directly on `.map-glass` — a background-color
+          // hover paints an extra white layer over the backdrop-blur and
+          // reads as a solid flash. An inset ring in the glass border colour
+          // gives a hover affordance while the frosted look stays identical.
+          className="flex w-full shrink-0 items-center justify-between gap-3 px-3 py-2.5 text-left transition-[box-shadow] duration-fast ease-standard motion-reduce:transition-none hover:shadow-[inset_0_0_0_1px_var(--glass-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset"
+        >
+          <span className="text-sm font-medium text-fg">
+            {open ? "Results" : resultCount !== null ? `Show results (${resultCount})` : "Show results"}
+          </span>
+          <ChevronDownIcon
+            className={`h-4 w-4 shrink-0 text-fg-muted transition-transform duration-fast ease-standard motion-reduce:transition-none ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+      )}
 
       {/* `hidden` (not unmounted) so the list's scroll position, and
           every row's own state, survive a collapse/reopen round trip.

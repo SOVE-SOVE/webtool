@@ -11,6 +11,18 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-26 (Discovery: glass Results panel, bottom bar removed, search switcher in panel header)
+
+**Mode:** background session in a worktree, pushed straight to main (e772488, then this commit). All edits by main assistant directly — not routed through `ui-and-ux-apple`.
+**Scope touched:** `apps/web` `app/globals.css` (`--glass-fill`/`--glass-fill-hover`/`--glass-hairline` tokens ×3 theme blocks, `.map-glass-controls`), `components/discovery/DiscoveryResultsPanel.tsx`, `components/DiscoveryWorkspace.tsx`, one comment in `app/dashboard/discovery/layout.tsx`. No backend changes.
+
+**What happened.** (1) Results panel is `.map-glass` open or collapsed (previously switched to a solid box when expanded). `.map-glass-controls` makes `.control`/`.control-btn`/`.chip`/`.btn-secondary` translucent inside it via `:where()` (so their own hover/focus borders still win); popovers (`role="dialog"`) keep their solid surface. Rows/dividers use the glass tokens. (2) Removed the floating "Showing <search> / Review queue" bar and the column space reserved for it. It was the only in-app way to switch between past searches — (3) restored as a `switcher` slot in the panel header: expanded, header = CompactSelect of searches + icon collapse button; collapsed unchanged. Focus follows the toggle between the two header layouts. Panel floor raised `min-h-11` → `min-h-14` to fit that header on short columns (see the browser-zoom entry below).
+**Tests:** web tsc/eslint clean, vitest 621/621.
+**Browser-verified:** light + dark: map visible through panel, controls/rows/Load more on glass, text legible; Filters popover still opaque; bar gone. Switcher renders, collapse/expand keeps focus on the visible toggle. Temp QA user deleted (API run on :8100 with ALLOWED_ORIGINS=:3100, web on :3100 with `--webpack` since Turbopack rejects a symlinked node_modules).
+**Blockers/issues:** dev DB had only one search, so an actual switch between two searches wasn't exercised (would need a paid search run); it calls the same `selectSearch` the old bar used. Long search labels truncate the date in the switcher at 400px.
+
+---
+
 ## 2026-09-26 (Today calendar check, funnel sparse data, Discovery overlays at browser zoom)
 
 **Mode:** same session, committed to main. All edits by main assistant directly (the `ui-and-ux-apple` delegation rule in apps/web/CLAUDE.md was only loaded after the edits were made and verified — not re-run through the agent).
