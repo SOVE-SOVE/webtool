@@ -565,13 +565,13 @@ export function DiscoveryWorkspace({
           The five criteria fields stack in one column, then a divider
           sets the website-status refinement + the primary Run search
           action apart as their own block, then a second divider sets
-          the quiet helper copy apart from both. Capped to its own share
-          of the column (rather than growing to push the results panel
-          out) by the same max-height this element used before the
-          results panel existed. */}
+          the quiet helper copy apart from both. Shrinks (and scrolls
+          internally) when the column is short — high browser zoom, a
+          landscape phone — so it can never push the results panel out
+          of the column; the panel keeps at least its toggle row. */}
       <form
         onSubmit={handleCreate}
-        className="pointer-events-auto max-h-[calc(100dvh-3rem-var(--discovery-layer-h,7rem)-3.5rem-1.75rem)] shrink-0 overflow-y-auto map-glass px-4 py-3 lg:max-h-[calc(100dvh-2.75rem-var(--discovery-layer-h,7rem)-0.75rem)]"
+        className="pointer-events-auto overflow-y-auto map-glass px-4 py-3"
       >
         <button
           type="button"

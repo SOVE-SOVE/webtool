@@ -11,6 +11,18 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-09-26 (Today calendar check, funnel sparse data, Discovery overlays at browser zoom)
+
+**Mode:** same session, committed to main. All edits by main assistant directly (the `ui-and-ux-apple` delegation rule in apps/web/CLAUDE.md was only loaded after the edits were made and verified — not re-run through the agent).
+**Scope touched:** `apps/web` `components/PipelineFunnel.tsx` (6c2ea68); `components/ui/FilterPopover.tsx`, `components/discovery/DiscoveryResultsPanel.tsx`, `components/DiscoveryWorkspace.tsx`. No backend changes.
+
+**What happened.** (1) Today calendar misalignment/overflow report: not reproducible on current main — measured 16 months (every start weekday, three 6-row months) at 1440/1280/1100/1024/800/390px and 12/20/24px root font: 0 misaligned cells, 0 overflow, uniform rows. No change made. (2) Pipeline funnel: every stage now drawn (empty = 4px muted sliver in its legend colour), filled segments carry a surface chip with label+count (count only when narrow) via per-segment container queries; zero-lead empty state and bar/legend colour match already existed. (3) Discovery at browser zoom — causes: the Results panel's list was the only shrinkable part under a fixed-height header/command bar inside `overflow-hidden`, so short viewports (zoom ≥175%, landscape phone) squeezed it to 0px; the search form was `shrink-0` with a max-height equal to the whole column, so expanded it squeezed the panel away entirely; the Filters popover was `absolute` inside that clipped glass panel (and `fixed` wouldn't escape either, since `backdrop-filter` makes `.map-glass` the containing block). Fixes: list floor `min(15rem,50dvh)` with the panel body scrolling as a whole on short viewports; panel `min-h-11`; form shrinks/scrolls instead of its duplicated calc max-height; FilterPopover shown in the top layer (`popover="manual"`), positioned from the trigger's rect, flips above when there's more room, clamps to the viewport, repositions on resize/scroll. The reported horizontal symptoms (header/saved-search bar overflow, panel off the left edge) didn't reproduce — the saved-search bar was removed in e772488.
+**Tests:** web tsc/eslint clean, vitest 621/621 (no component tests exist for these files).
+**Browser-verified:** zoom emulated as CSS viewport of a 1440×900 window at 50/67/100/125/150/175/200% plus 390×844 and 844×390: panels in viewport and in column, list ≥2 rows, popover 100% visible and attached (flips above at 175/200%/landscape). Expanded search form at 200%/landscape: form scrolls, Results toggle row stays visible. FilterPopover on Leads (shared component) at 100/200%/phone: attached, clamped, stays attached on page scroll, inside click keeps it open, Escape closes and refocuses the trigger. Funnel checked with mocked lead data (0, 1, 5 across 3 stages, 114 across all 10) in light/dark and at 390px. Temp QA users deleted.
+**Blockers/issues:** Playwright screenshots time out here, so checks were DOM measurements, not visual review. Real browser zoom was emulated (same CSS layout, not a real Ctrl +). FilterPopover now relies on the Popover API (Chrome 114+, Safari 17+, Firefox 125+).
+
+---
+
 ## 2026-09-26 (Website Reference Library + Inspiration in "Choose your website")
 
 **Mode:** same session, not committed. Backend/persistence/handoff by main assistant; UI by two parallel `ui-and-ux-apple` agents (InspirationDrawer/InspirationStrip + RequirementsBoard/PlanStep; ReviewStep).

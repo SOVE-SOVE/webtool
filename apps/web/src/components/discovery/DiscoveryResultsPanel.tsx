@@ -238,7 +238,9 @@ export function DiscoveryResultsPanel({
 
   return (
     <div
-      className={`map-glass map-glass-controls pointer-events-auto flex min-h-0 flex-col overflow-hidden ${
+      // `min-h-11` keeps at least the toggle row when an expanded search
+      // form above takes most of a short column (high zoom, landscape phone).
+      className={`map-glass map-glass-controls pointer-events-auto flex min-h-11 flex-col overflow-hidden ${
         open ? "flex-1" : "shrink-0"
       }`}
     >
@@ -268,11 +270,16 @@ export function DiscoveryResultsPanel({
           `animate-rise-in` replays every time this goes from
           display:none back to flex — a materialize-in on reopen, no
           animated exit, the same "enter only" convention .modal-panel
-          uses (see globals.css) rather than something new. */}
+          uses (see globals.css) rather than something new.
+          Normally only the list scrolls. On a short viewport (high browser
+          zoom, landscape phone) the list keeps a floor of its own
+          height rather than shrinking to nothing under the fixed-height
+          header/command bar, and this body scrolls as a whole instead —
+          so nothing is clipped by the panel's `overflow-hidden`. */}
       <div
         id={bodyId}
         hidden={!open}
-        className="animate-rise-in flex min-h-0 flex-1 flex-col border-t border-[var(--glass-hairline)]"
+        className="animate-rise-in flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain border-t border-[var(--glass-hairline)]"
       >
         {(banner || statusInfo || commandBar) && (
           <div className="shrink-0 space-y-2.5 border-b border-[var(--glass-hairline)] px-3 py-2.5">
@@ -282,7 +289,7 @@ export function DiscoveryResultsPanel({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="min-h-[min(15rem,50dvh)] flex-1 overflow-y-auto">
           {loading ? (
             <ListSkeleton rows={4} />
           ) : emptyMessage ? (

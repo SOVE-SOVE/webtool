@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Checkbox } from "./Checkbox";
 import { FiltersIcon } from "./ControlIcons";
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+/** Space between the trigger and the panel, and the panel's minimum distance from the viewport edge (px). */
+const GAP = 8;
+const VIEWPORT_MARGIN = 8;
 
 /**
  * The "Filters" trigger of a CommandBar and the popover it opens, which
@@ -20,6 +23,17 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * - A pointer press outside, or Tab moving focus out of it, closes it.
  * - `aria-haspopup`/`aria-expanded`/`aria-controls` on the trigger and
  *   `role="dialog"` on the panel expose it to assistive tech.
+ *
+ * The panel is shown in the browser's top layer (`popover="manual"`) and
+ * placed against the trigger's measured position: below it, or flipped
+ * above when there's more room there, clamped inside the viewport, with
+ * its body scrolling once it's taller than the space available. A plain
+ * `absolute` panel was clipped by any `overflow` ancestor (e.g. a
+ * scrolling results panel) and, under a `backdrop-filter` ancestor (the
+ * Discovery map's glass panels), even `fixed` resolves against that
+ * ancestor instead of the viewport. The top layer escapes both while the
+ * panel stays in place in the DOM, so tab order, focus handling and the
+ * outside-press check below are unchanged.
  */
 export function FilterPopover({
   activeCount,
@@ -41,13 +55,52 @@ export function FilterPopover({
   const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
 
+  // Before paint, so the panel never flashes at the top layer's default
+  // (centred) position. Re-placed whenever the viewport resizes (which
+  // includes a browser zoom change) or anything scrolls under the trigger.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const trigger = triggerRef.current;
+    if (!open || !panel || !trigger) return;
+    panel.showPopover?.();
+
+    function place() {
+      if (!panel || !trigger) return;
+      const t = trigger.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const vh = window.innerHeight;
+      panel.style.maxHeight = "";
+      const spaceBelow = vh - t.bottom - GAP - VIEWPORT_MARGIN;
+      const spaceAbove = t.top - GAP - VIEWPORT_MARGIN;
+      const natural = panel.offsetHeight;
+      const below = natural <= spaceBelow || spaceBelow >= spaceAbove;
+      const height = Math.min(natural, Math.max(below ? spaceBelow : spaceAbove, 0));
+      const width = panel.offsetWidth;
+      const preferredLeft = align === "end" ? t.right - width : t.left;
+      panel.style.maxHeight = `${height}px`;
+      panel.style.top = `${below ? t.bottom + GAP : t.top - GAP - height}px`;
+      panel.style.left = `${Math.min(Math.max(preferredLeft, VIEWPORT_MARGIN), vw - width - VIEWPORT_MARGIN)}px`;
+    }
+
+    // The panel's own scrolling doesn't move the trigger — and re-measuring
+    // mid-scroll would reset its scroll position.
+    function handleScroll(e: Event) {
+      if (!(e.target instanceof Node && panel?.contains(e.target))) place();
+    }
+
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [open, align]);
+
   useEffect(() => {
     if (!open) return;
     const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panelRef.current)?.focus({ preventScroll: true });
-    // On a phone the panel can open below the fold, behind the bottom nav
-    // (`scroll-mb-24` on the panel leaves room for it).
-    panelRef.current?.scrollIntoView({ block: "nearest" });
 
     function handlePointerDown(e: PointerEvent) {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
@@ -102,12 +155,12 @@ export function FilterPopover({
           role="dialog"
           aria-label={label}
           tabIndex={-1}
-          className={`animate-rise-in absolute top-full z-30 mt-2 scroll-mb-24 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-4 shadow-xl outline-none ${
-            align === "end" ? "right-0" : "left-0"
-          }`}
+          popover="manual"
+          // `inset-auto m-0` undo the UA popover centring; `place()` sets top/left/max-height.
+          className="animate-rise-in fixed inset-auto m-0 flex w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-visible rounded-xl border border-border bg-surface p-4 text-fg shadow-xl outline-none"
         >
-          <div className="max-h-[min(60vh,28rem)] space-y-3 overflow-y-auto pr-0.5">{children}</div>
-          <div className="mt-4 flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-h-0 max-h-[min(60vh,28rem)] space-y-3 overflow-y-auto pr-0.5">{children}</div>
+          <div className="mt-4 flex shrink-0 items-center justify-between gap-2 border-t border-border pt-3">
             {activeCount > 0 && onClearAll ? (
               <button type="button" onClick={onClearAll} className="btn btn-ghost btn-sm">
                 Clear all
