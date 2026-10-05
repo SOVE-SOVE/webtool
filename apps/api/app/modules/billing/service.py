@@ -27,6 +27,8 @@ from app.modules.billing.schemas import (
     PaymentVoid,
     ProjectPaymentSummary,
     RevenueHostingPlan,
+    RevenueExpectedHostingPlan,
+    RevenueOverdueItem,
     RevenueReport,
     RevenueTransaction,
     TodayBillingSnapshot,
@@ -903,7 +905,61 @@ def get_revenue_report(db: Session, *, workspace_id: uuid.UUID, start_date: date
     outstanding_total = sum(r.outstanding_cents for r in rows)
     overdue_rows = [r for r in rows if r.is_overdue]
 
+    overdue_items = []
+    for r in sorted(overdue_rows, key=lambda r: r.due_date or today):
+        client_name = None
+        if r.client_id is not None:
+            if r.client_id not in clients_by_id:
+                clients_by_id[r.client_id] = db.scalar(
+                    select(Client).options(joinedload(Client.business)).where(Client.id == r.client_id)
+                )
+            client = clients_by_id[r.client_id]
+            client_name = client.business.name if client else None
+        overdue_items.append(
+            RevenueOverdueItem(
+                kind=r.kind,
+                id=r.id,
+                project_id=r.project_id,
+                client_id=r.client_id,
+                client_business_name=client_name,
+                label=r.label,
+                outstanding_cents=r.outstanding_cents,
+                due_date=r.due_date,
+                days_overdue=(today - r.due_date).days,
+            )
+        )
+
+    expected_hosting_plans = []
+    for plan in db.scalars(
+        select(HostingPlan)
+        .where(HostingPlan.workspace_id == workspace_id, HostingPlan.status == HostingPlanStatus.ACTIVE)
+        .options(joinedload(HostingPlan.project))
+    ).unique():
+        client_name = None
+        client_id = plan.project.client_id if plan.project else None
+        if client_id is not None:
+            if client_id not in clients_by_id:
+                clients_by_id[client_id] = db.scalar(
+                    select(Client).options(joinedload(Client.business)).where(Client.id == client_id)
+                )
+            client = clients_by_id[client_id]
+            client_name = client.business.name if client else None
+        expected_hosting_plans.append(
+            RevenueExpectedHostingPlan(
+                plan_id=plan.id,
+                project_id=plan.project_id,
+                project_name=plan.project.name if plan.project else "",
+                client_id=client_id,
+                client_business_name=client_name,
+                monthly_fee_cents=plan.monthly_fee_cents,
+                next_due_date=plan.next_due_date,
+            )
+        )
+    expected_hosting_plans.sort(key=lambda p: (-p.monthly_fee_cents, p.project_name))
+
     return RevenueReport(
+        overdue_items=overdue_items,
+        expected_hosting_plans=expected_hosting_plans,
         start_date=start_date,
         end_date=end_date,
         website_payments_received_cents=website_cents,

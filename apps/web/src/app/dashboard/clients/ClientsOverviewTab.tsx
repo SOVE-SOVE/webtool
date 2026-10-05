@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type ActivityItem,
+  type Business,
   type Client,
   type ClientChecklistSummary,
   type NextPaymentObligation,
@@ -32,6 +33,9 @@ import { nextOpenTask } from "@/lib/projects";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
+import { CARD_GRID_FLIP } from "@/lib/cardGridFlip";
+import { useLayoutFlip } from "@/lib/useLayoutFlip";
+import { AnimatedCount } from "@/components/ui/AnimatedCount";
 import { Input } from "@/components/ui/Input";
 import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
@@ -39,6 +43,7 @@ import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ClientCard, ClientCardSkeleton } from "./ClientCard";
@@ -93,7 +98,12 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const [hostingPlans, setHostingPlans] = useState<RevenueHostingPlan[]>([]);
   const [obligations, setObligations] = useState<NextPaymentObligation[]>([]);
   const [checklistSummaries, setChecklistSummaries] = useState<ClientChecklistSummary[]>([]);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // True once every request of the first load has landed. The header
+  // counts are built from several of them, so until then they are still
+  // filling in — not changing — and must not play a swap (AnimatedCount).
+  const [countsSettled, setCountsSettled] = useState(false);
 
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [statusFilter, setStatusFilter] = useState<ClientTone | "">("");
@@ -105,6 +115,11 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const [sortBy, setSortByState] = useState<SortBy>("recent");
 
   useDebouncedUrlSync("search", search);
+
+  // Cards glide to their new places when search/filters/sort/view change
+  // the results (see useLayoutFlip).
+  const gridRef = useRef<HTMLDivElement>(null);
+  useLayoutFlip(gridRef, CARD_GRID_FLIP);
 
   function updateParam(key: string, value: string | null) {
     router.replace(`${pathname}?${withParam(searchParams, key, value)}`, { scroll: false });
@@ -151,20 +166,26 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
   const [saving, setSaving] = useState(false);
 
   function load() {
-    api
-      .listClients()
-      .then((rows) => {
-        setError(null);
-        setClients(rows);
-      })
-      .catch(() => setError("Couldn't load clients."));
-    api.listProjects().then(setProjects).catch(() => {});
-    api.listTasks().then(setTasks).catch(() => {});
-    api.listActivity().then(setActivity).catch(() => {});
-    api.listUsers().then(setUsers).catch(() => {});
-    api.listAllHostingPlans().then(setHostingPlans).catch(() => {});
-    api.getWorkspaceObligations().then(setObligations).catch(() => {});
-    api.listChecklistSummaries().then(setChecklistSummaries).catch(() => {});
+    const requests = [
+      api
+        .listClients()
+        .then((rows) => {
+          setError(null);
+          setClients(rows);
+        })
+        .catch(() => setError("Couldn't load clients.")),
+      api.listProjects().then(setProjects).catch(() => {}),
+      api.listTasks().then(setTasks).catch(() => {}),
+      api.listActivity().then(setActivity).catch(() => {}),
+      api.listUsers().then(setUsers).catch(() => {}),
+      api.listAllHostingPlans().then(setHostingPlans).catch(() => {}),
+      api.getWorkspaceObligations().then(setObligations).catch(() => {}),
+      api.listChecklistSummaries().then(setChecklistSummaries).catch(() => {}),
+      // Contact phone/email for the cards' back face — one bulk list
+      // alongside the others, never a per-card fetch.
+      api.listBusinesses().then(setBusinesses).catch(() => {}),
+    ];
+    void Promise.all(requests).then(() => setCountsSettled(true));
   }
 
   useEffect(load, []);
@@ -194,6 +215,7 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
 
   const rows = useMemo<EnrichedClient[]>(() => {
     if (!clients) return [];
+    const businessesById = new Map(businesses.map((b) => [b.id, b]));
     return clients.map((client) => {
       const clientProjects = projectsForClient(projects, client.id);
       const project = currentProject(clientProjects);
@@ -214,10 +236,12 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         lastActivity: lastActivityItem?.created_at ?? null,
         hostingPlans: hostingPlans.filter((p) => p.client_id === client.id),
         nextPayment: clientObligations[0] ?? null,
+        upcomingPayment: clientObligations.find((o) => !o.is_overdue) ?? null,
         requiredOutstanding: summary ? summary.total - summary.completed : 0,
+        business: businessesById.get(client.business_id) ?? null,
       };
     });
-  }, [clients, projects, tasks, activity, hostingPlans, obligations, checklistSummaries]);
+  }, [clients, projects, tasks, activity, hostingPlans, obligations, checklistSummaries, businesses]);
 
   const activeClientCount = useMemo(() => rows.filter((r) => r.tone === "active").length, [rows]);
   const liveWebsiteTotal = useMemo(() => liveWebsiteCount(projects), [projects]);
@@ -323,6 +347,23 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
       });
   }, [clients, rows, search, assigneeFilter, statusFilter, hostingFilter, paymentFilter, attentionFilter, view, attentionByClientId, sortBy]);
 
+  // What the grid region shows. In the "Needs attention" view with nobody
+  // needing attention, the view itself is what's empty — filters aren't
+  // blamed for it (clearing them would change nothing).
+  const state = listState({
+    loaded: clients !== null,
+    error: error !== null,
+    visible: visibleRows?.length ?? 0,
+    filtersActive:
+      (search.trim() !== "" || activeFilterCount > 0) && !(view === "attention" && attentionClientCount === 0),
+  });
+  const filteredEmpty = filteredEmptyCopy({ noun: "clients", search, filterCount: activeFilterCount });
+  // Hosting, payment, task and attention matches are joined on from
+  // requests that land after the client list itself. Until they have, an
+  // empty result is still filling in — so it shows as loading, not as
+  // "no clients match".
+  const emptyPending = !countsSettled && (state === "empty" || state === "filtered-empty");
+
   // A client can vanish from the current result set between the preview
   // being opened and this render (a filter change, a reload racing a
   // deletion elsewhere) — look it up defensively and simply don't render
@@ -344,14 +385,14 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         ) : (
           <>
             <Link href={`${pathname}?${withParam(searchParams, "clientStatus", "active")}`} className="text-fg-muted hover:text-fg hover:underline">
-              <span className="font-semibold tabular-nums text-fg">{activeClientCount}</span> active client
+              <AnimatedCount value={activeClientCount} animate={countsSettled} className="font-semibold text-fg" /> active client
               {activeClientCount === 1 ? "" : "s"}
             </Link>
             <span className="text-fg-subtle" aria-hidden="true">
               ·
             </span>
             <Link href="/dashboard/clients?tab=websites" className="text-fg-muted hover:text-fg hover:underline">
-              <span className="font-semibold tabular-nums text-fg">{liveWebsiteTotal}</span> live website
+              <AnimatedCount value={liveWebsiteTotal} animate={countsSettled} className="font-semibold text-fg" /> live website
               {liveWebsiteTotal === 1 ? "" : "s"}
             </Link>
             <span className="text-fg-subtle" aria-hidden="true">
@@ -362,7 +403,7 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
               onClick={() => setView("attention")}
               className={`hover:underline ${attentionClientCount > 0 ? "text-red-700 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300" : "text-fg-muted hover:text-fg"}`}
             >
-              <span className="font-semibold tabular-nums">{attentionClientCount}</span> client
+              <AnimatedCount value={attentionClientCount} animate={countsSettled} className="font-semibold" /> client
               {attentionClientCount === 1 ? "" : "s"} needing attention
             </button>
           </>
@@ -506,13 +547,13 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
         </div>
       )}
 
-      {clients && clients.length === 0 && (
+      {clients && clients.length === 0 && !error && (
         <div className="mt-4">
           <EmptyState
             title="No clients yet"
-            description="Once you add your first client — or convert a won lead — they'll appear here."
+            description="Add your first client here, or convert a won lead and they'll appear."
             action={
-              <button onClick={() => setShowAdd(true)} className="btn btn-primary">
+              <button type="button" onClick={() => setShowAdd(true)} className="btn btn-primary">
                 + Add Client
               </button>
             }
@@ -527,29 +568,22 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
           instead of replaying the reveal each time. */}
       {visibleRows && clients && clients.length > 0 && (
         <div className="content-reveal">
-          {visibleRows.length === 0 && view === "attention" && (
-            <div className="mt-4">
-              <EmptyState
-                title="No clients need attention"
-                description="Every client is caught up — no overdue payments or outstanding required tasks right now."
-                action={
-                  (search || activeFilterCount > 0) && (
-                    <button onClick={clearFilters} className="btn btn-secondary btn-sm">
-                      Clear filters
-                    </button>
-                  )
-                }
-              />
+          {/* A search or filter hides every client — in either view. */}
+          {emptyPending && (
+            <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <ClientCardSkeleton key={i} />
+              ))}
             </div>
           )}
 
-          {visibleRows.length === 0 && view === "all" && (
+          {state === "filtered-empty" && !emptyPending && (
             <div className="mt-4">
               <EmptyState
-                title="No clients found"
-                description="Try adjusting your search or filters."
+                title={filteredEmpty.title}
+                description={filteredEmpty.description}
                 action={
-                  <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+                  <button type="button" onClick={clearFilters} className="btn btn-secondary btn-sm">
                     Clear filters
                   </button>
                 }
@@ -557,22 +591,37 @@ export function ClientsOverviewTab({ currency }: { currency: string }) {
             </div>
           )}
 
+          {/* Nothing filtering: the "Needs attention" view is simply clear.
+              (The "all" view can't be empty here — it shows every client.) */}
+          {state === "empty" && view === "attention" && !emptyPending && (
+            <div className="mt-4">
+              <EmptyState
+                title="No clients need attention"
+                description="No overdue payments or outstanding required tasks right now."
+                action={
+                  <button type="button" onClick={() => setView("all")} className="btn btn-secondary btn-sm">
+                    Show all clients
+                  </button>
+                }
+              />
+            </div>
+          )}
+
           {visibleRows.length > 0 && (
-            <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-              {visibleRows.map((row) => {
-                const card = attentionByClientId.get(row.client.id);
-                const issueCount = card ? card.payments.length + (card.requiredTasksOutstanding > 0 ? 1 : 0) : 0;
-                return (
+            <div ref={gridRef} className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {visibleRows.map((row) => (
+                // The grid cell, and the only thing the layout move ever
+                // transforms — the card inside keeps its own lift and 3D flip.
+                <div key={row.client.id} data-flip-key={row.client.id}>
                   <ClientCard
-                    key={row.client.id}
                     row={row}
                     currency={currency}
-                    issueCount={issueCount}
+                    attention={attentionByClientId.get(row.client.id) ?? null}
                     isPreviewOpen={previewId === row.client.id}
                     onOpenPreview={() => openPreview(row.client.id)}
                   />
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>

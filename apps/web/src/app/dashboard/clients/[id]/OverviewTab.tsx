@@ -23,6 +23,7 @@ import { ThumbnailPlaceholder } from "@/components/ui/ThumbnailPlaceholder";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Panel, EmptyRow } from "@/components/ui/Panel";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 type Attention = { key: string; text: string; href: string };
 
@@ -249,9 +250,12 @@ export function OverviewTab({
           <div className="mt-2 space-y-1 text-sm text-fg-muted">
             {(business.suburb || business.state) && <p>{[business.suburb, business.state].filter(Boolean).join(", ")}</p>}
             {business.website_url && (
-              <a href={business.website_url} target="_blank" rel="noreferrer" className="block truncate text-fg hover:underline">
-                {business.website_url}
-              </a>
+              <div className="flex min-w-0 items-center gap-1">
+                <a href={business.website_url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-fg hover:underline">
+                  {business.website_url}
+                </a>
+                <CopyButton value={business.website_url} label="Copy website address" />
+              </div>
             )}
             {!business.suburb && !business.state && !business.website_url && <p>No details on file.</p>}
           </div>

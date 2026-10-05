@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
   ApiError,
@@ -21,6 +21,7 @@ import {
   type DiscoverySort,
 } from "@/lib/filters";
 import { diffNewIds } from "@/lib/discovery-diff";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { InstagramImportModal } from "@/components/InstagramImportModal";
 import { Input } from "@/components/ui/Input";
@@ -110,8 +111,19 @@ export function DiscoveryWorkspace({
   // background refreshes (the website-check poll below only ever calls
   // `applyResults`, never this), only by a genuine change of search
   // context (see `selectSearch`), so a deliberate collapse survives a
-  // poll landing behind it.
-  const [panelOpen, setPanelOpen] = useState(true);
+  // poll landing behind it. Entering Map Discovery always starts
+  // collapsed (map first, "Show results (N)" one click away): on mount
+  // (first load, reload, back from another section) and on switching
+  // back from Review Queue, where this component stays mounted, just
+  // hidden — so that transition is caught here, adjusted during render
+  // like `overrideForId` below. Only the presentation resets; results,
+  // filters, selection and the map's own view are untouched.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelForMapVisible, setPanelForMapVisible] = useState(mapVisible);
+  if (mapVisible !== panelForMapVisible) {
+    setPanelForMapVisible(mapVisible);
+    if (mapVisible) setPanelOpen(false);
+  }
 
   // Tracks which result ids have already been shown, so a poll/filter/
   // sort/re-render never replays the "new result" fade-in — only rows
@@ -187,21 +199,34 @@ export function DiscoveryWorkspace({
   }, []);
 
   const loadResults = useCallback((id: string) => {
-    api
+    const searchLoaded = api
       .getDiscoverySearch(id)
       .then((s) => {
-        setError(null);
         setSearch(s);
         setLoadedId(id);
+        return true;
       })
-      .catch(() => setError("Couldn't load this search."));
-    api
+      .catch(() => {
+        setError("Couldn't load this search.");
+        return false;
+      });
+    const resultsLoaded = api
       .listDiscoveredBusinesses(id)
       .then((rows) => {
         applyResults(rows, id);
         setLoadedId(id);
+        return true;
       })
-      .catch(() => setError("Couldn't load discovered businesses."));
+      .catch(() => {
+        setError("Couldn't load discovered businesses.");
+        return false;
+      });
+    // The error clears only once both have loaded — one request succeeding
+    // must not wipe the other's failure (which left the panel showing its
+    // loading skeleton forever instead of the error and its retry).
+    void Promise.all([searchLoaded, resultsLoaded]).then(([a, b]) => {
+      if (a && b) setError(null);
+    });
   }, [applyResults]);
 
   function selectSearch(id: string | null) {
@@ -503,14 +528,52 @@ export function DiscoveryWorkspace({
   // that list fetch finishes.
   let panelLoading = false;
   let panelEmptyMessage: string | null = null;
+  let panelEmptyAction: ReactNode = null;
   let panelItems: DiscoveryResultsPanelItem[] | null = null;
   let showCommandBar = false;
+  // Offered only while the search form is collapsed — open, it is already
+  // the next thing on screen and the button would do nothing.
+  const newSearchAction = filtersOpen ? null : (
+    <button type="button" onClick={() => setFiltersOpenOverride(true)} className="btn btn-secondary btn-sm">
+      New search
+    </button>
+  );
   if (activeId && !activeResults && !error) {
     panelLoading = true;
   } else if (activeResults && activeResults.length > 0) {
     showCommandBar = true;
-    if (visible.length === 0) {
-      panelEmptyMessage = "No results match these filters.";
+    // "Already imported" widens the list (imported rows are left out by
+    // default), so it is never what hides a result — the rest narrow it.
+    const narrowingFilterCount = filterChips.filter((chip) => chip.id !== "imported").length;
+    const state = listState({
+      loaded: true,
+      error: false,
+      visible: visible.length,
+      filtersActive: filters.search.trim() !== "" || narrowingFilterCount > 0,
+    });
+    if (state === "filtered-empty") {
+      const copy = filteredEmptyCopy({ noun: "results", search: filters.search, filterCount: narrowingFilterCount });
+      panelEmptyMessage = `${copy.title}.${copy.description ? ` ${copy.description}` : ""}`;
+      panelEmptyAction = (
+        <button type="button" onClick={clearResultFilters} className="btn btn-secondary btn-sm">
+          Clear filters
+        </button>
+      );
+    } else if (state === "empty") {
+      // Results exist and nothing is filtering: every one is already a lead.
+      panelEmptyMessage =
+        activeResults.length === 1
+          ? "The only result in this search is already imported."
+          : `All ${activeResults.length} results in this search are already imported.`;
+      panelEmptyAction = (
+        <button
+          type="button"
+          onClick={() => setFilters((f) => ({ ...f, showImported: true }))}
+          className="btn btn-secondary btn-sm"
+        >
+          Show imported
+        </button>
+      );
     } else {
       panelItems = visible.map((business, index) => ({
         business,
@@ -519,11 +582,18 @@ export function DiscoveryWorkspace({
       }));
     }
   } else if (activeResults && activeResults.length === 0) {
-    panelEmptyMessage = "No results for this search.";
+    // A search that failed found nothing because it never finished — that
+    // is not the same as a search that ran and came back empty.
+    panelEmptyMessage =
+      activeSearch?.status === "failed"
+        ? "This search didn't finish, so it has no results."
+        : "This search found no businesses.";
+    panelEmptyAction = newSearchAction;
   } else if (!searches && !listError) {
     panelLoading = true;
   } else if (searches && searches.length === 0 && !listError) {
     panelEmptyMessage = 'No discovery searches yet. Try "plumbing" in "Gold Coast" above.';
+    panelEmptyAction = newSearchAction;
   }
 
   return (
@@ -556,16 +626,13 @@ export function DiscoveryWorkspace({
           or the empty space below a collapsed results panel, still lets
           clicks/drags reach the map underneath instead of just sitting
           on top of it. `top`/`bottom` bound the column exactly between
-          the header layer above and the mobile bottom nav (or the
-          viewport edge at `lg`) below, so the column can never grow
-          into either. Width switches at
-          `sm` (the search form's old breakpoint); the bottom clearance
-          switches at `lg`, where the mobile bottom nav disappears (see
-          dashboard/layout.tsx). `lg:left` is the shared `--sidebar-w`
-          variable plus this column's own 0.75rem gutter, so it stays
-          flush with the sidebar's real edge (collapsed or expanded)
-          instead of a hard-coded width that can drift out of sync. */}
-      <div className="pointer-events-none fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] bottom-[calc(3.5rem+1.75rem)] z-20 flex flex-col gap-3 sm:right-auto sm:w-[400px] lg:left-[calc(var(--sidebar-w)+0.75rem)] lg:top-[calc(2.75rem+var(--discovery-layer-h,7rem))] lg:bottom-3">
+          the header layer above and the bottom nav below, at every width,
+          so the column can never grow into either — see
+          dashboard/layout.tsx and `--app-bottom-nav-h`. The extra gap
+          above the nav is 1.75rem below `lg` (keeps the map attribution
+          clear) and 0.75rem from `lg`, as before. Width switches at `sm`
+          (the search form's old breakpoint). */}
+      <div className="pointer-events-none fixed left-3 right-14 top-[calc(3rem+var(--discovery-layer-h,7rem))] bottom-[calc(var(--app-bottom-nav-h)+1.75rem)] z-20 flex flex-col gap-3 sm:right-auto sm:w-[400px] lg:bottom-[calc(var(--app-bottom-nav-h)+0.75rem)]">
       {/* Search controls — always visible: this is where discovery starts.
           The five criteria fields stack in one column, then a divider
           sets the website-status refinement + the primary Run search
@@ -896,6 +963,7 @@ export function DiscoveryWorkspace({
         }
         loading={panelLoading}
         emptyMessage={panelEmptyMessage}
+        emptyAction={panelEmptyAction}
         items={panelItems}
         selectedId={activeSelectionId}
         onSelect={(id) => setSelectedId(id === activeSelectionId ? null : id)}

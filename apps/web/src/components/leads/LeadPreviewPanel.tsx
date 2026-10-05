@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, PROJECT_STAGE_LABELS, type Business, type Lead } from "@/lib/api";
 import { LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 function socialLinkLines(raw: string | null): string[] {
   if (!raw) return [];
@@ -86,17 +87,19 @@ export function LeadPreviewPanel({ lead, onClose }: { lead: Lead; onClose: () =>
               </p>
             )}
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close preview"
-            className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-              <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
-          </button>
+          <Tooltip label="Close" side="bottom">
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Close preview"
+              className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

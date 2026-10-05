@@ -1109,3 +1109,45 @@ def test_today_snapshot_reuses_revenue_payments_received_and_mrr(authed_client, 
     ).json()
     assert snapshot["payments_received_this_month_cents"] == revenue["total_payments_received_cents"] == 30000
     assert snapshot["expected_mrr_cents"] == revenue["expected_mrr_cents"] == 4900
+
+
+def test_revenue_report_breakdowns_add_up_to_their_headlines(authed_client, db_session, workspace):
+    """overdue_items are exactly the rows behind overdue_cents (partial
+    payments netted, projections excluded); expected_hosting_plans are
+    exactly the ACTIVE plans behind expected_mrr_cents."""
+    from datetime import timedelta
+
+    _, project_id = _make_project(authed_client)
+    agreement = authed_client.put(
+        f"/api/v1/billing/projects/{project_id}/agreement",
+        json={"price_cents": 100000, "due_date": _iso(TODAY - timedelta(days=40))},
+    ).json()
+    authed_client.post(
+        "/api/v1/billing/payments",
+        json={
+            "project_id": project_id,
+            "allocation": {"type": "agreement", "id": agreement["id"]},
+            "amount_cents": 30000,
+            "received_date": _iso(TODAY - timedelta(days=45)),
+        },
+    )
+    authed_client.post(
+        f"/api/v1/billing/projects/{project_id}/hosting-plans",
+        json={"monthly_fee_cents": 5000, "start_date": _iso(TODAY), "billing_day": TODAY.day},
+    )
+    cancelled = authed_client.post(
+        f"/api/v1/billing/projects/{project_id}/hosting-plans",
+        json={"monthly_fee_cents": 9900, "start_date": _iso(TODAY), "billing_day": TODAY.day},
+    ).json()
+    authed_client.patch(f"/api/v1/billing/hosting-plans/{cancelled['id']}/cancel", json={"effective_date": _iso(TODAY)})
+
+    report = authed_client.get(f"/api/v1/billing/reports/revenue?start={_iso(TODAY)}&end={_iso(TODAY)}").json()
+    assert sum(i["outstanding_cents"] for i in report["overdue_items"]) == report["overdue_cents"]
+    assert len(report["overdue_items"]) == report["overdue_count"]
+    item = next(i for i in report["overdue_items"] if i["kind"] == "agreement")
+    assert item["outstanding_cents"] == 70000  # partial payment netted
+    assert item["days_overdue"] == 40
+    assert item["client_business_name"] == "Coastal Cafe"
+
+    assert sum(p["monthly_fee_cents"] for p in report["expected_hosting_plans"]) == report["expected_mrr_cents"]
+    assert [p["monthly_fee_cents"] for p in report["expected_hosting_plans"]] == [5000]  # cancelled plan excluded

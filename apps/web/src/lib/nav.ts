@@ -189,17 +189,27 @@ export const PRIMARY_NAV_LINKS: NavLink[] = NAV_SECTIONS.filter((s) => s.id !== 
 export const FOOTER_NAV_LINKS: NavLink[] = NAV_SECTIONS.find((s) => s.id === "system")?.links ?? [];
 
 /**
- * The four primary destinations for the mobile bottom nav — the
- * workflow's main line (Today, Discover, Sales, Build). Everything else
- * (Clients, Settings) lives behind
- * the drawer's "More" button.
+ * The five primary destinations for the bottom nav — the workflow's main
+ * line (Today, Discover, Sales, Build, Clients). Everything else
+ * (Settings, the account/theme menu) lives behind the bar's "More"
+ * button.
  */
 export const MOBILE_PRIMARY_HREFS = [
   "/dashboard",
   "/dashboard/discovery",
   "/dashboard/sales",
   "/dashboard/build",
+  "/dashboard/clients",
 ] as const;
+
+/**
+ * The primary rows the navigation sheet ("More") lists — every primary
+ * destination except Clients, which the bottom nav already shows
+ * directly as its own item, so the sheet doesn't repeat it.
+ */
+export const SHEET_PRIMARY_NAV_LINKS: NavLink[] = PRIMARY_NAV_LINKS.filter(
+  (link) => link.href !== "/dashboard/clients",
+);
 
 /**
  * Which of the sidebar's five primary destinations (if any) a pathname

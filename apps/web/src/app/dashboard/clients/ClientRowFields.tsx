@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import type { Client, NextPaymentObligation, Project, RevenueHostingPlan, Task } from "@/lib/api";
+import type { Business, Client, NextPaymentObligation, Project, RevenueHostingPlan, Task } from "@/lib/api";
 import { NEXT_PAYMENT_KIND_LABEL, relativeObligationLabel } from "@/lib/billing";
 import { formatDate, formatMoney } from "@/lib/format";
 import { HOSTING_STATUS_CLASS } from "@/components/billing/ClientBillingSection";
@@ -26,7 +26,11 @@ export type EnrichedClient = {
   lastActivity: string | null;
   hostingPlans: RevenueHostingPlan[];
   nextPayment: NextPaymentObligation | null;
+  /** The earliest obligation that is *not* overdue (null when none) — so a card can show an overdue balance and the next upcoming payment side by side, which `nextPayment` alone can't. */
+  upcomingPayment: NextPaymentObligation | null;
   requiredOutstanding: number;
+  /** The client's Business record (phone/email live there, not on Client) — null until the bulk business list arrives, or if it fails. */
+  business: Business | null;
 };
 
 /** A small "N of them" dropdown, click-to-open — the same controlled-menu pattern as ClientHeader's ProjectPickerMenu, reused here for a row field with more than one website/plan to show without crowding the row. */
@@ -95,7 +99,7 @@ export function WebsitesField({ row }: { row: EnrichedClient }) {
 }
 
 export function HostingField({ row, currency }: { row: EnrichedClient; currency: string }) {
-  if (row.hostingPlans.length === 0) return <span className="text-fg-subtle">No hosting</span>;
+  if (row.hostingPlans.length === 0) return <span className="text-fg-muted">No hosting</span>;
   if (row.hostingPlans.length === 1) {
     const plan = row.hostingPlans[0];
     return (

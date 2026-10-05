@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
-import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
+import { SaveStatus } from "@/components/ui/SaveStatus";
+import { deriveSaveStatus } from "@/lib/saveStatus";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Badge } from "@/components/ui/Badge";
@@ -133,19 +134,30 @@ export function ContentSectionEditor({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ content: Draft; notes: string[] } | null>(null);
 
+  // Counts edits, so a save that lands after the operator kept typing
+  // isn't mistaken for "everything is saved".
+  const editCount = useRef(0);
+
   function set(field: string, value: unknown) {
+    editCount.current += 1;
     setDraft((d) => ({ ...d, [field]: value }));
     setDirty(true);
-    setStatus("idle");
+    // An edit clears a shown "Saved", but never a save still in flight —
+    // that would re-enable the Save button under a running request.
+    setStatus((s) => (s === "saving" ? s : "idle"));
   }
 
   async function handleSave() {
+    const sentAt = editCount.current;
     setStatus("saving");
     setError(null);
     try {
       onUpdated(await api.updateContentSection(planningId, pageId, section.id, { content: draft }));
-      setDirty(false);
-      setStatus("saved");
+      // Edited again while this was saving: those changes are still
+      // unsaved, so stay dirty rather than reading "Saved".
+      const current = editCount.current === sentAt;
+      if (current) setDirty(false);
+      setStatus(current ? "saved" : "idle");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't save this section.");
       setStatus("idle");
@@ -318,7 +330,7 @@ export function ContentSectionEditor({
         </button>
         <div className="flex items-center gap-1">
           <SaveStatus
-            status={(status === "saving" ? "saving" : status === "saved" ? "saved" : dirty ? "dirty" : "idle") satisfies SaveStatusValue}
+            status={deriveSaveStatus({ saving: status === "saving", outcome: status === "saved" ? "saved" : "none", dirty })}
             dirtyText="Unsaved changes"
           />
           {pageApproved && !dirty && <span className="text-xs text-fg-subtle">· Approved</span>}

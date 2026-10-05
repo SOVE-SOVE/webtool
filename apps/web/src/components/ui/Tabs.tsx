@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { useLayoutEffect, useRef, useState } from "react";
+import { AnimatedCount } from "./AnimatedCount";
+import { nextIndicator, sameRect, travelOrigin, type IndicatorMemory, type IndicatorRect, type IndicatorState } from "@/lib/tabIndicator";
+
+/** Where each `travelKey` group's underline last was — survives the
+ * bar itself being remounted by a route change. */
+const indicatorMemory = new Map<string, IndicatorMemory>();
+const TRAVEL_MS = 200; // --duration-base
+const TRAVEL_EASE = "cubic-bezier(0.4, 0, 0.2, 1)"; // --ease-standard
 
 export type TabItem = {
   id: string;
@@ -37,6 +45,7 @@ export function TabBar({
   className = "",
   ariaLabel,
   variant = "default",
+  travelKey,
 }: {
   tabs: readonly TabItem[];
   active: string;
@@ -52,24 +61,84 @@ export function TabBar({
    * TabBar (detail pages, Settings, Discovery) keeps `default`.
    */
   variant?: "default" | "workspace";
+  /**
+   * Only for route-per-tab bars that each page renders for itself
+   * (Build): the bar is remounted on every switch, so its underline
+   * would just appear under the new tab. Bars sharing a `travelKey`
+   * remember where the underline was, and the next instance travels
+   * from there. Not needed when the bar lives in a shared layout
+   * (Sales, Discovery) or switches in place (`onChange`) — it already
+   * persists.
+   */
+  travelKey?: string;
 }) {
   const ws = variant === "workspace";
+  const listRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+  const [indicator, setIndicator] = useState<IndicatorState | null>(null);
+  // `undefined` until looked up once on mount; a rect while a remounted
+  // bar still owes its underline the trip from the previous instance.
+  const originRef = useRef<IndicatorRect | null | undefined>(undefined);
+  // Everything that sets a tab's width, so a commit that changes one
+  // re-measures before paint instead of a frame later via the observer.
+  const tabsKey = tabs.map((t) => `${t.id}:${t.label}:${t.count ?? ""}`).join("|");
 
+  // Measures the active tab on every switch, and again whenever a tab's
+  // box or the strip changes with no switch at all — a count badge
+  // loading, a web font swapping in, the strip being un-hidden or
+  // resized — which a window `resize` listener alone never saw.
   useLayoutEffect(() => {
+    if (originRef.current === undefined) {
+      originRef.current = travelKey ? travelOrigin(indicatorMemory.get(travelKey), active, performance.now()) : null;
+    }
     function measure() {
       const el = tabRefs.current.get(active);
-      if (el) setIndicator({ left: el.offsetLeft, width: el.offsetWidth });
+      if (!el) return;
+      const rect = { left: el.offsetLeft, width: el.offsetWidth };
+      setIndicator((prev) => nextIndicator(prev, rect, active));
+      if (travelKey) indicatorMemory.set(travelKey, { tabId: active, rect, at: performance.now() });
     }
     measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tabs.map((t) => t.label).join("|")]);
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    if (listRef.current) observer.observe(listRef.current);
+    for (const el of tabRefs.current.values()) observer.observe(el);
+    return () => {
+      observer.disconnect();
+      // Stamp when this instance was last on screen, so only the bar
+      // that replaces it straight away picks the position up.
+      const memory = travelKey ? indicatorMemory.get(travelKey) : undefined;
+      if (travelKey && memory) indicatorMemory.set(travelKey, { ...memory, at: performance.now() });
+    };
+  }, [active, tabsKey, travelKey]);
+
+  // A remounted bar's first underline is already in its final place (so
+  // nothing is ever left mispositioned); this plays the trip there from
+  // where the previous instance had it. Web Animations API, so it needs
+  // no staged render and can't collide with the CSS transition below.
+  useLayoutEffect(() => {
+    const origin = originRef.current;
+    const el = indicatorRef.current;
+    if (!origin || !indicator || !el) return;
+    originRef.current = null;
+    if (sameRect(origin, indicator)) return;
+    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate(
+      [
+        { left: `${origin.left}px`, width: `${origin.width}px` },
+        { left: `${indicator.left}px`, width: `${indicator.width}px` },
+      ],
+      { duration: TRAVEL_MS, easing: TRAVEL_EASE },
+    );
+  }, [indicator]);
 
   return (
     <div
+      ref={listRef}
       role="tablist"
       aria-label={ariaLabel}
       className={`relative flex overflow-x-auto ${
@@ -94,7 +163,11 @@ export function TabBar({
         const label = (
           <>
             {tab.label}
-            {tab.count !== undefined && <span className="ml-1.5 text-xs text-fg-subtle">{tab.count}</span>}
+            {tab.count !== undefined && (
+              <span className="ml-1.5 text-xs text-fg-subtle">
+                <AnimatedCount value={tab.count} />
+              </span>
+            )}
           </>
         );
         return tab.href ? (
@@ -116,9 +189,16 @@ export function TabBar({
         );
       })}
       {indicator && (
+        // Kept on left/width rather than translateX/scaleX: a scaled
+        // 1–2px line is composited separately while it moves and isn't
+        // guaranteed to land on the same pixel row as at rest. This is
+        // one out-of-flow element, so the layout it costs is trivial.
         <span
+          ref={indicatorRef}
           aria-hidden="true"
-          className={`absolute bottom-0 bg-fg transition-[left,width] duration-[var(--duration-base)] ease-standard motion-reduce:transition-none ${ws ? "h-px" : "h-0.5"}`}
+          className={`absolute bottom-0 bg-fg ${
+            indicator.animate ? "transition-[left,width] duration-[var(--duration-base)] ease-standard motion-reduce:transition-none" : ""
+          } ${ws ? "h-px" : "h-0.5"}`}
           style={{ left: indicator.left, width: indicator.width }}
         />
       )}

@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/Badge";
 import { LeadPriorityBadge, LeadStatusBadge } from "@/components/LeadStatusBadge";
 import { LeadsBoard } from "@/components/LeadsBoard";
 import { LeadPreviewPanel } from "@/components/leads/LeadPreviewPanel";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { withParam, withoutParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
@@ -207,6 +208,8 @@ function LeadsPageInner() {
   const [users, setUsers] = useState<User[]>([]);
   const [stages, setStages] = useState<PipelineStage[] | null>(null);
   const [followUpMap, setFollowUpMap] = useState<Map<string, string>>(new Map());
+  // Until follow-ups have loaded once, "Needs follow-up" is still filling in, not changing — so it must not play a count swap.
+  const [followUpsLoaded, setFollowUpsLoaded] = useState(false);
   const [checklistSummaries, setChecklistSummaries] = useState<Map<string, ClientChecklistSummary>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
@@ -257,7 +260,13 @@ function LeadsPageInner() {
       .listChecklistSummaries()
       .then((rows) => setChecklistSummaries(new Map(rows.map((r) => [r.client_id, r]))))
       .catch(() => {});
-    api.listFollowUps().then((b) => setFollowUpMap(nextFollowUpByLead(b))).catch(() => {});
+    api
+      .listFollowUps()
+      .then((b) => {
+        setFollowUpMap(nextFollowUpByLead(b));
+        setFollowUpsLoaded(true);
+      })
+      .catch(() => {});
   }
 
   useEffect(load, [showArchived]);
@@ -403,6 +412,22 @@ function LeadsPageInner() {
     if (!filteredLeads) return null;
     return sortLeads(filteredLeads, sort, followUpMap);
   }, [filteredLeads, sort, followUpMap]);
+
+  // What the list region shows. "Show archived" widens the list, so it is
+  // never what hides a lead; the board ignores the status tab (it has its
+  // own columns), so there the tab doesn't count as a filter either.
+  const narrowingFilterCount =
+    (statusFilter ? 1 : 0) +
+    (!statusFilter && view === "table" && tab !== "all" ? 1 : 0) +
+    (websiteFilter ? 1 : 0) +
+    (priorityFilter ? 1 : 0);
+  const listView = listState({
+    loaded: leads !== null,
+    error: error !== null,
+    visible: (view === "board" ? filteredLeads?.filter((l) => !l.archived_at).length : filteredLeads?.length) ?? 0,
+    filtersActive: search.trim() !== "" || narrowingFilterCount > 0,
+  });
+  const filteredEmpty = filteredEmptyCopy({ noun: "leads", search, filterCount: narrowingFilterCount });
 
   // Cards for leads created/updated since the last load flash briefly.
   // Watches the unfiltered set; re-baselines when "archived" toggles.
@@ -563,10 +588,10 @@ function LeadsPageInner() {
           Sales Pipeline metrics row. */}
       {leads && leads.length > 0 && (
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Metric label="Active leads" value={summary.active} />
-          <Metric label="High priority" value={summary.highPriority} hint="chase these first" />
-          <Metric label="Needs follow-up" value={summary.needsFollowUp} href="/dashboard/sales/follow-ups" />
-          <Metric label="No website" value={summary.noWebsite} hint="strongest pitch" />
+          <Metric count label="Active leads" value={summary.active} />
+          <Metric count label="High priority" value={summary.highPriority} hint="chase these first" />
+          <Metric count={followUpsLoaded} label="Needs follow-up" value={summary.needsFollowUp} href="/dashboard/sales/follow-ups" />
+          <Metric count label="No website" value={summary.noWebsite} hint="strongest pitch" />
         </div>
       )}
 
@@ -654,15 +679,35 @@ function LeadsPageInner() {
         </div>
       )}
 
-      {leads && leads.length === 0 && (
+      {leads && leads.length === 0 && !error && (
         <div className="mt-4">
+          {/* Archived leads are left out unless asked for, so "none yet" is
+              only claimed once they were included and there still are none. */}
           <EmptyState
-            title="No leads yet"
-            description="Run a Discovery search and approve a business — it becomes a lead here automatically. Or add one by hand below."
+            title={showArchived ? "No leads yet" : "No active leads"}
+            description="Approve a business in Discovery and it becomes a lead here."
             action={
               <Link href="/dashboard/discovery" className="btn btn-primary">
                 Go to Discovery
               </Link>
+            }
+          />
+        </div>
+      )}
+
+      {/* Empty after filtering — list or board. The board has no command
+          bar of its own, so this is where a search carried over from the
+          list (or a deep link) is named and can be cleared. */}
+      {leads && leads.length > 0 && listView === "filtered-empty" && (
+        <div className="mt-4">
+          <EmptyState
+            compact={view === "board"}
+            title={filteredEmpty.title}
+            description={filteredEmpty.description}
+            action={
+              <button type="button" onClick={clearAllFilters} className="btn btn-secondary btn-sm">
+                Clear filters
+              </button>
             }
           />
         </div>
@@ -686,15 +731,16 @@ function LeadsPageInner() {
         </div>
       )}
 
-      {/* List view — empty after filtering */}
-      {view === "table" && visibleLeads && leads && leads.length > 0 && visibleLeads.length === 0 && (
+      {/* List view, nothing filtering, leads exist: every one of them is
+          already a client, which the default view leaves out. */}
+      {view === "table" && leads && leads.length > 0 && listView === "empty" && (
         <div className="mt-4">
           <EmptyState
-            title="No leads match"
-            description="Try a different status, search, or clear the filters above."
+            title="No active leads"
+            description={`${leads.length === 1 ? "The only lead here has" : `All ${leads.length} leads here have`} been converted to a client.`}
             action={
-              <button onClick={clearAllFilters} className="btn btn-secondary btn-sm">
-                Clear filters
+              <button type="button" onClick={() => changeTab("converted")} className="btn btn-secondary btn-sm">
+                Show converted
               </button>
             }
           />

@@ -15,3 +15,21 @@ export function withParam(searchParams: URLSearchParams, key: string, value: str
 export function withoutParam(searchParams: URLSearchParams, key: string): string {
   return withParam(searchParams, key, null);
 }
+
+/**
+ * A short, display-only label for a website URL: just the host, minus a
+ * leading "www." — "https://www.example.com.au/services?ref=gbp" →
+ * "example.com.au". Never use it as an href; link to the original URL.
+ * A scheme-less value ("example.com/about") is parsed as https so its
+ * host still comes out; anything unparseable is returned trimmed, as-is,
+ * rather than guessed at.
+ */
+export function displayDomain(url: string): string {
+  const trimmed = url.trim();
+  try {
+    const host = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`).hostname;
+    return host.replace(/^www\./i, "") || trimmed;
+  } catch {
+    return trimmed;
+  }
+}

@@ -46,6 +46,7 @@ import { formatAud } from "@/lib/format";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 // Sales Audit / Outreach generation reads or references live evidence, so
 // it's only meaningful once a lead has cleared initial qualification —
@@ -600,9 +601,12 @@ export default function LeadDetailPage() {
             {summaryRow(
               "Website",
               business.website_url ? (
-                <a href={business.website_url} target="_blank" rel="noreferrer" className="hover:underline">
-                  Visit site ↗
-                </a>
+                <span className="inline-flex items-center gap-1">
+                  <a href={business.website_url} target="_blank" rel="noreferrer" className="hover:underline">
+                    Visit site ↗
+                  </a>
+                  <CopyButton value={business.website_url} label="Copy website address" />
+                </span>
               ) : (
                 "No website"
               ),

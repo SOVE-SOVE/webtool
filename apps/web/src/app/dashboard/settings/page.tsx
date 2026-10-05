@@ -22,6 +22,7 @@ import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 import { FONT_LABELS, useTheme, type FontChoice, type ThemeMode } from "@/components/ui/ThemeProvider";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { ChartColoursSection } from "./ChartColoursSection";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
   { mode: "light", label: "Light" },
@@ -36,7 +37,7 @@ type SectionId = "account" | "workspace" | "appearance" | "integrations" | "ai";
 const SECTIONS: { id: SectionId; label: string; description: string }[] = [
   { id: "account", label: "Account", description: "Your profile and sign-in session." },
   { id: "workspace", label: "Workspace", description: "Workspace name and who has access." },
-  { id: "appearance", label: "Appearance", description: "Theme and font, saved to this browser." },
+  { id: "appearance", label: "Appearance", description: "Theme, font and chart colours, saved to this browser." },
   { id: "integrations", label: "Integrations", description: "Calendar and other connected services." },
   { id: "ai", label: "AI & Automation", description: "Status of the AI providers this workspace uses." },
 ];
@@ -437,51 +438,54 @@ function SettingsPageInner() {
             )}
 
             {section === "appearance" && (
-              <div className="card p-4">
-                <h3 className="section-title">Theme &amp; font</h3>
-                <p className="mt-1 text-xs text-fg-muted">
-                  Saved to this browser and applied every time you sign in here.
-                </p>
+              <>
+                <div className="card p-4">
+                  <h3 className="section-title">Theme &amp; font</h3>
+                  <p className="mt-1 text-xs text-fg-muted">
+                    Saved to this browser and applied every time you sign in here.
+                  </p>
 
-                <div className="mt-4">
-                  <p className="field-label">Theme</p>
-                  <div className="mt-1.5 flex gap-2">
-                    {THEME_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.mode}
-                        type="button"
-                        onClick={() => setTheme(opt.mode)}
-                        aria-pressed={theme === opt.mode}
-                        className={`toggle-pill flex-1 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm ${
-                          theme === opt.mode
-                            ? "border-accent bg-accent text-accent-fg"
-                            : "border-border-strong text-fg hover:bg-surface-hover"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                  <div className="mt-4">
+                    <p className="field-label">Theme</p>
+                    <div className="mt-1.5 flex gap-2">
+                      {THEME_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.mode}
+                          type="button"
+                          onClick={() => setTheme(opt.mode)}
+                          aria-pressed={theme === opt.mode}
+                          className={`toggle-pill flex-1 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm ${
+                            theme === opt.mode
+                              ? "border-accent bg-accent text-accent-fg"
+                              : "border-border-strong text-fg hover:bg-surface-hover"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <label htmlFor="font-select" className="field-label">
+                      Font
+                    </label>
+                    <Select
+                      id="font-select"
+                      value={font}
+                      onChange={(e) => setFont(e.target.value as FontChoice)}
+                      className="input mt-1.5"
+                    >
+                      {FONT_OPTIONS.map((f) => (
+                        <option key={f} value={f}>
+                          {FONT_LABELS[f]}
+                        </option>
+                      ))}
+                    </Select>
                   </div>
                 </div>
-
-                <div className="mt-4">
-                  <label htmlFor="font-select" className="field-label">
-                    Font
-                  </label>
-                  <Select
-                    id="font-select"
-                    value={font}
-                    onChange={(e) => setFont(e.target.value as FontChoice)}
-                    className="input mt-1.5"
-                  >
-                    {FONT_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {FONT_LABELS[f]}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
+                <ChartColoursSection />
+              </>
             )}
 
             {section === "integrations" && (

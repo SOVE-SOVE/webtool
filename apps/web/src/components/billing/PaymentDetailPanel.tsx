@@ -6,6 +6,7 @@ import type { RevenueTransaction } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
 import { CorrectPaymentModal } from "./CorrectPaymentModal";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 function StatusTag({ tx }: { tx: RevenueTransaction }) {
   if (tx.voided) {
@@ -68,17 +69,19 @@ export function PaymentDetailPanel({
               {formatDate(tx.received_date)} · {tx.kind === "website" ? "Website" : "Hosting"}
             </p>
           </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close payment detail"
-            className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-              <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
-          </button>
+          <Tooltip label="Close" side="bottom">
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Close payment detail"
+              className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

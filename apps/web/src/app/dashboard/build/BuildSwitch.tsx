@@ -29,6 +29,10 @@ const DEFAULT_HREF: Record<BuildViewId, string> = {
  * same convention as useDensity/useClientTab elsewhere in this app);
  * the bare route is a correct, harmless first-paint fallback since it's
  * still a valid, working link to that view.
+ *
+ * Each Build view renders its own copy of this switch (there is no
+ * shared Build layout), so `travelKey` lets the active underline carry
+ * on from where the previous view's copy left it.
  */
 export function BuildSwitch({ active, className }: { active: BuildViewId; className?: string }) {
   const [hrefs, setHrefs] = useState<Record<BuildViewId, string>>(DEFAULT_HREF);
@@ -51,5 +55,5 @@ export function BuildSwitch({ active, className }: { active: BuildViewId; classN
     href: hrefs[view],
   }));
 
-  return <TabBar tabs={tabs} active={active} ariaLabel="Build view" variant="workspace" className={className} />;
+  return <TabBar tabs={tabs} active={active} ariaLabel="Build view" variant="workspace" travelKey="build" className={className} />;
 }

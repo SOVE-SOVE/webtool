@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { ScreenshotImage } from "@/components/ui/ScreenshotImage";
 
 /**
  * Discovery-stage research doesn't capture screenshots — the only
@@ -48,8 +49,7 @@ export function ScreenshotsBody({ src, onError }: { src: string | null; onError:
   if (!src) return <p className="text-sm text-fg-subtle">{SCREENSHOT_UNAVAILABLE_TEXT}</p>;
   return (
     <div>
-      {/* eslint-disable-next-line @next/next/no-img-element -- an authenticated API route, not an optimizable static asset */}
-      <img
+      <ScreenshotImage
         src={src}
         alt="Screenshot of the business's existing website"
         onError={onError}

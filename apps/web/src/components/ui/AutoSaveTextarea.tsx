@@ -35,12 +35,11 @@ export function AutoSaveTextarea({
     if (revertTimeout.current) clearTimeout(revertTimeout.current);
   }, []);
 
-  async function handleBlur(e: FocusEvent<HTMLTextAreaElement>) {
-    const value = e.target.value;
-    if (value === defaultValue) {
-      setStatus("idle");
-      return;
-    }
+  // The value the last save attempt carried — what "Retry" sends again.
+  const attempted = useRef(defaultValue);
+
+  async function save(value: string) {
+    attempted.current = value;
     if (revertTimeout.current) clearTimeout(revertTimeout.current);
     setStatus("saving");
     try {
@@ -50,6 +49,19 @@ export function AutoSaveTextarea({
     } catch {
       setStatus("error");
     }
+  }
+
+  function handleBlur(e: FocusEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    if (value === defaultValue) {
+      setStatus("idle");
+      return;
+    }
+    // Focus moving onto this field's own "Retry" button: let that click
+    // send the one request, rather than this blur sending a second.
+    const next = e.relatedTarget;
+    if (next instanceof HTMLElement && next.hasAttribute("data-save-retry") && e.currentTarget.parentElement?.contains(next)) return;
+    save(value);
   }
 
   return (
@@ -66,7 +78,12 @@ export function AutoSaveTextarea({
         disabled={disabled || status === "saving"}
         className={`input ${className}`}
       />
-      <SaveStatus status={status} dirtyText="Unsaved — click outside the field to save" className="mt-1" />
+      <SaveStatus
+        status={status}
+        dirtyText="Unsaved — click outside the field to save"
+        className="mt-1"
+        onRetry={() => save(attempted.current)}
+      />
     </div>
   );
 }

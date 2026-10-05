@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { completedByUser } from "@/lib/completionFeedback";
 
 // ChecklistItem and StageChecklistItem are structurally identical (same
 // ownership/blocked/required/review-version/notes fields) — this
@@ -298,16 +299,12 @@ function TaskRow<T extends TaskItem, R>({
   }, []);
 
   const effectiveStatus = optimisticStatus ?? item.status;
-  // The completion-icon pop should only play on an actual status
-  // change, not on first mount/page load — tracked by comparing against
-  // the previous render's status (React's documented way to react to a
-  // changed value during render) rather than a mount-detecting effect.
-  const [prevEffectiveStatus, setPrevEffectiveStatus] = useState(effectiveStatus);
-  const justChangedStatus = effectiveStatus !== prevEffectiveStatus;
-  if (justChangedStatus) setPrevEffectiveStatus(effectiveStatus);
   const isAutomatic = item.completion_mode === "automatic";
   const isNotRequired = effectiveStatus === "not_required";
   const isComplete = effectiveStatus === "complete";
+  // Only while the confirmed item really is complete (the server may
+  // have answered with another status, e.g. needs review).
+  const celebrating = justCompleted && isComplete;
   const isBlocked = effectiveStatus === "blocked";
   const needsReview = effectiveStatus === "needs_review";
 
@@ -326,17 +323,22 @@ function TaskRow<T extends TaskItem, R>({
   }
 
   async function setStatus(status: "pending" | "complete" | "not_required") {
+    const wasDone = effectiveStatus === "complete";
     setOptimisticStatus(status);
-    if (status === "complete") {
-      setJustCompleted(true);
-      if (completionTimeout.current) clearTimeout(completionTimeout.current);
-      completionTimeout.current = setTimeout(() => setJustCompleted(false), 700);
-    }
+    setJustCompleted(false);
     setBusy(true);
     setError(null);
     try {
       onUpdated(await updateItem(item.id, { status }));
       setOptimisticStatus(null);
+      // The acknowledgement (row tint + the check settling) waits for the
+      // server: the check itself shows at once, but a failed request
+      // never gets celebrated.
+      if (completedByUser({ wasDone, requestedDone: status === "complete", confirmedDone: true })) {
+        setJustCompleted(true);
+        if (completionTimeout.current) clearTimeout(completionTimeout.current);
+        completionTimeout.current = setTimeout(() => setJustCompleted(false), 700);
+      }
       if (expanded) void loadHistory();
     } catch (err) {
       setOptimisticStatus(null);
@@ -405,18 +407,15 @@ function TaskRow<T extends TaskItem, R>({
   return (
     <li
       className={`rounded-md border transition-colors duration-[var(--duration-base)] ease-standard ${
-        justCompleted ? "bg-emerald-50 dark:bg-emerald-500/10" : ""
+        celebrating ? "bg-emerald-50 dark:bg-emerald-500/10" : ""
       } ${isBlocked ? "border-error/40" : needsReview ? "border-amber-300 dark:border-amber-500/40" : "border-border"}`}
     >
       <div className="flex flex-col gap-1.5 p-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
           {isAutomatic ? (
             <span
-              key={effectiveStatus}
               aria-hidden="true"
               className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] ${
-                justChangedStatus ? "animate-checkbox-pop" : ""
-              } ${
                 isNotRequired || isBlocked
                   ? "bg-surface-subtle text-fg-subtle"
                   : isComplete
@@ -432,7 +431,7 @@ function TaskRow<T extends TaskItem, R>({
               disabled={busy || isNotRequired || isBlocked}
               onChange={() => setStatus(isComplete || needsReview ? "pending" : "complete")}
               aria-label={item.title}
-              className="checkbox-pop-on-check mt-0.5 h-4 w-4 shrink-0"
+              className={`mt-0.5 h-4 w-4 shrink-0 ${celebrating ? "animate-checkbox-pop" : ""}`}
             />
           )}
           <div className="min-w-0 flex-1">

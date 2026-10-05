@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   api,
@@ -12,32 +11,33 @@ import {
   type WebsiteAgreement,
   type Workspace,
 } from "@/lib/api";
-import { calendarPeriodBounds, toDateKey, type CalendarGridMode } from "@/lib/calendarGrid";
+import { calendarPeriodBounds, isoToLocalDate, toDateKey, type CalendarGridMode } from "@/lib/calendarGrid";
 import { formatMoney } from "@/lib/format";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { useToast } from "@/components/ui/ToastProvider";
-import { CommandBar } from "@/components/ui/CommandBar";
-import { ErrorState } from "@/components/ui/ErrorState";
-import { FilterChips } from "@/components/ui/FilterChips";
+import { CompactSelect } from "@/components/ui/CompactSelect";
+import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
 import { FilterPopover } from "@/components/ui/FilterPopover";
 import { SearchInput } from "@/components/ui/SearchInput";
+import { ChevronDownIcon, SearchIcon } from "@/components/ui/ControlIcons";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Metric } from "@/components/ui/Metric";
 import { RecordPaymentLauncher } from "@/components/billing/RecordPaymentLauncher";
 import { RecordPaymentModal } from "@/components/billing/RecordPaymentModal";
 import { useRevenueSubTab, type RevenueSubTabId } from "./useRevenueSubTab";
-import { DayDetailPanel, type DayDetailItem } from "./DayDetailPanel";
+import { CALENDAR_GROUP_LABELS, DayDetailPanel, type DayDetailItem } from "./DayDetailPanel";
 import { PaymentsTab, usePaymentsFilters } from "./PaymentsTab";
-import { UpcomingOverdueTab, useUpcomingFilters } from "./UpcomingOverdueTab";
+import { OVERDUE_SENTINEL, UpcomingOverdueTab, useUpcomingFilters } from "./UpcomingOverdueTab";
 import { HostingPlansTab, useHostingFilters } from "./HostingPlansTab";
-import { ReceiptsTrendChart } from "./ReceiptsTrendChart";
-
-function todayLocal(): Date {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
+import { FOCUS_LABEL, FOCUS_SCOPE } from "./RevenueSummaryBoxes";
+import { CalendarNav } from "./RevenueCalendar";
+import { parseFocus, type RevenueFocus } from "./revenueVisuals";
+import { RANGE_PRESETS, RANGE_PRESET_LABEL, type RangePreset, type WeekFlow } from "./revenueAnalytics";
+import { useRevenueAnalyticsData } from "./useRevenueAnalyticsData";
+import { RevenueAnalyticsGrid } from "./RevenueAnalyticsGrid";
+import { rangeLabel } from "./revenueChartParts";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 // Gates the Today box's dev-only demo fixture (see `demoObligationFor`
 // below). `NODE_ENV` is "development" under `npm run dev` and
@@ -102,7 +102,7 @@ const REVENUE_SUB_TABS: { id: RevenueSubTabId; label: string }[] = [
  */
 function RevenueSubTabBar({ active, onChange }: { active: RevenueSubTabId; onChange: (id: RevenueSubTabId) => void }) {
   return (
-    <div role="tablist" className="inline-flex flex-wrap rounded-md border border-border-strong p-0.5 text-sm">
+    <div role="tablist" className="inline-flex h-8 flex-wrap items-center rounded-lg bg-surface-subtle p-0.5 text-xs">
       {REVENUE_SUB_TABS.map((tab) => (
         <button
           key={tab.id}
@@ -110,8 +110,8 @@ function RevenueSubTabBar({ active, onChange }: { active: RevenueSubTabId; onCha
           role="tab"
           aria-selected={active === tab.id}
           onClick={() => onChange(tab.id)}
-          className={`toggle-pill rounded px-3 py-1.5 ${
-            active === tab.id ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg"
+          className={`toggle-pill h-7 rounded-md px-3 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring ${
+            active === tab.id ? "bg-surface text-fg shadow-sm" : "text-fg-muted hover:text-fg"
           }`}
         >
           {tab.label}
@@ -121,129 +121,10 @@ function RevenueSubTabBar({ active, onChange }: { active: RevenueSubTabId; onCha
   );
 }
 
-/** Loading placeholder matching one summary box's own shape — same
- * "label bar, then a taller value bar" skeleton the rest of this app's
- * Metric grids already use (see the old 4-tile version this replaces). */
-function SummaryBoxSkeleton() {
-  return (
-    <div className="rounded-md border border-border bg-surface px-4 py-3">
-      <Skeleton className="h-3 w-28" />
-      <Skeleton className="mt-2.5 h-7 w-24" />
-    </div>
-  );
-}
-
-/**
- * Three distinct summary boxes — received this month, expected hosting
- * revenue, and the current overdue balance — never summed together (a
- * received payment and an expected one aren't the same kind of number).
- * Reuses the app's own `Metric` card (label above a prominent value,
- * same border/padding/radius as every other summary tile in this app —
- * the Today dashboard, Sales, Leads, Review) rather than inventing new
- * box styling. "Received this month" is deliberately fixed to the real
- * current calendar month regardless of which month the calendar below
- * is displaying — `monthReport` is fetched once against that fixed
- * range, not against the calendar's own cursor. Everything else the
- * old 4-tile grid also showed (the website/hosting receipts split,
- * refunds, the full outstanding balance) stays in one native
- * `<details>` disclosure below the boxes — same "expandable details"
- * element `ClientMobileCard` already uses elsewhere in this app,
- * avoiding a fourth large summary card for secondary figures.
- */
-function SummaryRow({
-  monthReport,
-  error,
-  onRetry,
-  currency,
-  upcomingTabHref,
-}: {
-  monthReport: RevenueReport | null;
-  error: string | null;
-  onRetry: () => void;
-  currency: string;
-  upcomingTabHref: string;
-}) {
-  if (error) return <ErrorState message={error} onRetry={onRetry} compact />;
-
-  if (!monthReport) {
-    return (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <SummaryBoxSkeleton />
-        <SummaryBoxSkeleton />
-        <SummaryBoxSkeleton />
-      </div>
-    );
-  }
-
-  const isOverdue = monthReport.overdue_cents > 0;
-
-  return (
-    <div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Metric label="Received this month" value={formatMoney(monthReport.total_payments_received_cents, currency)} />
-        <Metric
-          label="Expected hosting revenue"
-          value={formatMoney(monthReport.expected_mrr_cents, currency)}
-          hint="Monthly"
-        />
-        {/* Restrained overdue emphasis: red text only, no filled
-            background — matches every other card's neutral border/
-            surface, distinguished the same understated way an overdue
-            row already reads elsewhere on this page. */}
-        <Metric
-          label="Overdue"
-          value={
-            <span className={isOverdue ? "text-red-700 dark:text-red-400" : undefined}>
-              {formatMoney(monthReport.overdue_cents, currency)}
-            </span>
-          }
-          hint={isOverdue ? `${monthReport.overdue_count} overdue payment${monthReport.overdue_count === 1 ? "" : "s"}` : "None overdue"}
-          href={upcomingTabHref}
-        />
-      </div>
-
-      <details className="mt-2 text-xs text-fg-muted">
-        <summary className="cursor-pointer select-none text-fg-subtle">Breakdown (this month)</summary>
-        <div className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-          <p>
-            Website payments received:{" "}
-            <span className="tabular-nums text-fg">{formatMoney(monthReport.website_payments_received_cents, currency)}</span>
-          </p>
-          <p>
-            Hosting payments received:{" "}
-            <span className="tabular-nums text-fg">{formatMoney(monthReport.hosting_payments_received_cents, currency)}</span>
-          </p>
-          {monthReport.refunds_cents > 0 && (
-            <p>
-              Refunds:{" "}
-              <span className="tabular-nums text-amber-700 dark:text-amber-400">
-                −{formatMoney(monthReport.refunds_cents, currency)}
-              </span>
-            </p>
-          )}
-          <p>
-            Outstanding balance (current, as of today):{" "}
-            <Link href={upcomingTabHref} className="tabular-nums text-fg hover:underline">
-              {formatMoney(monthReport.outstanding_balance_cents, currency)}
-            </Link>
-          </p>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-// The exact shell every other summary box (`SummaryBoxSkeleton`/
-// `Metric`) already uses — `rounded-md border border-border bg-surface
-// px-4 py-3` — reused here verbatim so Today genuinely matches their
-// dimensions and styling, not just a similar approximation. `w-full`
-// (not a fixed pixel width) deliberately: this box now sits in its own
-// cell of the same 3-column grid the Overdue box above it uses (see
-// ClientsRevenueTab's own toolbar row), so filling its cell exactly is
-// what makes its edges align with Overdue's at every viewport width,
-// rather than a hardcoded width that could only ever coincidentally
-// match a fluid grid column.
-const TODAY_BOX_SHELL = "w-full rounded-md border border-border bg-surface px-4 py-3";
+// The same card shell and padding as the analytics metric cards. `w-full`:
+// the box heads the Revenue summary row, so its edges align with the cards;
+// it stretches to the row's height like they do.
+const TODAY_BOX_SHELL = "flex w-full flex-col rounded-md border border-border bg-surface px-4 py-3";
 
 /** "17 Sep" — deliberately shorter than `formatDate`'s own "17 Sep
  * 2026" (used for the calendar's day-detail panel headings etc.): the
@@ -262,8 +143,8 @@ function shortDateLabel(dateKey: string): string {
  * currently displaying (its figures come from the fixed-range
  * `monthReport` and the full obligations list, never from `calCursor`
  * — see ClientsRevenueTab's own `receivedToday`/`displayDueToday`).
- * Same shell/type scale as the three summary boxes above (Metric's own
- * label/value tokens), organised as a header (date) over two right-
+ * Same shell/type scale as the Revenue summary cards below it,
+ * organised as a header (date) over two right-
  * aligned amount rows over one quiet count+action footer — never
  * per-client detail, which stays in the day-detail panel this box
  * opens (see `openToday` in ClientsRevenueTab) — never a second,
@@ -300,14 +181,14 @@ function TodayBox({
   onOpen: () => void;
 }) {
   const interactiveClass =
-    "block text-left transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none";
+    "text-left transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none";
 
   if (error) {
     return (
       <button type="button" onClick={onRetry} className={`${TODAY_BOX_SHELL} ${interactiveClass}`}>
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-fg-muted">Today</span>
-          <p className="text-sm text-fg-subtle">Couldn&apos;t load — tap to retry</p>
+          <p className="text-sm text-fg-muted">Couldn&apos;t load — tap to retry</p>
         </div>
       </button>
     );
@@ -336,38 +217,38 @@ function TodayBox({
 
   const isEmpty = receivedCount === 0 && dueCount === 0;
 
-  // The quiet footer's one job: a real count plus a nudge toward the
-  // panel it opens — never both counts at once (the two rows above
-  // already state each in full), and never "0 payments due" when
-  // nothing's outstanding but something was received today.
+  // The quiet footer's one job: a real count — never both counts at once
+  // (the two rows above already state each in full), and never "0
+  // payments due" when nothing's outstanding but something was received
+  // today. The chevron beside it marks the box as the way into the panel.
   const footerText =
     dueCount > 0
-      ? `${dueCount} payment${dueCount === 1 ? "" : "s"} due · View details`
-      : `${receivedCount} payment${receivedCount === 1 ? "" : "s"} received · View details`;
+      ? `${dueCount} payment${dueCount === 1 ? "" : "s"} due`
+      : `${receivedCount} payment${receivedCount === 1 ? "" : "s"} received`;
 
   const ariaSummary = isEmpty
     ? "No activity today."
-    : `Received ${formatMoney(receivedCents, currency)}. Due today ${formatMoney(dueCents, currency)}. ${footerText.replace(" · View details", "")}.`;
+    : `Received ${formatMoney(receivedCents, currency)}. Due today ${formatMoney(dueCents, currency)}. ${footerText}.`;
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Today, ${shortDateLabel(todayKey)}. ${ariaSummary}${filtered ? " Filtered by client." : ""}${demoActive ? " Includes a demo entry." : ""}`}
+      aria-label={`Today, ${shortDateLabel(todayKey)}. ${ariaSummary}${filtered ? " Filtered by client." : ""}${demoActive ? " Includes a demo entry." : ""} View details.`}
       className={`${TODAY_BOX_SHELL} ${interactiveClass}`}
     >
       {/* One consistent gap-1.5 rhythm for every visible section
           (header, rows, filtered note, footer) — a single declarative
           rule instead of each child carrying its own one-off mt-*,
           so the vertical spacing here can't quietly drift apart. */}
-      <div className="flex flex-col gap-1.5">
-        <span className="flex items-baseline justify-between gap-2">
-          <span className="text-xs text-fg-muted">Today</span>
-          <span className="text-xs text-fg-subtle">{shortDateLabel(todayKey)}</span>
+      <div className="flex flex-1 flex-col gap-1.5">
+        <span className="flex min-h-5 items-center justify-between gap-2 text-xs text-fg-muted">
+          <span>Today</span>
+          <span className="tabular-nums">{shortDateLabel(todayKey)}</span>
         </span>
 
         {isEmpty ? (
-          <p className="text-sm text-fg-subtle">No activity today.</p>
+          <p className="text-sm text-fg-muted">No activity today.</p>
         ) : (
           <div className="space-y-1.5">
             <div className="flex items-baseline justify-between gap-3">
@@ -376,19 +257,151 @@ function TodayBox({
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-xs text-fg-muted">
-                Due today
-                {demoActive && <span className="ml-1 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">Demo</span>}
+                Due
+                {demoActive && <span className="ml-1 text-[10px] font-medium uppercase tracking-wide text-fg-muted">Demo</span>}
               </span>
               <span className="tabular-nums text-lg font-semibold text-fg">{formatMoney(dueCents, currency)}</span>
             </div>
           </div>
         )}
 
-        {filtered && <p className="text-[11px] text-fg-subtle">Filtered by client</p>}
+        {filtered && <p className="text-xs text-fg-muted">Filtered by client</p>}
 
-        {!isEmpty && <p className="text-[11px] text-fg-subtle">{footerText}</p>}
+        <span className="mt-auto flex items-center justify-between gap-2 text-xs tabular-nums text-fg-muted">
+          <span>{isEmpty ? "" : footerText}</span>
+          <ChevronDownIcon aria-hidden="true" className="h-4 w-4 shrink-0 -rotate-90" />
+        </span>
       </div>
     </button>
+  );
+}
+
+/**
+ * TodayBox's compact form, for the collapsed Revenue summary line — the
+ * same figures, loading/error/demo semantics and `onOpen`/`onRetry`, as
+ * one inline button, so Today stays reachable when the column is hidden.
+ */
+function TodayInline({
+  receivedCents,
+  dueCents,
+  currency,
+  loading,
+  error,
+  onRetry,
+  filtered,
+  demoActive,
+  onOpen,
+}: {
+  receivedCents: number;
+  dueCents: number;
+  currency: string;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  filtered: boolean;
+  demoActive: boolean;
+  onOpen: () => void;
+}) {
+  const className =
+    "-mx-1.5 inline-flex min-h-9 items-center rounded-md px-1.5 text-xs tabular-nums text-fg-muted transition-colors duration-fast ease-standard hover:bg-surface-hover hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none";
+  if (error) {
+    return (
+      <button type="button" onClick={onRetry} className={className}>
+        Today: couldn&apos;t load — retry
+      </button>
+    );
+  }
+  if (loading) return <span className="text-xs text-fg-subtle">Today…</span>;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Today: ${formatMoney(receivedCents, currency)} received, ${formatMoney(dueCents, currency)} due.${filtered ? " Filtered by client." : ""}${demoActive ? " Includes a demo entry." : ""} View details.`}
+      className={className}
+    >
+      Today:&nbsp;<span className="font-medium text-fg">{formatMoney(receivedCents, currency)}</span>&nbsp;received ·&nbsp;
+      <span className="font-medium text-fg">{formatMoney(dueCents, currency)}</span>&nbsp;due
+      {demoActive && <span className="ml-1 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">Demo</span>}
+    </button>
+  );
+}
+
+/**
+ * Search that folds into an icon button so the calendar header stays one
+ * compact row. Expanding grows the existing SearchInput out of the
+ * button's own width and focuses it; collapsing (focus leaving it, or
+ * Escape) keeps the text — the button then shows it, with a filled
+ * "active" style, so a search in effect is never hidden. Only the
+ * field's clear button, or deleting the text, clears a search.
+ */
+function ExpandableSearch({ value, onValueChange, placeholder }: { value: string; onValueChange: (v: string) => void; placeholder: string }) {
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const refocusTrigger = useRef(false);
+  // The trigger's width when it was activated — where the field grows from.
+  const [fromWidth, setFromWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+    else if (refocusTrigger.current) {
+      refocusTrigger.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [open]);
+
+  const active = value.trim() !== "";
+  if (!open) {
+    return (
+      <Tooltip label={active ? "" : "Search"}>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={(e) => {
+            setFromWidth(e.currentTarget.offsetWidth);
+            setOpen(true);
+          }}
+          aria-expanded={false}
+          aria-label={active ? `Search: ${value} (active). Edit search` : "Search"}
+          // The full search text when the button shows it truncated; the plain icon gets the shared tooltip instead.
+          title={active ? `Search: ${value}` : undefined}
+          className={`control-btn max-w-[12rem] px-3 ${active ? "border-accent/50 bg-accent-soft" : ""}`}
+        >
+          <SearchIcon className={`h-4 w-4 shrink-0 ${active ? "text-fg" : "text-fg-muted"}`} />
+          {active && <span className="truncate text-xs">{value}</span>}
+        </button>
+      </Tooltip>
+    );
+  }
+  return (
+    <div
+      ref={rootRef}
+      style={fromWidth ? ({ "--expand-from": `${fromWidth}px` } as CSSProperties) : undefined}
+      onBlur={(e) => {
+        if (!(e.relatedTarget instanceof Node && rootRef.current?.contains(e.relatedTarget))) setOpen(false);
+      }}
+    >
+      <SearchInput
+        ref={inputRef}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        value={value}
+        onValueChange={onValueChange}
+        onKeyDown={(e) => {
+          // Escape folds the field back into the button and keeps the
+          // text. preventDefault stops both SearchInput's own
+          // clear-on-Escape and the browser's for type="search".
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            refocusTrigger.current = true;
+            setOpen(false);
+          }
+        }}
+        className="animate-expand-in h-8 w-52 overflow-hidden text-xs sm:w-60"
+      />
+    </div>
   );
 }
 
@@ -406,10 +419,11 @@ const SEARCH_PLACEHOLDER: Record<RevenueSubTabId, string> = {
  * shared payment calendar (Payments/Upcoming) instead of a plain list.
  * The calendar's cursor/grid mode live here, one level above both
  * views, so navigating the calendar survives switching between them.
- * The three summary boxes deliberately do NOT follow that navigation —
- * they're backed by their own `monthReport`, fetched once against the
- * real current calendar month — so paging the calendar to review a
- * past or future month never changes what "Received this month" means.
+ * Above the calendar sits the analytics dashboard (RevenueAnalyticsGrid),
+ * driven by its own date range (`?range=`, useRevenueAnalyticsData) — it
+ * never follows calendar navigation, so paging the calendar never changes
+ * a headline. Charts can move the calendar (to a week or month) and set
+ * the Payments type filter; the active filters bar says so.
  */
 export function ClientsRevenueTab() {
   const router = useRouter();
@@ -418,23 +432,38 @@ export function ClientsRevenueTab() {
   const showToast = useToast();
   const { activeTab, setTab } = useRevenueSubTab();
 
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
+  const analytics = useRevenueAnalyticsData(workspace, dataVersion);
+  // Today in the WORKSPACE timezone — the same day the server's overdue
+  // rule and the calendar's today marker use. The browser's own date can
+  // be a day (or, at a month end, a month) away from it.
+  const workspaceToday = analytics.today;
+
   // Seeded once from the URL (so a shared/bookmarked link opens on the
   // right month/week), then kept in sync with it on every navigation —
   // same "local state + immediate URL write" pattern the rest of this
   // page's filters already use, just for a Date instead of a string.
-  const [calCursor, setCalCursorState] = useState<Date>(() => {
+  // Without one, the calendar follows the workspace's today.
+  const [calCursorState, setCalCursorState] = useState<Date | null>(() => {
     const raw = searchParams.get("calCursor");
     if (raw) {
       const [y, m, d] = raw.split("-").map(Number);
       if (y && m && d) return new Date(y, m - 1, d);
     }
-    return todayLocal();
+    return null;
   });
+  const calCursor = useMemo(() => calCursorState ?? isoToLocalDate(workspaceToday), [calCursorState, workspaceToday]);
   const calGrid: CalendarGridMode = searchParams.get("calGrid") === "week" ? "week" : "month";
 
+  // Moving the calendar (←/→/Today) also clears a day/week selection in
+  // the same URL write, so the breakdown follows the newly visible period
+  // instead of pointing at dates that are no longer shown.
   function setCalCursor(next: Date) {
     setCalCursorState(next);
-    router.replace(`${pathname}?${withParam(searchParams, "calCursor", toDateKey(next))}`, { scroll: false });
+    let query = withParam(searchParams, "calCursor", toDateKey(next));
+    query = withParam(new URLSearchParams(query), "day", null);
+    router.replace(`${pathname}?${query}`, { scroll: false });
   }
 
   function setCalGrid(next: CalendarGridMode) {
@@ -444,15 +473,12 @@ export function ClientsRevenueTab() {
   const { start, end } = useMemo(() => calendarPeriodBounds(calCursor, calGrid), [calCursor, calGrid]);
 
   // The real current calendar month — fixed for the life of this page
-  // view, independent of `calCursor`. This is what the three summary
-  // boxes read from, so navigating the calendar (to review a different
-  // month's payments) never changes what "Received this month" means.
-  // "Today" itself is always inside this range by construction, so the
-  // Today box's "received today" figure can reuse the same fetch.
-  const thisMonth = useMemo(() => calendarPeriodBounds(todayLocal(), "month"), []);
-  const todayKey = useMemo(() => toDateKey(todayLocal()), []);
+  // view, independent of `calCursor` and of the analytics range. The
+  // Today box reads "received today" from it ("today" is always inside
+  // this range by construction, whichever analytics range is selected).
+  const thisMonth = useMemo(() => calendarPeriodBounds(isoToLocalDate(workspaceToday), "month"), [workspaceToday]);
+  const todayKey = workspaceToday;
 
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [report, setReport] = useState<RevenueReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -470,9 +496,7 @@ export function ClientsRevenueTab() {
     agreement: WebsiteAgreement | null;
     hostingPlans: HostingPlan[];
   } | null>(null);
-  const [dataVersion, setDataVersion] = useState(0);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
-  const [showTrends, setShowTrends] = useState(false);
 
   function loadReport() {
     api
@@ -491,7 +515,7 @@ export function ClientsRevenueTab() {
         setMonthReportError(null);
         setMonthReport(r);
       })
-      .catch(() => setMonthReportError("Couldn't load the revenue summary."));
+      .catch(() => setMonthReportError("Couldn't load today's payments."));
   }
 
   function loadTodayObligations() {
@@ -533,7 +557,7 @@ export function ClientsRevenueTab() {
   // already established.
   const scrollKey = useMemo(() => {
     let q = searchParams.toString();
-    for (const key of ["day", "payment", "today"]) {
+    for (const key of ["day", "payment", "today", "flowDay"]) {
       q = withParam(new URLSearchParams(q), key, null);
     }
     return q;
@@ -572,9 +596,6 @@ export function ClientsRevenueTab() {
   const filterUi = activeTab === "payments" ? paymentsFilters : activeTab === "upcoming" ? upcomingFilters : hostingFilters;
 
   const currency = workspace?.currency ?? "AUD";
-  let upcomingHrefQuery = withParam(searchParams, "tab", "revenue");
-  upcomingHrefQuery = withParam(new URLSearchParams(upcomingHrefQuery), "revenueTab", "upcoming");
-  const upcomingTabHref = `${pathname}?${upcomingHrefQuery}`;
 
   // The same `?client=` filter Payments'/Upcoming's own "More filters"
   // panels already read/write — applied here too so the Today box's
@@ -626,6 +647,167 @@ export function ClientsRevenueTab() {
   }
 
   const todayPanelOpen = searchParams.get("today") === "1";
+
+  // Summary-box focus (`?focus=`) — narrows which records Payments/
+  // Upcoming show (their own filtering reads it), never a headline.
+  // Every change is ONE URL write, so the view switch, cursor move and
+  // cleared overlays can't race each other.
+  const focus = parseFocus(searchParams.get("focus"));
+
+  function applyFocus(next: RevenueFocus | null, openDay?: string) {
+    let query = withParam(searchParams, "focus", next);
+    const set = (key: string, value: string | null) => {
+      query = withParam(new URLSearchParams(query), key, value);
+    };
+    // Received → Payments ("payments" is the default, omitted), on the
+    // current month; Hosting/Overdue → Upcoming, cursor unchanged.
+    if (next) set("revenueTab", next === "received" ? null : "upcoming");
+    if (next === "received") {
+      const now = isoToLocalDate(workspaceToday);
+      setCalCursorState(now);
+      set("calCursor", toDateKey(now));
+    }
+    set("payment", null);
+    set("today", null);
+    set("day", openDay ?? null);
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  }
+
+  function toggleFocus(f: RevenueFocus) {
+    applyFocus(focus === f ? null : f);
+  }
+
+  // Upcoming's existing all-months overdue panel (its OVERDUE sentinel).
+  function viewAllOverdue() {
+    applyFocus("overdue", OVERDUE_SENTINEL);
+  }
+
+  // A focus only applies to its own view (received → Payments,
+  // hosting/overdue → Upcoming); switching to a view it doesn't apply to
+  // clears it in the same URL write, so a "Showing: …" state is never
+  // left pointing at records that view doesn't filter.
+  function changeTab(id: RevenueSubTabId) {
+    const applies = focus === "received" ? id === "payments" : focus ? id === "upcoming" : true;
+    if (applies) {
+      setTab(id);
+      return;
+    }
+    let query = withParam(searchParams, "revenueTab", id === "payments" ? null : id);
+    query = withParam(new URLSearchParams(query), "focus", null);
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  }
+
+  const focusApplies =
+    focus !== null && (focus === "received" ? activeTab === "payments" : activeTab === "upcoming");
+
+  // `?kind=` — the Payments view's own type filter, which the donut sets.
+  const rawKind = searchParams.get("kind");
+  const kind = rawKind === "website" || rawKind === "hosting" ? rawKind : null;
+  const kindApplies = kind !== null && activeTab === "payments";
+  const rangeText = rangeLabel(analytics.range.start, analytics.range.end);
+
+  // Where a chart last moved the calendar — shown in the active filters
+  // bar only while the calendar is still on that exact week/month.
+  const [chartSelection, setChartSelection] = useState<{ key: string; grid: CalendarGridMode; label: string } | null>(null);
+  const chartSelectionActive =
+    chartSelection !== null && chartSelection.key === toDateKey(calCursor) && chartSelection.grid === calGrid && activeTab !== "hosting";
+
+  const calendarRef = useRef<HTMLElement>(null);
+  function revealCalendar() {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    calendarRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }
+
+  // One URL write per chart action: target view (a focus that doesn't
+  // apply to it is cleared, as `changeTab` does), plus any extra params;
+  // open overlays are closed so the calendar is what the user sees.
+  function chartNavigate(view: RevenueSubTabId, params: Record<string, string | null>) {
+    let query = withParam(searchParams, "revenueTab", view === "payments" ? null : view);
+    const set = (key: string, value: string | null) => {
+      query = withParam(new URLSearchParams(query), key, value);
+    };
+    const keepsFocus = focus === "received" ? view === "payments" : focus ? view === "upcoming" : true;
+    if (!keepsFocus) set("focus", null);
+    for (const [key, value] of Object.entries(params)) set(key, value);
+    for (const key of ["day", "payment", "today", "flowDay"]) set(key, null);
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  }
+
+  // Donut segment → Payments, filtered to that type (again = clear).
+  function selectKind(next: "website" | "hosting") {
+    chartNavigate("payments", { kind: kindApplies && kind === next ? null : next });
+  }
+
+  function moveCalendar(startKey: string, grid: CalendarGridMode, view: RevenueSubTabId, label: string) {
+    setCalCursorState(isoToLocalDate(startKey));
+    setChartSelection({ key: startKey, grid, label });
+    chartNavigate(view, { calCursor: startKey, calGrid: grid === "month" ? null : grid });
+    revealCalendar();
+  }
+
+  // Weekly cash flow → that week; Payments when the week only has
+  // receipts, Upcoming when anything is still scheduled there.
+  function openWeek(w: WeekFlow) {
+    const scheduled = w.expectedCents + w.overdueCents + w.notInvoicedCents;
+    const view: RevenueSubTabId = scheduled > 0 ? "upcoming" : w.receivedCents > 0 ? "payments" : activeTab;
+    moveCalendar(w.weekStart, "week", view, `Week of ${rangeLabel(w.weekStart, w.weekStart)} · from Weekly cash flow`);
+  }
+
+
+  function clearChartSelection() {
+    setChartSelection(null);
+    if (calGrid === "week") setCalGrid("month");
+  }
+
+  // Reset clears search, every filter, the summary focus and a chart's
+  // calendar label in one URL write; the calendar keeps its place.
+  function resetAll() {
+    setSearch("");
+    setChartSelection(null);
+    let query = searchParams.toString();
+    for (const key of ["q", "kind", "status", "type", "client", "focus"]) {
+      query = withParam(new URLSearchParams(query), key, null);
+    }
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
+
+  // One chip row: the view's own filter chips (the donut's type filter
+  // is Payments' "Type" chip), plus the summary focus and a chart's
+  // calendar selection.
+  const activeChips: FilterChip[] = [
+    ...(focus && focusApplies ? [{ id: "focus", label: "Focus", value: FOCUS_LABEL[focus], onRemove: () => applyFocus(null) }] : []),
+    ...filterUi.chips,
+    ...(chartSelectionActive && chartSelection
+      ? [{ id: "calendar", label: "Calendar", value: chartSelection.label, onRemove: clearChartSelection }]
+      : []),
+  ];
+  const anyFilterActive = Boolean(search.trim()) || activeChips.length > 0;
+
+  const flowDay = searchParams.get("flowDay");
+  const flowDayItems: DayDetailItem[] = useMemo(() => {
+    if (!flowDay) return [];
+    const receipts = (report?.transactions ?? []).filter(
+      (tx) => tx.received_date === flowDay && (!clientFilter || tx.client_id === clientFilter),
+    );
+    const outstanding = (todayObligations ?? []).filter(
+      (o) => o.due_date === flowDay && (!clientFilter || o.client_id === clientFilter),
+    );
+    return [
+      ...receipts.map((tx) => ({ type: "transaction" as const, tx })),
+      ...outstanding.map((o) => ({ type: "obligation" as const, o })),
+    ];
+  }, [flowDay, report, todayObligations, clientFilter]);
+
+  function closeFlowDay() {
+    router.replace(`${pathname}?${withParam(searchParams, "flowDay", null)}`, { scroll: false });
+  }
+
+  function openFlowTransaction(paymentId: string) {
+    let query = withParam(searchParams, "revenueTab", null); // "payments" is the default, omitted
+    query = withParam(new URLSearchParams(query), "payment", paymentId);
+    query = withParam(new URLSearchParams(query), "flowDay", null);
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  }
 
   // Opening Today's own panel also clears `day`/`payment` defensively
   // (belt-and-suspenders — the full-viewport overlay either panel
@@ -691,133 +873,184 @@ export function ClientsRevenueTab() {
     [receivedToday, displayDueToday],
   );
 
+  const todayProps = {
+    receivedCents: receivedTodayCents,
+    dueCents: displayDueTodayCents,
+    currency,
+    loading: todayLoading,
+    error: todayError,
+    onRetry: retryTodayBox,
+    filtered: Boolean(clientFilter),
+    demoActive: SHOW_TODAY_DEMO,
+    onOpen: openToday,
+  };
+  const todayBox = (
+    <TodayBox todayKey={todayKey} receivedCount={receivedToday.length} dueCount={displayDueToday.length} {...todayProps} />
+  );
+
   return (
     <div>
-      {/* 1. Compact summary — three distinct boxes, fixed to the real
-          current month regardless of calendar navigation, everything
-          else behind one expandable "Breakdown" disclosure. */}
-      <SummaryRow
-        monthReport={monthReport}
-        error={monthReportError}
-        onRetry={loadMonthReport}
-        currency={currency}
-        upcomingTabHref={upcomingTabHref}
-      />
+      {/* Hosting has no analytics, so Today gets its own row above the
+          controls — stacked, not beside them, since the box is taller than
+          the control rows and would leave a void next to it. */}
+      {activeTab === "hosting" && <div className="mb-4 w-full sm:w-[260px]">{todayBox}</div>}
 
-      {/* 2 & 3. Same 3-column grid template as SummaryRow above
-          (`grid-cols-1 sm:grid-cols-3 gap-3`) — not a coincidentally
-          similar width, but literally the same column math, so
-          TodayBox's left/right edges are guaranteed identical to
-          Overdue's regardless of viewport width, rather than two
-          independently-computed layouts that only happen to look
-          close. The toolbar controls (view switch, search, More
-          filters, Clear filters — the same single-row grouping
-          ClientsOverviewTab's own toolbar already established) span
-          the first two columns; TodayBox occupies the third, exactly
-          where Overdue sits above it. `items-start` overrides grid's
-          own default row-stretch so TodayBox's height never pulls the
-          shorter toolbar controls down to float mid-row (SummaryRow's
-          own separate grid keeps its default stretch, unaffected —
-          this is a different grid container). At `<sm:` both groups
-          stack as separate full-width rows, same as SummaryRow's own
-          boxes. Record Payment no longer lives here — it now sits in
-          the calendar's own toolbar (see RevenueCalendar), right after
-          the next ("→") arrow, alongside that calendar's own Today
-          (navigation) button — moved, not duplicated. */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
-        <div className="space-y-3 sm:col-span-2">
-          <RevenueSubTabBar active={activeTab} onChange={setTab} />
-
-          <CommandBar
-            search={
-              <SearchInput
-                placeholder={SEARCH_PLACEHOLDER[activeTab]}
-                aria-label={SEARCH_PLACEHOLDER[activeTab]}
-                value={search}
-                onValueChange={setSearch}
+      {/* 1. Analytics — Payments and Upcoming only (Hosting has its own
+          plan table). Its heading row carries the Revenue summary toggle
+          and the selected analytics period; Today heads the summary
+          column. Outside the per-view block so switching between the two
+          views doesn't remount it. */}
+      {activeTab !== "hosting" && (
+        <div className="mb-6">
+          <RevenueAnalyticsGrid
+            todayCard={todayBox}
+            todayInline={<TodayInline {...todayProps} />}
+            report={analytics.report}
+            error={analytics.error}
+            onRetry={analytics.reload}
+            range={analytics.range}
+            today={analytics.today}
+            historyStart={analytics.historyStart}
+            previous={analytics.previous}
+            currency={currency}
+            clientFilter={clientFilter || null}
+            obligations={todayObligations}
+            obligationsError={todayObligationsError}
+            focus={focus}
+            onToggleFocus={toggleFocus}
+            onViewAllOverdue={viewAllOverdue}
+            kind={kindApplies ? kind : null}
+            onSelectKind={selectKind}
+            onWeekClick={openWeek}
+            rangeControl={
+              // The analytics period — drives the charts and cards only
+              // (the calendar keeps its own month/week navigation).
+              <CompactSelect<RangePreset>
+                aria-label={`Analytics date range: ${RANGE_PRESET_LABEL[analytics.preset]}, ${rangeText}`}
+                prefix="Range"
+                value={analytics.preset}
+                onValueChange={analytics.setPreset}
+                options={RANGE_PRESETS.map((p) => ({ value: p, label: RANGE_PRESET_LABEL[p] }))}
+                className="w-auto"
               />
             }
-            filters={
-              <FilterPopover activeCount={filterUi.chips.length} onClearAll={clearFilters}>
-                {filterUi.panel}
-              </FilterPopover>
-            }
-            chips={filterUi.chips.length > 0 ? <FilterChips chips={filterUi.chips} onClearAll={clearFilters} /> : undefined}
           />
-        </div>
-
-        <TodayBox
-          todayKey={todayKey}
-          receivedCount={receivedToday.length}
-          receivedCents={receivedTodayCents}
-          dueCount={displayDueToday.length}
-          dueCents={displayDueTodayCents}
-          currency={currency}
-          loading={todayLoading}
-          error={todayError}
-          onRetry={retryTodayBox}
-          filtered={Boolean(clientFilter)}
-          demoActive={SHOW_TODAY_DEMO}
-          onOpen={openToday}
-        />
-      </div>
-
-      {/* Trend chart — real content, but secondary to the calendar
-          below it; collapsed behind one "View trends" control rather
-          than always taking up space. Only meaningful for Payments,
-          where the visible range is receipts, not obligations. */}
-      {activeTab === "payments" && report && report.transactions.length > 0 && (
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowTrends((v) => !v)}
-            aria-expanded={showTrends}
-            className="text-sm text-fg-muted hover:text-fg hover:underline"
-          >
-            {showTrends ? "Hide trends" : "View trends"}
-          </button>
-          {showTrends && <ReceiptsTrendChart transactions={report.transactions} currency={currency} start={start} end={end} />}
         </div>
       )}
 
-      <div key={activeTab} className="animate-fade-in mt-4">
-        {activeTab === "payments" && (
-          <PaymentsTab
-            report={report}
-            error={error}
-            onRetry={loadReport}
-            currency={currency}
-            cursor={calCursor}
-            grid={calGrid}
-            onCursorChange={setCalCursor}
-            onGridChange={setCalGrid}
-            onChanged={() => onChanged("Payment updated")}
-            onClearAll={clearFilters}
-            onRecordPayment={() => setShowRecordPayment(true)}
-          />
+      {/* 2. The calendar container — one rounded card holding the view
+          switch + Record Payment, then the period navigation beside
+          search / filters / reset, the active-filter chips, and the
+          active view (calendar, or the Hosting table). The analytics
+          Range control lives with the charts above, not here. */}
+      <section
+        ref={calendarRef}
+        aria-labelledby={activeTab !== "hosting" ? "revenue-calendar-label revenue-calendar-heading" : undefined}
+        aria-label={activeTab === "hosting" ? "Hosting plans" : undefined}
+        className="card scroll-mt-4 p-3 sm:p-4"
+      >
+        {activeTab !== "hosting" && (
+          <span id="revenue-calendar-label" className="sr-only">
+            Revenue calendar,
+          </span>
         )}
-        {activeTab === "upcoming" && (
-          <UpcomingOverdueTab
-            currency={currency}
-            cursor={calCursor}
-            grid={calGrid}
-            onCursorChange={setCalCursor}
-            onGridChange={setCalGrid}
-            dataVersion={dataVersion}
-            onChanged={() => onChanged("Payment recorded")}
-            onClearAll={clearFilters}
-            onRecordPayment={() => setShowRecordPayment(true)}
-          />
+        {/* Row 1: view switch, then search / filters / reset / Record
+            Payment together on the right (wrapping below the switch as one
+            group when narrow). Row 2: period navigation. Every header
+            control is 32px tall. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <RevenueSubTabBar active={activeTab} onChange={changeTab} />
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2 [&_.control-btn]:h-8 [&_.control-btn]:px-2.5 [&_.control-btn]:text-xs">
+            <ExpandableSearch placeholder={SEARCH_PLACEHOLDER[activeTab]} value={search} onValueChange={setSearch} />
+            <FilterPopover activeCount={filterUi.chips.length} onClearAll={clearFilters} align="end">
+              {filterUi.panel}
+            </FilterPopover>
+            {anyFilterActive && (
+              <button type="button" onClick={resetAll} aria-label="Reset search and all filters" className="btn btn-ghost btn-sm h-8 px-2.5">
+                Reset
+              </button>
+            )}
+            {activeTab !== "hosting" && (
+              <button type="button" onClick={() => setShowRecordPayment(true)} className="btn btn-primary btn-sm h-8 px-3">
+                Record Payment
+              </button>
+            )}
+          </div>
+        </div>
+
+        {activeTab !== "hosting" && (
+          <div className="mt-2">
+            <CalendarNav
+              cursor={calCursor}
+              grid={calGrid}
+              onCursorChange={setCalCursor}
+              onGridChange={setCalGrid}
+              todayKey={analytics.today}
+              headingId="revenue-calendar-heading"
+              currency={currency}
+            />
+          </div>
         )}
-        {activeTab === "hosting" && (
-          <HostingPlansTab
-            currency={currency}
-            dataVersion={dataVersion}
-            onChanged={() => onChanged("Hosting plan updated")}
-            onClearAll={clearFilters}
-          />
+
+        {/* What's narrowing the view — filter chips plus the summary
+            focus and a chart's calendar selection, as one compact row. */}
+        {activeChips.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <FilterChips chips={activeChips} />
+            {focus && focusApplies && <span className="text-xs text-fg-muted">{FOCUS_SCOPE[focus]}</span>}
+            {focus === "overdue" && focusApplies && (analytics.report?.overdue_count ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={viewAllOverdue}
+                className="rounded text-xs text-fg-muted hover:text-fg hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                All overdue, across every month →
+              </button>
+            )}
+          </div>
         )}
-      </div>
+
+        <div key={activeTab} className="mt-4 animate-fade-in">
+          {activeTab === "payments" && (
+            <PaymentsTab
+              report={report}
+              error={error}
+              onRetry={loadReport}
+              currency={currency}
+              cursor={calCursor}
+              grid={calGrid}
+              onChanged={() => onChanged("Payment updated")}
+              onClearAll={clearFilters}
+              obligations={todayObligations}
+              obligationsError={todayObligationsError}
+              onRecordObligation={handleTodayRecordPayment}
+              todayKey={analytics.today}
+            />
+          )}
+          {activeTab === "upcoming" && (
+            <UpcomingOverdueTab
+              currency={currency}
+              cursor={calCursor}
+              grid={calGrid}
+              dataVersion={dataVersion}
+              onChanged={() => onChanged("Payment recorded")}
+              onClearAll={clearFilters}
+              transactions={report?.transactions ?? null}
+              transactionsError={error}
+              onOpenTransaction={openFlowTransaction}
+              todayKey={analytics.today}
+            />
+          )}
+          {activeTab === "hosting" && (
+            <HostingPlansTab
+              currency={currency}
+              dataVersion={dataVersion}
+              onChanged={() => onChanged("Hosting plan updated")}
+              onClearAll={clearFilters}
+            />
+          )}
+        </div>
+      </section>
 
       {showRecordPayment && (
         <RecordPaymentLauncher
@@ -843,6 +1076,19 @@ export function ClientsRevenueTab() {
           currency={currency}
           onClose={closeToday}
           onOpenTransaction={openTodayTransaction}
+          onRecordPayment={handleTodayRecordPayment}
+        />
+      )}
+
+      {flowDay && (
+        <DayDetailPanel
+          dateKey={flowDay}
+          items={flowDayItems}
+          currency={currency}
+          description="Payments received and amounts still outstanding on this date."
+          groupLabels={CALENDAR_GROUP_LABELS}
+          onClose={closeFlowDay}
+          onOpenTransaction={openFlowTransaction}
           onRecordPayment={handleTodayRecordPayment}
         />
       )}

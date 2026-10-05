@@ -11,6 +11,728 @@ is purely "what did an agent do in this coding session."
 
 ---
 
+## 2026-10-04 (Settings → Appearance: chart colours; app restart)
+
+**Mode:** new session, not committed. Palette logic, persistence and chart wiring by the main assistant; Settings UI by `ui-and-ux-apple`; review, re-run of checks and a browser pass by the main assistant.
+**App restart:** the API, web server and job runner had stopped when the previous session ended (they were a background task of that session). Restarted with `scripts/start-mac.sh` in its own session. No code cause. The job runner is on the unsupervised fallback (launchd blocked, repo under `~/Desktop`).
+**Chart colours:**
+- Scope: per browser, localStorage key `wdos-chart-colours`, same convention as `wdos-theme`/`wdos-font`. No backend, no migration.
+- `lib/chartPalette.ts` (+ tests): six roles (received, outstanding, overdue, website, hosting, other); a palette is overrides only, `{}` = built-in; presets Default/Ocean/Forest/Warm; HEX/HSV helpers; `chartPaletteVars`; advisory `paletteWarnings` (3:1 contrast on both theme surfaces, similarity incl. a deuteranopia simulation).
+- `ThemeProvider.tsx`: `chartPalette` + `setChartPalette` (returns false when saving fails; applying the default removes the key); follows `storage` events from other tabs. `THEME_INIT_SCRIPT` sets saved colours before first paint (`themeInitScript.test.ts` keeps it equal to `chartPaletteVars`).
+- `globals.css`: `--chart-*-default` (per theme, the old Tailwind colours) and `--chart-*` tokens, mapped as `bg-/stroke-/text-chart-*`.
+- Charts now read the tokens: `revenueChartParts.tsx` MARK/STROKE, `RevenueCalendar.tsx` (SHADE, OVERDUE_FILL, overdue glyph), `DayDetailPanel.tsx` SEGMENT + glyph, `RevenueSummaryBoxes.tsx` overdue age bar. `SHADE` is now exported.
+- UI: `settings/ChartColoursSection.tsx`, `settings/ChartColoursPreview.tsx` (scoped with `chartPaletteVars(draft)` on the wrapper), `components/ui/ColourPicker.tsx`, `lib/colourPicker.ts` (+ 23 tests). No dependency added.
+- Left alone on purpose: red overdue amount text, the grey "Not yet invoiced" bar, Today's cumulative revenue chart (accent colour, won deals).
+
+**Checks:** tsc clean, vitest 854/854, eslint 0 errors (4 pre-existing warnings).
+**Browser-verified (Chrome, dark, 1224px, main assistant):** defaults compute to the previous colours in light and dark; Ocean as a draft changed only the preview (`<html>` untouched, nothing stored); picker opens, Escape returns focus to the swatch; Apply saved and updated `<html>`; Revenue page (donut, weekly bars, calendar bars/shading/legend/glyph, breakdown ring) used the palette after a full navigation; Default + Apply removed the key. The agent additionally covered hue/SV/HEX input, invalid HEX, Cancel/Reset, a stubbed save failure, light theme and a 375px harness.
+**Not verified:** Safari; real touch; screen readers; reduced motion; popover re-placement on real resize/scroll (scripted only); the "Other" slice on real data (preview only).
+**Open:**
+- Similarity warnings compare untouched roles using the current theme's defaults only.
+- Picking a colour equal to a default still counts as "Custom".
+- Customise renders as a card inside the section card (reused `Disclosure`).
+- Ideas not done: per-role reset, auto-open Customise when custom, warn on leaving with unsaved draft.
+
+---
+
+## 2026-10-05 (Discovery map: two-finger trackpad panning, pinch to zoom)
+
+**Mode:** same session, not committed. By the main assistant (interaction logic, no visual change).
+**Before:** `scrollWheelZoom: false`, so a wheel/two-finger scroll over the map did nothing; panning needed click-and-drag. Leaflet 1.9.4 has no wheel-to-pan handler.
+**Change:**
+- `lib/mapWheel.ts` (+ 8 tests): `wheelPanDelta` (pixel/line/page modes, Shift = sideways), `isPinchWheel` (ctrlKey), `accumulatePinch` (50 wheel-px per whole zoom level), `zoomForGestureScale` (Safari gesture `scale` → whole zoom level).
+- `components/DiscoveryMap.tsx`: one non-passive `wheel` listener on the map container. Plain wheel → `map.panBy` (batched to one pan per animation frame, skipped during a zoom animation). Ctrl+wheel (Chrome/Firefox trackpad pinch) → `setZoomAround` the pointer in whole levels. Safari `gesturestart/change/end` → the same zoom, with `preventDefault` over the map only. All listeners, the pending frame and the zoom flags are removed in the effect cleanup. `scrollWheelZoom` stays off; drag, touch, keyboard and the zoom buttons are Leaflet's own, untouched.
+- Scope: the search column, results panel and dialogs are not descendants of the map container, so their wheel events never reach the listener; Leaflet already stops wheel propagation inside popups.
+
+**Checks:** tsc clean, vitest 998/998, eslint 0 errors.
+**Verified in Chrome (background tab, so frames were forced by screenshots):**
+- Real wheel input from the automation tool over the map: down 3 ticks moved the view 300px down, right 2 ticks 200px right; page `scrollY` stayed 0.
+- Synthetic wheel events: diagonal 4×(5,10) moved exactly (20,40), no doubling; all were `defaultPrevented`; six Ctrl+wheel events of −10 zoomed in one level (12 → 13).
+- Real wheel over the open results panel: panel scrolled 300px, map did not move; a synthetic wheel there was not prevented.
+- Zoom-out button: 13 → 12. Timed synthetic mouse drag of (−150,−100) moved the map exactly that.
+- No app console errors; navigating away and back left no errors.
+
+**Not verified:** a physical trackpad (two-finger scroll, momentum, pinch) in any browser; Safari at all, including the gesture-event pinch path, which has only unit tests behind it; touch screens; marker click/cluster behaviour was not re-exercised (code untouched).
+**Notes:** an instantaneous automated drag flings the map by Leaflet's drag inertia (unbounded `inertiaMaxSpeed`); a timed drag is exact. Ctrl + mouse wheel over the map now zooms the map instead of the page. A plain mouse wheel pans vertically.
+
+---
+
+## 2026-10-05 (Nine finishing touches: client-card fronts, counts, tooltips, copy, header shadow, search, empty states, Undo, screenshot loading)
+
+**Mode:** same session, not committed. Five sequential `ui-and-ux-apple` batches (batch A was cut off by a usage limit before any edit and resumed); coordination, check re-runs and a short browser pass by the main assistant. No dependency, no backend change.
+**1. Client-card fronts** (`clients/ClientCard.tsx` only): preview slot (`ThumbnailPlaceholder`, 16:10 up to a 10.5rem cap), one-line name with eye/⋯ beside it, one `ClientStatusBadge`, one attention line (icon + headline, same link), divider-less footer. Removed: initials tile, filled attention block and its second line. Outer size (265.6×320 at 1440, 296×320 at 1280), grid, back face and all hrefs measured identical before/after. Details stays in the footer (same spot as Back). **The list payload has no screenshot field, so every client card shows "No preview yet"; a real preview needs a backend field.** `clientInitials()` is now unused outside tests.
+**2. Counts:** `components/ui/AnimatedCount.tsx`, `lib/countSwap.ts` (tests). Used in `PipelineFunnel`, `TodayOverviewTab`, Clients overview header (gated by `countsSettled`), Sales → Leads `Metric` tiles (`count` prop, gated by `followUpsLoaded`), `Tabs` count, `CountBadge`. No money value is wrapped.
+**3. Tooltips:** `components/ui/Tooltip.tsx`, `lib/tooltip.ts` (tests): 400ms hover delay, immediate on focus-visible, portal to body, `z-[60]`, no `aria-describedby`. Applied to top-bar buttons, card eye/⋯, Revenue search icon, calendar prev/next, six drawer close buttons, `InfoPopover`, client-detail and hosting ⋯. Sidebar's own tooltip left (only renders when collapsed).
+**4. Copy:** `components/ui/CopyButton.tsx`, `lib/copyFeedback.ts` (tests). Beside: client header email, client Overview website, lead website, Planning header domain, discovered-business email/website (`Fact` gained `after`), real deployment URLs. `PreviewLinksPanel`'s own Copy still fails silently.
+**5. Header shadow:** `dashboard/layout.tsx` `useScrolledBeneath` (passive window scroll listener writing `data-scrolled`, re-read on route change), `.app-bar-scroll-shadow` in globals.css. Bottom nav unchanged.
+**6. Search:** the only icon-triggered search is Revenue's `ExpandableSearch` (`ClientsRevenueTab.tsx`): Escape now closes and keeps the query (it used to clear it); 200ms `expand-in`.
+**7. Empty states:** `lib/listState.ts` (tests) used by Planning, Projects, Leads, Clients Overview/Websites, Discovery results, Review Queue; Blueprint library no-match. Fixed: Discovery results failure showed an endless skeleton; "No clients need attention" could flash before dependent data loaded.
+**8. Undo:** `ToastProvider` now `showToast(message, toneOrOptions?) => dismiss` with `{ tone, action, duration, key }` (old calls unchanged); action toasts last 7s and pause on hover/focus; Cmd/Ctrl+Z outside text fields focuses the newest Undo; separate sr-only status region; stack capped at 3; **toast layer `z-50` → `z-[55]` for all toasts**. `lib/toastQueue.ts`, `lib/undo.ts` (tests), `lib/useTaskDoneToast.ts`. Undo added to task complete/reopen (PATCH `{done}` only) and Blueprint requirement removal (re-add with notes and recommendation links). Not added: checklist items (prior state not restorable), reassign (possible later), anything financial, external or behind a confirmation.
+**9. Screenshot loading:** `components/ui/ScreenshotImage.tsx`, `lib/imageLoadState.ts` (tests): fade once per src, cached shows at once, error fallback, in-session memory of loaded sources. Converted: `PlanningCard` preview, `ReferencePreview` (InspirationStrip), ReviewStep thumbnail, discovered-business row thumbnail, `ScreenshotsBody` (fade/error only). Not converted: `EvidencePanel`/`ScreenshotDialog` in `SidePanels.tsx` (data: URL, unknown proportions, own Desktop/Mobile fade).
+
+**Checks:** tsc clean, vitest 990/990 (61 files), eslint 0 errors (3 pre-existing warnings).
+**Verification caveat:** every test tab was hidden, so motion was stepped, not watched; much input was scripted. Chrome only. Reduced motion checked by reading guards. Main assistant's pass: Clients grid renders the new fronts with no console errors; Build → Planning unchanged; a scripted scroll in the hidden tab did not fire scroll events, so the header shadow was not re-confirmed by me (the agent confirmed it with real wheel input).
+**Not exercised in a browser:** client with no attention item (none exists); ReferencePreview and ReviewStep thumbnail (0 references); `src`-change reset; reload/back at a scroll offset; Planning sticky header against the top bar; copy on client email, discovered-business and deployment URLs; Sales → Leads count tiles; Review Queue and Blueprint empties at 390.
+**Seen in the web log, not investigated:** `el._leaflet_pos` TypeError (Discovery map, WebKit wording, twice). The `SHADE` undefined and duplicate `state` errors in the log were mid-edit HMR states; tsc is clean now.
+**Open / decisions pending:** backend screenshot field for client cards; Undo for task reassign; failure feedback for `PreviewLinksPanel` copy; second action on the Planning empty state ("Show transferred"); `EvidencePanel` broken-payload fallback.
+
+---
+
+## 2026-10-05 (Eight interaction refinements: layout glide, ring transition, tabs, save/completion feedback, drawer exit)
+
+**Mode:** same session, not committed. Four sequential `ui-and-ux-apple` batches; shared layout hook, coordination, check re-runs and a functional browser pass by the main assistant. No dependency added (CSS + Web Animations API).
+**Shared:**
+- `lib/useLayoutFlip.ts` + pure `lib/layoutFlip.ts` (tests): children marked `data-flip-key` glide to new positions. Skips first render, off-screen items, > `maxMoves`, reduced motion; positions are relative to the container. Options added in batch D, off by default: `onlyWhenKeysChange`, `clampToViewport`.
+- `lib/useOverlayExit.ts` + `lib/overlayExit.ts` (tests), called from `useDismissableOverlay`: when a `.side-panel-overlay` drawer unmounts, an inert copy on `<body>` plays a 150ms exit (`[data-overlay-exit]`, keyframes `overlay-fade-out`, `slide-out-right/left` in globals.css). Dismissal itself is not delayed. Skipped under reduced motion and in hidden tabs.
+
+**1. Blueprint drop feedback:** `planning/[id]/RequirementsBoard.tsx`, `RequirementCard.tsx` (`flipKey`). New chip settles (opacity + 6px, 200ms); neighbours glide. Library list and the legacy `BlueprintCanvas` left alone.
+**2. Ring transition:** `clients/DayDetailPanel.tsx` `BreakdownRing` rewritten as two always-mounted circles (dash transition 250ms); geometry in `clients/breakdownRing.ts` (tests). Text is never interpolated. Hover is derived from pointer angle against current data. A non-zero amount now draws at least ~2px.
+**3. Tab indicator:** `components/ui/Tabs.tsx`: `travelKey` (module-level memory of the last rect, used by `build/BuildSwitch.tsx`), ResizeObserver re-measure, `count` in the effect key, transition only when the active tab changes. Logic in `lib/tabIndicator.ts` (tests).
+**4. Card rearrangement:** plain `data-flip-key` wrappers in `clients/ClientsOverviewTab.tsx`, `build/planning/page.tsx`, `build/projects/page.tsx`; options in `lib/cardGridFlip.ts` (`maxMoves: 24`). `SoftSwap` removed from the two Build grids. PlanningCard/ProjectCard hover re-check 50ms → 250ms. ClientCard untouched.
+**5. Save confirmation:** `components/ui/SaveStatus.tsx` (tick draws; live region excludes the unsaved hint; optional `onRetry`, `live`); `lib/saveStatus.ts` (tests): latest-request-wins and overlapping-request trackers. Fixed stale/false "Saved" in RequirementsBoard (footer, notes), ContentSectionEditor, InspirationStrip. AutoSaveInput/Textarea show Retry on failure.
+**6. Calendar tiles:** `clients/RevenueCalendar.tsx`: 1px lift + shadow on hover (`@media (hover: hover)`, driven by a non-moving wrapper), transition narrowed to four properties.
+**7. Task completion:** `lib/completionFeedback.ts` (tests), `lib/useCompletionCelebration.ts`, `components/ui/CompletionCheck.tsx`. Pop/tick only after a server-confirmed completion by the user: TaskChecklistList, TasksView, TaskDetailModal (tick on the "Completed" badge), DeliveryPanel, `projects/[id]/page.tsx`. The old CSS `:checked` pop (fired on load and before confirmation) and the automatic-glyph pop were removed.
+**8. Drawer exit:** see `useOverlayExit` above; nav sheet moved into a `NavSheet` component in `dashboard/layout.tsx`. Records drawer portal and z-40 unchanged.
+
+**Checks:** tsc clean, vitest 913/913 (54 files), eslint 0 errors (4 pre-existing warnings).
+**Verification caveat (applies to all eight):** every agent tab and the main assistant's tab reported `document.hidden`, so motion was verified by stepping paused animations and reading computed values, never watched at real speed; most input was scripted. Chrome only. Reduced motion checked by reading guards, not emulated.
+**Main assistant's pass (scripted, hidden tab):** selecting a day updates the ring and text; tile hover gives `translate: 0 -1px` with the four-property transition; client search "QA" started 10 glides of 200ms, same DOM nodes, no leftover transforms; records drawer opens under BODY, Escape leaves no overlay or copy, focus back on the trigger; Build Planning → Projects starts the travel animation.
+**Not exercised in a browser:** LeadPreviewPanel, ReviewDetailPanel, NotesPanel, PlanStep panel, InspirationStrip/InspirationDrawer exits; DeliveryPanel and `projects/[id]` completion pop; ContentSectionEditor, InspirationStrip, BlueprintInspector save fixes; project website tab bar.
+**Incident:** the batch E agent used `osascript` once to bring its tab to the front of the user's Chrome window (the user switched back) and once to close its own orphaned tab. Future briefs should forbid changing the user's active tab.
+**Open:**
+- TasksView: Space/Enter on a row's checkbox opens the detail modal instead of toggling (pre-existing).
+- "Lead no longer available" placeholder in `sales/leads/page.tsx` has no exit.
+- ClientCard has no hover re-check after a glide; its ⋯ menu stays put if the card moves.
+- SEO title/description fields never show "Saved" (remount on save); several Planning areas save silently.
+- Plan step header row overflows at 390px.
+- Decisions pending: restore `SoftSwap` for large Build reshuffles? keep the tick on the "Completed" badge?
+
+---
+
+## 2026-10-05 (Revenue calendar: records drawer portaled out of the calendar)
+
+**Mode:** same session as 2026-10-04, not committed. Fix by `ui-and-ux-apple`; review, re-run of checks and a browser pass by the main assistant.
+**Reported:** "View N records" opened a partly hidden panel: dark overlay across its top, header unreachable, records clipped to the calendar area.
+**Cause (mechanism confirmed, the user's browser not):** the drawer variant of `clients/DayDetailPanel.tsx` is `position: fixed` but was rendered inside `@container/calendar` (`CALENDAR_SPLIT`) and its `@container` parent. An engine that applies layout containment for `container-type` makes those the containing block for fixed descendants. Chrome 154 does not (computed `contain: none`), so the bug did NOT reproduce there; forcing `contain: layout` on the two wrappers reproduced the report exactly (overlay = the calendar's 1198×389 box, under both bars, scrolling with the page). Safari is the suspected engine; not tested.
+**Fix (`DayDetailPanel.tsx` only, no shared CSS change):**
+- Drawer variant renders through `createPortal(document.body)`, with a `useIsClient` guard for SSR. Covers every drawer use of the component (Payments, Upcoming, overdue/no-due-date lists, Today and flow-day panels).
+- Overlay is `side-panel-overlay z-40`: above the bars (z-30/31), below `.modal-overlay` (z-50), so Record Payment (still in the caller's tree) stays on top.
+- `overflow-hidden overscroll-contain` on the overlay and `overscroll-contain` on the list, so the page behind no longer scrolls; list bottom padding includes the safe-area inset.
+
+**Checks:** tsc clean, vitest 854/854, eslint clean on the file.
+**Browser-verified (Chrome):** main assistant, dark, ~1390px, page scrolled: drawer full height on the right above both bars, header and close visible, list scrolls to the last record, Escape closes with focus back on "View 10 records" and scroll unchanged. Agent: month/day/week × Payments/Upcoming at 1280/1680/1920/390 (iframe harness), a 70-row fixture, focus trap, backdrop click, Record Payment opened and cancelled above the drawer, Details, light theme.
+**Not verified:** real Safari; the user's actual failure in a real engine; reduced motion; the drawer's empty state.
+**Open (not fixed, shared modal):**
+- Escape with Record Payment open over the drawer closes the drawer, not the modal; cancelling Record Payment drops focus on `<body>`. `RecordPaymentModal`/`RecordPaymentLauncher` have no Escape handling, focus trap or focus restore (used in 5 places).
+- `PaymentDetailPanel`, `RecordPaymentModal` and `ClientPreviewPanel` are still rendered in-tree; they sit outside the `@container` wrappers on Revenue.
+- No app-wide scroll lock for overlays.
+
+---
+
+## 2026-10-03 (Bottom nav Clients item; Planning header + "Business analysis" widget)
+
+**Mode:** same session, not committed. UI by `ui-and-ux-apple` (three sequential tasks); review, tsc/vitest re-run and session log by the main assistant.
+**1. Bottom nav:** order is now Today → Discovery → Sales → Build → Clients → More.
+- `lib/nav.ts`: Clients appended to `MOBILE_PRIMARY_HREFS`; new `SHEET_PRIMARY_NAV_LINKS` (primary minus Clients) feeds the More sheet. `PRIMARY_NAV_LINKS` is unchanged because `primaryNavHrefForPath` needs it.
+- `dashboard/layout.tsx`: the active bar is `inset-x-[25%]`, and links get `min-w-0` with label ellipsis for six items.
+- Active state needed no logic change: the tabs are `?tab=`, and `/clients/[id]` already matched.
+
+**2. Planning detail header** (`planning/[id]/page.tsx`):
+- Nav row: All Planning, View lead (renamed), Open project, and a ⋯ RowMenu holding Remove (same ConfirmProvider flow).
+- Title: centred, `text-xl sm:text-2xl`.
+- Metadata: one line with the domain (`lib/url.ts` `displayDomain`, plus tests), the badge and "Updated Xm ago" with exact-time tooltips. The yellow banner became badge + "View issues" + "Why?".
+- "View issues" switches to Research and focuses `#analyse-title`.
+- `requestStep` now returns a boolean.
+
+**3. "Business analysis" widget** (Analyse business only):
+- New `BusinessAnalysisCard.tsx` (progress left, saved screenshot right, container-query stack under 768px card width).
+- New `analysisSummary.ts` + 13 tests: one bucket per op; unavailable is never complete; waiting counts as not started. The error-page warning shows only with the audit's `availability` finding.
+- `SidePanels.tsx`: opt-in `bare`/`caption` props; the default is unchanged.
+- `page.tsx`: the side preview column is hidden on Research.
+- `AnalysingOverview.tsx` is now unused but left in place.
+
+**4. Business analysis left column** (same day, follow-up):
+- Rows are compact and expand in place.
+- Key findings: up to 3, using `severityRank` from `planning/lib.ts` (now exported), then confidence. The `availability` finding is excluded because its text claims visitors see the failure.
+- Summary: an excerpt with Read more/Edit. The fallback is detected by matching the two fixed strings from `planning/service.py` (`_no_llm_summary_fallback` / `_no_llm_website_plan_fallback`). Keep them in sync.
+- One next action from `chooseNextAction`; the card header has no action now. The step footer's "Continue to choose your website →" still exists.
+- Screenshot unchanged at 627×392 (1280/1680). Vitest is now 753/753.
+
+**5. Map Discovery results panel starts collapsed** (`components/DiscoveryWorkspace.tsx`):
+- `panelOpen` now defaults to `false`. There was never a persisted preference.
+- A render-time reset collapses the panel when `mapVisible` turns true (Review Queue → Map; the workspace stays mounted).
+- Only `selectSearch` opens it: run search, Instagram import, and the switcher.
+- Browser-verified at ~570px: load, reload, Today→Discovery, Review Queue→Map, keyboard open, filter/selection/zoom kept.
+- Mocked submit, background refresh and desktop width were checked in code only (in-page JS was blocked by the permission check).
+
+**6. Frosted-glass top bar + bottom nav:**
+- New `.app-bar-glass` in globals.css. The glass is painted on `::before` so the activity panel inside the top bar isn't trapped by the backdrop-filter containing block. It reuses `--glass-bg`/blur/saturate, with the hairline edge and a new `--glass-bar-shadow`.
+- Solid fallbacks: `@supports not`, reduced transparency/more contrast, and forced colours.
+- `html` scroll-padding while the bars are mounted. The top bar is now `z-[31]`, so it sits above the nav when the activity panel is open.
+- The Discovery map is now `fixed inset-0` (shows through both bars); the zoom control, attribution and popup autopan padding moved accordingly.
+- Not verified: Safari, a live reduced-transparency check.
+- Open:
+  - The Planning sticky header only sticks about 60px. Its parent `chromeRef` wrapper limits it; this is pre-existing (also at HEAD).
+  - `ReviewQueueWorkspace` `scroll-mt-16` should probably become `scroll-mt-4`.
+
+**7. Header glass looked solid outside the map:**
+- Root cause: the bars reused `--glass-bg` (map-panel tint = card colour) with a 24px blur. Over cards, the blurred backdrop matched the tint, so the bar read as solid. Structure, scrolling and stacking were all fine (measured: window scroll, content passes under, no opaque layers).
+- Fix: new `--glass-bar-bg` (canvas 60% light / 68% dark), 12px blur, 180% saturation. Planning's sticky header uses `app-bar-glass shadow-none` instead of `bg-canvas`.
+- Still solid sticky bands: `ClientHeader.tsx:113` and `discovered-businesses/[id]/page.tsx:602`.
+- Scroll-padding (3rem) ignores tall sticky in-page headers.
+
+**8. More button three-dot wave:**
+- `MoreNavIcon` in AnimatedNavIcon.tsx: the original path is split into 3 paths, pixel-identical at rest. `useNavIconHoverPlay` now accepts `"more"`.
+- `BottomNavMoreButton` in layout.tsx.
+- `.nav-icon-play-more` + `@keyframes nav-icon-more-dot` (3px, staggered, ~540ms total, derived from `--duration-nav-icon`), with the reduced-motion override.
+- Real-time playback not filmed (hidden tab); timing checked by stepping paused animations.
+- Open: in the hidden tab, More sheet focus didn't move and Escape seemed not to close it. Initial focus uses rAF in `useDismissableOverlay` (paused in hidden tabs). Check by hand in a visible tab.
+
+**9. Flippable Planning list cards** (`build/planning/PlanningCard.tsx`):
+- Reuses `cardFlip.ts`/`useCardFlip.ts`; the 3D wrapper classes are duplicated from ClientCard rather than extracted (ClientCard is untouched).
+- `useCardFlip` gained an additive `pointerLeft()`, used for a `:hover` re-check that stops late flips when filtering moves a card from under a still mouse.
+- New `planningCardBack.ts` + 19 tests: step, next action and destination from list fields + checklist summary only. Always an explicit `?step=`; `lastStepStorageKey` is never read.
+- The ⋯ menu's fixed click-catcher became a document pointerdown listener (fixed overlays break inside 3D transforms).
+- Missing from the list payload for richer backs: review/recommendation/sitemap/visual timestamps, selected blueprint, per-item checklist status, `error_message`.
+- Flip observed only via stepped `getAnimations()` (hidden tab). Real Enter/Space was not delivered to the hidden tab.
+- Seen in dev: every router navigation did a full reload. Possibly environmental; recheck with a fresh dev server.
+
+**10. Flippable Projects list cards** (`build/projects/ProjectCard.tsx`):
+- Same structure as PlanningCard (3D wrapper duplicated a third time; nothing extracted).
+- New `projectCardBack.ts` + 26 tests: stage from `projectStatusLabel`; next action = the backend `advance_stage` gate per stage. Attention cases: latest deployment failed, checklist blocked. Delivered/complete/maintenance → "Open project →".
+- ⋯ menu: document pointerdown listener via `useEffectEvent`, swallowing the closing outside click.
+- Front verified identical: 24 cards × 1440/375 × light/dark, rect/text/colour diff.
+- Missing from the list payload: approval checkpoints, `missing_for_deployment`, QA result, website/draft state.
+- Open: **PlanningCard (item 9) has the outside-click flaw this fixed** — an outside click closing its ⋯ menu also activates what's underneath. Fix by porting ProjectCard's approach.
+- The `:hover` re-check for cards moved in place (sort/Load more) was not verifiable in the hidden tab.
+
+**11. Revenue calendar breakdown tidy** (`clients/DayDetailPanel.tsx` + PaymentsTab/UpcomingOverdueTab/RevenueAnalyticsGrid/calendarCashFlow):
+- Donut 112 → 176px, or 200px when the panel is ≥30rem.
+- Panel unboxed (no card/dividers; the drawer keeps its dividers). The whole panel scrolls beside the calendar.
+- Removed: `PERIOD_SCOPE_NOTE`, the "Received and overdue" heading (InfoPopover moved beside the scope heading as `BreakdownInfo`), and the "Analytics ·" prefix.
+- "Not yet due" is a legend row in the chart state.
+- Calendar widths unchanged. Vitest 807/807.
+- Open: `RecordPaymentModal.tsx` doesn't take focus or handle Escape (Escape reaches the panel behind it); pre-existing.
+- **Unrequested change awaiting user decision:** ClientCard back face rewritten by a subagent (~19:07, `clientCardBack()` in clientCardSummary.ts). Not reviewed/approved.
+
+**12. Revenue calendar: tiles, records drawer, centring:**
+- New `--surface-tile` token (`#f0f0f0` light / `#232323` dark; dark is lighter on purpose, giving the same 1.14 step vs surface). Used for adjacent days, week totals and mobile week rows.
+- DayDetailPanel beside the calendar now shows only heading + ring + amounts + "View N records", which opens the existing drawer variant. "Not yet due" was removed.
+- RevenueCalendar root is `display: contents`; a subgrid shares rows so the ring centres on the date grid (0px offset, 4/5/6 rows, 1280/1680). Exported `CALENDAR_COLUMN`.
+- Open: light grey labels on tiles are 4.16:1 (was 4.46, already < AA); the ring isn't centred in week view.
+
+**13. Revenue calendar: donut centred horizontally** (`clients/DayDetailPanel.tsx` only):
+- The ring's centre sits on the midpoint between the calendar's right edge (week totals included) and the card's inner right edge. The 16px column gap counts as part of that space (the panel is pulled left by `--calendar-gap`, a new variable on `CALENDAR_SPLIT`).
+- Panel ≥28rem (1680/1920): `minmax(0,1fr) auto minmax(0,1fr)` with the ring in the middle and the legend in the right column. Narrower (1050/1280): legend centred under the ring. No pixel offsets.
+- "View N records" moved into the heading row (floated right) when beside the calendar; the heading stays out of flow above the ring.
+- Measured by the agent, ring centre vs target, x and y both 0px: 1050/1280/1680/1920 × month, day and week selection, October (5 rows) and August (6 rows), Payments and Upcoming tabs. $1,234,567.89 legend amounts fit (DOM fixture, removed). Stacking at 1000/390 unchanged.
+- The agent was cut off before its final report; this entry is reconstructed from its transcript. tsc, vitest 807/807 and eslint on the file were re-run clean in the next session. The screenshots were not re-viewed by the main assistant.
+- Open: Week view is centred horizontally but not vertically (60–72px low; already open in item 12). A long refund note or a 4-row month lifts the ring 14–25px so the legend stays inside. Non-chart states (empty day) keep the placeholder at the left inset.
+
+**Tests:** web tsc clean, vitest 731/731, eslint 0 errors (4 pre-existing warnings in untouched files).
+**Browser-verified (agent):**
+- Nav at 320/375/1280: active states, More contents, focus, hover.
+- Header at 320–1680 on real data (Toowong) plus simulated states; Remove was opened and cancelled only.
+- Widget at 320–1920 with a mocked API: all op states, a simulated analysis through polling, and the Expand modal focus.
+- No real analysis/capture was run; overrides were removed.
+
+**Not verified:** reduced motion; a real touch device; light theme at wide widths; real Tab-key traversal (hidden tab).
+**Open:**
+- Today page horizontal overflow at ≤375 (a 560px chart SVG); pre-existing.
+- Header height with extreme names on mobile (sticky at all widths).
+- Desktop/Mobile mode no longer shared between Analyse business and Review.
+- Delete `AnalysingOverview.tsx`?
+
+---
+
+## 2026-10-01 (Clients → Revenue: "Receipts over time" chart removed)
+
+**Mode:** same session, not committed. By `ui-and-ux-apple` (interrupted once by a usage limit, then resumed); review and a light-theme check by the main assistant.
+**Removed:**
+- `ReceiptsOverTimeChart.tsx`.
+- RevenueAnalyticsGrid: `TREND_CELL*`, the trend skeleton, `buckets`, `onBucketClick`.
+- ClientsRevenueTab: `openBucket` and its "from Receipts over time" chips (`moveCalendar`/`chartSelection` kept for Weekly cash flow).
+- revenueAnalytics.ts: `receiptsOverTime`/`TrendBucket` (+ their 2 tests).
+- revenueChartParts: unused `RING`, `monthYearLabel`, `TableToggle`.
+
+No data or backend changes; no "Receipts over time" text remains in `src`.
+**Layout change (beyond pure removal):** with the trend gone, the expanded Revenue summary column was ~450px taller than the charts beside it. The summary cards now sit in a row ABOVE the charts (2 / 3 at lg / 5 at xl, `items-start`); the collapsed layout is unchanged. To revert, change the `ANALYTICS_GRID`/`METRIC_COLUMN` constants in RevenueAnalyticsGrid.tsx.
+**Measured (calendar top):**
+
+| Width | Collapsed | Expanded |
+|---|---|---|
+| 1440 | 659 → 446 | 896 → 608 |
+| 1280 | 699 → 486 | 896 → 624 |
+| 1024 | — | 896 → 752 |
+
+The gap above the calendar is 24px everywhere (was 261px when expanded). The donut and weekly cards stay level (198/197).
+**Tests:** web tsc/eslint clean, vitest 686/686 (−2 removed exclusive tests).
+**Browser-verified:**
+- Agent: no chart anywhere at 1024–1920, expanded and collapsed; the skeleton has 2 placeholders; the donut kind filter works; a weekly week click moves the calendar; the day panel works; Record Payment opened and cancelled; dark theme.
+- Main assistant: light theme at 1440 (collapsed): charts row then calendar, normal gap.
+
+**Not verified:** light theme with the summary expanded; reduced motion; screen reader.
+
+---
+
+## 2026-10-01 (Revenue calendar: selected-day panel text cleanup)
+
+**Mode:** same session, not committed. Presentation only, by `ui-and-ux-apple`; review and spot check by the main assistant.
+**Removed (visible):**
+- the "N records" line (inline panel);
+- the donut centre number;
+- legend captions ("on 1 Oct · 2 payments", "due … · current balance", "nothing received/overdue …");
+- the definitions paragraph;
+- card labels "Type:/Date:/Amount:/Due:".
+
+Also:
+- The card date is hidden only when it equals the selected single day.
+- The project name is hidden only when it is redundant (starts with the client name and that client has one project in the list). A "Project →" link is kept on obligations.
+- The "Also outstanding, not overdue …" line became "Not yet due · $X", and the refund note was shortened.
+
+**Relocated:**
+- the record count, dates, counts and time basis moved into sr-only text and the ring/segment aria-labels and tooltips;
+- the definitions moved into the "About this breakdown" InfoPopover beside a "Received and overdue" heading, preserving the overdue meaning (current unpaid balance of charges due on those dates; not historical, not account-wide);
+- the kind is now a compact chip.
+
+The day heading is now "Thu, 1 Oct 2026" (`calendarLabels.shortDayHeading`, + tests).
+**Kept:** negative-net figures, unavailable/hidden messages, back-to-month, "Refunded $X", "Remaining $X", due status, reversed (struck-through + sr text), Details, Client Billing and Record Payment.
+**Tests:** web tsc/eslint clean, vitest 688/688.
+**Browser-verified:**
+- Agent (real TEST dataset, search "TEST —", write guard, 0 writes): Oct period, 1 Oct, Sept period, 10/15/28/3 Sept, week of 27 Sept all match the expected amounts. Keyboard reaches the popover (Enter/Escape, focus returns), then the segments, then the links. Checked at 1280 light, 1920 dark and 1024 stacked.
+- Main assistant: unfiltered 1 Oct shows "Not yet due · $128" with the info button; the record count and bases are sr-only. DB record counts unchanged.
+
+**Not verified:** Record Payment (unchanged); 1920 light / 1280 dark; real screen reader.
+**Known:** at 1280 a long client name truncates beside "Remaining $X" (the full name is in the link).
+
+---
+
+## 2026-10-01 (Revenue TEST dataset seeded into the Default Workspace — still in place)
+
+**Mode:** same session, main assistant; user approved test records in the real workspace (no demo workspace: users belong to exactly one workspace and there is no switcher). Not committed.
+**What:** 5 fictional "TEST —" clients (Harbour Bakery, Northside Physio, Copperleaf Florist, Bluegum Plumbing, Riverbend Cafe), created via the app's own services by `test-data/revenue_test_seed.py`.
+- Hosting charges were issued with the sweep's per-plan step for the TEST plans only.
+- No emails or external calls.
+- Seed id `TEST-SEED-REVENUE-2026-10`.
+
+**Manifest (exact IDs for removal):** `test-data/revenue-test-seed.manifest.json`. It records 5 businesses/clients/projects, 3 agreements, 5 plans, 6 charges, 9 payments, 50 checklist items, 30 activity rows and the FK dependents.
+**Cleanup procedure:** `test-data/README.md`. Use manifest IDs only (never names); check first for later real links (payments on TEST agreements/charges, rows on TEST projects); delete in dependency order in one transaction; later sweep-generated charges go with their TEST plans.
+**Pre-seed real baseline:** 17 clients, 7 hosting plans, 8 non-voided payments = $5,119.00 net. Re-checked unchanged after seeding.
+**Amounts the test data adds:**
+- Received: Aug $1,529; Sept $14,178 net (incl. a $12,500 payment with $250 refunded, and a $790 entry voided); Oct $1,079 (1 Oct, 2 payments).
+- Overdue: $1,588 (Harbour website balance $1,500 due 10 Sept; Copperleaf $29 due 15 Sept; Riverbend $59 due 25 Sept).
+- October: $236 scheduled hosting (5/15/20/25 Oct) plus Northside's $2,200 balance due 20 Oct (not overdue).
+- MRR: +$315/mo.
+
+**Verified (service level and in the browser, normal login):** the clients list shows all 5. Revenue with search "TEST —" matches the expected totals:
+- Oct period: $1,079 received / $0 overdue / $2,436 outstanding.
+- Sept period: $14,178 / $1,588.
+- Days: 10 Sept $1,500 overdue; 15 Sept $1,800 + $29; 25 Sept $59; 28 Sept $12,250 net with a refund; Back to month works.
+- Charts include the test receipts and scheduled charges.
+
+Searching only "TEST" also matches the real client "Empty Test Co".
+
+---
+
+## 2026-10-01 (Clients → Revenue calendar: scenario QA + fixes)
+
+**Mode:** same session, not committed. Logic fixes and the scenario oracle by the main assistant; UI fixes and the browser matrix by `ui-and-ux-apple`; spot check by the main assistant.
+**Defects found and fixed:**
+1. `selectionBreakdown` put a whole month/week into the no-pie "negative" state if ANY payment had a negative net. Now only a negative scope NET does; otherwise Received = the honest net, with `netAdjustmentCents` noted (regression test).
+2. Workspace timezone: the calendar's default month, the Today box's day/month and the Received focus jump used the browser date, so near a boundary they could disagree with the server's overdue rule and the today marker. They now use `analytics.today`.
+3. With nothing selected, the panel showed "Select a day" instead of the visible month's breakdown. Added `calendarPeriodScope` (period scope, tested).
+4. ←/→/Today kept a stale day selection. Moving the calendar now clears `?day=`.
+5. (Agent) Breakdown and record rows rounded to whole dollars ($0.01 overdue shown as "$0"; $12,348,259.50 as $12,348,260). `exactMoney` now keeps cents for non-whole amounts; rows use it, which also affects the Today/flowDay drawers (regression test).
+6. (Agent) Copy: a "‹ {Month}" back control restores the period breakdown (Escape too, focus returns to the tile); refund wording matches the netting; scope wording "in this period"; zero legend rows say "nothing received/overdue".
+
+**Tests:** new `calendarScenarios.test.ts` (16 scenario tests with hand-computed expected totals: received-only, overdue-only, both, empty, future/scheduled, partial payments, several clients on one date, paid-later-for-earlier-due, refunds/reversals/negative net, large and $0.01 amounts, month/year boundaries, single currency, 4/5/6 rows, weeks summing to the month, undated obligations, unavailable ≠ zero), plus calendarCashFlow/calendarLabels additions.
+- web tsc/eslint clean, vitest 686/686.
+- api test_billing 45/45 (webdesignos_test pinned).
+
+**Browser-verified (disposable in-page fixture, writes blocked, today 2026-10-01 Brisbane):**
+- Agent:
+  - Every scenario row matched the hand-computed totals after fix 5: Oct $99/–/$148 outstanding; Sept $12,348,259.50/$2,078.01; Aug $49/$29; Jul $248; Jun $549 overdue; Nov empty; Dec/Jan boundary weeks $49/$7; 10/15/16/18/20/26/30/13/14 Sept days; 1–5 Sept week $1,069.
+  - Interactions: initial period breakdown; day/week selection; Back to month; ←/→ reset; today not auto-selected; search, filters and Reset; rapid selection with no stale totals; slow/loading, obligationsFail and reportFail states.
+  - Layout: keyboard; side by side at 1920/1280, stacked at 1024/700/390; light and dark at 1280.
+- Main assistant: Oct initial, Sept period, 16 Sept negative state, → resets to Oct with day cleared, 0 blocked writes.
+
+**Cleanup:** the fixture file (calendar_scenarios_mock.js), the agent's harness copy and the test tabs were removed; `wdos-revenue-summary-collapsed` is unchanged ("1").
+**Not verified:** tooltip edge placement this round (unchanged code, checked earlier); OS reduced motion; screen reader; narrow dark theme; the "Selection not in view" placeholder (URL / grid-toggle only); multi-currency (not supported: records have no currency of their own).
+**Known:** a huge outlier day flattens other bars (shared scale); on mobile the stacked breakdown sits below the calendar with no scroll to it.
+
+---
+
+## 2026-10-01 (Clients → Revenue calendar: selected-day Received vs Overdue breakdown)
+
+**Mode:** same session, not committed. Financial mapping by the main assistant; UI by `ui-and-ux-apple`, whose last layout tweak was cut off by a usage limit and then browser-checked by the main assistant.
+**Logic (main assistant):** `calendarCashFlow.selectionBreakdown(summary, status, visible)` (+ tests) returns select / unavailable / hidden / empty / negative (signed) / chart.
+- Received = receipts ON the date(s) (positive nets).
+- Overdue = the CURRENT unpaid balance of issued charges DUE on the date(s): the server's is_overdue as of today; scheduled charges are never overdue; never the account-wide total.
+- Covered by tests: partial remainder, scheduled, future due, voided, negative net, unavailable and filtered cases.
+
+**UI (agent):**
+- `DayDetailPanel`: `BreakdownRing` donut (received green / the calendar's muted overdue red, a single full ring when one amount is positive, no %, no total in the centre) plus `SelectionBreakdown` legend with exact amounts and time basis ("on 2 Sept" / "due 2 Sept · current balance").
+  - The select/unavailable/hidden/empty/negative states are text, never a pie.
+  - "Also outstanding, not overdue" line.
+  - `CalendarDetailPlaceholder` ("Select a day" / "Selection not in view" + Clear).
+- Layout: `CALENDAR_SPLIT` (container ≥60rem → 7fr/3fr, panel ≥19rem, slot ≥32rem; stacked below that). The panel is always present in Payments/Upcoming; drawers remain for the overdue/no-due-date lists, Today and flowDay.
+- `ReceiptsDonut.arcPath` exported.
+- `useInlineDayDetail` and `lib/useMediaQuery.ts` removed (unused).
+
+**Tests:** web tsc/eslint clean, vitest 668/668.
+**Browser-verified:**
+- Agent (fixtures, writes blocked):
+  - Chart reconciles with the listed rows: 2 Sept $299/$199 (incl. a $150 partial remainder), 1 Sept received-only $49, 20 Sept overdue-only $49, 10 Sept $1,398 (refund net, reversal excluded)/$300.
+  - Other states: empty; full refund; negative −$10; future due (empty + "also outstanding $2,000"); week 1–5 Sept scope; hidden (status filter); unavailable (obligations failing).
+  - Behaviour: no calendar remount, and focus stays on the tile; Escape clears and returns focus; month navigation shows "not in view"; Record Payment opened/cancelled; Details drawer over the panel.
+  - Layout: light and dark; no overflow at 1920/1280/1024/700/390.
+- Main assistant (real data read-only, 1280 iframe, Aug 2026 six-row month, day=14 Aug): side by side (calendar 767px / panel 329px), equal top and height (512px), selected tile aria-pressed, empty-state copy and definitions correct, no overflow.
+
+**Not verified:** OS reduced motion; screen reader.
+**Known:**
+- The 32rem panel minimum leaves ~80–90px under 5- and 6-row calendars at 1280.
+- On mobile the stacked panel sits below the whole calendar and selecting doesn't scroll to it.
+- In the "not in view" state the Clear button's focus falls to the page.
+- Record rows still round to whole dollars (app-wide `formatMoney`).
+
+---
+
+## 2026-09-30 (Clients → Revenue calendar: clutter polish)
+
+**Mode:** same session, not committed. Presentation only, by `ui-and-ux-apple`; review and checks by the main assistant.
+**Changes:**
+1. Toolbar: 32px controls; segmented view switch and Month/Week; ghost Today; search, Filters, Reset and Record Payment grouped right, wrapping as one unit.
+2. Legend: only Received, Outstanding and Overdue. The rest moved to a "How to read this calendar" InfoPopover. The currency shows once, in the heading ("September 2026 · AUD").
+3. Tiles: 76→62–64px (−16–18%), with softer borders. The 5-row grid is 425→361px; 6 rows 429px, 4 rows 291px.
+4. Bars: a genuinely zero series draws no bar and no track (its slot is kept for position). Unavailable data still shows "—".
+5. Colours: lighter shading steps (separate dark alphas); the overdue part of the bar is muted red; one overdue glyph per tile.
+6. Today and selection: today is a filled date circle plus a faint outline; selected is accent-soft with a 1px accent border; focus is an offset outline. All combinations were checked.
+7. Weekly rail: narrower; aligned `WeekLine`; "1–5 Sept" with the scope in aria/tooltip; zero lines omitted. "No records" shows only when all visible series have loaded.
+
+`calendarLabels.exactMoney` shows cents for sub-dollar amounts (tooltip/aria/summary); `compactMoney` shows "<$1".
+**Tests:** web tsc/eslint clean, vitest 664/664.
+**Browser-verified:**
+- Agent (fixture mock, writes blocked):
+  - Data states: busy, empty, overdue, refund, negative-net and unavailable days; $12.3M and $0.50/$1 amounts.
+  - Selection: today, selected and focus combinations; partial weeks; 4/5/6-row months.
+  - Controls: search, filters, Reset; day/week panels; chart links; inline panel at 1440, drawer at 1280.
+  - Tooltips and popover not clipped; no overflow at 1920/1440/1280/1024/700/390; light and dark at 1440.
+- Main assistant: real data read-only, 955px dark: heading, legend with info button, no empty tracks, "No records" week, no overflow.
+
+**Not verified:** OS reduced motion; screen reader; dark theme at 390; Record Payment re-run (only restyled).
+**Known:**
+- An outlier day flattens the shared scale.
+- The app-wide `formatMoney` rounds to whole dollars, so panel transaction rows show $0.50 as "$1" (pre-existing; the calendar's own labels now use cents).
+- The 390px header wraps to 3 rows.
+
+---
+
+## 2026-09-30 (Clients → Revenue calendar: cash-flow bars, weekly totals, day spotlight + rounded-tile restyle)
+
+**Mode:** same session (two requests), not committed. Financial aggregation and data plumbing by the main assistant; visuals by `ui-and-ux-apple` (interrupted once by a network error, then resumed).
+
+**Logic (main assistant):**
+- New `calendarCashFlow.ts` (+ tests):
+  - Entries for both series (receipts by received date, unpaid obligations by due date).
+  - Filters shared by both series (search, client, type) and `seriesVisibility`: a filter narrowing to one series hides the other (Payments status / Received focus hide Outstanding; Hosting / Overdue focus hide Received).
+  - Weekly totals: selected-month-only for boundary weeks, never double counted.
+  - One month-wide bar scale, plus `barShare` with a floor.
+  - `trimMonthRows` gives 4/5/6-row months.
+  - `?day=week:<Sunday>` selection with scope text.
+  - Received shading scale: `calendarReceivedMaxCents` plus a 4-step `receivedShadeLevel`.
+- `revenueVisuals.totalsByDay`: zero or negative nets are adjustments (with signed `netAdjustmentCents`), never received. This aligns with analytics' `countsAsReceived`.
+- Both tabs get both series: Payments gets the parent's obligations plus Record Payment; Upcoming gets the parent's report plus payment details. The workspace-timezone `todayKey` is passed through.
+
+**UI (agent):**
+- Tiles: rounded day tiles, each showing one primary amount (received in Payments / outstanding in Upcoming) plus mini received/outstanding bars.
+  - The overdue portion sits inside the outstanding bar with a labelled mark; adjustments get a ↺ mark.
+  - Emerald shading appears in Payments only.
+  - Unavailable data shows "—" and is announced, never $0.
+  - Adjacent-month days are quiet. Today uses an outline and `aria-current`; the selected day uses an accent fill and `aria-pressed`.
+- Weekly rail tiles with "Part · 1–5 Sept" scope; between sm and lg they become strips under each row, and the mobile agenda gets week headers.
+- DayDetailPanel: summary block, "Received"/"Outstanding" group labels, and an inline aside at ≥1440 (drawer below that, via `lib/useMediaQuery.ts`).
+- Controls consolidated into one card: view switch plus Record Payment; ← month → Today, Month/Week, expandable search (keeps text, shows active), Filters with count, one Reset, and a single chips row.
+- The old controls group, ActiveFiltersBar and calendar h2 were removed. The analytics Range selector moved into the analytics header. Hosting has no calendar nav.
+- New `calendarLabels.ts` (+ tests).
+- Main assistant fix: an empty week reads "No records" (it previously showed "—", the unavailable mark).
+
+**Tests:** web tsc/eslint clean, vitest 663/663; api test_billing 45/45 (run against webdesignos_test with DATABASE_URL pinned).
+
+**Browser-verified:**
+- Agent (fixture mock, writes blocked):
+  - Views and states: Payments, Upcoming and Hosting; today, selected, and today+selected; busy, overdue, refund, negative-net and empty days; Aug 6 rows and Feb 4 rows.
+  - Totals: boundary weeks sum in-month dates only, and the week rail reconciles with Weekly cash flow.
+  - Controls: search expand/keep/active; filter count, chips and Reset; chart links (donut kind, week, bucket); unavailable/loading states.
+  - Detail and payments: inline vs drawer panel; week panel scope; Record Payment opened and cancelled.
+  - Keyboard order; no overflow at 1920/1440/1280/1024/700/390; light and dark.
+- Main assistant (real data, read-only, 955px dark): single card and heading, Range selector in analytics, no overflow, shading only on received days.
+
+**Not verified:** OS reduced-motion setting; screen reader; dark theme at 390.
+**Decisions / known:**
+- One month-wide scale means a huge outlier flattens the other days (as specified).
+- `?q=` set only via the URL doesn't light up the search button (existing ownership).
+- The 390px header wraps to 4 rows.
+- The inline panel is a card inside a card at ≥1440.
+- Upcoming still shows its own empty state when no obligations exist at all.
+
+---
+
+## 2026-09-29 (Clients → Revenue: compact Receipts over time widget)
+
+**Mode:** same session, not committed. Presentation only. Change by `ui-and-ux-apple`; review and checks by the main assistant.
+**Scope touched:** `apps/web` clients:
+- `ReceiptsOverTimeChart.tsx`:
+  - The plot is `h-26` (was 112px).
+  - A 24px row above the plot holds the compact axis max ("$2.5K"), the "No records" key when present, and "View as table"; the footer and footnote are removed.
+  - The heading is "Receipts over time · by month/week" (range kept in tooltip/table/aria). Month ticks are short, with the year only on the first tick / January when spanning years.
+  - An "About receipts over time" info popover covers: net of refunds, voided excluded, exact buckets with no smoothing, hatched = no records, select to open in the calendar, currency.
+  - "Filtered by client." sits below the labels.
+  - Still a grouped bar chart; guide, markers, hatched gaps, keyboard, calendar links and the tooltip are unchanged.
+- `RevenueAnalyticsGrid.tsx`: the trend skeleton plot is `h-29`.
+
+**Result:** card 223→197px (matches Weekly cash flow 197 / donut 198). Filtered 217; empty 78; loading 198→197.
+**Tests:** web tsc/eslint clean, vitest 637/637. No extra servers left running.
+**Browser-verified (agent, fixture mock):**
+- Widths 1024/1280/1440/1920, summary collapsed (all) and expanded (1024/1440/1920).
+- Ranges: This month (weekly buckets), Last 6/12 months, Year to date (hatched months).
+- Variants: both series, large amounts ($29.6M tooltip), sparse, empty, filtered, loading; dark and light.
+- Tooltips at the first/middle/last bucket stay in the viewport and never cover the legend/toggle.
+- Keyboard arrows plus Enter → calendar month; click → month; info popover opens and Escape closes; no overflow; summary pref ends "1".
+
+**Not verified:** an Uncategorised third series (not in fixture); reduced motion.
+**Open issue (pre-existing, grid-level):** with Revenue summary EXPANDED, the metric column (Today + 4 cards) is taller than the charts column, leaving 101px (1024) to ~277–313px (1440/1920) of blank space before the controls. Collapsed, the gap is 24px. Needs a grid restructure — awaiting user decision.
+**Cleanup candidates (not done):** `TableToggle` is now unused; `compactMoney`/`InfoTerm` are duplicated in the weekly and receipts charts.
+
+---
+
+## 2026-09-28 (Clients → Revenue: compact Weekly cash flow widget)
+
+**Mode:** same session, not committed. Presentation only. Change by `ui-and-ux-apple`; review and checks by the main assistant.
+**Scope touched:** `apps/web` clients:
+- `WeeklyCashFlowChart.tsx`:
+  - The plot is `h-26` (104px, was 128); bars remain proportional via `barHeight` %.
+  - A new 24px row above the plot holds the axis max on the left and "View as table" on the right, plus the "No records" key when relevant (moved out of the header so the legend never wraps).
+  - The filter / obligations-failure note moved below the week labels.
+  - The own loading placeholder is resized.
+- `RevenueAnalyticsGrid.tsx`: the skeleton's weekly placeholder is `h-29` (renders 198).
+- `revenueChartParts.tsx`: the `TableToggleButton` export was split out of `TableToggle`; the "Receipts over time" footer is unchanged.
+
+**Result:** the weekly card is 197px vs the donut's 198, top-aligned with `items-start`. The 57px gap under the donut is gone (16–17px under both cards).
+**Tests:** web tsc/eslint clean, vitest 637/637. The main assistant confirmed no extra servers were left listening.
+**Browser-verified (agent, fixture mock):**
+- Widths 1024/1280/1440/1920, summary expanded and collapsed; 5/14/53-week ranges; large amounts ($12.3M, $20M axis).
+- States: empty, obligations failure (217 vs 198, with the note visible), filtered (217 vs 222), loading (198→197, no jump), table open.
+- Tooltips on the first/middle/last week stay in the viewport and clear of the legend and toggle, never clipped.
+- Keyboard Tab/arrows/Enter → `calCursor`; click → `calCursor`; dark, plus light at 1024.
+- Cleanup: `wdos-revenue-summary-collapsed` restored to "1"; leftover test tabs closed.
+
+**Not verified:** the 2px lift animating live (class present, code unchanged); reduced-motion emulation; light-theme tooltips.
+**Known:** the tooltip (~130px) is taller than the plot, so it can hang slightly below the card on dense ranges; middle-week tooltips in narrow plots may cover the hovered week (pre-existing).
+
+---
+
+## 2026-09-28 (Clients → Revenue: compact "Received by type" widget)
+
+**Mode:** same session, not committed. Implemented directly by the main assistant: a user-granted one-off exception to UI delegation, after the Agent launch was repeatedly blocked by the auto-mode classifier returning no verdict. The ui-ux-pro-max and apple-design skills were read and applied.
+**Scope touched:** `apps/web` clients:
+- `ReceiptsDonut.tsx`:
+  - The range subtitle is dropped (still in the ring's aria-label). The footnote moved to an `InfoPopover` covering: net of refunds, by day received, voided excluded, how to filter, and currency. "Filtered by client." stays visible.
+  - The body is content-sized flex-wrap: the legend sits beside the ring while it has 13rem, else wraps under; max-w-sm.
+  - `placeTooltip` may float outside the compact card within the viewport. Priority: viewport, hole and amounts (hard) > off the ring > inside the card > off the legend.
+  - Ring, centre fit, colours, hover offset, filtering and keyboard are unchanged.
+- `RevenueAnalyticsGrid.tsx`: the charts row is wrapped in `@container`. At ≥52rem it is `fit-content(28rem) | 1fr` with `items-start` (no stretch); below that it stacks. The trend span follows the same breakpoint, and the skeleton gets a donut-shaped placeholder.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Browser-verified (fixture mock in iframes):** at 1280 expanded, 1440 expanded and collapsed, and 1920 collapsed, the donut card is 402×198 beside Weekly cash flow, the legend is beside the ring, nothing is truncated, and there's no overflow. Tooltips are clean at 1280/1920.
+**Not verified then (classifier/throttling blocked):** 1024, 1280 collapsed, empty/loading, large amounts, keyboard. These were handed to the follow-up Weekly cash flow compaction check.
+**Known:** there is a 57px space under the donut (Weekly cash flow is taller); addressed next.
+
+---
+
+## 2026-09-28 (Clients → Revenue: Weekly cash flow text cleanup)
+
+**Mode:** same session, not committed. Presentation only. Change by `ui-and-ux-apple`; review and spot checks by the main assistant.
+**Scope touched:** `apps/web` clients:
+- `WeeklyCashFlowChart.tsx`:
+  - The heading loses the range subtitle.
+  - The legend is two entries: Received, and Scheduled outstanding with a stacked swatch of the three hues. "No records" appears only when hatched weeks are shown.
+  - The axis top label is compact ("$2.5K").
+  - The footnote moved into an info popover with the colour breakdown, week definition and currency.
+  - Tooltip counts gain units, and the subtotal is renamed "Scheduled outstanding".
+  - The error, filter and empty notes stay visible.
+- `revenueChartParts.tsx`: `InfoPopover` (32px button, aria-expanded/controls; Escape returns focus; closes on outside click or tap) and an optional `ChartCard` `info` prop. Other charts are unchanged.
+- Calculations, bar heights and colours, the hover lift, filtering and calendar links are unchanged.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Verified:**
+- Agent: 955px, plus 1280px and 360px iframes, summary expanded and collapsed, dark and light. Also a $1.2M week, an empty range, obligations failure, and hatched weeks. Tooltip and info panel stay in the card; keyboard info control works; week Enter sets calCursor; the lift is present.
+- Main assistant: the visible text is only heading, legend, axis, week labels and View as table. The info panel opens, stays in the card, Escape closes it and returns focus; the lift is still present.
+
+**Not verified:** real touch device, screen reader.
+
+---
+
+## 2026-09-28 (Clients → Revenue: donut centre text fixed)
+
+**Mode:** same session, not committed. Presentation only. Change by `ui-and-ux-apple`; review and spot checks by the main assistant.
+**Scope touched:** `apps/web` `ReceiptsDonut.tsx` only.
+- The centre always shows two lines, a short label ("Received" / "Builds" / "Hosting" / "Other") and the amount, in a fixed 36px block ≈ 0.78 × the hole diameter.
+- The amount is measured to fit: exact at 16px, then 15px, then compact ("$1.24M") at 16px, then 15px.
+- A new tooltip (the donut had none) shows the full name, exact amount, % of received and payment count. It appears on segment hover, keyboard `:focus-visible` and legend row hover. It is placed inside the card, clear of the hole and the legend amounts.
+- Legend hover handlers moved to the `<li>`, so the disabled Uncategorised row also shows the tooltip.
+- Colours, the 4px offset, filtering, aria labels and calculations are unchanged.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Verified:**
+- Agent: centre inside the hole in all states, across 360–1920px widths, summary expanded and collapsed, light and dark, all four app fonts, and large amounts ($1,234,567.89; $12,345,678). Keyboard Tab and Enter checked at 955px.
+- Main assistant (mock, 955px): default, each segment hover and after leave are all 2 lines, 36px, with the far corner at 40.2px against a ~46px hole radius. The tooltip is inside the card, clear of the hole and the amounts, and gone after leave. Aria labels keep % and count.
+
+**Known issue:** on a card under 352px with the system or mono font and a 7–8 digit amount, the tooltip can cover the legend amounts; it stays clear of the hole.
+
+---
+
+## 2026-09-28 (Clients → Revenue: weekly bars lift on hover/focus)
+
+**Mode:** same session, not committed. Presentation only. Change by `ui-and-ux-apple`; review and extra checks by the main assistant.
+**Scope touched:** `apps/web` `WeeklyCashFlowChart.tsx` only.
+- The active week's bars wrapper (not the column button) gets `-translate-y-[2px]` with `motion-fast` (150ms, `ease-standard`). The same condition drives the band, so hover and keyboard focus behave alike.
+- Reduced motion uses `motion-reduce:translate-y-0 transition-none`, keeping the static band and fade.
+- "No records" weeks don't lift.
+- Heights, axes, tooltip and handlers are unchanged.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Verified:**
+- Computed `translate: 0px -2px` on the active week only.
+- Column rects and bar heights are identical before and after hover.
+- Rapid pointer sweeps (the agent's synthetic 16ms events; the main assistant's real pointer weeks 8→13→9) always had exactly one lifted week, matching the band, with no empty or flicker states in between.
+- Keyboard arrows lift the focused week.
+- Enter or click still sets `calCursor`.
+- One mid-transition sample (-1.93px) observed; no billing writes.
+
+**Not verified:**
+- The live 150ms ease visually (the automation tab is hidden, so transitions stall and screenshots timed out).
+- Reduced motion emulation (CSS rules confirmed only).
+- Narrow width and light theme.
+
+---
+
+## 2026-09-28 (Clients → Revenue: per-chart hover/focus interactions)
+
+**Mode:** same session, not committed. Presentation only. Changes by `ui-and-ux-apple`; review and extra browser verification by the main assistant.
+**Scope touched:** `apps/web` clients:
+- `ReceiptsDonut.tsx`: the hovered/focused segment moves out about 4px along its mid-angle; the others soften to 45%. The centre shows category, amount, % and count. The `kind` selection dimming persists through pointer exit.
+- `WeeklyCashFlowChart.tsx`: the active week gets a full-height band; other weeks soften to 55% (opacity only, heights unchanged). The tooltip adds a "Scheduled, unpaid" subtotal.
+- `ReceiptsOverTimeChart.tsx`: this is a grouped bar chart, not a line chart. It gets a 1px tracking guide that slides between buckets (transform, 150ms) and outlined markers on non-zero bar tops; there is no guide or marker on "No records" buckets. The old hover band was removed here.
+- `revenueChartParts.tsx`:
+  - `usePlotWidth` (ResizeObserver) and `tooltipPlacement`: tooltips sit inside the plot beside the column, edge-pinned when there's no room. This replaces `tooltipAnchor`.
+  - `useColumnNav` only emphasises `:focus-visible` focus, so a mouse click no longer leaves a stuck tooltip.
+- All transitions use `duration-fast`/`ease-standard` with `motion-reduce:transition-none`. No dependencies were added; calculations and fetches are unchanged.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Browser-verified (in-page mock, Last 3 months, real cursor, 955px dark):**
+- Donut:
+  - Segment offset, softening and centre detail.
+  - Clicking sets `kind=hosting` and the selection survives hovering the other segment and leaving.
+  - A second click clears it.
+- Weekly: band, softening, and the tooltip beside the column with the scheduled subtotal.
+- Receipts:
+  - The guide and markers show; a mid-slide frame was captured as the guide moved Sept→July.
+  - A $0 series gets no marker.
+  - Keyboard Tab/Arrow gives the same guide, markers and tooltip, which flips sides at the edges.
+- Hover and clicks caused no fetches and no billing writes.
+- Reduced motion: classes present, plus the global `prefers-reduced-motion` rule. Not emulated.
+
+The agent also checked a 375px iframe (tooltips stay in the card; up to ~60px of unavoidable overlap on middle columns), 53-week density, and light theme at 955px.
+**Not verified:** real touch devices; light theme at 375px.
+
+---
+
+## 2026-09-28 (Clients → Revenue: collapsible summary, controls above the calendar)
+
+**Mode:** same session, not committed. Presentation only. Changes by `ui-and-ux-apple` plus a Today follow-up; grid fix by the main assistant.
+**Scope touched:** `apps/web` clients:
+- `RevenueAnalyticsGrid.tsx`:
+  - "Revenue summary" h2 disclosure button (chevron, `aria-expanded`/`aria-controls`) with a read-only "Analytics · {range}" label.
+  - Collapsed state stored in `wdos-revenue-summary-collapsed`; defaults to expanded; SSR snapshot is expanded.
+  - The collapsed line shows Received/Overdue/Expected plus the compact Today button. The metric column stays mounted (`hidden`) when collapsed.
+  - The grid is now two independent columns (metric column | charts sub-grid), so tall metric cards no longer stretch the chart rows (removes the blank bands in chart cards). When collapsed, the charts take the full width.
+- `ClientsRevenueTab.tsx`:
+  - Order is analytics → control group → filter chips → calendar. Row 1: view switch left, Range + dates right. Row 2: search/Filters.
+  - `TodayInline` added. The Today box is the first summary card; in the Hosting view it sits on its own row above the controls.
+- No change to calculations, data fetches or URL params. Record payment and month navigation stay in the calendar only.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Browser-verified (real data read-only, plus the earlier mock):**
+- Summary: first use is expanded. Collapse sets aria-expanded=false, stores "1", and the charts go full width (652/652/1320). The state survives a reload. Reopening works.
+- Nested disclosures: Active plans/By age are independent of the outer toggle.
+- Metric filters: Overdue focus keeps the headline ($15,763) and Reset clears it.
+- Views and range: Hosting shows no analytics and the Today box above the controls. Last 3 months updates the charts and the "Analytics ·" label.
+- Controls and calendar: search (no-match empty state), Filters, calendar Next/Previous, day panel and Record Payment (opened, cancelled) all work.
+- 360px has no overflow; chart cards show no blank bands.
+
+**Limitation:** the automation tool's Enter/Space doesn't activate any native button (the control "View as table" is affected too), so keyboard activation wasn't confirmed by the tool. The toggle is a native `<button>`.
+
+---
+
+## 2026-09-28 (Clients → Revenue: simplification reverted)
+
+**Mode:** same session, not committed. Revert by main assistant; browser verification by `ui-and-ux-apple` (report only, no edits).
+**What happened.** The simplification entry below is reverted. No git history existed for the intermediate state (nothing committed), so the exact pre-change contents of the 8 files that change touched (`ClientsRevenueTab.tsx`, `RevenueAnalyticsGrid.tsx`, `RevenueSummaryBoxes.tsx`, `ReceiptsOverTimeChart.tsx`, `ReceiptsDonut.tsx`, `WeeklyCashFlowChart.tsx`, `revenueChartParts.tsx`, `RevenueCalendar.tsx`) were recovered from that UI agent's session transcript (full `cat` dumps taken before its first edit; split by its own `wc -l` counts — every file matched exactly) and restored, which also removes main assistant's follow-up InfoPopover fix. No other file was touched; earlier Revenue work (calculations, charts, calendar indicators, backend) unchanged. The simplified versions are backed up in the session scratchpad.
+**Tests:** web tsc/eslint clean, vitest 637/637; no InfoPopover/More insights/TodayControl remnants.
+**Browser-verified (mock, no writes; 1280px iframe + 955px tab):** 4 stacked metric cards + donut/weekly side by side + wide trend + calendar; fixture values ($2,546; $196/mo; $598 · 3; 2 clients · 4 plans · 1 prospect; donut $2,300/$246; 6-month $4,742, May "No records"); Overdue focus + Reset; donut ring → kind filter; week → calendar week; bucket → month; calendar nav, day panel, Record Payment (cancelled), Hosting without analytics; keyboard through cards and charts.
+**Pre-existing issues noted (not introduced by the revert, not fixed):** donut centre label overflows the hole at ~955px; metric focus outline doesn't cover a stretched card in the 2×2 layout; uneven "View as table" placement / empty band in the donut card; ~57px gap under the toolbar beside the Today box at 1280px; Reset doesn't clear a calendar drill chip (has its own ×).
+
+---
+
+## 2026-09-28 (Clients → Revenue: simplified — strip, one chart, calendar)
+
+**Mode:** same session, not committed. Presentation only, by `ui-and-ux-apple`; one popover fix + verification by main assistant.
+**Scope touched:** `apps/web` clients `ClientsRevenueTab.tsx` (single wrapping toolbar incl. compact Today control; filter chips under it; visible calendar heading → sr-only), `RevenueAnalyticsGrid.tsx` (summary strip; Receipts over time only; collapsed "More insights" with the existing donut + weekly cash flow), `RevenueSummaryBoxes.tsx` (strip items keep focus toggles; per-item ⓘ holds definition + plans/client counts or overdue ages), `revenueChartParts.tsx` (`InfoPopover`, closes on inner actions; `ChartCard` plain/info), chart files (repeated subtitles/footnotes moved behind ⓘ), `RevenueCalendar.tsx` (month title first + quiet "Range: …" only when it differs). No calculation/data/URL/backend change.
+
+**Tests:** web tsc/eslint clean, vitest 637/637.
+**Browser-verified (in-page mock, no writes):** default = toolbar, strip (Received $2,546 · 1–30 Sept with comparison; Expected $196 per month · active plans; Overdue $598 current · 3 payments), one chart, collapsed More insights, calendar; More insights reveals donut ($2,546, 6 payments) + weekly; ⓘ panels (Expected: definition, "2 clients · 4 plans · 1 prospect plan", plans list; Overdue: ages + View all overdue — now closes itself and opens the all-overdue panel); Escape closes ⓘ with focus return; strip focus → filter bar with one Reset directly above the calendar; Last 3 months → $2,693 and "Range: 1 July – 30 Sept 2026" beside the September calendar; obligations failure still flagged on the collapsed More insights row; 360px no overflow.
+**Blockers/issues:** ⓘ buttons are 32px (below 44px touch guideline, matches page's compact controls); calendar still shows the "AUD" label; light theme unchecked.
+
+---
+
+## 2026-09-26 (Clients → Revenue: analytics dashboard — replaces the Revenue snapshot)
+
+**Mode:** same session, not committed. Definitions/aggregation/data hook by main assistant; UI by `ui-and-ux-apple` (dataviz skill + palette validator).
+**Scope touched:** `apps/web` clients: new `revenueAnalytics.ts`(+test: ranges, workspace-tz today, comparisons, category split, Sunday-first weekly flow with no-records weeks, exact trend buckets, active hosting clients), `useRevenueAnalyticsData.ts` (`?range=` presets, full-range report, previous-period report only when comparable), `RevenueAnalyticsGrid.tsx`, `ReceiptsDonut.tsx`, `WeeklyCashFlowChart.tsx`, `ReceiptsOverTimeChart.tsx`, `revenueChartParts.tsx`; `ClientsRevenueTab.tsx` (toolbar + range control, grid, ActiveFiltersBar, calendar heading, chart→calendar/type navigation); `RevenueSummaryBoxes.tsx`; removed the snapshot panel, `ReceivedTrend`, daily `CashFlowChart.tsx`, and unused `cashFlowSeries`/`cumulativeReceipts`. No backend change this round (uses the earlier additive `overdue_items`/`expected_hosting_plans`).
+
+**Data inspected:** payments are allocated to exactly one agreement or hosting charge (DB check) → two receipt categories, "Uncategorised" only a guard; no test/demo flag on payments (the dev-only Today demo obligation is display-only and never in analytics); active hosting clients = distinct clients on ACTIVE plans (prospect plans counted separately); workspace `created_at` marks where "no records" starts; single workspace currency.
+**Tests:** web tsc/eslint clean, vitest 637/637; api test_billing 45/45.
+**Browser-verified (in-page mock; workspace created_at mocked to 1 Jun; no writes):** This month $2,546 (+5096% vs 6–31 Aug, like-for-like days), donut $2,300/$246 (90/10%, 6 payments); Last 6 months $4,742 (11 payments, $4,300/$442), no comparison (prior window predates workspace), May hatched "No records", backdated April receipt shown; Last 3 months $2,693, no comparison; Overdue $598 (3) "current · as of", Expected $196 per month, 2 active hosting clients · 4 plans · 1 prospect plan; donut segment → kind=website + ActiveFiltersBar, headline unchanged; week → calendar week 13–19 Sep (Upcoming); trend bucket → June; Reset; Overdue metric focus; Hosting view has no analytics; Record Payment opens; report error + retry; 360px and 1024px no overflow, logical stacking.
+**Found & fixed:** weekly buckets were Mon–Sun but the calendar week is Sun–Sat (week click opened the wrong week) → Sunday-first; pre-workspace weeks announced as "$0 received" → "No records" band/label/tooltip; trend axis "Apr 26" (ambiguous) → "Apr 2026".
+**Blockers/issues:** extreme % changes are shown as-is when the baseline is tiny but non-zero; the "Breakdown (this month)" refunds/outstanding line went with the snapshot panel (refunds remain visible as calendar "adjusted" markers and in payment details); this-month report fetched up to three times (calendar, Today box, analytics); light theme unchecked; donut centre text is tight against the ring at 144px.
+
+---
+
+## 2026-09-26 (Clients → Revenue: one "Revenue snapshot" panel)
+
+**Mode:** same session, not committed. UI by `ui-and-ux-apple`; alignment/empty-state fixes and verification by main assistant.
+**Scope touched:** `apps/web` clients `RevenueSummaryBoxes.tsx` (`SnapshotMetric`, `ReceivedTrend`), `ClientsRevenueTab.tsx` (`RevenueSnapshot` + matching skeleton; toolbar row now uses the snapshot's `lg` column fractions with no column gap so the Today box sits under Overdue; empty "Active plans (0)" disclosure hidden). No calculation, handler, URL or backend change.
+
+**What happened.** The three boxes became one card: header ("Revenue snapshot · As of …"), three line-divided metric areas (Received primary; "$X per month · Sum of N active plans' monthly fees"; Overdue red only when > 0 with count), each a keyboard toggle for the existing `?focus=` filter with tint + accent rule + "Filtering below"; hosting/overdue breakdowns stay behind small collapsed disclosures; beneath, the existing cumulative receipts trend, labelled "Received so far this month (cumulative) · 1–26 Sep" and stopping at today; "Breakdown (this month)" as footer; one Reset in the FocusBar. No pie/total/percentages; the daily cash-flow chart (different measure) unchanged.
+**Tests:** web tsc/eslint clean, vitest 632/632.
+**Browser-verified (in-page mock, no billing writes):** totals $2,546 / $148 per month / $598 (3) match the previous boxes; keyboard Enter on Overdue → Upcoming + focus, selected state, headline unchanged; plans and age breakdowns; "View all overdue" cross-month panel; Reset; hosting and received focus; zero state ("No payments received yet this month", "No active hosting plans", "None overdue"); report error with Retry; panel-shaped loading skeleton; receipts-unavailable note on the chart; day click still opens the 4-record panel; 360px (stacked) and 800px (Received full width, two below) with no horizontal overflow (iframe check, real data read-only).
+**Blockers/issues:** "Receipts trend unavailable" only arises if transactions are missing from a loaded report (a failed report shows the panel error instead) — not separately exercised; light theme unchecked.
+
+---
+
+## 2026-09-26 (Clients → Revenue: day indicators, interactive summary boxes, linked cash-flow chart)
+
+**Mode:** same session, not committed. Definitions/calculations/API by main assistant; UI by `ui-and-ux-apple` (with the dataviz skill).
+**Scope touched:** `apps/api` billing `schemas.py`/`service.py` (additive `RevenueReport.overdue_items` = the balance rows behind `overdue_cents`, and `expected_hosting_plans` = the ACTIVE plans behind `expected_mrr_cents`), `tests/test_billing.py` (+1). `apps/web` clients: new `revenueVisuals.ts`(+test), `CashFlowChart.tsx`, `RevenueSummaryBoxes.tsx`; `RevenueCalendar.tsx` (per-day totals), `ClientsRevenueTab.tsx` (boxes, `?focus=`, chart, combined `?flowDay=` panel), `PaymentsTab.tsx`/`UpcomingOverdueTab.tsx` (focus filters; projected past-due hosting no longer shown as overdue), `DayDetailPanel.tsx` (description), `lib/api.ts`; deleted `ReceiptsTrendChart.tsx` (same receipts, superseded; per-day website/hosting split lost, monthly split still in Breakdown).
+
+**Definitions:** Received = non-voided payments net of refunds on received date; Outstanding = unpaid remainder (partials deducted) on due date, Due XOR Overdue; Overdue = server rule (due < today in workspace tz), projected not-yet-issued hosting never overdue (matches the Overdue total); undated obligations excluded from the calendar; single workspace currency, nothing converted; outstanding reflects today's unpaid state only (no historical "was due" data).
+**Tests:** api test_billing+test_dashboard 65/65; web tsc/eslint clean, vitest 632/632 (revenueVisuals 11).
+**Browser-verified with an in-page mock** of the two read-only revenue endpoints (no billing data written; mock also blocks any billing write): headline totals match hand-computed fixture values ($2,546 net of a $200 refund and a $50 reversal; $148; $598); multi-payment day (count 4, "2 adjusted"); partial payment remainder; projected past-due charge shown as Due; overdue from June/August in the all-overdue panel with scope text; chart keyboard (arrows/Enter) + tooltip; focus boxes (overdue/hosting/received) with selected state, stable headlines, Reset; plan and age breakdowns (sum = headline); month/year boundaries (Aug 31, Oct 1, Jan 4 2027), empty November, obligations-unavailable note; Hosting view has no chart; Record Payment modal still opens (not submitted).
+**Found & fixed:** day count double-counted a refunded payment (5 vs 4); chart day selection in Payments opened "Nothing recorded" for an overdue-only day → now opens a combined receipts+outstanding panel; Upcoming counted projected past-due hosting as overdue (inconsistent with the Overdue total).
+**Blockers/issues:** multi-currency not supported by the model (one workspace currency) — nothing to verify; frontend month bounds still use the browser's local date (unchanged behaviour); light theme unchecked.
+
+---
+
 ## 2026-09-26 (Discovery: glass Results panel, bottom bar removed, search switcher in panel header)
 
 **Mode:** background session in a worktree, pushed straight to main (e772488, then this commit). All edits by main assistant directly — not routed through `ui-and-ux-apple`.

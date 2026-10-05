@@ -6,6 +6,7 @@ import { loadCommandMenuData, type CommandMenuData } from "@/lib/commandMenuCach
 import { NAV_SECTIONS } from "@/lib/nav";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
 import { NavIcon } from "./Icons";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const CommandMenuContext = createContext<(() => void) | null>(null);
 
@@ -203,15 +204,16 @@ export function CommandMenuProvider({ children }: { children: ReactNode }) {
 export function CommandMenuButton() {
   const open = useCommandMenu();
   return (
-    <button
-      type="button"
-      onClick={open}
-      aria-label="Search (Cmd+K)"
-      title="Search (Cmd+K)"
-      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg"
-    >
-      <NavIcon name="discovery" className="h-4 w-4" />
-      <kbd className="rounded border border-border-strong px-1 text-[10px]">⌘K</kbd>
-    </button>
+    <Tooltip label="Search">
+      <button
+        type="button"
+        onClick={open}
+        aria-label="Search (Cmd+K)"
+        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg"
+      >
+        <NavIcon name="discovery" className="h-4 w-4" />
+        <kbd className="rounded border border-border-strong px-1 text-[10px]">⌘K</kbd>
+      </button>
+    </Tooltip>
   );
 }

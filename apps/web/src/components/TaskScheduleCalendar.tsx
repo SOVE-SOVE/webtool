@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type R
 import { ChevronDownIcon } from "@/components/ui/ControlIcons";
 import { addMonths, toDateKey } from "@/lib/calendarGrid";
 import { compactMonthCells, indexScheduleByDay, type ScheduleEvent } from "@/lib/taskSchedule";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -132,12 +133,16 @@ export function TaskScheduleCalendar({
           {monthLabel}
         </span>
         <div className="flex items-center gap-0.5">
-          <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month" className={NAV_BUTTON}>
-            <ChevronDownIcon className="h-3.5 w-3.5 rotate-90" />
-          </button>
-          <button type="button" onClick={() => changeMonth(1)} aria-label="Next month" className={NAV_BUTTON}>
-            <ChevronDownIcon className="h-3.5 w-3.5 -rotate-90" />
-          </button>
+          <Tooltip label="Previous month">
+            <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month" className={NAV_BUTTON}>
+              <ChevronDownIcon className="h-3.5 w-3.5 rotate-90" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Next month">
+            <button type="button" onClick={() => changeMonth(1)} aria-label="Next month" className={NAV_BUTTON}>
+              <ChevronDownIcon className="h-3.5 w-3.5 -rotate-90" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import {
   MOBILE_PRIMARY_HREFS,
   NAV_SECTIONS,
   PRIMARY_NAV_LINKS,
+  SHEET_PRIMARY_NAV_LINKS,
   isNavLinkActive,
   pageFadeKey,
 } from "./nav";
@@ -78,9 +79,19 @@ describe("nav config", () => {
     for (const href of ALL_NAV_HREFS) expect(href.split("?")[0].startsWith("/dashboard")).toBe(true);
   });
 
-  it("the mobile bottom nav's four primary hrefs all resolve to a real nav link", () => {
+  it("the bottom nav's five primary hrefs all resolve to a real nav link, Clients last", () => {
     for (const href of MOBILE_PRIMARY_HREFS) expect(ALL_NAV_HREFS).toContain(href);
-    expect(MOBILE_PRIMARY_HREFS).toHaveLength(4);
+    expect(MOBILE_PRIMARY_HREFS).toEqual([
+      "/dashboard",
+      "/dashboard/discovery",
+      "/dashboard/sales",
+      "/dashboard/build",
+      "/dashboard/clients",
+    ]);
+  });
+
+  it("the navigation sheet lists every primary destination except Clients (shown in the bottom nav)", () => {
+    expect(SHEET_PRIMARY_NAV_LINKS.map((l) => l.label)).toEqual(["Today", "Discovery", "Sales", "Build"]);
   });
 });
 

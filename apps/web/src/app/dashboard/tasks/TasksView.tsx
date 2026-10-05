@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { oneOf, useUrlState } from "@/lib/todayState";
 import { notifyAfter, notifyTodayDataChanged, useOnTodayDataChanged } from "@/lib/todaySync";
 import { ApiError, api, type Lead, type Project, type Task, type User } from "@/lib/api";
@@ -28,6 +28,9 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { ContentLoadingIndicator } from "@/components/ui/SectionLoadingIndicator";
 import { SoftSwap } from "@/components/ui/SoftSwap";
 import { useRecentChanges } from "@/lib/useRecentChanges";
+import { completedByUser } from "@/lib/completionFeedback";
+import { useCompletionCelebration } from "@/lib/useCompletionCelebration";
+import { useTaskDoneToast } from "@/lib/useTaskDoneToast";
 import { useToast } from "@/components/ui/ToastProvider";
 import { NewTaskModal } from "@/components/NewTaskModal";
 import { TaskDetailModal } from "@/components/TaskDetailModal";
@@ -68,7 +71,22 @@ function dueLabel(task: Task, urgency: TaskUrgency): string | null {
   return `Due ${date}`;
 }
 
-function TaskRow({ task, onToggle, onOpen, flash }: { task: Task; onToggle: () => void; onOpen: () => void; flash?: boolean }) {
+function TaskRow({
+  task,
+  onToggle,
+  onOpen,
+  flash,
+  celebrate,
+  onCelebrated,
+}: {
+  task: Task;
+  onToggle: () => void;
+  onOpen: () => void;
+  flash?: boolean;
+  /** The user just completed this task and the server confirmed it. */
+  celebrate?: boolean;
+  onCelebrated?: () => void;
+}) {
   const urgency = taskUrgency(task);
   const label = dueLabel(task, urgency);
   return (
@@ -89,7 +107,8 @@ function TaskRow({ task, onToggle, onOpen, flash }: { task: Task; onToggle: () =
         onClick={(e) => e.stopPropagation()}
         onChange={onToggle}
         aria-label={task.done ? `Reopen "${task.title}"` : `Mark "${task.title}" done`}
-        className="mt-1 h-4 w-4 shrink-0 accent-fg"
+        onAnimationEnd={onCelebrated}
+        className={`mt-1 h-4 w-4 shrink-0 accent-fg ${celebrate && task.done ? "animate-checkbox-pop" : ""}`}
       />
       <div className="min-w-0 flex-1">
         <p className={`truncate text-sm font-medium ${task.done ? "text-fg-muted line-through" : "text-fg"}`}>
@@ -145,6 +164,7 @@ export function TasksView() {
 
   const [showNewTask, setShowNewTask] = useState(false);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const { celebratingId, celebrate, settle } = useCompletionCelebration();
 
   function loadTasks() {
     api
@@ -176,11 +196,22 @@ export function TasksView() {
     notifyTodayDataChanged("tasks");
   }
 
+  // The tasks as this screen currently knows them, for an Undo pressed a
+  // few seconds after its toast appeared (see useTaskDoneToast).
+  const tasksRef = useRef<Task[] | null>(null);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+  const showTaskDoneToast = useTaskDoneToast((id) => tasksRef.current?.find((t) => t.id === id), handleTaskChanged);
+
   async function handleToggle(task: Task) {
     try {
       const updated = await notifyAfter(api.updateTask(task.id, { done: !task.done }), "tasks");
       updateTaskInState(updated);
-      showToast(updated.done ? "Marked complete" : "Reopened");
+      if (completedByUser({ wasDone: task.done, requestedDone: !task.done, confirmedDone: updated.done })) {
+        celebrate(updated.id);
+      }
+      showTaskDoneToast(updated);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Couldn't update this task.", "error");
     }
@@ -332,6 +363,8 @@ export function TasksView() {
                       <TaskRow
                         key={task.id}
                         flash={recentIds.has(task.id)}
+                        celebrate={celebratingId === task.id}
+                        onCelebrated={settle}
                         task={task}
                         onToggle={() => handleToggle(task)}
                         onOpen={() => setDetailTask(task)}
@@ -353,6 +386,8 @@ export function TasksView() {
                   <TaskRow
                     key={task.id}
                     flash={recentIds.has(task.id)}
+                    celebrate={celebratingId === task.id}
+                    onCelebrated={settle}
                     task={task}
                     onToggle={() => handleToggle(task)}
                     onOpen={() => setDetailTask(task)}
@@ -369,6 +404,8 @@ export function TasksView() {
                   <TaskRow
                     key={task.id}
                     flash={recentIds.has(task.id)}
+                    celebrate={celebratingId === task.id}
+                    onCelebrated={settle}
                     task={task}
                     onToggle={() => handleToggle(task)}
                     onOpen={() => setDetailTask(task)}

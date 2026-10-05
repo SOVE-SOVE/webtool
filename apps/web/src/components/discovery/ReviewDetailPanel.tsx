@@ -2,6 +2,7 @@
 
 import { useRef, type ReactNode } from "react";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /**
  * Right-hand detail panel for one section of the review brief. Reuses the
@@ -46,17 +47,19 @@ export function ReviewDetailPanel({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {actions}
-            <button
-              ref={closeButtonRef}
-              type="button"
-              onClick={onClose}
-              aria-label={`Close ${title}`}
-              className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-                <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
-              </svg>
-            </button>
+            <Tooltip label="Close" side="bottom">
+              <button
+                ref={closeButtonRef}
+                type="button"
+                onClick={onClose}
+                aria-label={`Close ${title}`}
+                className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+                  <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>

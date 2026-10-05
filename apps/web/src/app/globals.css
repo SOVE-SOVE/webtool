@@ -19,6 +19,30 @@
   --surface: #ffffff; /* cards, panels, table rows, inputs, popovers */
   --surface-subtle: #f5f5f5; /* table headers, sidebar, subtle fills */
   --surface-hover: #f5f5f5; /* hover state for list rows / nav items */
+  /* Quiet filled tiles on a card (Revenue calendar: adjacent-month days,
+     week totals) — one clear step off the surface in each theme. */
+  --surface-tile: #f0f0f0;
+  /* Chart colours, one per meaning (see lib/chartPalette.ts). The
+     *-default values are the built-in palette; Settings → Appearance →
+     Chart colours overrides the plain tokens on <html>, never these. */
+  --chart-received-default: var(--color-emerald-600);
+  --chart-received-shade-default: var(--color-emerald-500); /* calendar day shading base */
+  --chart-outstanding-default: var(--color-indigo-500);
+  --chart-overdue-default: var(--color-red-600);
+  --chart-overdue-soft-default: color-mix(in oklab, var(--color-red-500) 85%, transparent);
+  --chart-overdue-icon-default: var(--color-red-600);
+  --chart-website-default: var(--color-sky-600);
+  --chart-hosting-default: var(--color-amber-600);
+  --chart-other-default: var(--color-zinc-400);
+  --chart-received: var(--chart-received-default);
+  --chart-received-shade: var(--chart-received-shade-default);
+  --chart-outstanding: var(--chart-outstanding-default);
+  --chart-overdue: var(--chart-overdue-default);
+  --chart-overdue-soft: var(--chart-overdue-soft-default);
+  --chart-overdue-icon: var(--chart-overdue-icon-default);
+  --chart-website: var(--chart-website-default);
+  --chart-hosting: var(--chart-hosting-default);
+  --chart-other: var(--chart-other-default);
   --border: #e5e5e5; /* default hairline border */
   --border-strong: #d4d4d4; /* input borders, emphasized dividers */
   --fg: #171717; /* primary text */
@@ -52,6 +76,20 @@
   --glass-fill: rgb(255 255 255 / 0.4);
   --glass-fill-hover: rgb(255 255 255 / 0.65);
   --glass-hairline: rgb(23 23 23 / 0.12);
+  /* The dashboard's edge-attached glass bars (.app-bar-glass) — a soft,
+     even halo rather than the floating panels' deep drop shadow, so a
+     full-width bar doesn't cast a heavy band over the page. */
+  --glass-bar-shadow: 0 0 12px rgb(15 23 42 / 0.06);
+  /* The bars' own tint — NOT --glass-bg. That one is tuned for a panel
+     over the light map, and its colour is the cards' own surface (white
+     here, #171717 in dark), so over ordinary page content the blurred
+     backdrop came back as the bar's exact colour and the bar read as a
+     solid `bg-surface` strip. Tinting with the canvas instead keeps the
+     bar a step apart from the cards it passes over. Over the worst
+     light map tile: light -> primary 14:1, muted 6.1:1, faint 5.2:1;
+     dark (68%, the floor that keeps the same ratios as --glass-bg) ->
+     7:1 / 5.2:1 / 4.6:1. */
+  --glass-bar-bg: color-mix(in srgb, var(--canvas) 60%, transparent);
   --danger: #dc2626;
   --danger-fg: #ffffff;
 
@@ -93,6 +131,11 @@
   --surface: #171717;
   --surface-subtle: #1f1f1f;
   --surface-hover: #262626;
+  --surface-tile: #232323;
+  --chart-overdue-default: var(--color-red-500);
+  --chart-overdue-soft-default: color-mix(in oklab, var(--color-red-400) 75%, transparent);
+  --chart-overdue-icon-default: var(--color-red-400);
+  --chart-other-default: var(--color-zinc-500);
   --border: #2a2a2a;
   --border-strong: #404040;
   --fg: #f5f5f5;
@@ -111,6 +154,8 @@
   --glass-fill: rgb(255 255 255 / 0.06);
   --glass-fill-hover: rgb(255 255 255 / 0.12);
   --glass-hairline: rgb(255 255 255 / 0.12);
+  --glass-bar-shadow: 0 0 12px rgb(0 0 0 / 0.4);
+  --glass-bar-bg: color-mix(in srgb, var(--canvas) 68%, transparent);
   --danger: #f87171;
   --danger-fg: #171717;
 
@@ -137,6 +182,11 @@
     --surface: #171717;
     --surface-subtle: #1f1f1f;
     --surface-hover: #262626;
+    --surface-tile: #232323;
+    --chart-overdue-default: var(--color-red-500);
+    --chart-overdue-soft-default: color-mix(in oklab, var(--color-red-400) 75%, transparent);
+    --chart-overdue-icon-default: var(--color-red-400);
+    --chart-other-default: var(--color-zinc-500);
     --border: #2a2a2a;
     --border-strong: #404040;
     --fg: #f5f5f5;
@@ -155,6 +205,8 @@
     --glass-fill: rgb(255 255 255 / 0.06);
     --glass-fill-hover: rgb(255 255 255 / 0.12);
     --glass-hairline: rgb(255 255 255 / 0.12);
+    --glass-bar-shadow: 0 0 12px rgb(0 0 0 / 0.4);
+    --glass-bar-bg: color-mix(in srgb, var(--canvas) 68%, transparent);
     --danger: #f87171;
     --danger-fg: #171717;
 
@@ -189,18 +241,22 @@ html[data-font="mono"] {
   --font-app: var(--font-geist-mono);
 }
 
-/* The desktop dashboard sidebar's current effective width — the single
-   source of truth for anything outside its own DOM subtree that needs
-   to sit flush against its right edge (Discovery's fixed/full-bleed map
-   and floating controls, which can't rely on ordinary flex layout
-   because they're positioned relative to the viewport). Kept in sync
-   with the collapsed/expanded toggle by Sidebar.tsx (see
-   SIDEBAR_W_EXPANDED/COLLAPSED there); this value is only the default
-   before that effect runs, and below `lg` where the sidebar is hidden
-   and consumers don't read it anyway. Matches `w-60` (expanded) — see
-   the `w-[4.5rem]` collapsed counterpart on `.app-sidebar` below. */
+/* The dashboard shell's fixed chrome (dashboard/layout.tsx), the same at
+   every width: a 3rem top bar (`top-12` / `pt-12`) and the bottom nav —
+   3.5rem of items plus the device's safe-area inset. Both bars are
+   frosted glass (.app-bar-glass). <main> reserves them as padding
+   *inside* the window's scroll, so the first and last content start
+   clear of the bars yet scrolls beneath them; viewport-sized content
+   (Discovery's floating column, Planning's board) subtracts them, and
+   Discovery's map runs under both on purpose. */
 :root {
-  --sidebar-w: 15rem;
+  --app-bottom-nav-h: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* Keyboard focus, anchors and scrollIntoView() land clear of both bars
+   rather than beneath them. Only where the dashboard chrome is mounted. */
+html:has(.app-bar-glass) {
+  scroll-padding-top: 3rem;
+  scroll-padding-bottom: var(--app-bottom-nav-h);
 }
 
 @theme inline {
@@ -208,6 +264,16 @@ html[data-font="mono"] {
   --color-surface: var(--surface);
   --color-surface-subtle: var(--surface-subtle);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-tile: var(--surface-tile);
+  --color-chart-received: var(--chart-received);
+  --color-chart-received-shade: var(--chart-received-shade);
+  --color-chart-outstanding: var(--chart-outstanding);
+  --color-chart-overdue: var(--chart-overdue);
+  --color-chart-overdue-soft: var(--chart-overdue-soft);
+  --color-chart-overdue-icon: var(--chart-overdue-icon);
+  --color-chart-website: var(--chart-website);
+  --color-chart-hosting: var(--chart-hosting);
+  --color-chart-other: var(--chart-other);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-fg: var(--fg);
@@ -276,8 +342,8 @@ html[data-font="mono"] {
   /* A "this just changed" highlight is a deliberate exception to the
      scale: long enough to notice, then it settles without a trace. */
   --duration-highlight: 1400ms;
-  /* Another deliberate exception: the sidebar's one-time "you've
-     arrived" icon acknowledgement on a real section change (see
+  /* Another deliberate exception: the main nav's one-shot section-icon
+     animation on hover / keyboard focus (see
      components/nav/AnimatedNavIcon.tsx). Longer than the state-change
      scale above on purpose — it's a short piece of narrative motion
      (a sweep, a scan, a line drawing in), not a control responding to
@@ -524,6 +590,88 @@ body {
     --fg-muted: var(--glass-fg-muted);
     --fg-subtle: var(--glass-fg-subtle);
   }
+  /* The dashboard's fixed top bar and bottom nav (and in-page sticky
+     headers that sit flush under the top bar), frosted glass with page
+     content scrolling beneath. Its own material, not .map-glass's: over
+     the map anything shows through, but over page content (flat cards,
+     12-14px text) the panels' surface-coloured tint and 24px blur
+     averaged the backdrop back to the bar's own colour — it read as
+     solid everywhere except the map. --glass-bar-bg tints with the
+     canvas; a 12px blur keeps the shapes and colour of what's beneath
+     legible as soft forms (24px wiped out text-sized detail entirely),
+     and 180% saturation lets badges, charts and thumbnails bleed
+     through instead of washing to grey. The material is painted on a
+     ::before layer, NOT on the bar itself: backdrop-filter makes its
+     element the containing block for `fixed` descendants, and the top
+     bar renders the activity side panel (a fixed, full-screen overlay)
+     inside it — on the bar, that panel would be trapped in the 48px
+     strip. The bar keeps its own position/z-index (z-30), so layering
+     against the nav sheet (z-40) and modals/toasts (z-50) is unchanged.
+     Edges use the on-glass hairline: the panels' white rim vanishes
+     against the light canvas. */
+  .app-bar-glass {
+    isolation: isolate;
+    border-color: var(--glass-hairline);
+    box-shadow: var(--glass-bar-shadow);
+  }
+  /* The top bar only (dashboard/layout.tsx): at the top of the page it
+     rests on its hairline alone; the same soft halo eases in once page
+     content has scrolled beneath it (`data-scrolled`, written by
+     useScrolledBeneath). Same geometry at zero alpha, so only the
+     colour interpolates. The bottom nav always has content behind it
+     and keeps the plain rule above. */
+  .app-bar-scroll-shadow {
+    box-shadow: 0 0 12px transparent;
+    transition: box-shadow var(--duration-base) var(--ease-standard);
+  }
+  .app-bar-scroll-shadow[data-scrolled="true"] {
+    box-shadow: var(--glass-bar-shadow);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-bar-scroll-shadow {
+      transition: none;
+    }
+  }
+  .app-bar-glass::before {
+    @apply pointer-events-none absolute inset-0 -z-10 backdrop-blur-md backdrop-saturate-[1.8];
+    content: "";
+    background-color: var(--glass-bar-bg);
+  }
+  /* The bars' own links/buttons take the darker on-glass muted/faint
+     text, as inside .map-glass — the app-wide ones are too pale over a
+     busy page or the map. Overlays rendered inside the bar's DOM keep
+     the normal palette on their solid surface. */
+  .app-bar-glass :where(a, button):not(:where(.side-panel-overlay, .modal-overlay) *) {
+    --fg-muted: var(--glass-fg-muted);
+    --fg-subtle: var(--glass-fg-subtle);
+  }
+  /* Solid fallback: no backdrop-filter support, or the viewer asked for
+     less transparency / more contrast — an opaque surface, no blur. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .app-bar-glass::before {
+      background-color: var(--surface);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .app-bar-glass {
+      border-color: var(--border-strong);
+    }
+    .app-bar-glass::before {
+      background-color: var(--surface);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  @media (forced-colors: active) {
+    .app-bar-glass {
+      border-color: CanvasText;
+    }
+    .app-bar-glass::before {
+      background-color: Canvas;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
   /* Opt-in for a glass panel whose command-bar controls and buttons
      should sit on the glass rather than read as opaque blocks. Popovers
      (role="dialog") opened from inside keep their solid surface. */
@@ -625,6 +773,34 @@ body {
     }
   }
 
+  /* Drawer exit (lib/useOverlayExit.ts). A drawer still unmounts the
+     instant it closes — focus, Escape and the page behind behave exactly
+     as before. What leaves along the path it arrived by is an inert,
+     click-through copy of it, tagged `data-overlay-exit` and removed when
+     this ends. Each keyframe has only a `to`, so a drawer closed
+     mid-entrance leaves from where it was (the copy carries that as
+     inline opacity/transform). The copy never replays its content's own
+     entrance effects. No copy is made under reduced motion. */
+  [data-overlay-exit] {
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    [data-overlay-exit] * {
+      animation: none !important;
+      transition: none !important;
+    }
+    .side-panel-overlay[data-overlay-exit],
+    [data-overlay-exit] > .modal-overlay {
+      animation: overlay-fade-out var(--duration-fast) var(--ease-in-calm) forwards !important;
+    }
+    [data-overlay-exit] .side-panel {
+      animation: slide-out-right var(--duration-fast) var(--ease-in-calm) forwards !important;
+    }
+    [data-overlay-exit] .animate-slide-in-left {
+      animation: slide-out-left var(--duration-fast) var(--ease-in-calm) forwards !important;
+    }
+  }
+
   /* Compact list density — spacing only, text size untouched. */
   .table--compact td,
   .table--compact th {
@@ -634,22 +810,6 @@ body {
   /* Loading */
   .skeleton {
     @apply animate-pulse rounded bg-surface-subtle motion-reduce:animate-none;
-  }
-
-  /* Dashboard sidebar (layout.tsx / components/nav). Width itself is set
-     inline (it depends on collapsed state — see `w-60`/`w-[4.5rem]` in
-     Sidebar.tsx, mirrored in the `--sidebar-w` CSS variable defined
-     above for consumers outside this subtree); this only owns the
-     transition so expand/collapse animates instead of jumping, and
-     backs off under reduced motion like every other transform-y
-     animation in the app. */
-  .app-sidebar {
-    transition: width var(--duration-base) var(--ease-standard);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .app-sidebar {
-      transition: none;
-    }
   }
 
   /* The label a collapsed sidebar row shows on hover/keyboard focus —
@@ -664,6 +824,19 @@ body {
      edge was clipped by that, invisible, even at opacity 1. */
   .sidebar-tooltip {
     @apply pointer-events-none fixed z-40 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs text-fg shadow-sm;
+  }
+
+  /* The shared tooltip for icon-only controls (components/ui/Tooltip.tsx):
+     same quiet surface as the sidebar label above. Positioned by inline
+     left/top from the measured control, from <body>, so no overflow,
+     card or container-query ancestor can clip or trap it. z-[60] puts it
+     over every app layer — the bars (z-30/31), sheets and menus (z-40)
+     and drawers/modals (z-50) — since it always belongs to whichever
+     control is under the pointer or focused. A short fade only; static
+     under reduced motion. */
+  .tooltip-bubble {
+    @apply pointer-events-none fixed z-[60] max-w-[min(18rem,calc(100vw-1rem))] select-none truncate rounded-md border border-border bg-surface px-2 py-1 text-xs font-normal leading-4 text-fg shadow-sm motion-reduce:animate-none;
+    animation: fade-in var(--duration-fast) var(--ease-standard);
   }
 
   /* The "inspection" sweep over a website preview while it's being
@@ -723,6 +896,15 @@ body {
     animation: rise-in var(--duration-panel) var(--ease-out-calm);
   }
 
+  /* An icon-triggered search field opening (Revenue calendar toolbar):
+     it grows from its trigger's width — `--expand-from`, measured at
+     the click — to its own declared width while fading in. Enter only;
+     it folds back at once. */
+  .animate-expand-in {
+    @apply motion-reduce:animate-none;
+    animation: expand-in var(--duration-base) var(--ease-out-calm);
+  }
+
   /* A results list that just re-queried (filter/sort/tab). Two names,
      one keyframe — see SoftSwap. Opacity only, so layout never moves. */
   .soft-swap-a {
@@ -732,35 +914,44 @@ body {
     animation: soft-swap-b var(--duration-fast) var(--ease-out-calm);
   }
 
+  /* A count that changed in place (components/ui/AnimatedCount.tsx): the
+     new value settles up into place as the old one lifts out. Two names
+     for the entrance, one keyframe — restarted the same way as SoftSwap.
+     Transform/opacity only; the old value is out of flow, so nothing
+     around the number moves. Never used on money. */
+  .count-swap-in-a {
+    animation: count-swap-in-a var(--duration-fast) var(--ease-out-calm);
+  }
+  .count-swap-in-b {
+    animation: count-swap-in-b var(--duration-fast) var(--ease-out-calm);
+  }
+  .count-swap-out {
+    animation: count-swap-out var(--duration-fast) var(--ease-in-calm) forwards;
+  }
+
   /* A row/card that was just created or updated: a faint accent tint
      that fades back to the row's own surface. Nothing moves or resizes. */
   .row-flash {
     animation: row-flash var(--duration-highlight) var(--ease-out-calm);
   }
 
-  /* Applied to a completion glyph (checkbox tick, status icon) on the
-     frame it newly matches/mounts — a brief acknowledgement, not a
-     decorative loop. */
+  /* The acknowledgement for a task the user just completed and the
+     server confirmed (lib/completionFeedback.ts) — never for one that
+     merely arrives complete. One beat, two forms: a native checkbox
+     settles into place; a drawn tick (CompletionCheck) draws in. Static
+     under reduced motion — the checked state/label carries the meaning. */
   .animate-checkbox-pop {
     @apply motion-reduce:animate-none;
-    animation: checkbox-pop var(--duration-fast) var(--ease-standard);
+    animation: checkbox-pop var(--duration-base) var(--ease-out-calm);
+  }
+  .animate-check-draw {
+    @apply motion-reduce:animate-none;
+    stroke-dasharray: 1;
+    animation: nav-icon-draw-in var(--duration-base) var(--ease-out-calm);
   }
 
-  /* Same acknowledgement, but for a native checkbox: replays whenever
-     it transitions to :checked (browsers don't replay a CSS animation
-     on a rule that already matched, so this doesn't fire on every
-     unrelated re-render — only on an actual check). */
-  .checkbox-pop-on-check:checked {
-    animation: checkbox-pop var(--duration-fast) var(--ease-standard);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .checkbox-pop-on-check:checked {
-      animation: none;
-    }
-  }
-
-  /* The sidebar's one-time per-section icon acknowledgement (see
-     components/nav/AnimatedNavIcon.tsx) — five distinct, restrained,
+  /* The main nav's one-shot per-section icon animation, played on
+     hover / keyboard focus (see components/nav/AnimatedNavIcon.tsx) — five distinct, restrained,
      monochrome animations, each built only from `transform`/`opacity`/
      `stroke-dashoffset` on the icon's own existing strokes (or a stroke
      that's invisible at both ends, for the two that briefly draw a new
@@ -806,7 +997,21 @@ body {
     transform-origin: 12px 7.5px;
     animation: nav-icon-clients-lid var(--duration-nav-icon) var(--ease-standard);
   }
+  /* The bottom nav's "More" dots: a left-to-right wave — each dot lifts
+     ~3px (viewBox units = CSS px at the 20px icon size) and settles, the
+     next starting a little later. Per dot 0.72× and stagger 0.28× the
+     shared nav-icon duration: ~300ms each, ~540ms overall. */
+  .nav-icon-play-more path {
+    animation: nav-icon-more-dot calc(var(--duration-nav-icon) * 0.72) var(--ease-standard);
+  }
+  .nav-icon-play-more path:nth-child(2) {
+    animation-delay: calc(var(--duration-nav-icon) * 0.28);
+  }
+  .nav-icon-play-more path:nth-child(3) {
+    animation-delay: calc(var(--duration-nav-icon) * 0.56);
+  }
   @media (prefers-reduced-motion: reduce) {
+    .nav-icon-play-more path,
     .nav-icon-play-today,
     .nav-icon-play-discovery,
     .nav-icon-play-sales-line,
@@ -903,6 +1108,13 @@ body {
   }
 }
 
+@keyframes expand-in {
+  from {
+    width: var(--expand-from, 2.25rem);
+    opacity: 0;
+  }
+}
+
 @keyframes content-reveal {
   from {
     opacity: 0;
@@ -931,6 +1143,37 @@ body {
   }
 }
 
+@keyframes count-swap-in-a {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes count-swap-in-b {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes count-swap-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
 @keyframes row-flash {
   from {
     background-color: color-mix(in srgb, var(--accent) 9%, var(--surface));
@@ -939,7 +1182,7 @@ body {
 
 @keyframes checkbox-pop {
   0% {
-    transform: scale(0.92);
+    transform: scale(0.8);
   }
   100% {
     transform: scale(1);
@@ -965,6 +1208,28 @@ body {
   to {
     transform: translateX(0);
     opacity: 1;
+  }
+}
+
+/* Drawer exits — the entrances above, reversed. `to` only: they start
+   from whatever the drawer showed when it closed. */
+@keyframes overlay-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-out-right {
+  to {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-out-left {
+  to {
+    transform: translateX(-16px);
+    opacity: 0;
   }
 }
 
@@ -1065,6 +1330,17 @@ body {
   }
   45% {
     transform: translateY(-1.75px);
+  }
+}
+
+/* More: one dot's lift-and-settle (staggered per dot on the class). */
+@keyframes nav-icon-more-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-3px);
   }
 }
 
