@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, PLANNING_STATUS_LABELS, type Lead, type Planning, type PlanningStatus } from "@/lib/api";
 import { useStageChecklist } from "@/components/checklists/StageChecklistPanel";
 import { DoThisNext } from "@/components/ui/DoThisNext";
@@ -10,6 +10,10 @@ import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
 import { Badge } from "@/components/ui/Badge";
+import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
+import { RowMenu } from "@/components/review/RowMenu";
+import { timeAgo } from "@/lib/format";
+import { displayDomain } from "@/lib/url";
 import { STATUS_BADGE_TONE, planningMode } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
 import { NotesPanel } from "./NotesPanel";
@@ -32,6 +36,7 @@ import { ResearchStep } from "./ResearchStep";
 import { ReviewStep } from "./ReviewStep";
 import { computeHandoffReadiness } from "./handoffReadiness";
 import { WebsitePreviewPanel } from "./WebsitePreviewPanel";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 // "Resume where you left off" — reads/writes are wrapped in try/catch the
 // same way components/nav/Sidebar.tsx guards its own localStorage access
@@ -104,7 +109,8 @@ function PlanningDetailPageInner() {
   // of leaving that step through this page — Previous/Continue and the
   // stepper alike — rather than only its own Continue button.
   const [planDirty, setPlanDirty] = useState(false);
-  async function requestStep(id: StepId) {
+  // Resolves false only when the operator kept their unsaved Plan edits.
+  async function requestStep(id: StepId): Promise<boolean> {
     if (id !== activeStep && activeStep === "plan" && planDirty) {
       const ok = await confirm({
         title: "Discard unsaved changes?",
@@ -112,10 +118,11 @@ function PlanningDetailPageInner() {
         confirmLabel: "Discard changes",
         danger: true,
       });
-      if (!ok) return;
+      if (!ok) return false;
       setPlanDirty(false);
     }
     setStep(id);
+    return true;
   }
 
   // Resume where the operator left off on THIS plan — but only landing
@@ -272,6 +279,54 @@ function PlanningDetailPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep, Boolean(planning)]);
 
+  // "Needs review" is a single generic flag — the backend doesn't record
+  // which part of the run degraded — so "View issues" takes the operator
+  // to where that run's real per-step results live: Research's "Analyse
+  // business" card (each step row there says which part needs a look).
+  // Offset by the sticky header so the card isn't hidden beneath it, and
+  // focus its heading so keyboard/screen-reader users land there too.
+  const headerRef = useRef<HTMLElement>(null);
+  const pendingIssuesScroll = useRef(false);
+  function scrollToIssues() {
+    const heading = document.getElementById("analyse-title");
+    const target = heading?.closest("section") ?? heading;
+    if (!heading || !target) return;
+    const header = headerRef.current;
+    const offset = header ? parseFloat(getComputedStyle(header).top) + header.offsetHeight + 12 : 0;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({
+      top: target.getBoundingClientRect().top + window.scrollY - offset,
+      behavior: reduced ? "auto" : "smooth",
+    });
+    heading.setAttribute("tabindex", "-1");
+    heading.focus({ preventScroll: true });
+  }
+  async function viewIssues() {
+    if (activeStep === "research") {
+      scrollToIssues();
+      return;
+    }
+    pendingIssuesScroll.current = true;
+    if (!(await requestStep("research"))) pendingIssuesScroll.current = false;
+  }
+  useEffect(() => {
+    if (activeStep !== "research" || !pendingIssuesScroll.current) return;
+    pendingIssuesScroll.current = false;
+    // Runs after commit, so the Research step's card is already mounted.
+    scrollToIssues();
+  }, [activeStep]);
+  const [reviewDetailOpen, setReviewDetailOpen] = useState(false);
+  const reviewDetailId = useId();
+  const websiteTipId = useId();
+  const updatedTipId = useId();
+
+  // Keeps the header's relative "Updated … ago" honest while the page sits
+  // open (the polling above only refreshes `now` mid-run).
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // A ref, not state: two clicks in the same tick both see
   // `creatingProject === false` before React re-renders, and the backend's
   // "already has a project" check isn't atomic under concurrent requests —
@@ -409,89 +464,168 @@ function PlanningDetailPageInner() {
         a live-measured value, not a guessed offset, because notices here
         can appear/disappear and the header can wrap). */}
     <div ref={outerRef} className="flex flex-col gap-4">
-      <div ref={chromeRef} className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          <Link href={planningReturnUrl} className="text-fg-muted hover:underline">
-            ← All Planning
-          </Link>
-          <Link href={`/dashboard/leads/${planning.lead_id}`} className="text-fg-muted hover:underline">
-            ← Back to lead
-          </Link>
-        </div>
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={removing}
-          className="text-sm text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-        >
-          {removing ? "Removing…" : "Remove from Planning"}
-        </button>
-      </div>
-      {removeError && <p className="text-error">{removeError}</p>}
-
-      {/* Header — business name, website, audit status, last updated, and the one restrained handoff action.
-          Sticky so it stays visible while scrolling: top-12 clears the
-          existing mobile fixed top bar (h-12), lg:top-11 clears the
-          new desktop header strip (h-11) added in dashboard/layout.tsx.
-          Negative-margin-then-repad bleeds the opaque background full-
-          width past the page's own edge padding; the inner div keeps
-          content aligned to that same edge (no max-w cap — this page
-          fills the dashboard's available content width). Vertical
-          padding tightened to py-3 (was py-4) as part of this same pass. */}
-      <header className="sticky top-12 z-20 -mx-4 border-b border-border bg-surface px-4 py-3 sm:-mx-6 sm:px-6 lg:top-11">
-      {/* Below `sm` this stays the plain stacked column it always was
-          (name, then metadata, then the action) — nothing here changes
-          for mobile. At `sm` and up it becomes a 3-track grid
-          (`[1fr_auto_1fr]`): the name+metadata block always sits in the
-          fixed middle track (`sm:col-start-2`, its text centered) and the
-          action sits in the right track (`sm:col-start-3`, pinned to that
-          track's own end) — column 1 is a deliberately empty spacer
-          track. Because both outer tracks are the same `1fr` weight, they
-          stay equal width regardless of whether the action is actually
-          rendered (an empty `1fr` track still claims its fair share of
-          the row's free space), which is what keeps the name block
-          genuinely centered on the FULL row width whether or not
-          "Create project"/"Open project" is showing — not just centered
-          in whatever space happens to be left of one visible action. */}
-      <div className="flex flex-col gap-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-start sm:gap-4">
-        <div className="min-w-0 sm:col-start-2 sm:text-center">
-          <h1 className="truncate text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
-            {planning.lead_business_name}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:justify-center">
-            {planning.website_url ? (
-              <a
-                href={planning.website_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-fg-muted hover:text-fg hover:underline"
-              >
-                {planning.website_url}
-              </a>
-            ) : (
-              <span className="text-sm text-fg-subtle">No website on record</span>
+      <div ref={chromeRef} className="flex flex-col gap-3">
+      {/* Header — navigation, business name, one metadata line, and the
+          single status treatment. Sticky so it stays visible while
+          scrolling: top-12 clears the dashboard's fixed top bar (h-12,
+          every width — see dashboard/layout.tsx). Its background is the
+          top bar's own frosted glass (.app-bar-glass), not an opaque
+          band: while stuck, step content blurs beneath it exactly as it
+          does beneath the bar above, instead of vanishing behind a solid
+          strip and reappearing in the bar. At rest it reads as the plain
+          canvas. No halo shadow (shadow-none) — the edge is the border
+          below. The bleed (negative margin, then re-padded) just covers
+          the page's edge padding. The one boundary is the inner div's
+          own border-b, which stays aligned to that same page padding.
+          -mt-2/pt-2 keeps the resting position unchanged while giving the
+          nav row a little air beneath the top bar once stuck. */}
+      <header ref={headerRef} className="app-bar-glass sticky top-12 z-20 -mx-4 -mt-2 px-4 pt-2 shadow-none sm:-mx-6 sm:px-6">
+      <div className="border-b border-border pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <nav aria-label="Planning" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <Link href={planningReturnUrl} className="text-fg-muted hover:underline">
+              ← All Planning
+            </Link>
+            <Link href={`/dashboard/leads/${planning.lead_id}`} className="text-fg-muted hover:underline">
+              ← View lead
+            </Link>
+          </nav>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* Only "Open project" lives up here — creating one happens on
+                "Confirm & create project", after its summary and blockers,
+                rather than from a second button that skips them. */}
+            {projectId && (
+              <Link href={`/dashboard/projects/${projectId}`} className="btn btn-primary btn-sm">
+                Open project →
+              </Link>
             )}
+            <RowMenu
+              label="More actions"
+              items={[
+                {
+                  kind: "action",
+                  label: removing ? "Removing…" : "Remove from Planning",
+                  onSelect: handleRemove,
+                  danger: true,
+                  disabled: removing,
+                },
+              ]}
+            />
+          </div>
+        </div>
+
+        {/* Centred on the full content width — nothing shares its row, so
+            nothing can push it off-centre or overlap it. Long names wrap
+            (balanced) rather than truncate. */}
+        <h1 className="mt-1 text-balance text-center text-xl font-semibold leading-tight tracking-tight text-fg [overflow-wrap:anywhere] sm:text-2xl">
+          {planning.lead_business_name}
+        </h1>
+
+        {/* `relative` here, not on each item: both tooltips below centre
+            under this full-width row, so they can never run off-screen
+            however the row wraps. */}
+        <div className="relative mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm">
+          {planning.website_url ? (
+            // Short domain on screen; the href is the original, full URL
+            // (path + query intact), which the tooltip shows on hover/focus.
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <span className="group inline-flex min-w-0 max-w-full">
+                <a
+                  href={planning.website_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-describedby={websiteTipId}
+                  className="min-w-0 text-fg-muted [overflow-wrap:anywhere] hover:text-fg hover:underline"
+                >
+                  {displayDomain(planning.website_url)}
+                  <span aria-hidden="true" className="ml-1">
+                    ↗
+                  </span>
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                <span
+                  id={websiteTipId}
+                  role="tooltip"
+                  className="pointer-events-none absolute inset-x-0 top-full z-10 mx-auto mt-1.5 hidden w-fit max-w-full break-all rounded-md border border-border bg-surface px-2 py-1 text-xs text-fg shadow-sm group-focus-within:block group-hover:block"
+                >
+                  {planning.website_url}
+                </span>
+              </span>
+              <CopyButton value={planning.website_url} label="Copy website address" />
+            </span>
+          ) : (
+            <span className="text-fg-subtle">No website on record</span>
+          )}
+
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
             <span title="Analysis status">
               <Badge tone={STATUS_BADGE_TONE[planning.status]}>{PLANNING_STATUS_LABELS[planning.status]}</Badge>
             </span>
-            {showLastUpdated && (
-              <span className="text-xs text-fg-subtle">Last updated {new Date(planning.updated_at).toLocaleString()}</span>
+            {planning.status === "needs_review" && (
+              <>
+                <button
+                  type="button"
+                  onClick={viewIssues}
+                  className="text-xs font-medium text-fg-muted hover:text-fg hover:underline"
+                >
+                  View issues
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReviewDetailOpen((o) => !o)}
+                  aria-expanded={reviewDetailOpen}
+                  aria-controls={reviewDetailId}
+                  className="inline-flex items-center gap-1 text-xs text-fg-subtle hover:text-fg hover:underline"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`inline-block transition-transform duration-[var(--duration-fast)] ease-standard motion-reduce:transition-none ${reviewDetailOpen ? "rotate-90" : ""}`}
+                  >
+                    ▸
+                  </span>
+                  Why?
+                </button>
+              </>
             )}
-          </div>
+          </span>
+
+          {showLastUpdated && !Number.isNaN(new Date(planning.updated_at).getTime()) && (
+            <span className="group inline-flex">
+              <time
+                dateTime={planning.updated_at}
+                tabIndex={0}
+                aria-describedby={updatedTipId}
+                className="rounded text-xs text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                Updated {timeAgo(planning.updated_at, now)}
+              </time>
+              <span
+                id={updatedTipId}
+                role="tooltip"
+                className="pointer-events-none absolute inset-x-0 top-full z-10 mx-auto mt-1.5 hidden w-fit max-w-full rounded-md border border-border bg-surface px-2 py-1 text-xs text-fg shadow-sm group-focus-within:block group-hover:block"
+              >
+                Last updated {new Date(planning.updated_at).toLocaleString()}
+              </span>
+            </span>
+          )}
         </div>
-        {/* Only "Open project" lives up here now — creating one happens on
-            "Confirm & create project", after its summary and blockers,
-            rather than from a second button that skips them. */}
-        {projectId && (
-          <div className="shrink-0 sm:col-start-3 sm:justify-self-end">
-            <Link href={`/dashboard/projects/${projectId}`} className="btn btn-primary btn-sm">
-              Open project →
-            </Link>
+
+        {/* The generic "needs review" explanation — the backend records
+            only that part of the run degraded, not which part, so this
+            says exactly that rather than guessing at a cause. */}
+        {planning.status === "needs_review" && (
+          <div id={reviewDetailId}>
+            <AnimatedHeight open={reviewDetailOpen}>
+              <p className="mx-auto mt-1.5 max-w-xl text-balance text-center text-xs text-fg-muted">
+                This workspace needs a quick look — part of it may be incomplete. Check{" "}
+                {mode === "existing" ? "the findings" : "the plan"} before relying on it.
+              </p>
+            </AnimatedHeight>
           </div>
         )}
       </div>
       </header>
+      {removeError && <p className="text-error">{removeError}</p>}
       {createProjectError && <p className="text-error">{createProjectError}</p>}
 
       {isStale && (
@@ -523,14 +657,6 @@ function PlanningDetailPageInner() {
             {planning.error_message ?? "The last re-analysis didn't finish — the findings below are from the previous run."}
           </p>
           <AnalyseWebsiteAction planning={planning} onAnalysed={setPlanning} variant="inline" />
-        </div>
-      )}
-      {planning.status === "needs_review" && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <p className="text-sm text-amber-900 dark:text-amber-300">
-            This workspace needs a quick look — part of it may be incomplete. Check{" "}
-            {mode === "existing" ? "the findings" : "the plan"} before relying on it.
-          </p>
         </div>
       )}
 
@@ -590,7 +716,11 @@ function PlanningDetailPageInner() {
           state is reset by visiting Plan. */}
       <div
         className={
-          activeStep === "plan" ? "" : "mx-auto w-full max-w-6xl xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-8"
+          activeStep === "plan"
+            ? ""
+            : activeStep === "research"
+              ? "mx-auto w-full max-w-6xl"
+              : "mx-auto w-full max-w-6xl xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-8"
         }
       >
         <div key={activeStep} className="min-w-0">
@@ -628,7 +758,12 @@ function PlanningDetailPageInner() {
           )}
         </div>
 
-        <div className={`mt-4 xl:mt-0 xl:self-start ${activeStep === "plan" ? "hidden" : ""}`}>
+        {/* Analyse business shows this same screenshot inside its own
+            "Business analysis" card (BusinessAnalysisCard), so it's
+            hidden — still mounted — there as well as on Plan. */}
+        <div
+          className={`mt-4 xl:mt-0 xl:self-start ${activeStep === "plan" || activeStep === "research" ? "hidden" : ""}`}
+        >
           <WebsitePreviewPanel planning={planning} />
         </div>
       </div>

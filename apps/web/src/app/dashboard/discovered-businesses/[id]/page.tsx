@@ -51,6 +51,7 @@ import {
   SourcesBody,
 } from "@/components/discovery/ReviewSections";
 import { ScreenshotsBody, useDiscoveryScreenshot } from "@/components/discovery/ScreenshotPreview";
+import { ScreenshotImage } from "@/components/ui/ScreenshotImage";
 import {
   checklistPercent,
   checklistSummary,
@@ -599,7 +600,7 @@ export default function DiscoveredBusinessDetailPage() {
         // of the content column (over the sidebar, and a horizontal scrollbar
         // that shifted the whole page). The padding lives on the inner
         // wrapper instead, so it lines up with the body's `max-w-6xl p-6`.
-        <header className="sticky top-12 z-20 border-b border-border bg-surface lg:top-11">
+        <header className="sticky top-12 z-20 border-b border-border bg-surface">
           <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:px-6">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <Link href={backTo || "/dashboard/discovery/review"} className="text-fg-muted hover:text-fg hover:underline">
@@ -953,14 +954,15 @@ export default function DiscoveredBusinessDetailPage() {
                 summary={screenshot.src ? "Capture from Planning" : "Not captured yet — generated in Planning"}
                 badge={
                   screenshot.src ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- an authenticated API route, not an optimizable static asset
-                    <img
-                      src={screenshot.src}
-                      alt=""
-                      loading="lazy"
-                      onError={screenshot.markFailed}
-                      className="h-8 w-14 rounded border border-border object-cover object-top"
-                    />
+                    <span className="block h-8 w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-subtle">
+                      <ScreenshotImage
+                        src={screenshot.src}
+                        alt=""
+                        loading="lazy"
+                        onError={screenshot.markFailed}
+                        className="h-full w-full object-cover object-top"
+                      />
+                    </span>
                   ) : undefined
                 }
               />

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { api, type Lead, type Planning } from "@/lib/api";
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { AutoSaveTextarea } from "@/components/ui/AutoSaveTextarea";
-import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
 import {
   ROW_STATE_DOT,
@@ -17,8 +17,9 @@ import {
   type Opportunity,
 } from "../lib";
 import { AnalyseWebsiteAction } from "./AnalyseWebsiteAction";
-import { AnalysingOverview } from "./AnalysingOverview";
+import { chooseNextAction } from "./analysisSummary";
 import { AuditTab } from "./AuditTab";
+import { BusinessAnalysisCard } from "./BusinessAnalysisCard";
 import type { ResearchOp, ResearchOpState } from "./researchRun";
 import { ReviewInsightsTab } from "./ReviewInsightsTab";
 import { StepFooter } from "./StepFooter";
@@ -31,17 +32,6 @@ const BUSINESS_ROW_KEYS = ["business_details", "location", "contact"] as const;
 
 /** How many items each summary group shows before "Show all". */
 const SUMMARY_LIMIT = 4;
-
-// "unavailable" (e.g. no Google listing) is a result, not a failure —
-// neutral, never red. Only a real failure gets "danger".
-const OP_STATE_BADGE: Record<ResearchOpState, { label: string; tone: BadgeTone }> = {
-  done: { label: "Done", tone: "success" },
-  running: { label: "Running…", tone: "info" },
-  failed: { label: "Failed", tone: "danger" },
-  needed: { label: "Not run yet", tone: "muted" },
-  waiting: { label: "Waiting", tone: "muted" },
-  unavailable: { label: "Not available", tone: "muted" },
-};
 
 function businessBadge(lead: LeadResearchFields | null, confirmed: number, total: number) {
   // A failed lead fetch is swallowed upstream (page.tsx), so `null` can't
@@ -78,44 +68,6 @@ function OpportunityRow({ opportunity, index }: { opportunity: Opportunity; inde
       <AnimatedHeight open={showEvidence}>
         <p className="mt-1 pl-5 text-xs text-fg-subtle">{opportunity.basis}</p>
       </AnimatedHeight>
-    </li>
-  );
-}
-
-/** One row of the analysis progress list. */
-function OpRow({
-  op,
-  state,
-  retryDisabled,
-  onRetry,
-}: {
-  op: ResearchOp;
-  state: ResearchOpState;
-  retryDisabled: boolean;
-  onRetry: () => void;
-}) {
-  const badge = OP_STATE_BADGE[state];
-  const detail = op.detail ?? (state === "running" ? "Working…" : null);
-  return (
-    <li className="flex items-start justify-between gap-3 py-2">
-      <div className="min-w-0">
-        <p className="text-sm text-fg">{op.label}</p>
-        {detail && <p className="mt-0.5 text-xs text-fg-muted">{detail}</p>}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {state === "failed" && (
-          <button
-            type="button"
-            onClick={onRetry}
-            disabled={retryDisabled}
-            aria-label={`Retry ${op.label}`}
-            className="btn btn-secondary btn-sm"
-          >
-            Retry
-          </button>
-        )}
-        <Badge tone={badge.tone}>{badge.label}</Badge>
-      </div>
     </li>
   );
 }
@@ -190,7 +142,9 @@ function EmptyLine({ children }: { children: ReactNode }) {
 /**
  * Step 1 — "Analyse business" (id stays "research"). One primary action
  * runs whatever research is still missing (useResearchRunner), with an
- * honest per-operation progress list. Below it, a short summary split
+ * honest per-operation progress list beside the saved website preview
+ * (BusinessAnalysisCard — page.tsx hides its own preview column on this
+ * step so it isn't shown twice). Below it, a short summary split
  * into three visibly different kinds of thing — confirmed facts,
  * suggestions, and what still needs the operator — and then the full
  * evidence behind collapsed Disclosures. Nothing is accepted or
@@ -252,41 +206,91 @@ export function ResearchStep({
     onUpdated(await api.updatePlanning(planning.id, { website_summary: value }));
   }
 
-  // --- Primary action ------------------------------------------------------
-  // Offered only when there's something it can actually run. Failed
-  // operations are retried individually in the list below.
-  let primaryAction: ReactNode;
-  if (working) {
-    primaryAction = (
-      <button type="button" disabled className="btn btn-primary">
-        Analysing…
-      </button>
-    );
-  } else if (progress.complete) {
-    primaryAction = <Badge tone="success">Analysis complete</Badge>;
-  } else if (progress.hasRemaining) {
-    primaryAction = (
-      <button type="button" onClick={start} className="btn btn-primary">
-        {nothingRunYet ? "Analyse business" : "Continue analysis"}
-      </button>
-    );
-  } else {
-    primaryAction = <Badge tone="warning">Needs a retry</Badge>;
+  // --- Next action ---------------------------------------------------------
+  // ONE contextual action at the bottom of Business analysis's left column
+  // (chooseNextAction) — the card header no longer repeats it. "Continue to
+  // website plan" is navigation only: it calls the same `onNext` as the
+  // step footer, which only changes the active step (StepFooter.tsx).
+  const next = chooseNextAction(ops, progress, working);
+  let nextAction: ReactNode;
+  let actionHint: string | null = null;
+  switch (next.kind) {
+    case "running":
+      nextAction = (
+        <button type="button" disabled className="btn btn-primary">
+          Analysing…
+        </button>
+      );
+      actionHint = "Working through each step in order — this page updates as each one finishes.";
+      break;
+    case "start":
+      nextAction = (
+        <button type="button" onClick={start} className="btn btn-primary">
+          {next.label}
+        </button>
+      );
+      actionHint =
+        next.label === "Analyse business"
+          ? "Runs each step in order. Anything already done is reused, never repeated."
+          : "Picks up where the analysis left off, reusing everything already done.";
+      break;
+    case "retry":
+      nextAction = (
+        <button type="button" onClick={() => retry(next.opId)} disabled={working} className="btn btn-primary">
+          {next.label}
+        </button>
+      );
+      actionHint = "This step didn't finish — retry it to carry on.";
+      break;
+    case "continue":
+      nextAction = (
+        <button type="button" onClick={onNext} className="btn btn-primary">
+          {next.label} →
+        </button>
+      );
+      break;
   }
+  const cardNotes = ops.some((op) => op.id === "reviews")
+    ? ["Google reviews are optional — planning can continue without them."]
+    : [];
 
-  let actionHint: string;
-  if (working) actionHint = "Working through each step in order — this page updates as each one finishes.";
-  else if (progress.complete) actionHint = "Everything that could be analysed has been.";
-  else if (progress.hasRemaining)
-    actionHint = nothingRunYet
-      ? "Runs each step below in order. Anything already done is reused, never repeated."
-      : "Picks up where the analysis left off, reusing everything already done.";
-  else actionHint = "A step didn't finish — retry it below to carry on.";
+  // "View all findings" / "Edit summary" open the existing Full detail
+  // section (Website audit / Website plan) rather than repeating it — the
+  // Disclosure keeps its own open state, so it's opened via its own
+  // toggle, then scrolled clear of the sticky header (same offset rule as
+  // page.tsx's "View issues") and focused.
+  const siteDetailRef = useRef<HTMLDivElement>(null);
+  function openSiteDetail(focus: "section" | "summary") {
+    const wrap = siteDetailRef.current;
+    const toggle = wrap?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    if (!wrap || !toggle) return;
+    if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+    // This runs inside the calling button's own click handler, so the
+    // open state above is batched until it returns — a macrotask later
+    // the editor inside is mounted and laid out.
+    setTimeout(() => {
+      const header = document.querySelector<HTMLElement>("header.sticky");
+      const offset = header ? header.getBoundingClientRect().bottom + 12 : 0;
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({
+        top: wrap.getBoundingClientRect().top + window.scrollY - offset,
+        behavior: reduced ? "auto" : "smooth",
+      });
+      const target = focus === "summary" ? wrap.querySelector<HTMLTextAreaElement>("textarea") : null;
+      (target ?? toggle).focus({ preventScroll: true });
+    }, 0);
+  }
+  // The summary editor below exists only once an audit or plan does.
+  const summaryEditable = !(isAnalysing && !hasAudit) && (hasAudit || planning.website_plan_generated_at !== null);
 
   // --- Website audit / plan content -------------------------------------
   let currentSiteContent;
   if (isAnalysing && !hasAudit) {
-    currentSiteContent = <AnalysingOverview planning={planning} />;
+    // Live progress and the capture placeholder are in Business analysis
+    // above — not repeated in here.
+    currentSiteContent = (
+      <EmptyLine>Analysing the website — findings appear here once the audit finishes.</EmptyLine>
+    );
   } else if (mode === "new") {
     const analyseInstead = !planning.website_url && !working && (
       <div className="rounded-md border border-dashed border-border p-3">
@@ -364,37 +368,21 @@ export function ResearchStep({
 
   return (
     <div className="content-reveal space-y-4">
-      {/* Primary action + honest progress */}
-      <section aria-labelledby="analyse-title" className="card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 max-w-xl">
-            <h2 id="analyse-title" className="section-title">
-              Analyse business
-            </h2>
-            <p className="mt-0.5 text-sm text-fg-muted">{actionHint}</p>
-          </div>
-          <div className="shrink-0">{primaryAction}</div>
-        </div>
-
-        <p className="mt-3 border-t border-border pt-3 text-xs font-medium text-fg-muted" aria-live="polite">
-          {progress.done} of {progress.total} done
-          {progress.failed.length > 0 && ` · ${progress.failed.length} failed`}
-        </p>
-        <ol aria-label="Analysis steps" className="divide-y divide-border">
-          {ops.map((op) => (
-            <OpRow
-              key={op.id}
-              op={op}
-              state={displayState(op)}
-              retryDisabled={working}
-              onRetry={() => retry(op.id)}
-            />
-          ))}
-        </ol>
-        <p className="mt-1 text-xs text-fg-subtle">
-          Google reviews are optional — planning can continue without them.
-        </p>
-      </section>
+      {/* Primary action, honest progress and the saved website preview */}
+      <BusinessAnalysisCard
+        planning={planning}
+        ops={ops}
+        displayState={displayState}
+        nextAction={nextAction}
+        actionHint={actionHint}
+        retryHandledByAction={next.kind === "retry" ? next.opId : null}
+        notes={cardNotes}
+        retryDisabled={working}
+        onRetry={(op) => retry(op.id)}
+        summaryEditable={summaryEditable}
+        onViewFindings={() => openSiteDetail("section")}
+        onEditSummary={() => openSiteDetail("summary")}
+      />
 
       {/* Summary: facts, suggestions and open questions kept visibly apart */}
       <section aria-labelledby="summary-title" className="card p-4">
@@ -533,16 +521,18 @@ export function ResearchStep({
           </p>
         </Disclosure>
 
-        <Disclosure
-          title={mode === "existing" ? "Website audit" : "Website plan"}
-          hint={
-            mode === "existing"
-              ? "Editable summary and evidence-backed findings"
-              : "Editable summary and the new-website plan"
-          }
-        >
-          {currentSiteContent}
-        </Disclosure>
+        <div ref={siteDetailRef}>
+          <Disclosure
+            title={mode === "existing" ? "Website audit" : "Website plan"}
+            hint={
+              mode === "existing"
+                ? "Editable summary and evidence-backed findings"
+                : "Editable summary and the new-website plan"
+            }
+          >
+            {currentSiteContent}
+          </Disclosure>
+        </div>
 
         {opportunities.length > 0 && (
           <Disclosure title="Top opportunities" hint="Ranked evidence from the audit and Google Review Insights">

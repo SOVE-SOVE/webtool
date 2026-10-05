@@ -210,6 +210,34 @@ class RevenueTransaction(BaseModel):
     voided_reason: str | None
 
 
+class RevenueOverdueItem(BaseModel):
+    """One row behind `RevenueReport.overdue_cents` — the same balance rows
+    that total is summed from, so any breakdown of them always adds up to it."""
+
+    kind: Literal["agreement", "hosting_charge"]
+    id: uuid.UUID
+    project_id: uuid.UUID
+    client_id: uuid.UUID | None
+    client_business_name: str | None
+    label: str
+    outstanding_cents: int
+    due_date: date
+    days_overdue: int
+
+
+class RevenueExpectedHostingPlan(BaseModel):
+    """One ACTIVE hosting plan behind `RevenueReport.expected_mrr_cents`
+    (that figure is the sum of these monthly fees, not of issued charges)."""
+
+    plan_id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    client_id: uuid.UUID | None
+    client_business_name: str | None
+    monthly_fee_cents: int
+    next_due_date: date
+
+
 class RevenueReport(BaseModel):
     start_date: date
     end_date: date
@@ -228,6 +256,10 @@ class RevenueReport(BaseModel):
     # every total above is still computed net of them); the frontend
     # distinguishes reversed rows via `voided`.
     transactions: list[RevenueTransaction]
+    # Additive breakdowns (always the full workspace set, never paginated):
+    # the rows behind overdue_cents and the plans behind expected_mrr_cents.
+    overdue_items: list[RevenueOverdueItem] = []
+    expected_hosting_plans: list[RevenueExpectedHostingPlan] = []
 
 
 # ---- Next payment due ----

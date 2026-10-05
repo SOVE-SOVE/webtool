@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, type Me } from "@/lib/api";
 import {
   FOOTER_NAV_LINKS,
-  PRIMARY_NAV_LINKS,
+  SHEET_PRIMARY_NAV_LINKS,
   isNavLinkActive,
   type NavLink as NavLinkType,
 } from "@/lib/nav";
@@ -14,17 +15,7 @@ import type { NavCounts } from "@/lib/navCounts";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
 import { CountBadge } from "@/components/ui/CountBadge";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { PrimaryNavIcon } from "@/components/nav/AnimatedNavIcon";
-
-export const SIDEBAR_COLLAPSED_KEY = "wdos-sidebar-collapsed";
-
-// Kept in exact sync with the `w-60` / `w-[4.5rem]` classes on the
-// desktop `<aside>` below — these are the values published to the
-// `--sidebar-w` CSS variable (defined in globals.css) that anything
-// outside this component's own DOM subtree reads to sit flush against
-// the sidebar's real right edge, in either state.
-const SIDEBAR_W_EXPANDED = "15rem";
-const SIDEBAR_W_COLLAPSED = "4.5rem";
+import { PrimaryNavIcon, useNavIconHoverPlay } from "@/components/nav/AnimatedNavIcon";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -37,7 +28,16 @@ function initials(name: string): string {
  * it is open — recomputed on resize/scroll so the flyout stays aligned.
  * `position: fixed` (used by both flyouts below) is positioned purely
  * from this rect, so it's never clipped by the sidebar nav list's own
- * `overflow-y-auto`. */
+ * `overflow-y-auto`.
+ *
+ * Both flyouts are also portalled to <body>: the desktop `<aside>` is
+ * `position: sticky`, which always makes it a stacking context, so a
+ * z-index on anything inside it only ranks against the sidebar's own
+ * children — the part of a flyout that reaches past the sidebar's edge
+ * painted *under* any positioned/z-indexed main content (e.g. a lifted
+ * or turning Clients card's `z-10`). From <body>, `z-40` ranks against
+ * the app's real overlay layers: above page content and the z-30 top
+ * bars, still below modals/side panels (z-50). */
 function useTriggerRect(open: boolean, triggerRef: React.RefObject<HTMLElement | null>): DOMRect | null {
   const [rect, setRect] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
@@ -71,14 +71,15 @@ function useTriggerRect(open: boolean, triggerRef: React.RefObject<HTMLElement |
 // CSS `absolute`.
 function RowTooltip({ rect, children }: { rect: DOMRect | null; children: React.ReactNode }) {
   if (!rect) return null;
-  return (
+  return createPortal(
     <span
       role="tooltip"
       className="sidebar-tooltip"
       style={{ left: rect.right + 8, top: rect.top + rect.height / 2 }}
     >
       {children}
-    </span>
+    </span>,
+    document.body,
   );
 }
 
@@ -121,24 +122,19 @@ function NavRow({
   count,
   collapsed,
   onNavigate,
-  iconPlayToken,
 }: {
   link: NavLinkType;
   active: boolean;
   count?: number;
   collapsed: boolean;
   onNavigate?: () => void;
-  /** Plays that one-time section-arrival animation on this row's icon
-   * when positive and new — see AnimatedNavIcon.tsx and
-   * dashboard/layout.tsx (where it's computed from a real section
-   * change, never a no-op click or a same-section tab switch). Omitted
-   * for footer links (Settings), which aren't one of the five animated
-   * sections. */
-  iconPlayToken?: number;
 }) {
   const tooltipRef = useRef<HTMLAnchorElement>(null);
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const tooltipRect = useTriggerRect(tooltipVisible, tooltipRef);
+  // Hover/keyboard-focus icon animation — a no-op for rows without one
+  // (Settings). Independent of `active`, which only drives colour.
+  const iconPlay = useNavIconHoverPlay(link.icon);
   return (
     <Link
       ref={tooltipRef}
@@ -146,15 +142,20 @@ function NavRow({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={rowClasses(collapsed, active)}
+      onPointerEnter={iconPlay.onPointerEnter}
       onMouseEnter={collapsed ? () => setTooltipVisible(true) : undefined}
       onMouseLeave={collapsed ? () => setTooltipVisible(false) : undefined}
-      onFocus={collapsed ? () => setTooltipVisible(true) : undefined}
+      onFocus={(e) => {
+        iconPlay.onFocus(e);
+        if (collapsed) setTooltipVisible(true);
+      }}
       onBlur={collapsed ? () => setTooltipVisible(false) : undefined}
     >
       <PrimaryNavIcon
         name={link.icon}
         className={`h-[18px] w-[18px] shrink-0 ${active ? "text-accent" : ""}`}
-        playToken={iconPlayToken}
+        playToken={iconPlay.playToken}
+        onPlayEnd={iconPlay.onPlayEnd}
       />
       <span className={collapsed ? "sr-only" : "min-w-0 flex-1 truncate"}>{link.label}</span>
       {!collapsed && <CountBadge count={count} />}
@@ -228,14 +229,22 @@ function AccountMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
         )}
         {collapsed && !open && <RowTooltip rect={tooltipVisible ? tooltipRect : null}>{me.name}</RowTooltip>}
       </button>
-      {open && rect && (
+      {open && rect && createPortal(
         <div
           ref={panelRef}
           tabIndex={-1}
           role="menu"
           aria-label="Account"
-          style={{ position: "fixed", left: rect.left, bottom: window.innerHeight - rect.top + 8 }}
-          className="z-40 w-60 rounded-md border border-border bg-surface p-3 shadow-lg animate-fade-in focus:outline-none"
+          // Grows upward from the trigger; capped to the space above it so
+          // a short window scrolls the panel instead of pushing its top
+          // (account details) off-screen.
+          style={{
+            position: "fixed",
+            left: rect.left,
+            bottom: window.innerHeight - rect.top + 8,
+            maxHeight: Math.max(rect.top - 16, 0),
+          }}
+          className="z-40 w-60 overflow-y-auto rounded-md border border-border bg-surface p-3 shadow-lg animate-fade-in focus:outline-none"
         >
           <p className="truncate text-sm font-medium text-fg">{me.name}</p>
           <p className="truncate text-xs text-fg-muted">{me.email}</p>
@@ -256,34 +265,10 @@ function AccountMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
               Sign out
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
-  );
-}
-
-function CollapseToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-[var(--duration-fast)] hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-    >
-      <svg
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        className={`h-4 w-4 transition-transform duration-[var(--duration-fast)] motion-reduce:transition-none ${collapsed ? "rotate-180" : ""}`}
-      >
-        <path d="M12.5 5 7.5 10l5 5" />
-      </svg>
-    </button>
   );
 }
 
@@ -294,9 +279,6 @@ function SidebarBody({
   counts,
   onNavigate,
   collapsed,
-  allowCollapse,
-  onToggleCollapse,
-  iconAnimation,
 }: {
   me: Me;
   pathname: string;
@@ -304,12 +286,6 @@ function SidebarBody({
   counts: NavCounts | null;
   onNavigate?: () => void;
   collapsed: boolean;
-  allowCollapse: boolean;
-  onToggleCollapse?: () => void;
-  /** The primary link (by href) whose icon should play its one-time
-   * arrival animation, and a token that changes on every new arrival —
-   * see NavRow's `iconPlayToken` and dashboard/layout.tsx. */
-  iconAnimation?: { href: string; token: number } | null;
 }) {
   return (
     <>
@@ -319,13 +295,12 @@ function SidebarBody({
             <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-sm bg-accent" />
             {!collapsed && <span className="truncate text-sm font-semibold text-fg">Web Design OS</span>}
           </div>
-          {allowCollapse && onToggleCollapse && <CollapseToggle collapsed={collapsed} onToggle={onToggleCollapse} />}
         </div>
         {!collapsed && <p className="mt-1 truncate text-xs text-fg-muted">{me.workspace_name}</p>}
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3" aria-label="Primary">
-        {PRIMARY_NAV_LINKS.map((link) => (
+        {SHEET_PRIMARY_NAV_LINKS.map((link) => (
           <NavRow
             key={link.href}
             link={link}
@@ -333,7 +308,6 @@ function SidebarBody({
             count={link.countKey ? counts?.[link.countKey] : undefined}
             collapsed={collapsed}
             onNavigate={onNavigate}
-            iconPlayToken={iconAnimation?.href === link.href ? iconAnimation.token : undefined}
           />
         ))}
       </nav>
@@ -355,122 +329,35 @@ function SidebarBody({
 }
 
 /**
- * The dashboard sidebar. Two variants sharing one implementation:
- * "desktop" renders its own collapsible `<aside>` (state persisted to
- * localStorage — see SIDEBAR_COLLAPSED_KEY); "mobile" renders just the
- * inner content for the existing drawer/bottom-nav "More" sheet in
- * dashboard/layout.tsx, always expanded (a collapsed icon rail doesn't
- * make sense inside a temporary overlay).
- *
- * The collapsed-state hook lives here rather than in the dashboard
- * layout deliberately: this component only ever mounts client-side,
- * after `me` has loaded (the layout shows a loading placeholder until
- * then), so reading localStorage in its initializer can never disagree
- * with server-rendered markup — there isn't any for this subtree.
+ * The dashboard's full navigation list (every destination except
+ * Clients, which the bottom nav shows directly; badges; and the
+ * account/theme menu), rendered inside the navigation sheet that the
+ * top bar and the bottom nav's "More" open in dashboard/layout.tsx — at
+ * every width, since the persistent desktop sidebar was retired in
+ * favour of the bottom nav. Always expanded: `collapsed` on the rows
+ * below is a leftover of the retired icon-rail mode and is always false.
  */
 export function Sidebar({
-  variant,
   me,
   pathname,
   search,
   counts,
   onNavigate,
-  iconAnimation,
 }: {
-  variant: "desktop" | "mobile";
   me: Me;
   pathname: string;
   search: URLSearchParams;
   counts: NavCounts | null;
   onNavigate?: () => void;
-  /** See SidebarBody — passed through from dashboard/layout.tsx, which
-   * is the one place that knows a real section change just happened.
-   * Not wired into the "mobile" variant: it only ever renders while its
-   * drawer is open, and opening that drawer is never itself what
-   * triggered the navigation, so there's never a moment where its rows
-   * would need to play the animation. */
-  iconAnimation?: { href: string; token: number } | null;
 }) {
-  const allowCollapse = variant === "desktop";
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (!allowCollapse) return false;
-    try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
-      } catch {
-        // Private-browsing / storage-disabled — the toggle still works
-        // for this session, it just won't be remembered next time.
-      }
-      return next;
-    });
-  }
-
-  // Publish the sidebar's real current width onto the document root —
-  // the single source of truth Discovery's fixed/full-bleed map and
-  // floating controls read (`var(--sidebar-w)`) instead of duplicating
-  // this width as their own hard-coded constant, which is exactly what
-  // caused them to drift out of sync with it. `useLayoutEffect` so this
-  // lands before the browser paints the commit that changed `collapsed`
-  // — no visible frame at the old offset. Skipped for the mobile variant,
-  // which floats over content rather than pushing it (`--sidebar-w`'s
-  // default in globals.css only matters below `lg` as a harmless unused
-  // fallback, since nothing reads it there).
-  useLayoutEffect(() => {
-    if (!allowCollapse) return;
-    document.documentElement.style.setProperty(
-      "--sidebar-w",
-      collapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED,
-    );
-  }, [allowCollapse, collapsed]);
-
-  if (variant === "mobile") {
-    return (
-      <SidebarBody
-        me={me}
-        pathname={pathname}
-        search={search}
-        counts={counts}
-        onNavigate={onNavigate}
-        collapsed={false}
-        allowCollapse={false}
-      />
-    );
-  }
-
   return (
-    <aside
-      // sticky + h-screen + self-start: without these, this flex item
-      // stretches to match <main>'s full (often much taller) content
-      // height — the default cross-axis stretch of the shell's flex
-      // row — which pushed the footer far below the viewport and left
-      // a large dead gap in the nav list. This keeps the whole sidebar
-      // capped to one viewport height and pinned in place as the page
-      // scrolls, without touching <main>'s own overflow behaviour
-      // (deliberately left to the window, not a nested scroll
-      // container — see the comment above <main> below).
-      className={`app-sidebar sticky top-0 hidden h-screen shrink-0 flex-col self-start border-r border-border bg-surface-subtle lg:flex ${
-        collapsed ? "w-[4.5rem]" : "w-60"
-      }`}
-    >
-      <SidebarBody
-        me={me}
-        pathname={pathname}
-        search={search}
-        counts={counts}
-        collapsed={collapsed}
-        allowCollapse
-        onToggleCollapse={toggleCollapsed}
-        iconAnimation={iconAnimation}
-      />
-    </aside>
+    <SidebarBody
+      me={me}
+      pathname={pathname}
+      search={search}
+      counts={counts}
+      onNavigate={onNavigate}
+      collapsed={false}
+    />
   );
 }

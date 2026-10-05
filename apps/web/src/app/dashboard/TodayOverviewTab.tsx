@@ -16,6 +16,7 @@ import {
   type Task,
 } from "@/lib/api";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { AnimatedCount } from "@/components/ui/AnimatedCount";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PipelineFunnel } from "@/components/PipelineFunnel";
@@ -172,11 +173,11 @@ export function TodayOverviewTab() {
               >
                 <Link href="/dashboard/build/planning" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                   Planning/build needing review{" "}
-                  <span className="font-semibold tabular-nums text-fg">{planningNeedsReviewCount ?? 0}</span>
+                  <AnimatedCount value={planningNeedsReviewCount ?? 0} className="font-semibold text-fg" />
                 </Link>
                 <Link href="/dashboard/build/projects" className="rounded text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                   Projects in progress{" "}
-                  <span className="font-semibold tabular-nums text-fg">{data.overview.active_projects}</span>
+                  <AnimatedCount value={data.overview.active_projects} className="font-semibold text-fg" />
                 </Link>
               </PipelineFunnel>
             )}

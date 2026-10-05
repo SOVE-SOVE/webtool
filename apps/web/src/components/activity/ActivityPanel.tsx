@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef } from "react";
 import type { PlanningListItem } from "@/lib/api";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 type Group = "running" | "failed" | "completed";
 
@@ -93,17 +94,19 @@ export function ActivityPanel({ items, onClose }: { items: PlanningListItem[]; o
       >
         <div className="flex items-center justify-between gap-3 border-b border-border p-4">
           <h2 className="text-base font-semibold text-fg">Background activity</h2>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-              <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
-            </svg>
-          </button>
+          <Tooltip label="Close" side="bottom">
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="shrink-0 rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L10 8.94l4.72-4.72a.75.75 0 1 1 1.06 1.06L11.06 10l4.72 4.72a.75.75 0 1 1-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 0 1-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">

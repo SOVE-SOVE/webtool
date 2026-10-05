@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Planning } from "@/lib/api";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
 
@@ -9,9 +9,12 @@ type PreviewView = "desktop" | "mobile";
 function ViewToggle({
   view,
   onChange,
+  roomy = false,
 }: {
   view: PreviewView;
   onChange: (next: PreviewView) => void;
+  /** btn-sm-height hit areas, for hosts with room for them. */
+  roomy?: boolean;
 }) {
   return (
     <div className="flex gap-1">
@@ -21,7 +24,7 @@ function ViewToggle({
           type="button"
           onClick={() => onChange(v)}
           aria-pressed={view === v}
-          className={`rounded px-2 py-0.5 text-xs font-medium transition-colors duration-[var(--duration-fast)] ${
+          className={`rounded text-xs font-medium ${roomy ? "min-h-8 px-2.5" : "px-2 py-0.5"} transition-colors duration-[var(--duration-fast)] ${
             view === v ? "bg-surface-subtle text-fg" : "text-fg-muted hover:text-fg"
           }`}
         >
@@ -104,6 +107,8 @@ export function EvidencePanel({
   planning,
   evidence,
   emptyStateMessage = "No screenshot captured yet.",
+  bare = false,
+  caption,
 }: {
   planning: Planning;
   evidence?: { label: string; text: string } | null;
@@ -111,6 +116,13 @@ export function EvidencePanel({
    * specific, data-backed reason to give (e.g. an audit ran but the
    * capture itself failed) — never a fabricated cause. */
   emptyStateMessage?: string;
+  /** No card chrome or "Website preview" label of its own — for a host
+   * that already frames and titles the preview (BusinessAnalysisCard).
+   * The screenshot keeps its own thin frame so a white page still has
+   * an edge. */
+  bare?: boolean;
+  /** Replaces the toolbar's "Website preview" label (e.g. capture date). */
+  caption?: ReactNode;
 }) {
   const hasDesktop = Boolean(planning.screenshot_desktop_base64);
   const hasMobile = Boolean(planning.screenshot_mobile_base64);
@@ -147,7 +159,7 @@ export function EvidencePanel({
 
   if (!hasDesktop && !hasMobile) {
     return (
-      <div className="rounded-md border border-border bg-surface-subtle px-4 py-10 text-center">
+      <div className={`rounded-md bg-surface-subtle px-4 py-10 text-center ${bare ? "" : "border border-border"}`}>
         <p className="text-sm text-fg-muted">{emptyStateMessage}</p>
       </div>
     );
@@ -156,23 +168,29 @@ export function EvidencePanel({
   const src = displayView === "desktop" ? planning.screenshot_desktop_base64 : planning.screenshot_mobile_base64;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <p className="text-xs font-medium text-fg-subtle">Website preview</p>
+    <div className={bare ? "min-w-0" : "card overflow-hidden"}>
+      <div
+        className={
+          bare
+            ? "flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pb-2"
+            : "flex items-center justify-between gap-2 border-b border-border px-3 py-2"
+        }
+      >
+        <p className="text-xs font-medium text-fg-subtle">{caption ?? "Website preview"}</p>
         <div className="flex items-center gap-3">
-          {hasDesktop && hasMobile && <ViewToggle view={view} onChange={handleSetView} />}
+          {hasDesktop && hasMobile && <ViewToggle view={view} onChange={handleSetView} roomy={bare} />}
           {src && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="text-xs font-medium text-fg-muted hover:text-fg hover:underline"
+              className={`text-xs font-medium text-fg-muted hover:text-fg hover:underline ${bare ? "min-h-8 rounded px-1" : ""}`}
             >
               Expand preview
             </button>
           )}
         </div>
       </div>
-      <div className="max-h-[75vh] overflow-auto p-3">
+      <div className={`max-h-[75vh] overflow-auto ${bare ? "" : "p-3"}`}>
         {src && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -211,12 +229,14 @@ export function EvidencePanel({
  * current: a fresh one is mid-capture, so there's nothing honest to
  * show yet but the box itself.
  */
-export function AnalysingPreviewPanel() {
+export function AnalysingPreviewPanel({ bare = false }: { bare?: boolean }) {
   return (
-    <div className="card overflow-hidden">
-      <div className="border-b border-border px-3 py-2">
-        <p className="text-xs font-medium text-fg-subtle">Website preview</p>
-      </div>
+    <div className={bare ? "overflow-hidden rounded-md" : "card overflow-hidden"}>
+      {!bare && (
+        <div className="border-b border-border px-3 py-2">
+          <p className="text-xs font-medium text-fg-subtle">Website preview</p>
+        </div>
+      )}
       <div
         className="scan-surface flex h-[260px] items-center justify-center bg-surface-subtle"
         role="status"

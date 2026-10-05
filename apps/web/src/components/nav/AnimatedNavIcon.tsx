@@ -1,12 +1,13 @@
+import { useRef, useState } from "react";
 import type { IconName } from "@/lib/nav";
 import { NavIcon } from "@/components/ui/Icons";
 
 /**
- * The one-time sidebar-icon "acknowledgement" that plays when the user
- * deliberately navigates to a different main section (see
- * `dashboard/layout.tsx`, which computes `playToken` from a real
- * section change and never replays it for a no-op click, a tab switch
- * inside the same section, or a background refresh).
+ * The one-shot section-icon animation on the main nav's primary rows
+ * (desktop sidebar, mobile drawer, mobile bottom nav). It plays once when
+ * a mouse/pen pointer enters the row, or when the row receives keyboard
+ * focus — see `useNavIconHoverPlay` below for the exact trigger rules.
+ * It never runs on click or on navigation, so it can't delay either.
  *
  * Every animated variant below is built from the *same* path data as
  * `Icons.tsx`'s `PATHS` for that name — this never redesigns the resting
@@ -99,35 +100,144 @@ const ANIMATED_VARIANTS: Partial<Record<IconName, () => React.ReactNode>> = {
 };
 
 /**
- * Drop-in replacement for `NavIcon` on the sidebar's five primary rows
- * (and the mobile bottom nav's, which shows four of them) — renders the
- * exact same icon at rest, and additionally plays that section's
- * one-time animation when `playToken` is a new, positive number. `key`
- * on the inner `<g>`/fragment forces React to remount it on every new
- * token, which is what restarts the CSS animation (a plain class toggle
- * wouldn't replay on an already-mounted element).
+ * The bottom nav's "More" glyph — not a nav destination, so it has no
+ * `IconName`/`NavIcon` entry; its rest icon has always been this 20×20
+ * filled three-dot SVG (dots r=1.5 at x=3/10/17). Its single path is
+ * split into one `<path>` per dot, keeping the exact subpath data (a
+ * `<circle>` rasterizes with slightly more ink than these arcs), so
+ * each can lift in turn: a left-to-right wave, staggered in globals.css
+ * (`.nav-icon-play-more`). Same trigger/replay rules as the section
+ * icons: pass `useNavIconHoverPlay("more")`'s `playToken`/`onPlayEnd`.
+ * At rest and under reduced motion no animation class is applied.
+ */
+export function MoreNavIcon({
+  className = "h-5 w-5",
+  playToken = 0,
+  onPlayEnd,
+}: {
+  className?: string;
+  playToken?: number;
+  onPlayEnd?: () => void;
+}) {
+  const playing =
+    playToken > 0 &&
+    typeof window !== "undefined" &&
+    !window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className={playing ? `${className} nav-icon-play-more` : className}
+      aria-hidden="true"
+      key={playing ? playToken : undefined}
+      onAnimationEnd={(e) => {
+        if (e.currentTarget.getAnimations({ subtree: true }).length === 0) onPlayEnd?.();
+      }}
+    >
+      <path d="M4.5 10a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+      <path d="M11.5 10a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+      <path d="M17 11.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+    </svg>
+  );
+}
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+// Comfortably longer than the longest play (`--duration-nav-icon`, 420ms).
+const PLAY_GUARD_MS = 1000;
+
+/**
+ * Hover/keyboard trigger for a nav row's icon animation. Spread the
+ * returned `onPointerEnter`/`onFocus` onto the row's link (the whole
+ * item, so moving between its icon and label never re-fires — pointer
+ * enter doesn't bubble from children) and pass `playToken`/`onPlayEnd`
+ * to `PrimaryNavIcon`.
+ *
+ * - One play per entry; nothing loops while the pointer rests on it.
+ * - A play that's already running is never restarted — a re-entry or a
+ *   keyboard focus during it is ignored, and leaving mid-play lets it
+ *   finish (every keyframe ends at the rest pose; cutting it short would
+ *   snap the icon back abruptly). Once it ends, the next entry replays.
+ * - Touch pointers are ignored, and the emulated mouseenter a tap also
+ *   fires isn't listened to, so a tap just navigates — no motion, no
+ *   delay.
+ * - Focus plays only when the browser deems it `:focus-visible`
+ *   (keyboard), so a mouse click that focuses the link can't re-trigger.
+ * - Reduced motion: never starts; the row's own hover colour/background
+ *   remains the only feedback.
+ */
+export function useNavIconHoverPlay(name: IconName | "more") {
+  const [playToken, setPlayToken] = useState(0);
+  // Start time of the running play, or null. The time check is only a
+  // safety net: if the animation is cancelled rather than ending (e.g.
+  // a breakpoint hides this nav mid-play), no animationend arrives, and
+  // this keeps that from blocking every later play.
+  const playStartRef = useRef<number | null>(null);
+  const animatable = name === "more" || ANIMATED_VARIANTS[name] !== undefined;
+
+  function play() {
+    if (!animatable) return;
+    const start = playStartRef.current;
+    if (start !== null && performance.now() - start < PLAY_GUARD_MS) return;
+    if (window.matchMedia(REDUCED_MOTION_QUERY).matches) return;
+    playStartRef.current = performance.now();
+    setPlayToken((t) => t + 1);
+  }
+
+  return {
+    playToken,
+    onPlayEnd: () => {
+      playStartRef.current = null;
+    },
+    onPointerEnter: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.pointerType === "touch") return;
+      play();
+    },
+    onFocus: (e: React.FocusEvent<HTMLElement>) => {
+      if (e.currentTarget.matches(":focus-visible")) play();
+    },
+  };
+}
+
+/**
+ * Drop-in replacement for `NavIcon` on the five primary nav rows —
+ * renders the exact same icon at rest, and additionally plays that
+ * section's one-shot animation whenever `playToken` becomes a new,
+ * positive number. `key` on the `<svg>` forces React to remount it on
+ * every new token, which is what restarts the CSS animation (a plain
+ * class toggle wouldn't replay on an already-mounted element).
+ * `onPlayEnd` fires once every animation inside the icon has finished
+ * (Sales and Build run two staggered ones).
  */
 export function PrimaryNavIcon({
   name,
   className = "h-5 w-5",
   playToken = 0,
+  onPlayEnd,
 }: {
   name: IconName;
   className?: string;
   playToken?: number;
+  onPlayEnd?: () => void;
 }) {
   const Animated = playToken > 0 ? ANIMATED_VARIANTS[name] : undefined;
   const reduceMotion =
     Animated !== undefined &&
     typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.matchMedia(REDUCED_MOTION_QUERY).matches;
 
   if (!Animated || reduceMotion) {
     return <NavIcon name={name} className={className} />;
   }
 
   return (
-    <svg {...ICON_SVG_PROPS} className={className} key={playToken}>
+    <svg
+      {...ICON_SVG_PROPS}
+      className={className}
+      key={playToken}
+      onAnimationEnd={(e) => {
+        if (e.currentTarget.getAnimations({ subtree: true }).length === 0) onPlayEnd?.();
+      }}
+    >
       <Animated />
     </svg>
   );

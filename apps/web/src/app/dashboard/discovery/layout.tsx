@@ -93,14 +93,13 @@ export default function DiscoveryLayout({ children }: { children: React.ReactNod
           non-positioned elements. Floating, the layer itself ignores
           pointer events so the map stays draggable around the header
           card and Import button, which opt back in. Offsets mirror
-          dashboard/layout.tsx's chrome, same as DiscoveryMap's — `left`
-          reads the shared `--sidebar-w` variable so it stays flush with
-          the sidebar's real edge in both collapsed and expanded states. */}
+          dashboard/layout.tsx's chrome (top bar, h-12, at every width),
+          same as DiscoveryMap's. */}
       <div
         ref={layerRef}
         className={
           floating
-            ? "pointer-events-none fixed inset-x-0 top-12 z-20 flex items-start justify-between gap-3 p-3 lg:left-[var(--sidebar-w)] lg:top-11"
+            ? "pointer-events-none fixed inset-x-0 top-12 z-20 flex items-start justify-between gap-3 p-3"
             : "relative z-10"
         }
       >

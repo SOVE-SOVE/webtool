@@ -259,7 +259,9 @@ export function WebsiteBlueprintSection({
           ))}
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <SaveStatus status={selectedSection ? inspectorStatus : "idle"} className="hidden sm:block" />
+          {/* A visual mirror of the inspector's own indicator — that one
+              does the announcing, so this one stays silent. */}
+          <SaveStatus status={selectedSection ? inspectorStatus : "idle"} live={false} className="hidden sm:block" />
           <BlueprintMoreMenu
             planning={planning}
             open={moreOpen}

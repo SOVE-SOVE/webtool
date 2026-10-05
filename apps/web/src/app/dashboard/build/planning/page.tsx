@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   PLANNING_STATUS_LABELS,
@@ -15,7 +15,6 @@ import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { SoftSwap } from "@/components/ui/SoftSwap";
 import { useRecentChanges } from "@/lib/useRecentChanges";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
@@ -23,8 +22,11 @@ import { FilterField, FilterPopover, FilterToggle } from "@/components/ui/Filter
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { useToast } from "@/components/ui/ToastProvider";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
+import { CARD_GRID_FLIP } from "@/lib/cardGridFlip";
+import { useLayoutFlip } from "@/lib/useLayoutFlip";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { PLANNING_MODE_LABEL, planningListItemMode, type PlanningMode } from "@/app/dashboard/planning/lib";
 import { BuildSwitch } from "../BuildSwitch";
@@ -67,6 +69,13 @@ function PlanningListPageInner() {
   const visibleCount = Math.max(PAGE_SIZE, Number(searchParams.get("show")) || PAGE_SIZE);
 
   useDebouncedUrlSync("search", search);
+
+  // Cards glide to their new places when search/filters/sort change the
+  // results, and a card new to the results fades in (see useLayoutFlip).
+  // This replaced the grid's SoftSwap opacity settle rather than adding
+  // to it — one acknowledgement of a re-query, not two at once.
+  const gridRef = useRef<HTMLDivElement>(null);
+  useLayoutFlip(gridRef, CARD_GRID_FLIP);
 
   // This view was the one the operator landed on — remembered so a bare
   // /dashboard/build visit (no explicit view) returns here next time.
@@ -222,6 +231,17 @@ function PlanningListPageInner() {
 
   const pagedItems = visibleItems?.slice(0, visibleCount) ?? null;
 
+  // "Show transferred" widens the list rather than narrowing it, so it is
+  // never what hides a plan — only the search and the two selects are.
+  const narrowingFilterCount = (statusFilter ? 1 : 0) + (modeFilter ? 1 : 0);
+  const state = listState({
+    loaded: items !== null,
+    error: error !== null,
+    visible: visibleItems?.length ?? 0,
+    filtersActive: search.trim() !== "" || narrowingFilterCount > 0,
+  });
+  const filteredEmpty = filteredEmptyCopy({ noun: "plans", search, filterCount: narrowingFilterCount });
+
   if (error) {
     return (
       <div className="p-4 sm:p-6">
@@ -247,9 +267,12 @@ function PlanningListPageInner() {
         </p>
 
         {items === null ? null : items.length === 0 ? (
+          // The list leaves transferred plans out unless asked, so "none
+          // yet" is only claimed once they were included and there still
+          // are none.
           <EmptyState
-            title="No Planning items yet"
-            description={'Start one from a lead’s "Start Planning" action.'}
+            title={showTransferred ? "No Planning items yet" : "No active plans"}
+            description="Planning starts from a lead — open one and choose Start Planning."
             action={
               <Link href="/dashboard/sales/leads" className="btn btn-primary btn-sm">
                 Go to Leads →
@@ -327,12 +350,12 @@ function PlanningListPageInner() {
           </div>
         )}
 
-        {pagedItems && pagedItems.length === 0 && items && items.length > 0 && (
+        {state === "filtered-empty" && (
           <EmptyState
-            title="No matches"
-            description="Try adjusting your search or filters."
+            title={filteredEmpty.title}
+            description={filteredEmpty.description}
             action={
-              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+              <button type="button" onClick={clearFilters} className="btn btn-secondary btn-sm">
                 Clear filters
               </button>
             }
@@ -341,22 +364,23 @@ function PlanningListPageInner() {
 
         {pagedItems && pagedItems.length > 0 && (
           <>
-            <SoftSwap
-              signature={`${statusFilter}|${modeFilter}|${sortBy}`}
-              className="content-reveal grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
-            >
+            <div ref={gridRef} className="content-reveal grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {pagedItems.map((item) => (
-                <PlanningCard
-                  key={item.id}
-                  flash={recentIds.has(item.id)}
-                  item={item}
-                  checklist={checklistById.get(item.id)}
-                  density={DENSITY}
-                  onRemove={handleRemove}
-                  removing={removingId === item.id}
-                />
+                // The grid cell, and the only thing the layout move ever
+                // transforms. The one-column grid stretches the card to the cell, so a row's
+                // cards stay the same height exactly as when the card was the cell.
+                <div key={item.id} data-flip-key={item.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)]">
+                  <PlanningCard
+                    flash={recentIds.has(item.id)}
+                    item={item}
+                    checklist={checklistById.get(item.id)}
+                    density={DENSITY}
+                    onRemove={handleRemove}
+                    removing={removingId === item.id}
+                  />
+                </div>
               ))}
-            </SoftSwap>
+            </div>
 
             {visibleItems && visibleItems.length > pagedItems.length && (
               <div className="flex justify-center pt-2">

@@ -12,7 +12,9 @@ import {
   type WebsiteReference,
 } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
-import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
+import { SaveStatus } from "@/components/ui/SaveStatus";
+import { ScreenshotImage } from "@/components/ui/ScreenshotImage";
+import { deriveSaveStatus } from "@/lib/saveStatus";
 import { Textarea } from "@/components/ui/Textarea";
 import { CloseIcon } from "@/components/ui/ControlIcons";
 import { useDismissableOverlay } from "@/lib/useDismissableOverlay";
@@ -81,8 +83,7 @@ export function ReferencePreview({
   if (reference.capture_status === "captured" && reference.has_screenshot && brokenSrc !== src) {
     return (
       <div className={shell}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- a stored preview from an authenticated API route, not an optimizable static asset */}
-        <img
+        <ScreenshotImage
           src={src}
           alt=""
           loading="lazy"
@@ -294,7 +295,10 @@ function InspirationDetailPanel({
         liked_aspects: ordered,
       });
       onUpdated(updated);
-      setAspects(ordered);
+      // Tidy the chips into catalogue order — unless one was toggled
+      // while this was saving, in which case that newer choice stands
+      // (and shows as unsaved).
+      setAspects((current) => (sameAspects(current, aspects) ? ordered : current));
       setStatus("saved");
     } catch (err) {
       setErrorText(err instanceof ApiError ? err.message : "Couldn't save — try again.");
@@ -335,8 +339,11 @@ function InspirationDetailPanel({
     }
   }
 
-  const displayStatus: SaveStatusValue =
-    status === "saving" ? "saving" : status === "error" ? "error" : dirty ? "dirty" : status === "saved" ? "saved" : "idle";
+  const displayStatus = deriveSaveStatus({
+    saving: status === "saving",
+    outcome: status === "saved" || status === "error" ? status : "none",
+    dirty,
+  });
 
   return (
     <div className="side-panel-overlay" onClick={requestClose} role="presentation">

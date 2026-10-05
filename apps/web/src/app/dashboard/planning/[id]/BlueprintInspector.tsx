@@ -5,6 +5,7 @@ import { api, ApiError, type ContentSection, type Planning } from "@/lib/api";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
+import { deriveSaveStatus } from "@/lib/saveStatus";
 import { SECTION_TYPE_LABEL } from "./websiteBlueprintLib";
 
 type Fields = { heading: string; purpose: string; draft_text: string; notes: string };
@@ -72,7 +73,13 @@ export function BlueprintInspector({
   const [errorText, setErrorText] = useState<string | undefined>();
 
   const dirty = (Object.keys(fields) as (keyof Fields)[]).some((k) => fields[k] !== saved[k]);
-  const displayStatus: SaveStatusValue = status === "saving" ? "saving" : status === "error" ? "error" : dirty ? "dirty" : status === "saved" ? "saved" : "idle";
+  // "Saved" only while the fields still match what the server confirmed
+  // — typing during a save leaves this on "unsaved" when it lands.
+  const displayStatus = deriveSaveStatus({
+    saving: status === "saving",
+    outcome: status === "saved" || status === "error" ? status : "none",
+    dirty,
+  });
 
   useEffect(() => {
     onDirtyChange(dirty);

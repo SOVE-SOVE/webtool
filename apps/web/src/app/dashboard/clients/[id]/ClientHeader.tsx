@@ -6,6 +6,8 @@ import type { Business, Client, Project } from "@/lib/api";
 import { ClientStatusBadge } from "@/components/ClientStatusBadge";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import type { ClientTone } from "@/lib/clients";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 function ProjectPickerMenu({ projects }: { projects: Project[] }) {
   const [open, setOpen] = useState(false);
@@ -41,14 +43,16 @@ function SecondaryActionMenu({ onEdit }: { onEdit: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="More actions"
-        className="rounded-md border border-border-strong px-2 py-1.5 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg"
-      >
-        ⋯
-      </button>
+      <Tooltip label="More actions">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="More actions"
+          className="rounded-md border border-border-strong px-2 py-1.5 text-sm text-fg-muted hover:bg-surface-hover hover:text-fg"
+        >
+          ⋯
+        </button>
+      </Tooltip>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />
@@ -75,9 +79,8 @@ function SecondaryActionMenu({ onEdit }: { onEdit: () => void }) {
 
 /**
  * Sticky header — offsets copied from Planning's detail page (top-12
- * clears the app's mobile fixed top bar, lg:top-11 clears the desktop
- * sticky strip, z-20 sits below both so it tucks under rather than
- * over). One primary action, never repeated elsewhere on the page.
+ * clears the app's fixed top bar at every width, z-20 sits below it so
+ * it tucks under rather than over). One primary action, never repeated elsewhere on the page.
  *
  * Unlike Planning, this uses plain `px-4 sm:px-6` — no negative-margin
  * bleed + inner `mx-auto max-w-5xl` recenter. That pattern only works
@@ -111,7 +114,7 @@ export function ClientHeader({
   onEditClick: () => void;
 }) {
   return (
-    <header className="sticky top-12 z-20 border-b border-border bg-surface px-4 py-4 sm:px-6 lg:top-11">
+    <header className="sticky top-12 z-20 border-b border-border bg-surface px-4 py-4 sm:px-6">
       <Link href={clientsReturnUrl} className="text-sm text-fg-muted hover:underline">
         ← Clients
       </Link>
@@ -137,9 +140,12 @@ export function ClientHeader({
               (a Contact model exists on the backend but has no routes). */}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-muted">
             {business.email && (
-              <a href={`mailto:${business.email}`} className="hover:text-fg hover:underline">
-                {business.email}
-              </a>
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <a href={`mailto:${business.email}`} className="min-w-0 truncate hover:text-fg hover:underline">
+                  {business.email}
+                </a>
+                <CopyButton value={business.email} label="Copy email address" tooltip="Copy email" />
+              </span>
             )}
             {business.phone && (
               <a href={`tel:${business.phone}`} className="hover:text-fg hover:underline">

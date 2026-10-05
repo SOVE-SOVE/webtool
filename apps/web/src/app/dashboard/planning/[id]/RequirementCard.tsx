@@ -621,10 +621,14 @@ export function PlacedRequirementChip({
   hasNotes,
   selected,
   busy,
+  flipKey,
   onToggle,
   onRemove,
 }: {
   featureKey: string;
+  /** Stable id for the board's layout transition (see useLayoutFlip) —
+   * lets this chip glide when its neighbours are added or removed. */
+  flipKey?: string;
   suggested: boolean;
   hasNotes: boolean;
   selected: boolean;
@@ -637,6 +641,7 @@ export function PlacedRequirementChip({
   const preference = isPreferenceKind(kind);
   return (
     <div
+      data-flip-key={flipKey}
       className={`group relative flex items-center gap-2 rounded-full border-2 py-1.5 pl-1.5 pr-2 transition-colors duration-fast ease-standard motion-reduce:transition-none ${
         selected
           ? "border-fg bg-surface-hover"

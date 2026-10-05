@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { api, ApiError, type DeliveryStatus } from "@/lib/api";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { completedByUser } from "@/lib/completionFeedback";
+import { useCompletionCelebration } from "@/lib/useCompletionCelebration";
 
 export function DeliveryPanel({
   projectId,
@@ -16,12 +18,14 @@ export function DeliveryPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taskBusyId, setTaskBusyId] = useState<string | null>(null);
+  const { celebratingId, celebrate, settle } = useCompletionCelebration();
 
   async function toggleTask(taskId: string, done: boolean) {
     setTaskBusyId(taskId);
     setError(null);
     try {
-      await api.updateTask(taskId, { done: !done });
+      const updated = await api.updateTask(taskId, { done: !done });
+      if (completedByUser({ wasDone: done, requestedDone: !done, confirmedDone: updated.done })) celebrate(taskId);
       onChanged();
     } catch {
       setError("Couldn't update that checklist item.");
@@ -66,6 +70,8 @@ export function DeliveryPanel({
                 checked={item.done}
                 disabled={taskBusyId === item.task_id}
                 onChange={() => toggleTask(item.task_id, item.done)}
+                onAnimationEnd={settle}
+                className={celebratingId === item.task_id && item.done ? "animate-checkbox-pop" : undefined}
               />
               <span className={item.done ? "text-fg-subtle line-through" : "text-fg"}>{item.title}</span>
             </li>

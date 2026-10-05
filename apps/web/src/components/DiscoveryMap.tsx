@@ -8,6 +8,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { INSTAGRAM_CHECK_STATE_LABEL, instagramCheckDisplayState, type DiscoveredBusiness } from "@/lib/api";
 import { hasCoordinates, type LocatedBusiness } from "@/lib/filters";
+import { accumulatePinch, isPinchWheel, wheelPanDelta, zoomForGestureScale } from "@/lib/mapWheel";
 
 // Leaflet's default marker asset paths break under a bundler, so every
 // pin is an inline SVG divIcon instead — no external image requests.
@@ -140,10 +141,13 @@ export default function DiscoveryMap({
     // never changes — so this doesn't need to vary with that state.
     const popupPadding = popupPaddingRef.current;
     const container = containerRef.current;
+    // The map runs under the 3rem glass top bar (see the render below),
+    // so the top padding clears that too.
     function syncPopupPadding() {
       const layerH = parseFloat(getComputedStyle(container).getPropertyValue("--discovery-layer-h")) || 0;
+      const topBarH = 3 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
       popupPadding.x = window.innerWidth >= 640 ? 428 : 16;
-      popupPadding.y = layerH + 16;
+      popupPadding.y = topBarH + layerH + 16;
     }
     syncPopupPadding();
     map.on("resize", syncPopupPadding);
@@ -183,6 +187,89 @@ export default function DiscoveryMap({
     }
     map.on("popupopen", handlePopupOpen);
 
+    // --- Trackpad gestures ------------------------------------------------
+    // Two-finger scrolling pans the map; a pinch zooms it. Leaflet has no
+    // wheel-to-pan handler (its only wheel handler, `scrollWheelZoom`, is
+    // switched off above so scrolling never zooms), so this is the one
+    // wheel listener on the map — nothing competes with it. Dragging,
+    // touch gestures, the keyboard and the zoom buttons stay Leaflet's own.
+    //
+    // Bound to the map container only: the search column, results panel,
+    // menus and dialogs are not inside it, so wheel events over them never
+    // arrive here, and Leaflet stops wheel events inside its popups. The
+    // listener must be non-passive to call preventDefault, which also
+    // stops a sideways swipe over the map from triggering the browser's
+    // back/forward gesture.
+    let panX = 0;
+    let panY = 0;
+    let panFrame = 0;
+    let pinchAccumulated = 0;
+    let zooming = false;
+    const onZoomStart = () => {
+      zooming = true;
+    };
+    const onZoomEnd = () => {
+      zooming = false;
+    };
+    map.on("zoomstart", onZoomStart);
+    map.on("zoomend", onZoomEnd);
+
+    // One pan per frame, however many wheel events arrive (trackpads send
+    // several per frame, and keep sending while momentum runs out).
+    function flushPan() {
+      panFrame = 0;
+      const [dx, dy] = [panX, panY];
+      panX = 0;
+      panY = 0;
+      // Mid zoom-animation the map's origin is changing; drop the movement.
+      if (zooming || (dx === 0 && dy === 0)) return;
+      map.panBy([dx, dy], { animate: false });
+    }
+
+    function zoomAround(clientX: number, clientY: number, zoom: number) {
+      const target = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), zoom));
+      if (zooming || target === map.getZoom()) return;
+      const rect = container.getBoundingClientRect();
+      map.setZoomAround(L.point(clientX - rect.left, clientY - rect.top), target);
+    }
+
+    function handleWheel(e: WheelEvent) {
+      e.preventDefault();
+      if (isPinchWheel(e)) {
+        const { steps, remainder } = accumulatePinch(pinchAccumulated, e.deltaY);
+        pinchAccumulated = remainder;
+        if (steps !== 0) zoomAround(e.clientX, e.clientY, map.getZoom() + steps);
+        return;
+      }
+      pinchAccumulated = 0;
+      const { dx, dy } = wheelPanDelta(e, { width: container.clientWidth, height: container.clientHeight });
+      panX += dx;
+      panY += dy;
+      if (!panFrame) panFrame = requestAnimationFrame(flushPan);
+    }
+    container.addEventListener("wheel", handleWheel, { passive: false });
+
+    // Safari reports a trackpad pinch as gesture events (non-standard, so
+    // typed locally) rather than Ctrl + wheel. Handling them here zooms the
+    // map and, over the map only, keeps the page itself from zooming.
+    type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number };
+    let gestureStartZoom = 0;
+    function handleGestureStart(e: Event) {
+      e.preventDefault();
+      gestureStartZoom = map.getZoom();
+    }
+    function handleGestureChange(e: Event) {
+      e.preventDefault();
+      const g = e as GestureEvent;
+      zoomAround(g.clientX, g.clientY, zoomForGestureScale(gestureStartZoom, g.scale, map.getMinZoom(), map.getMaxZoom()));
+    }
+    function handleGestureEnd(e: Event) {
+      e.preventDefault();
+    }
+    container.addEventListener("gesturestart", handleGestureStart);
+    container.addEventListener("gesturechange", handleGestureChange);
+    container.addEventListener("gestureend", handleGestureEnd);
+
     // Leaflet caches its container size and only re-measures on an
     // explicit invalidateSize() call — it has no way to notice the
     // container itself getting wider/narrower (e.g. the sidebar
@@ -195,6 +282,13 @@ export default function DiscoveryMap({
 
     return () => {
       resizeObserver.disconnect();
+      if (panFrame) cancelAnimationFrame(panFrame);
+      container.removeEventListener("wheel", handleWheel);
+      container.removeEventListener("gesturestart", handleGestureStart);
+      container.removeEventListener("gesturechange", handleGestureChange);
+      container.removeEventListener("gestureend", handleGestureEnd);
+      map.off("zoomstart", onZoomStart);
+      map.off("zoomend", onZoomEnd);
       map.off("popupopen", handlePopupOpen);
       map.remove();
       mapRef.current = null;
@@ -290,25 +384,23 @@ export default function DiscoveryMap({
   }, [selectedId, located]);
 
   return (
-    // Full-viewport base layer: pinned to everything the dashboard chrome
-    // leaves free — below the mobile top bar / desktop header strip,
-    // above the mobile bottom nav, right of the desktop sidebar — so the
-    // app navigation stays reachable. Offsets mirror dashboard/layout.tsx.
-    // `left` reads the sidebar's real width from `--sidebar-w` (published
-    // by Sidebar.tsx) rather than a hard-coded constant, so it tracks the
-    // collapsed/expanded toggle instead of drifting out of sync with it —
-    // the ResizeObserver below already re-measures Leaflet whenever this
-    // resulting width changes.
-    <div className="fixed inset-x-0 bottom-14 top-12 z-0 lg:bottom-0 lg:left-[var(--sidebar-w)] lg:top-11">
+    // Full-viewport base layer, running beneath the dashboard's frosted
+    // top bar and bottom nav (z-30, dashboard/layout.tsx) so the map
+    // shows through the glass. Leaflet's own controls are pushed clear of
+    // both bars instead: zoom below the top bar + Import button (5.5rem),
+    // attribution above the bottom nav (incl. its safe-area inset,
+    // `--app-bottom-nav-h`). The same at every width; the ResizeObserver
+    // below re-measures Leaflet whenever the size changes.
+    <div className="fixed inset-0 z-0">
       <div
         ref={containerRef}
-        className="h-full w-full [&_.leaflet-top.leaflet-right]:top-10!"
+        className="h-full w-full [&_.leaflet-top.leaflet-right]:top-22! [&_.leaflet-bottom]:bottom-[var(--app-bottom-nav-h)]!"
         aria-label="Map of discovered business locations"
       />
       {/* A small frosted note, kept clear of the attribution (bottom-right)
           and — on narrow screens — of the bottom-left results panel. */}
       {businesses.length > 0 && located.length === 0 && (
-        <div className="pointer-events-none absolute bottom-24 right-3 z-[1000] max-w-xs map-glass px-3 py-2 text-xs text-fg-muted lg:bottom-9">
+        <div className="pointer-events-none absolute bottom-[calc(var(--app-bottom-nav-h)+6rem)] right-3 z-[1000] max-w-xs map-glass px-3 py-2 text-xs text-fg-muted lg:bottom-[calc(var(--app-bottom-nav-h)+2.25rem)]">
           No mapped locations in view — a business is pinned once its own site publishes map coordinates.
         </div>
       )}

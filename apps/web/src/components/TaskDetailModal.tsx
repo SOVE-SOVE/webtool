@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api, type Task, type User } from "@/lib/api";
 import { taskContextHref, taskContextKind, taskContextName } from "@/lib/tasks";
 import { timeAgo } from "@/lib/format";
@@ -9,6 +9,10 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useEscapeToClose } from "@/components/ui/useEscapeToClose";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
+import { CompletionCheck } from "@/components/ui/CompletionCheck";
+import { completedByUser } from "@/lib/completionFeedback";
+import { useCompletionCelebration } from "@/lib/useCompletionCelebration";
+import { useTaskDoneToast } from "@/lib/useTaskDoneToast";
 import { TaskScheduleSection } from "@/components/TaskScheduleSection";
 
 /**
@@ -39,8 +43,17 @@ export function TaskDetailModal({
   const showToast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { celebratingId, celebrate, settle } = useCompletionCelebration();
 
   useEscapeToClose(onClose);
+
+  // The task as last seen here — what an Undo pressed after this toggle
+  // checks itself against (see useTaskDoneToast).
+  const taskRef = useRef(task);
+  useEffect(() => {
+    taskRef.current = task;
+  }, [task]);
+  const showTaskDoneToast = useTaskDoneToast((id) => (taskRef.current.id === id ? taskRef.current : null), onChanged);
 
   async function toggleDone() {
     setBusy(true);
@@ -48,7 +61,10 @@ export function TaskDetailModal({
     try {
       const updated = await api.updateTask(task.id, { done: !task.done });
       onChanged(updated);
-      showToast(updated.done ? "Marked complete" : "Reopened");
+      if (completedByUser({ wasDone: task.done, requestedDone: !task.done, confirmedDone: updated.done })) {
+        celebrate(updated.id);
+      }
+      showTaskDoneToast(updated);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't update this task.");
     } finally {
@@ -86,6 +102,11 @@ export function TaskDetailModal({
             {task.title}
           </h2>
           <Badge tone={task.done ? "success" : "muted"} className="shrink-0">
+            {/* The tick draws in only for a completion made here, just now;
+                an already-completed task shows it static. */}
+            {task.done && (
+              <CompletionCheck animate={celebratingId === task.id} onAnimationEnd={settle} className="-mt-px mr-1 align-middle" />
+            )}
             {task.done ? "Completed" : "Open"}
           </Badge>
         </div>

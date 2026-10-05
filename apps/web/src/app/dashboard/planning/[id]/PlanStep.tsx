@@ -20,7 +20,7 @@ type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business
 
 // The requirements board's height, on wide screens: real viewport
 // height, minus a couple of small fixed constants this file fully
-// controls (the dashboard's own sticky header strip, and two of this
+// controls (the dashboard's fixed top bar and bottom nav, and two of this
 // step's own layout gaps that don't show up in either measured box's own
 // offsetHeight), minus three *measured* values — `--planning-above-h`
 // (page.tsx: back-nav/header/notices/stepper — published only for this
@@ -41,7 +41,7 @@ type LeadBusinessFields = Pick<Lead, "industry" | "suburb" | "state" | "business
 // board: on a ~680px-tall laptop viewport the old floor squeezed the canvas
 // to ~70px. Below the floor the page scrolls a little instead.
 const BOARD_HEIGHT_CSS =
-  "max(480px, calc(100dvh - 2.75rem - 0.75rem - 1rem - 1.25rem - var(--planning-above-h, 0px) - var(--plan-heading-h, 0px) - var(--plan-below-h, 0px)))";
+  "max(480px, calc(100dvh - 3rem - var(--app-bottom-nav-h) - 0.75rem - 1rem - 1.25rem - var(--planning-above-h, 0px) - var(--plan-heading-h, 0px) - var(--plan-below-h, 0px)))";
 
 /**
  * Step 2 — "Choose your website" (step id "plan"). Merges the old "Choose improvements" and "Prepare the

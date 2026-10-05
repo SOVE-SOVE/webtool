@@ -675,6 +675,32 @@ export type RevenueReport = {
   overdue_cents: number;
   overdue_count: number;
   transactions: RevenueTransaction[];
+  /** The rows behind `overdue_cents` (always the full workspace set). */
+  overdue_items?: RevenueOverdueItem[];
+  /** The ACTIVE plans behind `expected_mrr_cents` (monthly fees, not issued charges). */
+  expected_hosting_plans?: RevenueExpectedHostingPlan[];
+};
+
+export type RevenueOverdueItem = {
+  kind: "agreement" | "hosting_charge";
+  id: string;
+  project_id: string;
+  client_id: string | null;
+  client_business_name: string | null;
+  label: string;
+  outstanding_cents: number;
+  due_date: string;
+  days_overdue: number;
+};
+
+export type RevenueExpectedHostingPlan = {
+  plan_id: string;
+  project_id: string;
+  project_name: string;
+  client_id: string | null;
+  client_business_name: string | null;
+  monthly_fee_cents: number;
+  next_due_date: string;
 };
 
 export type RevenueHostingPlan = HostingPlan & {

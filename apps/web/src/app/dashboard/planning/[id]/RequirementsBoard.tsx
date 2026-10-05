@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { api, ApiError, type Planning, type Requirement } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/ToastProvider";
 import { SaveStatus, type SaveStatusValue } from "@/components/ui/SaveStatus";
 import { Textarea } from "@/components/ui/Textarea";
 import { ChevronDownIcon } from "@/components/ui/ControlIcons";
@@ -42,8 +43,28 @@ import {
 } from "./websiteBlueprintLib";
 import { FeatureLibraryCard, PlacedRequirementChip } from "./RequirementCard";
 import { InspirationStrip } from "./InspirationStrip";
+import { useLayoutFlip } from "@/lib/useLayoutFlip";
+import {
+  beginBurstSave,
+  beginLatestSave,
+  deriveSaveStatus,
+  IDLE_LATEST_SAVE,
+  IDLE_SAVE_BURST,
+  resetLatestSave,
+  settleBurstSave,
+  settleLatestSave,
+  touchLatestSave,
+  type LatestSave,
+} from "@/lib/saveStatus";
+import { requirementRestoreVerdict } from "@/lib/undo";
 
 const REQUIREMENT_DRAG_MIME = "application/x-requirement-feature";
+
+/** A newly added chip settles in: a short fade and a few px of rise, no
+ * overshoot. The end keyframe leaves opacity to the chip's own resting
+ * value. Played by useLayoutFlip only for chips that appear after the
+ * board's first render — never on load, refetch or a step switch. */
+const CHIP_ENTER: Keyframe[] = [{ opacity: 0, transform: "translateY(6px)" }, { transform: "translateY(0)" }];
 
 type DragPayload = { feature_key: string; source_recommendation_id?: string | null };
 
@@ -114,6 +135,7 @@ export function RequirementsBoard({
   onOpenInspiration?: () => void;
 }) {
   const confirm = useConfirm();
+  const showToast = useToast();
   const requirements = planning.blueprint_requirements;
   // Derived straight from the canvas's own saved data — never a second
   // "already added" list of its own, so it can't drift out of sync with
@@ -176,7 +198,20 @@ export function RequirementsBoard({
   const [openId, setOpenId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [notesSaved, setNotesSaved] = useState("");
-  const [notesStatus, setNotesStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Latest-request-wins (see lib/saveStatus.ts): a save that settles after
+  // the editor has moved to another feature is ignored rather than
+  // landing its result on the wrong one. The ref mirrors the state so an
+  // in-flight request can read the current value when it settles.
+  const [notesSave, setNotesSaveState] = useState<LatestSave>(IDLE_LATEST_SAVE);
+  const notesSaveRef = useRef<LatestSave>(IDLE_LATEST_SAVE);
+  function setNotesSave(next: LatestSave) {
+    notesSaveRef.current = next;
+    setNotesSaveState(next);
+  }
+  // Adding/removing features (and applying a template): these can
+  // overlap, so the footer reads "Saving…" until all have settled and
+  // "Saved" only if none failed.
+  const [selectionSave, setSelectionSave] = useState(IDLE_SAVE_BURST);
   const [notesError, setNotesError] = useState<string | undefined>();
   const notesDirty = openId !== null && notesDraft !== notesSaved;
   // The inspiration strip's own detail editor — independent of the notes
@@ -199,6 +234,84 @@ export function RequirementsBoard({
     if (trigger && trigger.isConnected && document.activeElement === document.body) trigger.focus();
   }, [addingKey, busyId]);
 
+  // Undo for a removed feature (see `offerRestore`). The plan as this
+  // board currently has it, for an Undo pressed a few seconds later; and
+  // each pending Undo's dismisser by feature key, so one is withdrawn as
+  // soon as it stops being the inverse of that removal — the feature was
+  // added back by hand, a conflicting choice replaced it, or this board
+  // (the only place that can apply it) has gone.
+  const latestRef = useRef({ planning, onUpdated });
+  useEffect(() => {
+    latestRef.current = { planning, onUpdated };
+  });
+  const restoreOffersRef = useRef<Map<string, () => void>>(new Map());
+  useEffect(() => {
+    const offers = restoreOffersRef.current;
+    return () => {
+      for (const dismiss of offers.values()) dismiss();
+      offers.clear();
+    };
+  }, []);
+
+  function withdrawRestoreOffers(addedKey: string) {
+    for (const [key, dismiss] of restoreOffersRef.current) {
+      if (key === addedKey || conflictingSelections(key, [addedKey]).length > 0) {
+        dismiss();
+        restoreOffersRef.current.delete(key);
+      }
+    }
+  }
+
+  /**
+   * "Removed X · Undo". Undo adds that one feature back with what the
+   * removed card carried — its notes, the recommendation it came from, and
+   * the recommendations its removal put back to proposed — through the
+   * same `addRequirement` call a manual add uses. It never rewrites the
+   * rest of the selection, and stands down if the feature is already back
+   * or can no longer coexist with what's selected now.
+   */
+  function offerRestore(removed: Requirement, deselectedRecommendationIds: string[]) {
+    const featureKey = removed.feature_key;
+    const label = featureLabel(featureKey);
+    const dismiss = showToast(`Removed ${label}`, {
+      key: `requirement:${planning.id}:${featureKey}`,
+      action: {
+        label: "Undo",
+        onAction: async () => {
+          restoreOffersRef.current.delete(featureKey);
+          const currentKeys = latestRef.current.planning.blueprint_requirements.map((r) => r.feature_key);
+          const conflicts = conflictingSelections(featureKey, currentKeys);
+          const verdict = requirementRestoreVerdict({ featureKey, currentKeys, conflicts });
+          if (!verdict.ok) {
+            throw new Error(
+              verdict.reason === "already-added"
+                ? `${label} is already back in the plan.`
+                : `${label} wasn't restored — ${conflicts.map(featureLabel).join(", ")} is selected instead.`,
+            );
+          }
+          setSelectionSave(beginBurstSave);
+          let ok = true;
+          try {
+            const restored = await api.addRequirement(planning.id, {
+              feature_key: featureKey,
+              notes: removed.notes,
+              source_recommendation_id: removed.source_recommendation_id,
+              accept_recommendation_ids: deselectedRecommendationIds,
+            });
+            latestRef.current.onUpdated(restored);
+          } catch (err) {
+            ok = false;
+            throw new Error(err instanceof ApiError ? err.message : `Couldn't restore ${label} — it is still removed.`);
+          } finally {
+            setSelectionSave((b) => settleBurstSave(b, ok));
+          }
+          return `Restored ${label}`;
+        },
+      },
+    });
+    restoreOffersRef.current.set(featureKey, dismiss);
+  }
+
   async function confirmDiscardNotesIfDirty(): Promise<boolean> {
     if (!notesDirty) return true;
     return confirm({
@@ -217,7 +330,7 @@ export function RequirementsBoard({
     const req = nextId ? requirements.find((r) => r.id === nextId) : null;
     setNotesDraft(req?.notes ?? "");
     setNotesSaved(req?.notes ?? "");
-    setNotesStatus("idle");
+    setNotesSave(resetLatestSave(notesSaveRef.current));
     setNotesError(undefined);
     return true;
   }
@@ -246,7 +359,9 @@ export function RequirementsBoard({
     }
     setAddingKey(featureKey);
     setError(null);
+    setSelectionSave(beginBurstSave);
     pendingFocusRef.current = trigger;
+    let ok = true;
     try {
       let latest = planning;
       for (const conflictKey of conflicts) {
@@ -271,35 +386,44 @@ export function RequirementsBoard({
         accept_recommendation_ids: acceptIds,
       });
       onUpdated(updated);
+      withdrawRestoreOffers(featureKey);
     } catch (err) {
+      ok = false;
       setError(err instanceof ApiError ? err.message : "Couldn't add that feature.");
     } finally {
       setAddingKey(null);
+      setSelectionSave((b) => settleBurstSave(b, ok));
     }
   }
 
   async function removeRequirement(id: string) {
     setBusyId(id);
     setError(null);
+    setSelectionSave(beginBurstSave);
     pendingFocusRef.current = null;
+    let ok = true;
     try {
       // Removing deselects: accepted supporting recommendations go back
       // to proposed (never deleted or dismissed), so the card reappears
       // under Recommended with its evidence intact.
-      const featureKey = requirements.find((r) => r.id === id)?.feature_key;
+      const removed = requirements.find((r) => r.id === id);
+      const featureKey = removed?.feature_key;
       const deselectIds = featureKey ? acceptedRecommendationIdsForFeature(planning, featureKey) : [];
       const updated = await api.deleteRequirement(planning.id, id, deselectIds);
       onUpdated(updated);
+      if (removed) offerRestore(removed, deselectIds);
       if (openId === id) {
         setOpenId(null);
         setNotesDraft("");
         setNotesSaved("");
-        setNotesStatus("idle");
+        setNotesSave(resetLatestSave(notesSaveRef.current));
       }
     } catch (err) {
+      ok = false;
       setError(err instanceof ApiError ? err.message : "Couldn't remove that feature.");
     } finally {
       setBusyId(null);
+      setSelectionSave((b) => settleBurstSave(b, ok));
     }
   }
 
@@ -347,7 +471,9 @@ export function RequirementsBoard({
     }
     setApplyingTemplate(templateKey);
     setTemplateError(null);
+    setSelectionSave(beginBurstSave);
     pendingFocusRef.current = null;
+    let ok = true;
     // Not atomic across these calls the way a single backend endpoint
     // would be (see WebsiteBlueprintSection's own "Start blank", which
     // documents the same trade-off for the old editor's template apply)
@@ -380,33 +506,42 @@ export function RequirementsBoard({
         setOpenId(null);
         setNotesDraft("");
         setNotesSaved("");
-        setNotesStatus("idle");
+        setNotesSave(resetLatestSave(notesSaveRef.current));
       }
     } catch (err) {
+      ok = false;
       setTemplateError(err instanceof ApiError ? err.message : "Couldn't apply that template.");
     } finally {
       setApplyingTemplate(null);
+      setSelectionSave((b) => settleBurstSave(b, ok));
     }
   }
 
   async function saveNotes() {
     if (!openId) return;
-    setNotesStatus("saving");
+    const sent = notesDraft;
+    const started = beginLatestSave(notesSaveRef.current);
+    setNotesSave(started);
     setNotesError(undefined);
+    let failure: string | null = null;
     try {
-      const updated = await api.updateRequirement(planning.id, openId, { notes: notesDraft.trim() || null });
+      const updated = await api.updateRequirement(planning.id, openId, { notes: sent.trim() || null });
       onUpdated(updated);
-      setNotesSaved(notesDraft);
-      setNotesStatus("saved");
     } catch (err) {
-      setNotesError(err instanceof ApiError ? err.message : "Couldn't save these notes.");
-      setNotesStatus("error");
+      failure = err instanceof ApiError ? err.message : "Couldn't save these notes.";
     }
+    const settled = settleLatestSave(notesSaveRef.current, started.latest, failure === null);
+    // Unchanged means this request is no longer the editor's latest (it
+    // moved to another feature meanwhile) — its result isn't shown there.
+    if (settled === notesSaveRef.current) return;
+    setNotesSave(settled);
+    if (failure === null) setNotesSaved(sent);
+    else setNotesError(failure);
   }
 
   function cancelNotesEdit() {
     setNotesDraft(notesSaved);
-    setNotesStatus("idle");
+    setNotesSave(resetLatestSave(notesSaveRef.current));
     setNotesError(undefined);
   }
 
@@ -438,17 +573,21 @@ export function RequirementsBoard({
   }
 
   const openRequirement = openId ? requirements.find((r) => r.id === openId) ?? null : null;
-  const notesDisplayStatus: SaveStatusValue =
-    notesStatus === "saving" ? "saving" : notesStatus === "error" ? "error" : notesDirty ? "dirty" : notesStatus === "saved" ? "saved" : "idle";
+  const notesDisplayStatus = deriveSaveStatus({ saving: notesSave.saving, outcome: notesSave.outcome, dirty: notesDirty });
 
+  // The footer readout is for the feature selection itself. The notes
+  // editor has its own indicator beside its Save button, so while that
+  // one has something to say (unsaved, saving, failed) the footer doesn't
+  // sit there claiming "Saved".
+  const selectionStatus = deriveSaveStatus({ saving: selectionSave.pending > 0, outcome: selectionSave.outcome, dirty: false });
   const boardStatus: SaveStatusValue =
-    addingKey !== null || busyId !== null || notesStatus === "saving"
-      ? "saving"
-      : error
-        ? "error"
-        : notesStatus === "saved"
-          ? "saved"
-          : "idle";
+    selectionStatus === "saved" && notesDisplayStatus !== "idle" && notesDisplayStatus !== "saved" ? "idle" : selectionStatus;
+
+  // Chips glide to their new places when one is added or removed, and a
+  // new one settles in. The drop target is this whole area, not the
+  // chips, so a chip mid-glide never changes where a drop lands.
+  const canvasRef = useRef<HTMLDivElement>(null);
+  useLayoutFlip(canvasRef, { enter: CHIP_ENTER });
 
   return (
     // `flex h-full min-h-0 flex-col` — when PlanStep gives this
@@ -541,6 +680,7 @@ export function RequirementsBoard({
               </div>
 
               <div
+                ref={canvasRef}
                 // A modest floor (`min-h`), not a generous one — on wide
                 // screens PlanStep hands the frame above a real, bounded
                 // height to fill (`flex-1`) via its own calc'd height (see
@@ -588,6 +728,7 @@ export function RequirementsBoard({
                     {requirements.map((r) => (
                       <PlacedRequirementChip
                         key={r.id}
+                        flipKey={r.id}
                         featureKey={r.feature_key}
                         suggested={Boolean(r.source_recommendation_id)}
                         hasNotes={Boolean(r.notes && r.notes.trim())}
@@ -611,7 +752,7 @@ export function RequirementsBoard({
                     errorText={notesError}
                     onChange={(value) => {
                       setNotesDraft(value);
-                      if (notesStatus !== "saving") setNotesStatus("idle");
+                      setNotesSave(touchLatestSave(notesSaveRef.current));
                     }}
                     onSave={saveNotes}
                     onCancel={cancelNotesEdit}
@@ -818,7 +959,25 @@ function FeatureLibrary({
             All features added.
           </p>
         ) : filtered.length === 0 ? (
-          <p className="px-1 py-3 text-center text-xs text-fg-subtle">No features match — try another search</p>
+          // Only reachable with a search or category set (`filtered` is
+          // otherwise the whole list), so there is always something to clear.
+          <div className="px-1 py-3 text-center">
+            <p className="text-xs text-fg-subtle">
+              {query.trim()
+                ? `No features match “${query.trim()}”${category !== "all" ? ` in ${FEATURE_CATEGORY_LABEL[category]}` : ""}`
+                : `Every ${FEATURE_CATEGORY_LABEL[category as FeatureCategory]} feature is already in the plan`}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setCategory("all");
+              }}
+              className="btn btn-secondary btn-sm mt-2"
+            >
+              Clear filters
+            </button>
+          </div>
         ) : category === "all" ? (
           <div className="space-y-3">
             {groups.map((group) => (
@@ -1192,7 +1351,7 @@ function NotesEditor({
         <button type="button" onClick={onSave} disabled={!dirty || status === "saving"} className="btn btn-secondary btn-sm">
           {status === "saving" ? "Saving…" : "Save"}
         </button>
-        <button type="button" onClick={onCancel} disabled={!dirty} className="btn btn-secondary btn-sm">
+        <button type="button" onClick={onCancel} disabled={!dirty || status === "saving"} className="btn btn-secondary btn-sm">
           Cancel
         </button>
         <SaveStatus status={status} errorText={errorText} />

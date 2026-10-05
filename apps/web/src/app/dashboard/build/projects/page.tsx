@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   PROJECT_STAGE_LABELS,
@@ -15,14 +15,16 @@ import {
   type User,
 } from "@/lib/api";
 import { FINISHED_STAGES, filterProjects, UNASSIGNED } from "@/lib/filters";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { nextOpenTask } from "@/lib/projects";
 import { withParam } from "@/lib/url";
 import { useDebouncedUrlSync } from "@/lib/useDebouncedUrlSync";
+import { CARD_GRID_FLIP } from "@/lib/cardGridFlip";
+import { useLayoutFlip } from "@/lib/useLayoutFlip";
 import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { SoftSwap } from "@/components/ui/SoftSwap";
 import { useRecentChanges } from "@/lib/useRecentChanges";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
@@ -57,6 +59,10 @@ function ProjectsPageInner() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [checklists, setChecklists] = useState<ProjectChecklistSummary[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  // The "no projects yet" state offers a different action depending on
+  // whether any client exists, so it waits for that answer rather than
+  // showing one action and swapping it for the other.
+  const [clientsSettled, setClientsSettled] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +86,13 @@ function ProjectsPageInner() {
 
   useDebouncedUrlSync("search", search);
 
+  // Cards glide to their new places when search/filters/sort change the
+  // results, and a card new to the results fades in (see useLayoutFlip).
+  // This replaced the grid's SoftSwap opacity settle rather than adding
+  // to it — one acknowledgement of a re-query, not two at once.
+  const gridRef = useRef<HTMLDivElement>(null);
+  useLayoutFlip(gridRef, CARD_GRID_FLIP);
+
   // This view was the one the operator landed on — remembered so a bare
   // /dashboard/build visit (no explicit view) returns here next time.
   useEffect(() => {
@@ -98,7 +111,11 @@ function ProjectsPageInner() {
         setProjects(rows);
       })
       .catch(() => setError("Couldn't load projects."));
-    api.listClients().then(setClients).catch(() => {});
+    api
+      .listClients()
+      .then(setClients)
+      .catch(() => {})
+      .finally(() => setClientsSettled(true));
     api.listUsers().then(setUsers).catch(() => {});
     api.listTasks().then(setTasks).catch(() => {});
     api.listProjectChecklistSummaries().then(setChecklists).catch(() => {}); // Progress is a nice-to-have per card — its own fetch failing shouldn't block the list.
@@ -255,6 +272,17 @@ function ProjectsPageInner() {
 
   const pagedProjects = visibleProjects?.slice(0, visibleCount) ?? null;
 
+  // "Show finished" widens the list rather than narrowing it, so it is
+  // never what hides a project — the search and the three selects are.
+  const narrowingFilterCount = [stageFilter, ownerFilter, assigneeFilter].filter(Boolean).length;
+  const state = listState({
+    loaded: projects !== null,
+    error: error !== null,
+    visible: visibleProjects?.length ?? 0,
+    filtersActive: search.trim() !== "" || narrowingFilterCount > 0,
+  });
+  const filteredEmpty = filteredEmptyCopy({ noun: "projects", search, filterCount: narrowingFilterCount });
+
   if (error) {
     return (
       <div className="p-4 sm:p-6">
@@ -326,12 +354,12 @@ function ProjectsPageInner() {
         )}
 
         {projects === null ? null : projects.length === 0 ? (
-          <EmptyState
+          clientsSettled && <EmptyState
             title="No projects yet"
             description={
               clients.length === 0
-                ? "Projects are for signed clients. Convert a won lead first (Leads → Won), or start one from Planning."
-                : "Start a project for a client, or it's created automatically when you convert a won lead."
+                ? "Projects are for signed clients — convert a won lead first."
+                : "Start one for a client here, or convert a won lead and it's created for you."
             }
             action={
               clients.length > 0 ? (
@@ -429,13 +457,27 @@ function ProjectsPageInner() {
           </div>
         )}
 
-        {pagedProjects && pagedProjects.length === 0 && projects && projects.length > 0 && (
+        {state === "filtered-empty" && (
           <EmptyState
-            title="No matches"
-            description="Try adjusting your search or filters."
+            title={filteredEmpty.title}
+            description={filteredEmpty.description}
             action={
-              <button onClick={clearFilters} className="btn btn-secondary btn-sm">
+              <button type="button" onClick={clearFilters} className="btn btn-secondary btn-sm">
                 Clear filters
+              </button>
+            }
+          />
+        )}
+
+        {/* Projects exist and nothing is filtering: every one of them is
+            finished, which this list leaves out until asked. */}
+        {state === "empty" && projects && projects.length > 0 && (
+          <EmptyState
+            title="No active projects"
+            description={`${projects.length === 1 ? "The only project is" : `All ${projects.length} projects are`} finished, and finished projects are hidden here.`}
+            action={
+              <button type="button" onClick={() => changeShowFinished(true)} className="btn btn-secondary btn-sm">
+                Show finished
               </button>
             }
           />
@@ -443,21 +485,22 @@ function ProjectsPageInner() {
 
         {pagedProjects && pagedProjects.length > 0 && (
           <>
-            <SoftSwap
-              signature={`${stageFilter}|${ownerFilter}|${assigneeFilter}|${showFinished}|${sortBy}`}
-              className="content-reveal grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
-            >
+            <div ref={gridRef} className="content-reveal grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {pagedProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  flash={recentIds.has(project.id)}
-                  project={project}
-                  nextTask={nextOpenTask(tasks, project.id)}
-                  checklist={checklistById.get(project.id)}
-                  density={DENSITY}
-                />
+                // The grid cell, and the only thing the layout move ever
+                // transforms. The one-column grid stretches the card to the cell, so a row's
+                // cards stay the same height exactly as when the card was the cell.
+                <div key={project.id} data-flip-key={project.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)]">
+                  <ProjectCard
+                    flash={recentIds.has(project.id)}
+                    project={project}
+                    nextTask={nextOpenTask(tasks, project.id)}
+                    checklist={checklistById.get(project.id)}
+                    density={DENSITY}
+                  />
+                </div>
               ))}
-            </SoftSwap>
+            </div>
 
             {visibleProjects && visibleProjects.length > pagedProjects.length && (
               <div className="flex justify-center pt-2">

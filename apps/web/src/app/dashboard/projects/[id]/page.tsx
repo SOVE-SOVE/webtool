@@ -47,6 +47,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { completedByUser } from "@/lib/completionFeedback";
+import { useCompletionCelebration } from "@/lib/useCompletionCelebration";
 
 // Thin wrapper over the shared Badge primitive (docs/11_UI_REDESIGN_PLAN.md
 // §2.1/§4) — kept as its own component since every call site here passes a
@@ -111,6 +113,7 @@ export default function ProjectDetailPage() {
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
 
   const [tasks, setTasks] = useState<Task[] | null>(null);
+  const { celebratingId, celebrate, settle } = useCompletionCelebration();
   const [newTask, setNewTask] = useState("");
   const [addingTask, setAddingTask] = useState(false);
 
@@ -303,7 +306,8 @@ export default function ProjectDetailPage() {
   }
 
   async function handleToggleTask(id: string, done: boolean) {
-    await api.updateTask(id, { done });
+    const updated = await api.updateTask(id, { done });
+    if (completedByUser({ wasDone: !done, requestedDone: done, confirmedDone: updated.done })) celebrate(id);
     loadTasks();
   }
 
@@ -955,6 +959,8 @@ export default function ProjectDetailPage() {
             <li key={t.id} className="flex items-center gap-2 text-sm text-fg-subtle">
               <Checkbox
                 checked
+                onAnimationEnd={settle}
+                className={celebratingId === t.id ? "animate-checkbox-pop" : undefined}
                 onChange={() => handleToggleTask(t.id, false)}
                 aria-label={`Reopen "${t.title}"`}
               />

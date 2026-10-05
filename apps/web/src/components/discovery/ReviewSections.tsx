@@ -17,8 +17,9 @@ import { timeAgo } from "@/lib/format";
 import { SEVERITY_TONE, sortFindings } from "@/lib/reviewBrief";
 import { isReviewTextUnavailable } from "@/lib/reviewText";
 import { ReviewTextUnavailable } from "@/components/discovery/ReviewTextUnavailable";
+import { CopyButton } from "@/components/ui/CopyButton";
 
-export function Fact({ label, value }: { label: string; value: string | boolean | null }) {
+export function Fact({ label, value, after }: { label: string; value: string | boolean | null; /** A small control beside the value, e.g. a CopyButton. */ after?: ReactNode }) {
   return (
     <div className="flex justify-between gap-4 border-b border-border py-1.5 text-sm">
       <span className="shrink-0 text-fg-muted">{label}</span>
@@ -26,6 +27,7 @@ export function Fact({ label, value }: { label: string; value: string | boolean 
           URL) wraps inside the card instead of widening the whole page. */}
       <span className="min-w-0 text-right text-fg [overflow-wrap:anywhere]">
         {value === null ? "Unknown" : typeof value === "boolean" ? (value ? "Yes" : "No") : value}
+        {after && <span className="ml-1">{after}</span>}
       </span>
     </div>
   );
@@ -437,8 +439,16 @@ export function ContactBody({ business, socialLinks }: { business: DiscoveredBus
         }
       />
       <Fact label="Phone" value={business.phone} />
-      <Fact label="Email" value={business.email} />
-      <Fact label="Website" value={business.website_url ?? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]} />
+      <Fact
+        label="Email"
+        value={business.email}
+        after={business.email ? <CopyButton value={business.email} label="Copy email address" tooltip="Copy email" /> : undefined}
+      />
+      <Fact
+        label="Website"
+        value={business.website_url ?? DISCOVERED_WEBSITE_STATUS_LABEL[business.website_status]}
+        after={business.website_url ? <CopyButton value={business.website_url} label="Copy website address" /> : undefined}
+      />
       {socialLinks.length > 0 && (
         <div className="mt-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Social links</h3>

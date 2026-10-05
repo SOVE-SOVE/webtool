@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
+import { AnimatedCount } from "@/components/ui/AnimatedCount";
 import { leadsHrefForStage, type Funnel, type FunnelSegment, type FunnelTone } from "@/lib/pipelineFunnel";
 
 /** Theme-aware fill per stage, from the existing pill/foreground tokens —
@@ -61,7 +62,7 @@ export function PipelineFunnel({
     <div className="card @container flex flex-1 flex-col p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm text-fg-muted">
-          <span className="text-2xl font-semibold tabular-nums text-fg">{total}</span>{" "}
+          <AnimatedCount value={total} className="text-2xl font-semibold text-fg" />{" "}
           {total === 1 ? "lead" : "leads"} in the pipeline
         </p>
         <Link
@@ -103,7 +104,7 @@ export function PipelineFunnel({
                 >
                   <span className="hidden max-w-full items-center gap-1.5 rounded bg-surface/90 px-1.5 py-0.5 text-xs leading-none text-fg @min-[2rem]:flex">
                     <span className="hidden min-w-0 truncate @min-[7rem]:inline">{segment.label}</span>
-                    <span className="shrink-0 font-semibold tabular-nums">{segment.count}</span>
+                    <AnimatedCount value={segment.count} className="shrink-0 font-semibold" />
                   </span>
                 </Link>
               );
@@ -120,7 +121,7 @@ export function PipelineFunnel({
                     style={{ backgroundColor: fillFor(segment), opacity: segment.count > 0 ? 1 : 0.35 }}
                   />
                   <span className="min-w-0 flex-1 truncate">{segment.label}</span>
-                  <span className="tabular-nums">{segment.count}</span>
+                  <AnimatedCount value={segment.count} />
                 </>
               );
               return (

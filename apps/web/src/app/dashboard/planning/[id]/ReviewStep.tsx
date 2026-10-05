@@ -17,6 +17,7 @@ import { NextActionSummary, progressLabel } from "@/components/checklists/TaskCh
 import { AnimatedHeight } from "@/components/ui/AnimatedHeight";
 import { Badge } from "@/components/ui/Badge";
 import { Disclosure } from "@/components/ui/Disclosure";
+import { ScreenshotImage } from "@/components/ui/ScreenshotImage";
 import { computeBuildBriefFacts } from "../lib";
 import { BuildBriefTab } from "./BuildBriefTab";
 import type { HandoffReadiness } from "./handoffReadiness";
@@ -97,24 +98,19 @@ const likedText = (ref: PlanningReference) => ref.liked_aspects.map((a) => LIKED
  * when none was captured (or it fails to load). Decorative: the name
  * beside it carries the meaning. */
 function InspirationThumb({ reference }: { reference: PlanningReference["reference"] }) {
-  const [failed, setFailed] = useState(false);
   const tile = "aspect-[16/10] w-[4.5rem] shrink-0 overflow-hidden rounded border border-border bg-surface-subtle";
-  if (!reference.has_screenshot || failed) {
-    return (
-      <span className={`${tile} flex items-center justify-center text-center text-xs leading-tight text-fg-subtle`}>
-        No preview
-      </span>
-    );
+  const empty = "flex items-center justify-center text-center text-xs leading-tight text-fg-subtle";
+  if (!reference.has_screenshot) {
+    return <span className={`${tile} ${empty}`}>No preview</span>;
   }
   return (
     <span className={`${tile} block`}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- an authenticated API route, not an optimizable static asset */}
-      <img
+      <ScreenshotImage
         src={api.websiteReferenceScreenshotUrl(reference)}
         alt=""
         loading="lazy"
-        onError={() => setFailed(true)}
         className="h-full w-full object-cover object-top"
+        fallback={<span className={`${empty} h-full`}>No preview</span>}
       />
     </span>
   );

@@ -115,7 +115,7 @@ export function groupByArea(points: PlanningKeyPoint[]): [string, PlanningKeyPoi
 }
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-function severityRank(severity: string): number {
+export function severityRank(severity: string): number {
   return SEVERITY_RANK[severity] ?? 4;
 }
 

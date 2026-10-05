@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { api, ApiError, type ReviewQueuePage } from "@/lib/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { filteredEmptyCopy } from "@/lib/listState";
 import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect, SortSelect } from "@/components/ui/CompactSelect";
 import { FilterChips, type FilterChip } from "@/components/ui/FilterChips";
@@ -275,6 +276,11 @@ function ReviewQueueWorkspaceInner({
     [query.search, websiteFilter, analysisFilter, scoreFilter],
   );
   const filtersActive = hasActiveReviewFilters(filters) || search.trim() !== "";
+  const filteredEmpty = filteredEmptyCopy({
+    noun: "businesses",
+    search: search.trim() || query.search,
+    filterCount: [websiteFilter, analysisFilter, scoreFilter].filter(Boolean).length,
+  });
 
   function clearFilters() {
     setSearch("");
@@ -494,12 +500,14 @@ function ReviewQueueWorkspaceInner({
         </div>
       )}
 
-      {data && total === 0 && (
+      {/* Not under a load error: the rows still held are from an earlier
+          query, and an empty one would present the failure as "none". */}
+      {data && total === 0 && !error && (
         <div className="mt-2">
           {queueEmpty ? (
             <EmptyState
               title="Nothing in the review queue yet"
-              description="Run a Map Discovery search, then use its 'Add to Review Queue' action to bring candidates here to approve, reject, or bring the good ones into the CRM."
+              description="Add businesses from a Map Discovery search to review them here."
               action={
                 <Link href="/dashboard/discovery/map" className="btn btn-primary">
                   Go to Map Discovery
@@ -508,11 +516,9 @@ function ReviewQueueWorkspaceInner({
             />
           ) : (
             <EmptyState
-              title={filtersActive ? "No businesses match these filters" : `Nothing in ${tabLabel}`}
+              title={filtersActive ? filteredEmpty.title : `Nothing in ${tabLabel}`}
               description={
-                filtersActive
-                  ? "Try a broader search, or clear the filters."
-                  : "Pick a different review state above to see other businesses."
+                filtersActive ? filteredEmpty.description : "Other review states may still have businesses."
               }
               action={
                 filtersActive ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withParam, withoutParam } from "./url";
+import { displayDomain, withParam, withoutParam } from "./url";
 
 describe("withParam", () => {
   it("adds a new param while preserving existing ones", () => {
@@ -38,5 +38,23 @@ describe("withoutParam", () => {
   it("is a no-op when the param isn't present", () => {
     const sp = new URLSearchParams("tab=won");
     expect(withoutParam(sp, "preview")).toBe("tab=won");
+  });
+});
+
+describe("displayDomain", () => {
+  it("drops the scheme, www., path, query and hash", () => {
+    expect(displayDomain("https://www.example.com.au/services/plumbing?ref=gbp&utm_source=x#top")).toBe(
+      "example.com.au",
+    );
+    expect(displayDomain("http://shop.example.com:8080/a")).toBe("shop.example.com");
+  });
+
+  it("handles a scheme-less URL", () => {
+    expect(displayDomain("www.example.com/about")).toBe("example.com");
+    expect(displayDomain("  example.com  ")).toBe("example.com");
+  });
+
+  it("returns the trimmed input when it can't be parsed", () => {
+    expect(displayDomain("not a url")).toBe("not a url");
   });
 });

@@ -16,6 +16,7 @@ import { FilterField } from "@/components/ui/FilterPopover";
 import type { RevenueFilterUi } from "./revenueFilterUi";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 type StatusFilter = "active" | "paused" | "cancelled" | "all";
 
@@ -62,14 +63,16 @@ function PlanActionsMenu({ plan, onAction }: { plan: RevenueHostingPlan; onActio
   const [open, setOpen] = useState(false);
   return (
     <span className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={`Actions for ${plan.project_name}`}
-        className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
-      >
-        ⋯
-      </button>
+      <Tooltip label="Actions">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={`Actions for ${plan.project_name}`}
+          className="rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg"
+        >
+          ⋯
+        </button>
+      </Tooltip>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden="true" />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useOverlayExit } from "./useOverlayExit";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -23,6 +24,10 @@ export function useDismissableOverlay({
 }): { containerRef: React.RefObject<HTMLDivElement | null> } {
   const containerRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // Side panels leave with a short exit transition; other overlays built
+  // on this hook (the command menu, dialogs) are unaffected.
+  useOverlayExit(containerRef, open);
 
   useEffect(() => {
     if (!open) return;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Deployment, type ProjectApprovalStatus } from "@/lib/api";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 const STATUS_STYLE: Record<Deployment["status"], string> = {
   pending: "border-border bg-surface-subtle text-fg-muted",
@@ -135,9 +136,12 @@ export function DeploymentPanel({
                     (d.target === "mock" ? (
                       <span className="font-mono">{d.url}</span>
                     ) : (
-                      <a href={d.url} target="_blank" rel="noreferrer" className="underline">
-                        {d.url}
-                      </a>
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <a href={d.url} target="_blank" rel="noreferrer" className="min-w-0 underline [overflow-wrap:anywhere]">
+                          {d.url}
+                        </a>
+                        <CopyButton value={d.url} label="Copy deployment address" />
+                      </span>
                     ))}
                 </div>
                 <div className="flex items-center gap-2">

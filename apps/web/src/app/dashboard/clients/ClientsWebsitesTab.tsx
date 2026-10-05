@@ -11,6 +11,7 @@ import { useScrollRestoration } from "@/lib/useScrollRestoration";
 import { CommandBar } from "@/components/ui/CommandBar";
 import { CompactSelect } from "@/components/ui/CompactSelect";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { filteredEmptyCopy, listState } from "@/lib/listState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { FilterChips } from "@/components/ui/FilterChips";
 import { FilterField, FilterPopover } from "@/components/ui/FilterPopover";
@@ -87,6 +88,14 @@ export function ClientsWebsitesTab({ currency }: { currency: string }) {
     [projects, search, assigneeFilter],
   );
 
+  const state = listState({
+    loaded: projects !== null,
+    error: error !== null,
+    visible: visible?.length ?? 0,
+    filtersActive: search.trim() !== "" || assigneeFilter !== "",
+  });
+  const filteredEmpty = filteredEmptyCopy({ noun: "live websites", search, filterCount: assigneeFilter ? 1 : 0 });
+
   return (
     <div>
       <CommandBar
@@ -161,11 +170,25 @@ export function ClientsWebsitesTab({ currency }: { currency: string }) {
           back) re-renders in place instead of replaying the reveal. */}
       {visible && (
         <div className="content-reveal">
-          {projects && projects.length > 0 && visible.length === 0 && (
+          {state === "filtered-empty" && (
+            <div className="mt-4">
+              <EmptyState
+                title={filteredEmpty.title}
+                description={filteredEmpty.description}
+                action={
+                  <button type="button" onClick={clearFilters} className="btn btn-secondary btn-sm">
+                    Clear filters
+                  </button>
+                }
+              />
+            </div>
+          )}
+
+          {state === "empty" && (
             <div className="mt-4">
               <EmptyState
                 title="No live websites yet"
-                description="Nothing has been deployed for a client yet — once a project ships, it shows up here."
+                description="Once a project is deployed for a client, it shows up here."
               />
             </div>
           )}
